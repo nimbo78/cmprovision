@@ -1,0 +1,13 @@
+# The app runs on Linux and ships shell scripts (debian/, scriptexecute, blade-rendered shell):
+# keep LF in the working tree on every platform.
+* text=auto eol=lf
+*.bin binary
+*.img binary
+*.dtb binary
+*.dtbo binary
+*.elf binary
+*.dat binary
+*.woff binary
+*.woff2 binary
+*.ico binary
+*.png binary
