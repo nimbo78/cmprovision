@@ -16,7 +16,10 @@ DEST=${1:-/var/backups/cmprovision}
 VER=$(dpkg-query -W -f='${Version}' cmprovision4 2>/dev/null || echo unknown)
 OUT="$DEST/$(date +%Y%m%d-%H%M%S)-$VER"
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
-mkdir -p "$OUT"
+# The snapshot holds .env (APP_KEY), password hashes, printer and SNMP credentials: root-only.
+umask 077
+mkdir -p -m 700 "$DEST"
+mkdir -m 700 "$OUT"
 
 sqlite3 "$APP/database/database.sqlite" ".backup '$OUT/database.sqlite'"
 
