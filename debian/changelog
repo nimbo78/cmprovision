@@ -1,3 +1,11 @@
+cmprovision4 (1.6.5~dev2) unstable; urgency=medium
+
+  * Fix EEPROM firmware download: images now come from firmware-2711
+    default/latest on GitHub (only missing files, checksum verified)
+    and from the rpi-eeprom package; artisan firmware:update (#43).
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 08 Oct 2026 02:56:30 +0300
+
 cmprovision4 (1.6.5~dev1) unstable; urgency=medium
 
   * Fork maintenance build: no functional changes yet.
