@@ -19,7 +19,7 @@ class Projects extends Component
     public $projects, $activeProject;
     public $projectid, $name, $device, $storage, $image_id, $label_id, $label_moment, $selectedScripts, $offerSettingsReset;
     public $firmware, $eeprom_settings, $verify;
-    public $images, $labels, $scripts, $beta_firmware, $stable_firmware;
+    public $images, $labels, $scripts, $firmwareChannels;
 
     protected $rules = [
         'name' => 'required|max:255',
@@ -41,8 +41,11 @@ class Projects extends Component
         $this->images = Image::orderBy('filename')->orderBy('id')->get();
         $this->labels = Label::orderBy('name')->get();
         $this->scripts = Script::orderBy('name')->get();
-        $this->beta_firmware = Firmware::allOfChannel('beta');
-        $this->stable_firmware = Firmware::allOfChannel('stable');        
+        $this->firmwareChannels = [];
+        foreach (Firmware::channels() as $channel)
+        {
+            $this->firmwareChannels[$channel] = Firmware::allOfChannel($channel);
+        }
 
         if ($this->isOpen && $this->label_moment != 'never' && !$this->label_id && count($this->labels))
             $this->label_id = $this->labels[0]->id;
