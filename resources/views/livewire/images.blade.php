@@ -62,15 +62,13 @@
             </table>
         </div>
     </div>
-</div>
-
 <style>[x-cloak] { display: none !important; }</style>
 <script src="{{ asset('js/upload-progress.js') }}?v={{ filemtime(public_path('js/upload-progress.js')) }}"></script>
 <script>
 /* Alpine component for the upload dialog (resources/views/livewire/addimage.blade.php). */
 function imageUploader(cfg) {
     return {
-        state: 'idle',          // idle | uploading | processing
+        state: 'idle',          // idle | uploading | processing | done
         percent: 0,
         statusLine: '',
         error: '',
@@ -111,7 +109,7 @@ function imageUploader(cfg) {
                 if (s.loaded >= s.total) { self.state = 'processing'; self.statusLine = 'Upload finished, the server is storing the file...'; }
             });
             xhr.addEventListener('load', function () {
-                if (xhr.status >= 200 && xhr.status < 300) { window.location.href = cfg.done; return; }
+                if (xhr.status >= 200 && xhr.status < 300) { self.state = 'done'; window.location.href = cfg.done; return; }
                 self.fail(self.explain(xhr));
             });
             xhr.addEventListener('error', function () { self.fail('Connection to the server was lost during the upload.'); });
@@ -150,3 +148,4 @@ function imageUploader(cfg) {
     };
 }
 </script>
+</div>
