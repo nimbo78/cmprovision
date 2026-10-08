@@ -98,6 +98,20 @@ class ProjectActivationTest extends TestCase
         $this->assertFileDoesNotExist(public_path('uploads/pieeprom.bin'));
     }
 
+    public function test_only_images_from_the_firmware_store_are_accepted()
+    {
+        file_put_contents($this->dir.'/secret.txt', 'not a firmware');
+        $project = $this->project(['eeprom_firmware' => '../'.basename($this->dir).'/secret.txt']);
+
+        try {
+            (new ProjectActivator)->activate($project);
+            $this->fail('a path outside the channel directories must be rejected');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('no longer available', $e->getMessage());
+        }
+        $this->assertFileDoesNotExist(public_path('uploads/pieeprom.bin'));
+    }
+
     public function test_patching_the_active_project_through_the_api_rebuilds_the_eeprom_image()
     {
         $project = $this->project();

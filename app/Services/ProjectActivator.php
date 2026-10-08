@@ -45,8 +45,10 @@ class ProjectActivator
             return;
         }
 
+        /* Only images from the firmware store: the value may come from the API */
+        $known = array_map(function ($f) { return $f->path; }, Firmware::all());
         $source = Firmware::basedir().'/'.$firmware;
-        $data = is_file($source) ? @file_get_contents($source) : false;
+        $data = in_array($firmware, $known, true) && is_file($source) ? @file_get_contents($source) : false;
         if ($data === false)
         {
             /* Do not leave the image of a previous project in place */
@@ -57,7 +59,8 @@ class ProjectActivator
 
         /* The settings may arrive with CRLF from a browser or trimmed by the API: store them the
            way rpi-eeprom-config does, LF-only with a single trailing newline */
-        $settings = rtrim(str_replace("", "", (string) $project->eeprom_settings));
+        $settings = rtrim(str_replace("
+", "", (string) $project->eeprom_settings));
         if ($settings !== '')
             $settings .= "
 ";
