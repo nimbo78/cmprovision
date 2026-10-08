@@ -55,6 +55,25 @@ case "$1" in
         nginx -t >/dev/null 2>&1 && deb-systemd-invoke reload nginx || echo "nginx configuration test failed, not reloaded"
     fi
 
+    # Uploaded images pass through PHP's temporary directory. Keep it on disk next to the images:
+    # on Debian 13 /tmp is RAM-backed (half the memory at most), and renaming is instant.
+    UPLOAD_TMP=/var/lib/cmprovision/storage/app/upload-tmp
+    install -d -o www-data -g www-data -m 700 "$UPLOAD_TMP"
+    PHP_INI=`echo "<?php echo str_replace('cli', 'fpm', php_ini_loaded_file() );" | php`
+    if [ -n "$PHP_INI" ] && ! grep -q "^upload_tmp_dir = $UPLOAD_TMP" "$PHP_INI"; then
+        echo "Setting upload_tmp_dir = $UPLOAD_TMP in $PHP_INI"
+        if grep -q "^;\?upload_tmp_dir =" "$PHP_INI"; then
+            sed -i "s#^;\?upload_tmp_dir =.*#upload_tmp_dir = $UPLOAD_TMP#" "$PHP_INI"
+        else
+            echo "upload_tmp_dir = $UPLOAD_TMP" >> "$PHP_INI"
+        fi
+        deb-systemd-invoke restart php${PHP_VERSION}-fpm || true
+    fi
+
+    # The .env template used to ship development settings; production ones are safer
+    # (debug pages show configuration and stack traces to anyone who reaches them).
+    sed -i "s/^APP_ENV=local$/APP_ENV=production/; s/^APP_DEBUG=true$/APP_DEBUG=false/" /var/lib/cmprovision/.env
+
     sed -i "s/QUEUE_CONNECTION=sync/QUEUE_CONNECTION=database/" /var/lib/cmprovision/.env
     /var/lib/cmprovision/artisan config:clear
     /var/lib/cmprovision/artisan view:clear

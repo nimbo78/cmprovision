@@ -42,7 +42,7 @@
                   <select id="firmware" name="firmware" wire:model="firmware" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
                     <option value="">-none-</option>
                       @foreach ($firmwareChannels as $channel => $images)
-                      <optgroup label="{{ $channel }}{{ $channel == 'default' ? ' (recommended by Raspberry Pi)' : '' }}">
+                      <optgroup label="{{ $channel }}{{ $channel == 'default' ? ' (recommended by Raspberry Pi)' : (in_array($channel, ['stable', 'beta', 'critical']) ? ' (old channel name, images downloaded years ago)' : '') }}">
                         @foreach ($images as $fw)
                         <option value="{{ $fw->path }}">{{ $fw->name }}</option>
                         @endforeach
