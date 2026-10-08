@@ -1,3 +1,11 @@
+cmprovision4 (1.6.5~dev5) unstable; urgency=medium
+
+  * Image write failures are explained in the web log (curl exit code,
+    decompressor errors, diagnosis); nginx no longer drops slow image
+    downloads (send_timeout 6h for /uploads/, added on upgrade too).
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 01:20:25 +0300
+
 cmprovision4 (1.6.5~dev4) unstable; urgency=medium
 
   * Upload dialog: no leave-page prompt after a successful upload,
