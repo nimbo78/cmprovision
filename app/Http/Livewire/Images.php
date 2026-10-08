@@ -10,7 +10,7 @@ class Images extends Component
 {
     use \Livewire\WithFileUploads;
 
-    public $images, $maxfilesize, $freediskspace;
+    public $images, $maxfilesize, $freediskspace, $hashPending = false;
     public $isOpen = false;
     public $os32bit = false;
 
@@ -20,6 +20,7 @@ class Images extends Component
         $this->maxfilesize = UploadedFile::getMaxFilesize();
         $this->freediskspace = min( disk_free_space("/tmp"), disk_free_space(public_path("uploads")));
         $this->os32bit = (PHP_INT_MAX == 2147483647);
+        $this->hashPending = Image::where('sha256', '')->exists();
 
         return view('livewire.images');
     }
