@@ -16,15 +16,17 @@ class Image extends Model
         return public_path('uploads/'.$this->filename_on_server);
     }
 
+    /* Size of the compressed file on disk, or null when the file is gone */
     function filesize()
     {
-        return filesize( $this->imagepath() );
+        return is_file($this->imagepath()) ? filesize($this->imagepath()) : null;
     }
 
     function delete()
     {
-        // Delete image from filesystem
-        unlink( $this->imagepath() );
+        // Delete image from filesystem, if it is still there
+        if (is_file($this->imagepath()))
+            unlink($this->imagepath());
 
         // Delete from database
         parent::delete();

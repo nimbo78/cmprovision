@@ -18,7 +18,13 @@ class Images extends Component
     {
         $this->images = Image::orderBy('filename')->orderBy('id')->get();
         $this->maxfilesize = UploadedFile::getMaxFilesize();
-        $this->freediskspace = min( disk_free_space("/tmp"), disk_free_space(public_path("uploads")));
+        // uploads pass through PHP's temporary directory before landing in public/uploads
+        $tmpdir = ini_get('upload_tmp_dir') ?: sys_get_temp_dir();
+        $uploads = public_path('uploads');
+        $this->freediskspace = min(
+            is_dir($tmpdir) ? disk_free_space($tmpdir) : 0,
+            is_dir($uploads) ? disk_free_space($uploads) : 0
+        );
         $this->os32bit = (PHP_INT_MAX == 2147483647);
         $this->hashPending = Image::where('sha256', '')->exists();
 
