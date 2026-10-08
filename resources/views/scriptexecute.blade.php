@@ -7,6 +7,18 @@ export STORAGE="{{ $storage }}"
 export PART1="{{ $part1 }}"
 export PART2="{{ $part2 }}"
 
+# Deliver a report (log, EEPROM version, completion) to the provisioning server, retrying for up to
+# 10 minutes: the server or the network may be unavailable for a moment, and a lost report leaves
+# the operator with a silent module.
+report() {
+    for attempt in $(seq 1 60); do
+        curl --silent --show-error -g --connect-timeout 10 --max-time 120 --retry 2 --retry-connrefused "$@" && return 0
+        echo "Report to server failed (attempt $attempt of 60), retrying in 10 seconds"
+        sleep 10
+    done
+    return 1
+}
+
 # Make sure we have random entropy
 echo "{{Str::random(64)}}" >/dev/urandom
 
@@ -33,7 +45,7 @@ strings /tmp/pieeprom.bin |grep BUILD_TIMESTAMP= >>/tmp/eeprom_version
 vcgencmd bootloader_version >/tmp/eeprom_version || true
 @endif
 if [ -f /tmp/eeprom_version ]; then
-    curl --retry 10 -g -F 'eeprom_version=@/tmp/eeprom_version' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}"
+    report -F 'eeprom_version=@/tmp/eeprom_version' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}"
 fi
 @endif
 
@@ -47,11 +59,11 @@ sh -v /tmp/pre-{{$script->id}}.sh >>/tmp/pre.log 2>&1 @if ($script->bg) & @endif
 RETCODE=$?
 if [ $RETCODE -ne 0 ]; then
     echo "Pre-installation script failed."
-    curl --retry 10 -g -F 'log=@/tmp/pre.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=preinstall"
+    report -F 'log=@/tmp/pre.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=preinstall"
     exit 1
 fi
 @endforeach
-curl --retry 10 -g -F 'log=@/tmp/pre.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=0&phase=preinstall"
+report -F 'log=@/tmp/pre.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=0&phase=preinstall"
 @endif
 
 @if ($image_url)
@@ -73,7 +85,7 @@ else
     # Do not leave a half-written image that looks bootable: clear the partition table so the
     # module returns to network boot (provisioning) on the next power cycle.
     dd if=/dev/zero of=$STORAGE bs=1M count=1 conv=fsync 2>/dev/null || true
-    curl --retry 10 -g -F 'log=@/tmp/dd.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=dd"
+    report -F 'log=@/tmp/dd.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=dd"
     exit 1
 fi
 
@@ -91,15 +103,15 @@ sh -v /tmp/post-{{$script->id}}.sh >>/tmp/post.log 2>&1 @if ($script->bg) & @end
 RETCODE=$?
 if [ $RETCODE -ne 0 ]; then
     echo "Postinstallation script failed."
-    curl --retry 10 -g -F 'log=@/tmp/post.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=postinstall"
+    report -F 'log=@/tmp/post.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=postinstall"
     exit 1
 fi
 @endforeach
-curl --retry 10 -g -F 'log=@/tmp/post.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=0&phase=postinstall"
+report -F 'log=@/tmp/post.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=0&phase=postinstall"
 @endif
 
 TEMP=`vcgencmd measure_temp`
-curl --retry 10 -g "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&alldone=1&temp=${TEMP:5}&verify={{ $project->verify }}"
+report "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&alldone=1&temp=${TEMP:5}&verify={{ $project->verify }}"
 
 echo ""
 echo "====="
