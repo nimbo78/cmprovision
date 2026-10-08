@@ -83,9 +83,9 @@ case "$1" in
         chown www-data:www-data /var/lib/cmprovision/database/database.sqlite
         chmod 600 /var/lib/cmprovision/database/database.sqlite
         echo "Initializing database"
-        /var/lib/cmprovision/artisan migrate --seed
+        /var/lib/cmprovision/artisan migrate --seed --force
     else
-        /var/lib/cmprovision/artisan migrate
+        /var/lib/cmprovision/artisan migrate --force
         # Restart rpiboot just in case an upgrade was triggered by the new version requirement in 'control' file
         deb-systemd-invoke restart cmprovision-rpiboot || true
         # Restart dnsmasq
