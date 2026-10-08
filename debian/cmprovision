@@ -9,6 +9,13 @@ server {
 
     server_name _;
 
+    # Modules decompress the image while downloading it; writing a long run of zeros to eMMC can
+    # keep a module from reading the socket for minutes. Do not drop the download in the meantime
+    # (the nginx default send_timeout is 60s).
+    location /uploads/ {
+        send_timeout 6h;
+    }
+
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }

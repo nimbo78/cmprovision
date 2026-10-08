@@ -59,9 +59,12 @@ echo Sending BLKDISCARD to $STORAGE
 blkdiscard -v $STORAGE || true
 
 echo Writing image from {{ $image_url }} to $STORAGE
-curl --retry 10 -g "{{ $image_url }}" \
-@if ($image_extension == 'gz') | gzip -dc @elseif ($image_extension == 'xz') | xz -dc @elseif ($image_extension == 'bz2') | bunzip2 -dc @endif \
- | dd of=$STORAGE conv=fsync obs=1M >/tmp/dd.log 2>&1
+# Download, decompress and write in one stream. Every stage leaves its failure in /tmp/dd.log,
+# which goes to the server when the pipeline fails (the progress meter of curl stays on the console).
+: > /tmp/dd.log
+{ curl --retry 10 -g "{{ $image_url }}"; RC=$?; [ $RC -eq 0 ] || echo "curl exit code $RC" >> /tmp/dd.log; exit $RC; } \
+ | { {{ $decompress }} 2>> /tmp/dd.log; } \
+ | dd of=$STORAGE conv=fsync obs=1M >> /tmp/dd.log 2>&1
 RETCODE=$?
 if [ $RETCODE -eq 0 ]; then
     echo Original image written successfully
