@@ -3,6 +3,7 @@
 namespace App\Http\Livewire;
 
 use Livewire\Component;
+use Illuminate\Support\Carbon;
 use App\Models\Firmware;
 use App\Models\Setting;
 use App\Services\FirmwareUpdater;
@@ -15,7 +16,7 @@ class Firmwares extends Component
     {
         $this->firmware = Firmware::all();
         $setting = Setting::find('firmware_last_update');
-        $this->lastUpdate = $setting ? $setting->value : null;
+        $this->lastUpdate = $setting ? Carbon::parse($setting->value, 'UTC')->local()->toDateTimeString() : null;
 
         return view('livewire.firmware');
     }

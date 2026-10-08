@@ -42,7 +42,7 @@
                 <tbody>
                     @forelse($images as $i)
                     <tr>
-                        <td class="border px-4 py-2"><span style="word-break: break-all;">{{ $i->filename }}</span> (added {{ date_format($i->created_at, "d-M-Y") }})</td>
+                        <td class="border px-4 py-2"><span style="word-break: break-all;">{{ $i->filename }}</span> (added {{ $i->created_at->local()->format("d-M-Y") }})</td>
                         <td class="border px-4 py-2">
                             @if ($i->filesize() === null)
                             <nobr class="text-red-500 font-bold">file missing on disk</nobr><br>
