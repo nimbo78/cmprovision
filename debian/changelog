@@ -1,3 +1,9 @@
+cmprovision4 (1.6.5~dev9) unstable; urgency=medium
+
+  * postinst: run migrations with --force (APP_ENV=production).
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 02:40:03 +0300
+
 cmprovision4 (1.6.5~dev8) unstable; urgency=medium
 
   * /scriptexecute never answers with an error page; switch lookup
