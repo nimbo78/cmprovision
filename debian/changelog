@@ -1,3 +1,10 @@
+cmprovision4 (1.6.5~dev4) unstable; urgency=medium
+
+  * Upload dialog: no leave-page prompt after a successful upload,
+    single Livewire root element on the Images page.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 08 Oct 2026 22:55:37 +0300
+
 cmprovision4 (1.6.5~dev3) unstable; urgency=medium
 
   * Image upload shows progress, speed and remaining time, can be
