@@ -41,21 +41,38 @@ class ScriptExecuteController extends Controller
         if (!$this->serial)
             abort(401);
 
-        if ($req->query("alldone"))
+        try
         {
-            return $this->provisioningComplete($req);
+            if ($req->query("alldone"))
+            {
+                return $this->provisioningComplete($req);
+            }
+            else if ($req->hasFile("log"))
+            {
+                return $this->registerLogFile($req);
+            }
+            else if ($req->hasFile("eeprom_version"))
+            {
+                return $this->registerFirmware($req);
+            }
+            else
+            {
+                return $this->startProvisoning($req);
+            }
         }
-        else if ($req->hasFile("log"))
+        catch (\Throwable $e)
         {
-            return $this->registerLogFile($req);
-        }
-        else if ($req->hasFile("eeprom_version"))
-        {
-            return $this->registerFirmware($req);
-        }
-        else
-        {
-            return $this->startProvisoning($req);
+            /* The module runs whatever we answer and retries an HTTP 500 for a quarter of an hour,
+               so answer with a script that shows the problem, and keep it in the web log too */
+            report($e);
+            $msg = "Provisioning server error: ".$e->getMessage()." (".basename($e->getFile()).":".$e->getLine().")";
+            $this->logInfo($msg, 'error');
+
+            return response("#!/bin/sh
+echo ".escapeshellarg($msg)."
+exit 1
+", 200)
+                ->header('Content-Type', 'text/plain');
         }
     }
 
@@ -68,11 +85,25 @@ class ScriptExecuteController extends Controller
         $switchIpSetting = Setting::find('ethernetswitch_ip');
         $switchCommunitySetting = Setting::find('ethernetswitch_snmp_community');
 
+        $switchWarning = null;
         if ($switchIpSetting && $switchIpSetting->value && $req->query('mac')
             && $switchCommunitySetting && $switchCommunitySetting->value)
         {
-            $switch = new EthernetSwitch($switchIpSetting->value, $switchCommunitySetting->value);
-            $board = $switch->getPortNameByMac($req->query('mac'));
+            try
+            {
+                $switch = new EthernetSwitch($switchIpSetting->value, $switchCommunitySetting->value);
+                $board = $switch->getPortNameByMac($req->query('mac'));
+                if ($board === false)
+                {
+                    $board = null;
+                    $switchWarning = "Switch port unknown: ".$switchIpSetting->value." did not answer or does not know MAC ".$req->query('mac');
+                }
+            }
+            catch (\Throwable $e)
+            {
+                $board = null;
+                $switchWarning = "Switch port unknown: error talking to ".$switchIpSetting->value.": ".$e->getMessage();
+            }
         }
         else if ($jumper)
         {
@@ -115,6 +146,11 @@ class ScriptExecuteController extends Controller
             'provisioning_started_at' => now(),
             'provisioning_complete_at' => null
         ]);
+
+        if ($switchWarning)
+        {
+            $this->logInfo($switchWarning, 'warning');
+        }
 
         if (!$project)
         {
@@ -262,13 +298,14 @@ class ScriptExecuteController extends Controller
         {
             $msg .= " Verification successful.";
         }
-        if ($project->label_moment == 'postinstall' && $project->label)
+        $printLabel = $project && $project->label_moment == 'postinstall' && $project->label;
+        if ($printLabel)
         {
             $msg .= " Printing label.";
         }
         $this->logInfo($msg);
 
-        if ($project->label_moment == 'postinstall' && $project->label)
+        if ($printLabel)
         {
             $this->printLabel();
         }
@@ -361,7 +398,7 @@ class ScriptExecuteController extends Controller
     {
         Cmlog::create([
             'cm' => $this->serial,
-            'board' => $this->cm->provisioning_board,
+            'board' => $this->cm ? $this->cm->provisioning_board : null,
             'loglevel' => $loglevel,
             'ip' => request()->ip(),
             'msg' => $msg
