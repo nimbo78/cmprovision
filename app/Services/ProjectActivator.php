@@ -59,11 +59,9 @@ class ProjectActivator
 
         /* The settings may arrive with CRLF from a browser or trimmed by the API: store them the
            way rpi-eeprom-config does, LF-only with a single trailing newline */
-        $settings = rtrim(str_replace("
-", "", (string) $project->eeprom_settings));
+        $settings = rtrim(str_replace("\r", "", (string) $project->eeprom_settings));
         if ($settings !== '')
-            $settings .= "
-";
+            $settings .= "\n";
 
         if (!EepromImage::setConfig($data, $settings))
             throw new RuntimeException("EEPROM firmware '$firmware' could not be parsed for its configuration");
