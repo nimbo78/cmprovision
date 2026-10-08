@@ -58,6 +58,15 @@ class ImageWriteDiagnosticsTest extends TestCase
         $this->assertStringContainsString('dd of=$STORAGE conv=fsync obs=1M >> /tmp/dd.log 2>&1', $script);
     }
 
+    public function test_script_leaves_the_storage_unbootable_after_a_failed_write()
+    {
+        $script = $this->provisioningScript('gz');
+
+        // a half-written image must not boot on the next power cycle: the module should net-boot again
+        $this->assertMatchesRegularExpression(
+            '/echo Writing image failed\.\n.*dd if=\/dev\/zero of=\$STORAGE bs=1M count=1 conv=fsync/s', $script);
+    }
+
     public function test_script_uses_the_decompressor_matching_the_image_type()
     {
         $this->assertStringContainsString('xz -dc 2>> /tmp/dd.log', $this->provisioningScript('xz'));

@@ -70,6 +70,9 @@ if [ $RETCODE -eq 0 ]; then
     echo Original image written successfully
 else
     echo Writing image failed.
+    # Do not leave a half-written image that looks bootable: clear the partition table so the
+    # module returns to network boot (provisioning) on the next power cycle.
+    dd if=/dev/zero of=$STORAGE bs=1M count=1 conv=fsync 2>/dev/null || true
     curl --retry 10 -g -F 'log=@/tmp/dd.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=dd"
     exit 1
 fi
