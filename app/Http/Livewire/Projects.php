@@ -11,6 +11,8 @@ use App\Models\Setting;
 use App\Models\Firmware;
 use Illuminate\Support\Str;
 use App\Jobs\ComputeSHA256;
+use App\Services\EepromImage;
+use App\Services\ProjectActivator;
 
 class Projects extends Component
 {
@@ -181,125 +183,16 @@ class Projects extends Component
     public function setActive($id)
     {
         $p = Project::findOrFail($id);
-
-        Setting::updateOrCreate(['key' => 'active_project'], ['value' => $id]);
         $this->activeProject = $id;
 
-        /* Set active firmware update */
-        $firmware = $p->eeprom_firmware;
-        if ($firmware)
+        try
         {
-            $allFirmware = Firmware::all();
-            $found = false;
-
-            foreach ($allFirmware as $f)
-            {
-                if ($f->path == $firmware)
-                {
-                    $found = true;
-                    break;
-                }
-            }
-
-            if (!$found)
-            {
-                session()->flash('message', "EEPROM firmware '$firmware' no longer available");
-                $firmware = '';
-            }
+            (new ProjectActivator)->activate($p);
         }
-
-        
-        //$updfile = base_path('scriptexecute/pieeprom.upd');
-        /* Delete file created by previous CMprovision beta */
-        $sigfile = base_path('scriptexecute/pieeprom.sig');
-        if (file_exists($sigfile))
-            unlink($sigfile);
-
-        $updfile = public_path('uploads/pieeprom.bin');
-
-        if ($firmware)
+        catch (\RuntimeException $e)
         {
-            $data = @file_get_contents(Firmware::basedir().'/'.$firmware);
-            if (!$data)
-            {
-                session()->flash('message', "Error opening EEPROM firmware file '".Firmware::basedir().'/'.$firmware."'");
-                return;
-            }
-
-            if (!$this->setEepromSettings($data, $p->eeprom_settings))
-            {
-                session()->flash('message', "Error parsing EEPROM file for configuration");
-                return;
-            }
-
-            if (!@file_put_contents($updfile, $data))
-            {
-                session()->flash('message', "Error writing to '$updfile'");
-                return;
-            }
-
-            $sha256 = hash_file("sha256", $updfile);
-            /*if (!@file_put_contents($sigfile, "$sha256\nts=".time()."\n"))
-            {
-                session()->flash('message', "Error writing to '$sigfile'");
-                return;
-            }*/
-            Setting::updateOrCreate(['key' => 'active_eeprom_sha256'], ['value' => $sha256]);
+            session()->flash('message', $e->getMessage());
         }
-        else
-        {
-            /* EEPROM firmware update disabled */
-            //if (file_exists($sigfile))
-            //    unlink($sigfile);
-            if (file_exists($updfile))
-                unlink($updfile);
-        }
-    }
-
-    function setEepromSettings(&$data, $settings)
-    {
-        $MAGIC = 0x55aaf00f;
-        $MAGIC_MASK = 0xfffff00f;
-        $FILE_MAGIC = 0x55aaf11f;
-        $FILE_HDR_LEN = 20;
-        $FILENAME_LEN = 12;
-        $MAX_BOOTCONF_SIZE = 2024;
-
-        $offset = $magic = $len = 0;
-        $found = false;
-
-        while ($offset+8 < strlen($data))
-        {
-            list($magic, $len) = array_values(unpack("Nmagic/Nlen", $data, $offset));
-            if (($magic & $MAGIC_MASK) != $MAGIC)
-            {
-                // EEPROM corrupt
-                return false;
-            }
-
-            if ($magic == $FILE_MAGIC)
-            {
-                if (Str::startsWith(substr($data, $offset+8, $FILE_HDR_LEN), "bootconf.txt\0"))
-                {
-                    $found = true;
-                    break;
-                }
-            }
-
-            $offset += 8 + $len;
-            $offset = ($offset + 7) & ~7;
-        }
-
-        if (!$found)
-            return false;
-
-        $newlen = strlen($settings) + $FILENAME_LEN + 4;
-        $binnewlen = pack("N", $newlen);
-        $data = substr($data, 0, $offset+4).$binnewlen.substr($data, $offset+8);
-        $settings = str_pad($settings, $MAX_BOOTCONF_SIZE, "\xff");
-        $data = substr($data, 0, $offset+4+$FILE_HDR_LEN).$settings.substr($data, $offset+4+$FILE_HDR_LEN+$MAX_BOOTCONF_SIZE);
-
-        return true;
     }
 
     function getEepromSettingsFromFirmwareFile($fn)
@@ -310,46 +203,6 @@ class Projects extends Component
 
     function getEepromSettings(&$data)
     {
-        $MAGIC = 0x55aaf00f;
-        $MAGIC_MASK = 0xfffff00f;
-        $FILE_MAGIC = 0x55aaf11f;
-        $FILE_HDR_LEN = 20;
-        $FILENAME_LEN = 12;
-        $MAX_BOOTCONF_SIZE = 2024;
-
-        $offset = $magic = $len = 0;
-        $found = false;
-
-        while ($offset+8 < strlen($data))
-        {
-            list($magic, $len) = array_values(unpack("Nmagic/Nlen", $data, $offset));
-            if (($magic & $MAGIC_MASK) != $MAGIC)
-            {
-                // EEPROM corrupt
-                return false;
-            }
-
-            if ($magic == $FILE_MAGIC)
-            {
-                if (Str::startsWith(substr($data, $offset+8, $FILE_HDR_LEN), "bootconf.txt\0"))
-                {
-                    $found = true;
-                    break;
-                }
-            }
-
-            $offset += 8 + $len;
-            $offset = ($offset + 7) & ~7;
-        }
-
-        if (!$found)
-            return false;
-
-        $datalen = $len - $FILENAME_LEN - 4;
-
-        if ($datalen < 0)
-            return false;
-
-        return substr($data, $offset+4+$FILE_HDR_LEN, $datalen);
+        return EepromImage::getConfig($data);
     }
 }

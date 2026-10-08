@@ -9,6 +9,7 @@ use App\Models\Image;
 use App\Models\Script;
 use App\Models\Label;
 use App\Http\Controllers\AddImageController;
+use App\Services\ProjectActivator;
 
 /*
 |--------------------------------------------------------------------------
@@ -89,6 +90,14 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
     {
         $project = Project::findOrFail($projectId);
         $project->update($request->all());
+        try
+        {
+            (new ProjectActivator)->refreshIfActive($project);
+        }
+        catch (\RuntimeException $e)
+        {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
         return $project;
     }
     else
