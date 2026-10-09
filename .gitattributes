@@ -11,3 +11,4 @@
 *.woff2 binary
 *.ico binary
 *.png binary
+public/tools/* binary

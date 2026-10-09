@@ -23,6 +23,12 @@ class CmCard extends Component
         $this->serial = $serial;
     }
 
+    /* The module blinks for the operator the next time it asks the server */
+    public function identify()
+    {
+        Cm::where('serial', $this->serial)->firstOrFail()->identify();
+    }
+
     public function render()
     {
         $cm = Cm::where('serial', $this->serial)->firstOrFail();

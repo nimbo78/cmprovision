@@ -22,6 +22,12 @@ class Cm extends Model
     const STALE_AFTER_SCRIPTS = 600;
     /* A run has a dozen steps; the cap only guards against a script that keeps renaming itself */
     const MAX_TIMELINE = 200;
+    /* A finished module asks every 5 s whether to blink (led_poll_once in scriptexecute/leds.blade.php)
+       and then blinks for LED_IDENTIFY_SECONDS = IDENTIFY_SECONDS. polled_at is written at most once
+       per POLL_NOTE_SECONDS, so a module counts as on the bench for ON_BENCH_SECONDS after it. */
+    const IDENTIFY_SECONDS = 30;
+    const POLL_NOTE_SECONDS = 60;
+    const ON_BENCH_SECONDS = 120;
 
     protected $fillable = [
         'serial','mac','model','memory_in_gb','storage','csd','cid','firmware',
@@ -29,7 +35,7 @@ class Cm extends Model
         'temp1', 'temp2', 'provisioning_board', 'provisioning_started_at', 'provisioning_complete_at', 'project_id',
         'phase', 'phase_detail', 'phase_started_at', 'progress_bytes', 'progress_total', 'progress_updated_at',
         'notification_batch_id', 'eeprom_before', 'eeprom_config_before', 'eeprom_config_after', 'eeprom_result',
-        'timeline',
+        'timeline', 'polled_at', 'identify_until',
     ];
 
     protected $casts = [
@@ -40,7 +46,32 @@ class Cm extends Model
         'progress_bytes' => 'integer',
         'progress_total' => 'integer',
         'timeline' => 'array',
+        'polled_at' => 'datetime',
+        'identify_until' => 'datetime',
     ];
+
+    /* A module that finished and still asks the server whether to blink, i.e. is still on the bench */
+    public function canIdentify()
+    {
+        return in_array($this->phase, ['done', 'failed'], true) && $this->polled_at
+            && $this->polled_at->getTimestamp() >= now()->getTimestamp() - self::ON_BENCH_SECONDS;
+    }
+
+    public function isIdentifying()
+    {
+        return $this->identify_until && $this->identify_until->getTimestamp() > now()->getTimestamp();
+    }
+
+    /* The operator wants to see which one it is: the module blinks the next time it asks */
+    public function identify()
+    {
+        if ($this->canIdentify())
+        {
+            $this->identify_until = now()->addSeconds(self::IDENTIFY_SECONDS);
+            $this->save();
+        }
+        return $this;
+    }
 
     public function project()
     {

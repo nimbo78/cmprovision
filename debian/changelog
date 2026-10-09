@@ -1,3 +1,20 @@
+cmprovision4 (1.6.9~dev1) unstable; urgency=medium
+
+  * LEDs show where a module is: in progress ACT blinks fast with PWR on,
+    done ACT and PWR take turns fading in and out, failed ACT is dim while
+    PWR double-flashes. Fading and dimming come from a small helper the
+    module downloads (public/tools/ledpattern); without it kernel triggers
+    show the same states. Refusals and server errors show the failed state
+    too.
+  * ACT works during provisioning: it shares its pin with the SPI bus of the
+    EEPROM, and the LED driver now takes it back after the pre-install
+    scripts. Before, ACT stayed dark and the end of a run blinked PWR only.
+  * Identify: a module that finished keeps asking the server whether to
+    blink; the Identify button on the module card and the dashboard makes
+    it alternate its LEDs for 30 seconds.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 10 Oct 2026 02:08:00 +0300
+
 cmprovision4 (1.6.8) unstable; urgency=medium
 
   * EEPROM before and after: every module reports its running bootloader
