@@ -61,7 +61,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - При обновлении пакета `postinst` выполняет только `migrate`, сидеры запускаются лишь при первой установке. Данные для существующих установок добавляйте миграцией.
 - `postinst` не должен падать: запуск служб (`#DEBHELPER#`) стоит в его конце, и после ошибки сервер остаётся без dnsmasq и очереди до следующего успешного configure. Команды artisan там — только с `--force` (в `.env` стоит `APP_ENV=production`).
 - `postinst` на каждом configure идемпотентно правит окружение существующих установок: `send_timeout` для `/uploads/` в сайте nginx, `upload_tmp_dir = storage/app/upload-tmp` в php.ini (на Debian 13 `/tmp` в RAM), `APP_ENV=production`/`APP_DEBUG=false` в `.env` вместо значений из старого шаблона. Новые правки такого рода добавляйте туда же, а не только в шаблоны: сайт nginx и `.env` при обновлении не перезаписываются.
-- Время хранится в UTC, показывается в `config('app.display_timezone')` (системный пояс сервера или `APP_DISPLAY_TIMEZONE`) через макрос `Carbon::local()`; CSV-экспорт и API отдают UTC.
+- Время хранится в UTC, показывается в `config('app.display_timezone')` (`APP_DISPLAY_TIMEZONE` или системный пояс сервера) через макрос `Carbon::local()`; CSV-экспорт и API отдают UTC. Системный пояс читает `App\Support\SystemTimezone` из `/etc/timezone` или ссылки `/etc/localtime`: спрашивать PHP нельзя — PHP 8.4 в Debian 13 возвращает UTC при любом поясе системы, и `date.timezone` по умолчанию там тоже `UTC`.
 
 ## Фронтенд
 
