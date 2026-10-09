@@ -28,8 +28,8 @@ case "$1" in
         /var/lib/cmprovision/artisan config:cache
 
         # Make sure log is owned by www-data
-        touch /var/lib/cmprovision/storage/logs/laravel.log
-        chown www-data:www-data /var/lib/cmprovision/storage/logs/laravel.log
+        # install replaces whatever is there (never follows a symlink planted by the web user)
+        install -m 644 -o www-data -g www-data /dev/null /var/lib/cmprovision/storage/logs/laravel.log
 
         # Enlarge php-fpm file upload size
         echo "Enlarging php maximum file upload size"
@@ -58,6 +58,7 @@ case "$1" in
     # Uploaded images pass through PHP's temporary directory. Keep it on disk next to the images:
     # on Debian 13 /tmp is RAM-backed (half the memory at most), and renaming is instant.
     UPLOAD_TMP=/var/lib/cmprovision/storage/app/upload-tmp
+    if [ -L "$UPLOAD_TMP" ]; then rm -f "$UPLOAD_TMP"; fi   # storage is the web user's: no symlinks for root to follow
     install -d -o www-data -g www-data -m 700 "$UPLOAD_TMP"
     PHP_INI=`echo "<?php echo str_replace('cli', 'fpm', php_ini_loaded_file() );" | php`
     if [ -n "$PHP_INI" ] && ! grep -q "^upload_tmp_dir = $UPLOAD_TMP" "$PHP_INI"; then
@@ -78,10 +79,10 @@ case "$1" in
     /var/lib/cmprovision/artisan config:clear
     /var/lib/cmprovision/artisan view:clear
 
-    if [ ! -e /var/lib/cmprovision/database/database.sqlite ]; then
-        touch /var/lib/cmprovision/database/database.sqlite
-        chown www-data:www-data /var/lib/cmprovision/database/database.sqlite
-        chmod 600 /var/lib/cmprovision/database/database.sqlite
+    DB=/var/lib/cmprovision/database/database.sqlite
+    if [ -L "$DB" ]; then rm -f "$DB"; fi   # the database directory is the web user's: no symlinks for root to follow
+    if [ ! -e "$DB" ]; then
+        install -m 600 -o www-data -g www-data /dev/null "$DB"
         echo "Initializing database"
         /var/lib/cmprovision/artisan migrate --seed --force
     else
@@ -107,15 +108,17 @@ case "$1" in
     # public/uploads, etc (dnsmasq.conf) and the SQLite database. Packages before 1.6.7 gave
     # www-data the whole tree, and dpkg keeps the owner of existing directories on upgrade; this
     # also repairs files the artisan commands above (run as root) may have created.
+    # chown -h everywhere: these places are writable by the web user, and following a symlink planted
+    # there would hand it any file on the system.
     fix_ownership() {
         APP=/var/lib/cmprovision
         find "$APP" -xdev \( -path "$APP/storage" -o -path "$APP/bootstrap/cache" -o -path "$APP/public/uploads" \
             -o -path "$APP/etc" -o -path "$APP/.env" -o -path "$APP/database/database.sqlite*" \) -prune \
-            -o -user www-data -exec chown root:root {} +
-        chown -R www-data:www-data "$APP/storage" "$APP/bootstrap/cache" "$APP/public/uploads" "$APP/etc"
-        chown www-data:www-data "$APP/database"
+            -o -user www-data -exec chown -h root:root {} +
+        chown -R -h www-data:www-data "$APP/storage" "$APP/bootstrap/cache" "$APP/public/uploads" "$APP/etc"
+        chown -h www-data:www-data "$APP/database"
         for f in "$APP/.env" "$APP"/database/database.sqlite*; do
-            if [ -e "$f" ]; then chown www-data:www-data "$f"; fi
+            if [ -f "$f" ] && [ ! -L "$f" ]; then chown -h www-data:www-data "$f"; fi
         done
         return 0
     }

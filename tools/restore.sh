@@ -29,11 +29,12 @@ tar xzf "$SRC/system-config.tar.gz" -C / 2>/dev/null || true
 # Ownership as debian/postinst sets it (after artisan, which runs as root): code root's, the web server writes only to its own places
 find "$APP" -xdev \( -path "$APP/storage" -o -path "$APP/bootstrap/cache" -o -path "$APP/public/uploads" \
     -o -path "$APP/etc" -o -path "$APP/.env" -o -path "$APP/database/database.sqlite*" \) -prune \
-    -o -user www-data -exec chown root:root {} +
-chown -R www-data:www-data "$APP/storage" "$APP/bootstrap/cache" "$APP/public/uploads" "$APP/etc"
-chown www-data:www-data "$APP/database"
+    -o -user www-data -exec chown -h root:root {} +
+# -h: never follow a symlink the web user may have planted in its own places
+chown -R -h www-data:www-data "$APP/storage" "$APP/bootstrap/cache" "$APP/public/uploads" "$APP/etc"
+chown -h www-data:www-data "$APP/database"
 for f in "$APP/.env" "$APP"/database/database.sqlite*; do
-    if [ -e "$f" ]; then chown www-data:www-data "$f"; fi
+    if [ -f "$f" ] && [ ! -L "$f" ]; then chown -h www-data:www-data "$f"; fi
 done
 systemctl restart 'php*-fpm' nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot
 systemctl is-active nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot | tr '\n' ' '; echo
