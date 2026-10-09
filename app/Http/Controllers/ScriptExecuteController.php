@@ -4,9 +4,12 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Events\CmProvisioningComplete;
+use App\Events\CmProvisioningFailed;
+use App\Events\CmProvisioningStarted;
 use App\Models\Cm;
 use App\Models\Cmlog;
 use App\Models\EthernetSwitch;
+use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
@@ -76,7 +79,10 @@ class ScriptExecuteController extends Controller
             try
             {
                 if ($this->cm)
+                {
                     $this->cm->markFailed($msg)->save();
+                    $this->failed();
+                }
             }
             catch (\Throwable $ignored)
             {
@@ -176,6 +182,11 @@ exit 1
         {
             return $this->refuse("Could not provision, because there is no active project", 'No active project set in CMprovisioning');
         }
+
+        $batch = NotificationBatch::current($project);
+        $batch->touchEvent();
+        $this->cm->notification_batch_id = $batch->id;
+        $this->cm->save();
         if ($project->verify && $image)
         {
             if (!$image->uncompressed_sha256)
@@ -250,6 +261,7 @@ exit 1
         }
 
         $this->cm->setPhase(count($preinstall_scripts) ? 'preinstall' : ($image ? 'write' : 'postinstall'))->save();
+        CmProvisioningStarted::dispatch($this->cm);
 
         $msg = "Provisioning started.";
         if ($project->label_moment == 'preinstall' && $project->label)
@@ -313,6 +325,7 @@ exit 1
         $this->cm->setPhase('done');
         $this->cm->progress_bytes = $this->cm->progress_total;
         $this->cm->save();
+        $this->touchBatch();
 
         $msg = 'Provisioning completed.';
         if ($req->query('verify'))
@@ -371,6 +384,7 @@ exit 1
             }
             $this->logInfo($msg." Script output:\n\n".$logfile, 'error');
             $this->cm->markFailed($msg);
+            $failed = true;
         }
         else
         {
@@ -389,6 +403,8 @@ exit 1
         }
 
         $this->cm->save();
+        if (!empty($failed))
+            $this->failed();
         return "";
     }
 
@@ -433,9 +449,25 @@ exit 1
     {
         $this->logInfo($reason, 'error');
         if ($this->cm)
+        {
             $this->cm->markFailed($reason)->save();
+            $this->failed();
+        }
 
         return "echo ".escapeshellarg($consoleMessage ?: $reason);
+    }
+
+    /* The module's provisioning stopped: keep its batch alive and tell the notification channels */
+    protected function failed()
+    {
+        $this->touchBatch();
+        CmProvisioningFailed::dispatch($this->cm);
+    }
+
+    protected function touchBatch()
+    {
+        if ($this->cm && $this->cm->notification_batch_id)
+            NotificationBatch::whereKey($this->cm->notification_batch_id)->update(['last_event_at' => now()]);
     }
 
     /* Explanation of a failed image write from the log the module sent, or null when nothing is recognised */

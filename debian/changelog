@@ -1,3 +1,16 @@
+cmprovision4 (1.6.6~dev5) unstable; urgency=medium
+
+  * Notifications, set up on the settings page: Mattermost bot and
+    Telegram bot keep a thread per batch of modules (a summary with
+    project, image, EEPROM and counters, edited on every event, and a
+    reply per module); Mattermost/Slack incoming webhooks and JSON
+    webhooks get a message per event. Events: module started, done,
+    failed (with the reason). Sent after the module got its answer;
+    errors show on the channel. Test button, chat finder for Telegram,
+    Mattermost channel links resolved to ids, new batch button.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 11:36:45 +0300
+
 cmprovision4 (1.6.6~dev4) unstable; urgency=medium
 
   * Live progress of every module on the dashboard: step (pre-install

@@ -63,6 +63,19 @@
 
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
+                <h3 class="text-lg font-medium text-gray-900">Notifications</h3>
+                <p class="mt-1 text-sm text-gray-600">
+                    Tell Mattermost, Telegram or any webhook when a module is done or failed.
+                    Bots keep a thread per batch of modules with an up-to-date summary.
+                </p>
+            </div>
+        </div>
+        <div class="mt-5 md:mt-0 md:col-span-2">
+            <livewire:notification-settings />
+        </div>
+
+        <div class="md:col-span-1">
+            <div class="px-4 sm:px-0">
                 <h3 class="text-lg font-medium text-gray-900">Service status</h3>
                 <p class="mt-1 text-sm text-gray-600">
                     View the logs of server processes

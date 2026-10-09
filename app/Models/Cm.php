@@ -26,6 +26,7 @@ class Cm extends Model
         'image_filename', 'image_sha256', 'pre_script_output', 'post_script_output', 'script_return_code',
         'temp1', 'temp2', 'provisioning_board', 'provisioning_started_at', 'provisioning_complete_at', 'project_id',
         'phase', 'phase_detail', 'phase_started_at', 'progress_bytes', 'progress_total', 'progress_updated_at',
+        'notification_batch_id',
     ];
 
     protected $casts = [
