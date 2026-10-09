@@ -72,7 +72,9 @@
         <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg px-4 py-4 mb-6">
             <div class="text-xl">Last run</div>
             <div class="text-sm text-gray-600 mb-2">Times in {{ $zone }}</div>
-            @if (empty($steps))
+            @if ($cm->timeline === null)
+                <div class="text-gray-500">This module was provisioned before steps were recorded.</div>
+            @elseif (empty($steps))
                 <div class="text-gray-500">No steps recorded yet.</div>
             @else
             <table class="table-auto min-w-full text-sm">
@@ -112,6 +114,8 @@
                             unchanged: the EEPROM already held this image
                         @elseif ($cm->eeprom_result === 'failed')
                             <span class="text-red-700">flashing failed</span>
+                        @elseif ($cm->timeline === null)
+                            not recorded for this run
                         @elseif ($cm->eeprom_config_after === null)
                             not flashed: the project has no EEPROM firmware
                         @else

@@ -200,6 +200,21 @@ class ModuleCardTest extends TestCase
         $this->actingAs(User::factory()->create())->get('/cms/1000000000000bad')->assertNotFound();
     }
 
+    public function test_a_module_provisioned_before_steps_were_kept_does_not_pretend_to_know_them()
+    {
+        /* a row from 1.6.7 or older: no timeline, no bootloader details, firmware set by the project */
+        Cm::create(['serial' => self::SERIAL, 'mac' => 'e4:5f:01:62:9f:d3', 'phase' => 'done',
+                    'firmware' => 'default/pieeprom-2026-09-23.bin',
+                    'provisioning_started_at' => Carbon::parse('2026-10-09 13:01:19'),
+                    'provisioning_complete_at' => Carbon::parse('2026-10-09 13:05:16')]);
+
+        $this->actingAs(User::factory()->create())->get('/cms/'.self::SERIAL)
+            ->assertOk()
+            ->assertSee('provisioned before steps were recorded')
+            ->assertDontSee('the project has no EEPROM firmware')
+            ->assertSee('not recorded for this run');
+    }
+
     public function test_the_card_shows_the_run_the_bootloader_the_logs_and_the_history()
     {
         $this->sensor0Run();
