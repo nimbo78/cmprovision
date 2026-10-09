@@ -1,3 +1,17 @@
+cmprovision4 (1.6.6~dev6) unstable; urgency=medium
+
+  * Ethernet switch on the settings page: address, SNMP v2c or v3, lookup
+    method, a Test button listing port, MAC, VLAN and known module, and
+    hints for Cisco, Cisco Business, Huawei and MikroTik. The port lookup
+    now reads Q-BRIDGE-MIB, BRIDGE-MIB, HUAWEI-L2MAM-MIB and Cisco IOS
+    per-VLAN instances, maps bridge ports with HUAWEI-L2IF-MIB where
+    BRIDGE-MIB lacks it, prefers the access port over an uplink, shows
+    port descriptions, and remembers the method that worked.
+  * SNMPv3 VLAN contexts work: php-snmp kept a pointer to a freed context
+    name, so a Cisco switch was asked for garbage and never answered.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 12:05:22 +0300
+
 cmprovision4 (1.6.6~dev5) unstable; urgency=medium
 
   * Notifications, set up on the settings page: Mattermost bot and

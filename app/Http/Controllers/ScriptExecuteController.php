@@ -8,11 +8,11 @@ use App\Events\CmProvisioningFailed;
 use App\Events\CmProvisioningStarted;
 use App\Models\Cm;
 use App\Models\Cmlog;
-use App\Models\EthernetSwitch;
 use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
+use App\Services\SwitchPortFinder;
 
 class ScriptExecuteController extends Controller
 {
@@ -102,27 +102,29 @@ exit 1
         $image   = $project ? $project->image : null;
         $bootmode = $req->query('bootmode');
         $jumper  = $req->query('inversejumper');
-        $switchIpSetting = Setting::find('ethernetswitch_ip');
-        $switchCommunitySetting = Setting::find('ethernetswitch_snmp_community');
+        $switchConfig = SwitchPortFinder::config();
 
         $switchWarning = null;
-        if ($switchIpSetting && $switchIpSetting->value && $req->query('mac')
-            && $switchCommunitySetting && $switchCommunitySetting->value)
+        if ($switchConfig['host'] && $req->query('mac'))
         {
             try
             {
-                $switch = new EthernetSwitch($switchIpSetting->value, $switchCommunitySetting->value);
-                $board = $switch->getPortNameByMac($req->query('mac'));
-                if ($board === false)
+                $finder = SwitchPortFinder::forConfig($switchConfig);
+                $board = $finder->portOf($req->query('mac'));
+                if ($board === null)
                 {
-                    $board = null;
-                    $switchWarning = "Switch port unknown: ".$switchIpSetting->value." did not answer or does not know MAC ".$req->query('mac');
+                    $switchWarning = "Switch port unknown: ".$switchConfig['host']." does not know MAC ".$req->query('mac');
+                }
+                else if ($finder->lastMethod() !== $switchConfig['detected'])
+                {
+                    // try the method that works first next time
+                    Setting::updateOrCreate(['key' => 'ethernetswitch_method_detected'], ['value' => $finder->lastMethod()]);
                 }
             }
             catch (\Throwable $e)
             {
                 $board = null;
-                $switchWarning = "Switch port unknown: error talking to ".$switchIpSetting->value.": ".$e->getMessage();
+                $switchWarning = "Switch port unknown: error talking to ".$switchConfig['host'].": ".$e->getMessage();
             }
         }
         else if ($jumper)

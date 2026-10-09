@@ -63,6 +63,20 @@
 
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
+                <h3 class="text-lg font-medium text-gray-900">Ethernet switch</h3>
+                <p class="mt-1 text-sm text-gray-600">
+                    With a managed switch, each module gets the switch port it is plugged into as its board:
+                    the server reads the switch's MAC address table over SNMP when the module starts.
+                    Without one, the board comes from the jumpers.
+                </p>
+            </div>
+        </div>
+        <div class="mt-5 md:mt-0 md:col-span-2">
+            <livewire:switch-settings />
+        </div>
+
+        <div class="md:col-span-1">
+            <div class="px-4 sm:px-0">
                 <h3 class="text-lg font-medium text-gray-900">Notifications</h3>
                 <p class="mt-1 text-sm text-gray-600">
                     Tell Mattermost, Telegram or any webhook when a module is done or failed.
