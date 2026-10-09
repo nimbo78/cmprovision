@@ -110,6 +110,23 @@ class SwitchSettingsTest extends TestCase
         $this->assertSame('priv-secret', $this->setting('snmp_priv_password'));
     }
 
+    public function test_stored_secrets_are_never_sent_to_another_switch()
+    {
+        $this->fakeSwitch();
+        foreach (['ip' => '192.168.25.2', 'snmp_version' => '2c', 'snmp_community' => 'stored-secret'] as $k => $v)
+            Setting::create(['key' => 'ethernetswitch_'.$k, 'value' => $v]);
+
+        Livewire::test(SwitchSettings::class)->set('host', '203.0.113.9')->call('test');
+        $this->assertNotSame('stored-secret', $this->configs[0]['community'] ?? null, 'test with a new address uses no stored community');
+
+        Livewire::test(SwitchSettings::class)->set('host', '203.0.113.9')->call('save')->assertHasErrors(['community']);
+        $this->assertSame('192.168.25.2', $this->setting('ip'));
+
+        // the same switch keeps its stored community
+        Livewire::test(SwitchSettings::class)->call('test');
+        $this->assertSame('stored-secret', end($this->configs)['community']);
+    }
+
     public function test_settings_are_checked()
     {
         Livewire::test(SwitchSettings::class)

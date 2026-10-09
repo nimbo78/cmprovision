@@ -110,6 +110,24 @@ class NotificationSettingsTest extends TestCase
         $this->assertSame(['failed'], $channel->events);
     }
 
+    public function test_a_stored_token_is_never_sent_to_a_new_server()
+    {
+        $channel = NotificationChannel::create(['name' => 'mm', 'type' => 'mattermost_bot', 'enabled' => true,
+            'settings' => ['server_url' => 'https://mm.example.com', 'token' => 'stored-secret', 'channel' => 'line/prov',
+                           'channel_id' => 'abcdefghijklmnopqrstuvwxyz'], 'events' => ['failed']]);
+        Http::fake();
+
+        Livewire::test(NotificationSettings::class)
+            ->call('edit', $channel->id)
+            ->set('serverUrl', 'https://collector.example.org')
+            ->set('channel', 'team/somewhere')
+            ->call('save')
+            ->assertHasErrors(['token']);
+
+        Http::assertNothingSent();
+        $this->assertSame('https://mm.example.com', $channel->fresh()->setting('server_url'));
+    }
+
     public function test_the_test_button_sends_a_message_and_shows_errors()
     {
         $channel = NotificationChannel::create(['name' => 'hook', 'type' => 'mattermost_webhook', 'enabled' => true,

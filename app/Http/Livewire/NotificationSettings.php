@@ -60,7 +60,10 @@ class NotificationSettings extends Component
     public function save()
     {
         $existing = $this->editingId ? NotificationChannel::findOrFail($this->editingId) : null;
-        $this->validate($this->rules($existing));
+        $this->validate($this->rules($existing), [
+            'token.required' => 'Enter the bot token: a stored token is only used for the server it was saved with.',
+            'botToken.required' => 'Enter the bot token.',
+        ]);
 
         $settings = $existing ? ($existing->settings ?: []) : [];
         switch ($this->type)
@@ -71,7 +74,7 @@ class NotificationSettings extends Component
                 break;
 
             case 'mattermost_bot':
-                $token = $this->token !== '' ? $this->token : ($settings['token'] ?? '');
+                $token = $this->token !== '' ? $this->token : ($this->keepsStoredToken($existing) ? $settings['token'] : '');
                 $channelId = $this->resolveMattermostChannel($this->serverUrl, $token, $this->channel);
                 if ($channelId === null)
                     return;
@@ -113,7 +116,7 @@ class NotificationSettings extends Component
                 break;
             case 'mattermost_bot':
                 $rules['serverUrl'] = 'required|url|max:200';
-                $rules['token'] = ($keepsSecret ? 'nullable' : 'required').'|string|max:200';
+                $rules['token'] = ($this->keepsStoredToken($existing) ? 'nullable' : 'required').'|string|max:200';
                 $rules['channel'] = 'required|string|max:300';
                 break;
             case 'telegram':
@@ -123,6 +126,14 @@ class NotificationSettings extends Component
                 break;
         }
         return $rules;
+    }
+
+    /* A Mattermost token left empty means "the stored one", but only for the server it was stored with:
+       otherwise changing the address would send the hidden token to any host */
+    protected function keepsStoredToken($existing)
+    {
+        return $existing && $existing->type === 'mattermost_bot' && $existing->setting('token') !== null
+            && rtrim($existing->setting('server_url', ''), '/') === rtrim($this->serverUrl, '/');
     }
 
     /* Channel id from an id, a "team/channel" pair or a channel link; null after reporting an error */
