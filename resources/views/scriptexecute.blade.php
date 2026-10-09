@@ -19,6 +19,29 @@ report() {
     return 1
 }
 
+# Live status for the web interface: the phase (and script) the module is in and, while the image is
+# written or verified, how many sectors went to or came from the storage device. Best effort: short
+# timeouts and no retries, so a slow or missing answer never holds up provisioning.
+STORAGE_STAT=/sys/block/$(basename $STORAGE)/stat
+progress_mark() {
+    curl --silent --output /dev/null --connect-timeout 2 --max-time 4 -G "http://{{ $server }}/scriptexecute" \
+        --data-urlencode "serial={{ $cm->serial }}" --data-urlencode "progress=$1" \
+        --data-urlencode "detail=$2" --data-urlencode "sectors=$3" || true
+}
+# progress_start <phase> <field of $STORAGE_STAT: 7 = sectors written, 3 = sectors read>
+progress_start() {
+    progress_mark "$1"
+    [ -r "$STORAGE_STAT" ] || return 0
+    PROGRESS_BASE=$(awk -v f="$2" '{print $f}' "$STORAGE_STAT")
+    ( while sleep 5; do
+          progress_mark "$1" "" "$(( $(awk -v f="$2" '{print $f}' "$STORAGE_STAT") - PROGRESS_BASE ))"
+      done ) &
+    PROGRESS_PID=$!
+}
+progress_stop() {
+    if [ -n "$PROGRESS_PID" ]; then kill "$PROGRESS_PID" 2>/dev/null; PROGRESS_PID=""; fi
+}
+
 # Make sure we have random entropy
 echo "{{Str::random(64)}}" >/dev/urandom
 
@@ -52,10 +75,11 @@ fi
 @if ( count($preinstall_scripts) )
 echo "Running pre-install scripts"
 @foreach ( $preinstall_scripts as $script )
+progress_mark preinstall {!! escapeshellarg($script->name) !!}
 echo "===" >> /tmp/pre.log
 echo "Running pre-installation script '{{ $script->name }}'" >> /tmp/pre.log
 echo "===" >> /tmp/pre.log
-sh -v /tmp/pre-{{$script->id}}.sh >>/tmp/pre.log 2>&1 @if ($script->bg) & @endif 
+sh -v /tmp/pre-{{$script->id}}.sh >>/tmp/pre.log 2>&1{!! $script->bg ? ' &' : '' !!}
 RETCODE=$?
 if [ $RETCODE -ne 0 ]; then
     echo "Pre-installation script failed."
@@ -67,6 +91,7 @@ report -F 'log=@/tmp/pre.log' "http://{{ $server }}/scriptexecute?serial={{ $cm-
 @endif
 
 @if ($image_url)
+progress_mark write 'Discarding old data'
 echo Sending BLKDISCARD to $STORAGE
 blkdiscard -v $STORAGE || true
 
@@ -74,10 +99,12 @@ echo Writing image from {{ $image_url }} to $STORAGE
 # Download, decompress and write in one stream. Every stage leaves its failure in /tmp/dd.log,
 # which goes to the server when the pipeline fails (the progress meter of curl stays on the console).
 : > /tmp/dd.log
+progress_start write 7
 { curl --retry 10 -g "{{ $image_url }}"; RC=$?; [ $RC -eq 0 ] || echo "curl exit code $RC" >> /tmp/dd.log; exit $RC; } \
  | { {{ $decompress }} 2>> /tmp/dd.log; } \
  | dd of=$STORAGE conv=fsync obs=1M >> /tmp/dd.log 2>&1
 RETCODE=$?
+progress_stop
 if [ $RETCODE -eq 0 ]; then
     echo Original image written successfully
 else
@@ -96,11 +123,19 @@ sleep 0.1
 @if ( count($postinstall_scripts) )
 echo "Running post-install scripts"
 @foreach ( $postinstall_scripts as $script )
+@if ($script->progress == 'verify')
+progress_start verify 3
+@else
+progress_mark postinstall {!! escapeshellarg($script->name) !!}
+@endif
 echo "===" >> /tmp/post.log
 echo "Running post-installation script '{{ $script->name }}'" >> /tmp/post.log
 echo "===" >> /tmp/post.log
-sh -v /tmp/post-{{$script->id}}.sh >>/tmp/post.log 2>&1 @if ($script->bg) & @endif 
+sh -v /tmp/post-{{$script->id}}.sh >>/tmp/post.log 2>&1{!! $script->bg ? ' &' : '' !!}
 RETCODE=$?
+@if ($script->progress == 'verify')
+progress_stop
+@endif
 if [ $RETCODE -ne 0 ]; then
     echo "Postinstallation script failed."
     report -F 'log=@/tmp/post.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=postinstall"
