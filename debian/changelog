@@ -1,4 +1,4 @@
-cmprovision4 (1.6.8~dev1) unstable; urgency=medium
+cmprovision4 (1.6.8~dev2) unstable; urgency=medium
 
   * EEPROM before and after: every module reports its running bootloader
     (version and settings) before the pre-install scripts, and the flash
@@ -11,7 +11,7 @@ cmprovision4 (1.6.8~dev1) unstable; urgency=medium
     silent module shows the step where it stopped and what to do about it,
     for every kind of failure.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 17:29:13 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 17:56:40 +0300
 
 cmprovision4 (1.6.7) unstable; urgency=medium
 
