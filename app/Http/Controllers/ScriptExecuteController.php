@@ -4,18 +4,23 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Events\CmProvisioningComplete;
+use App\Events\CmProvisioningFailed;
+use App\Events\CmProvisioningStarted;
 use App\Models\Cm;
 use App\Models\Cmlog;
-use App\Models\EthernetSwitch;
+use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
+use App\Services\SwitchPortFinder;
 
 class ScriptExecuteController extends Controller
 {
     public $serial, $cm;
     const MAX_LOG_SIZE = 1*1024*1024;
     const DECOMPRESSORS = ['gz' => 'gzip -dc', 'xz' => 'xz -dc', 'bz2' => 'bunzip2 -dc'];
+    /* Phases a module may report with ?progress= (see progress_mark in scriptexecute.blade.php) */
+    const PROGRESS_PHASES = ['preinstall', 'write', 'verify', 'postinstall'];
 
     /* What the output of a failed image write usually means. Pattern => explanation. */
     const WRITE_FAILURE_HINTS = [
@@ -55,6 +60,10 @@ class ScriptExecuteController extends Controller
             {
                 return $this->registerFirmware($req);
             }
+            else if ($req->query("progress"))
+            {
+                return $this->registerProgress($req);
+            }
             else
             {
                 return $this->startProvisoning($req);
@@ -67,6 +76,17 @@ class ScriptExecuteController extends Controller
             report($e);
             $msg = "Provisioning server error: ".$e->getMessage()." (".basename($e->getFile()).":".$e->getLine().")";
             $this->logInfo($msg, 'error');
+            try
+            {
+                if ($this->cm)
+                {
+                    $this->cm->markFailed($msg)->save();
+                    $this->failed();
+                }
+            }
+            catch (\Throwable $ignored)
+            {
+            }
 
             return response("#!/bin/sh
 echo ".escapeshellarg($msg)."
@@ -82,27 +102,29 @@ exit 1
         $image   = $project ? $project->image : null;
         $bootmode = $req->query('bootmode');
         $jumper  = $req->query('inversejumper');
-        $switchIpSetting = Setting::find('ethernetswitch_ip');
-        $switchCommunitySetting = Setting::find('ethernetswitch_snmp_community');
+        $switchConfig = SwitchPortFinder::config();
 
         $switchWarning = null;
-        if ($switchIpSetting && $switchIpSetting->value && $req->query('mac')
-            && $switchCommunitySetting && $switchCommunitySetting->value)
+        if ($switchConfig['host'] && $req->query('mac'))
         {
             try
             {
-                $switch = new EthernetSwitch($switchIpSetting->value, $switchCommunitySetting->value);
-                $board = $switch->getPortNameByMac($req->query('mac'));
-                if ($board === false)
+                $finder = SwitchPortFinder::forConfig($switchConfig);
+                $board = $finder->portOf($req->query('mac'));
+                if ($board === null)
                 {
-                    $board = null;
-                    $switchWarning = "Switch port unknown: ".$switchIpSetting->value." did not answer or does not know MAC ".$req->query('mac');
+                    $switchWarning = "Switch port unknown: ".$switchConfig['host']." does not know MAC ".$req->query('mac');
+                }
+                else if ($finder->lastMethod() !== $switchConfig['detected'])
+                {
+                    // try the method that works first next time
+                    Setting::updateOrCreate(['key' => 'ethernetswitch_method_detected'], ['value' => $finder->lastMethod()]);
                 }
             }
             catch (\Throwable $e)
             {
                 $board = null;
-                $switchWarning = "Switch port unknown: error talking to ".$switchIpSetting->value.": ".$e->getMessage();
+                $switchWarning = "Switch port unknown: error talking to ".$switchConfig['host'].": ".$e->getMessage();
             }
         }
         else if ($jumper)
@@ -144,7 +166,13 @@ exit 1
             'image_sha256'   => $image ? $image->sha256 : null,
             'provisioning_board' => $board,
             'provisioning_started_at' => now(),
-            'provisioning_complete_at' => null
+            'provisioning_complete_at' => null,
+            'phase' => null,
+            'phase_detail' => null,
+            'phase_started_at' => null,
+            'progress_bytes' => null,
+            'progress_total' => $image ? $image->uncompressed_size : null,
+            'progress_updated_at' => null,
         ]);
 
         if ($switchWarning)
@@ -154,33 +182,34 @@ exit 1
 
         if (!$project)
         {
-            $this->logInfo("Could not provision, because there is no active project", "error");
-            return "echo 'No active project set in CMprovisioning'";
+            return $this->refuse("Could not provision, because there is no active project", 'No active project set in CMprovisioning');
         }
+
+        $batch = NotificationBatch::current($project);
+        $batch->touchEvent();
+        $this->cm->notification_batch_id = $batch->id;
+        $this->cm->save();
         if ($project->verify && $image)
         {
             if (!$image->uncompressed_sha256)
             {
-                $this->logInfo("Verification enabled, but uncompressed SHA256 not computed yet, try again later...", "error");
-                return "echo 'Verification enabled, but uncompressed SHA256 not computed yet, try again later...'";
+                return $this->refuse("Verification enabled, but uncompressed SHA256 not computed yet, try again later...");
             }
             if ($image->uncompressed_size % 512 != 0)
             {
-                $this->logInfo("Image is not a valid disk image. Uncompressed size not dividable by sector size of 512 bytes.", "error");
-                return "echo 'Image is not a valid disk image. Uncompressed size not dividable by sector size of 512 bytes.'";
+                return $this->refuse("Image is not a valid disk image. Uncompressed size not dividable by sector size of 512 bytes.");
             }
         }
         if ($image && $project->storage == '/dev/mmcblk0')
         {
             if (!$storage_bytes)
             {
-                $this->logInfo("Missing eMMC/SD card.", "error");
-                return "echo 'Missing eMMC/SD card.'";
+                return $this->refuse("Missing eMMC/SD card.");
             }
             if ($image->uncompressed_size && $storage_bytes < $image->uncompressed_size)
             {
-                $this->logInfo("Image does not fit in storage. Uncompressed image size: ".$image->uncompressed_size." bytes. Available space: ".$storage_bytes." bytes.", "error");
-                return "echo 'Image does not fit in storage.'";
+                return $this->refuse("Image does not fit in storage. Uncompressed image size: ".$image->uncompressed_size." bytes. Available space: ".$storage_bytes." bytes.",
+                                     'Image does not fit in storage.');
             }
         }
 
@@ -217,6 +246,7 @@ exit 1
             $fscript->id = 0;
             $fscript->name = 'Verifying written image';
             $fscript->bg = false;
+            $fscript->progress = 'verify';   // the script counts the sectors read while it runs
 
             if ($image->uncompressed_size % 1048576 == 0)
                 $ddline = "dd if=".$project->storage." bs=1M count=".($image->uncompressed_size / 1048576);
@@ -231,6 +261,9 @@ exit 1
                              . 'if [ "$READ_SHA256" = "'.$image->uncompressed_sha256.'" ]; then echo Verification successful!; else echo Verification failed; exit 2; fi'."\n";
             $postinstall_scripts->prepend($fscript);
         }
+
+        $this->cm->setPhase(count($preinstall_scripts) ? 'preinstall' : ($image ? 'write' : 'postinstall'))->save();
+        CmProvisioningStarted::dispatch($this->cm);
 
         $msg = "Provisioning started.";
         if ($project->label_moment == 'preinstall' && $project->label)
@@ -291,7 +324,10 @@ exit 1
         $project = $this->cm->project;
         $this->cm->provisioning_complete_at = now();
         $this->cm->temp2 = $req->query('temp');
+        $this->cm->setPhase('done');
+        $this->cm->progress_bytes = $this->cm->progress_total;
         $this->cm->save();
+        $this->touchBatch();
 
         $msg = 'Provisioning completed.';
         if ($req->query('verify'))
@@ -349,22 +385,28 @@ exit 1
                 $msg .= " Diagnosis: $diagnosis.";
             }
             $this->logInfo($msg." Script output:\n\n".$logfile, 'error');
+            $this->cm->markFailed($msg);
+            $failed = true;
         }
         else
         {
             if ($phase == "preinstall")
             {
                 $msg = "Preinstall script complete.";
-                if ($this->cm->project->image)
+                $hasImage = $this->cm->project && $this->cm->project->image;
+                if ($hasImage)
                 {
                     $msg .= " Starting to write image.";
                 }
 
                 $this->logInfo($msg);
+                $this->cm->setPhase($hasImage ? 'write' : 'postinstall');
             }
         }
 
         $this->cm->save();
+        if (!empty($failed))
+            $this->failed();
         return "";
     }
 
@@ -381,6 +423,53 @@ exit 1
             $this->cm->firmware .= date('r', $regs[1]);
         }
         $this->cm->save();
+    }
+
+    /* ?progress=<phase>[&detail=<script name>][&sectors=<n>]: where the module is, sent every few seconds
+       while the image is written or verified. Best effort on both sides, so never an error and no log entry. */
+    public function registerProgress(Request $req)
+    {
+        $phase = $req->query('progress');
+        if (!in_array($phase, self::PROGRESS_PHASES, true))
+            return '';
+
+        $this->cm = Cm::where('serial', $this->serial)->first();
+        if (!$this->cm || !$this->cm->isActive())
+            return '';   // unknown module, or a late report after completion or failure
+
+        $this->cm->setPhase($phase, $req->query('detail'));
+        $sectors = $req->query('sectors');
+        if (is_string($sectors) && ctype_digit($sectors))
+            $this->cm->progress_bytes = (int) $sectors * 512;
+        $this->cm->save();
+
+        return '';
+    }
+
+    /* Do not provision: tell the web log, mark the module failed and show the reason on its console */
+    protected function refuse($reason, $consoleMessage = null)
+    {
+        $this->logInfo($reason, 'error');
+        if ($this->cm)
+        {
+            $this->cm->markFailed($reason)->save();
+            $this->failed();
+        }
+
+        return "echo ".escapeshellarg($consoleMessage ?: $reason);
+    }
+
+    /* The module's provisioning stopped: keep its batch alive and tell the notification channels */
+    protected function failed()
+    {
+        $this->touchBatch();
+        CmProvisioningFailed::dispatch($this->cm);
+    }
+
+    protected function touchBatch()
+    {
+        if ($this->cm && $this->cm->notification_batch_id)
+            NotificationBatch::whereKey($this->cm->notification_batch_id)->update(['last_event_at' => now()]);
     }
 
     /* Explanation of a failed image write from the log the module sent, or null when nothing is recognised */

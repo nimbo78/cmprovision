@@ -14,7 +14,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register()
     {
-        //
+        /* SNMP access to the switch; tests bind a fake one */
+        $this->app->bind(\App\Services\Snmp\SnmpClient::class, function ($app, $params) {
+            return new \App\Services\Snmp\PhpSnmpClient($params['config'] ?? []);
+        });
     }
 
     /**

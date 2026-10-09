@@ -19,3 +19,16 @@ docker/bench.sh deb                # собрать .deb в контейнере
 Рабочие копии приложения лежат в `docker/<сервис>/app` (в git не попадают). Их состояние — `.env`, база, образы, прошивки, `vendor` — при `sync` не трогается; чтобы начать с чистого листа, удалите каталог и выполните `up` заново.
 
 Что здесь не проверить: сетевую загрузку модуля, прошивку EEPROM, dnsmasq и rpiboot — для этого нужен Raspberry Pi.
+
+## Поиск порта коммутатора на SNMP-агенте
+
+`tests/Feature/SnmpAgentTest.php` проверяет поиск порта по MAC через настоящий php-snmp на симуляторе [snmpsim](https://pypi.org/project/snmpsim/), который отдаёт `tests/fixtures/snmp/*.snmprec`. Community v2c выбирает файл (`qbridge`, `ciscoios`, `ciscoios@20`, `huawei`, `yunshan`, `routeros`) так же, как Cisco IOS отдаёт VLAN по `community@vlan`; контекст SNMPv3 выбирает файл так же (`vlan-20`). Без переменной `SNMPSIM_ENDPOINT` тест пропускается.
+
+```sh
+python3 -m venv /opt/snmpsim && /opt/snmpsim/bin/pip install snmpsim pysmi
+/opt/snmpsim/bin/snmpsim-command-responder --data-dir=tests/fixtures/snmp --agent-udpv4-endpoint=127.0.0.1:1161 \
+    --v3-user=cmprova --v3-auth-key=authpass123 --v3-auth-proto=SHA --process-user=nobody --process-group=nogroup &
+SNMPSIM_ENDPOINT=127.0.0.1:1161 DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test --filter=SnmpAgentTest
+```
+
+SNMPv3 с шифрованием AES симулятор (pysnmp 7) отдаёт так, что его не расшифровывает и net-snmp, поэтому тест v3 идёт без шифрования. Файлы данных собирает `tests/fixtures/snmp/generate.py` (записи `oid|тип|значение`, отсортированные по OID); правьте его, а не `.snmprec`.
