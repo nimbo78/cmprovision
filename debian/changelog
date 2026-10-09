@@ -1,75 +1,28 @@
-cmprovision4 (1.6.6~dev7) unstable; urgency=medium
+cmprovision4 (1.6.6) unstable; urgency=medium
 
-  * Dashboard: a silent module no longer shows speed and time left from
-    stale numbers; a failed one shows how long it ran; boards stay on one
-    line.
-  * Switch test: a switch that does not answer is reported as such, not
-    as answering without a MAC table.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 12:13:45 +0300
-
-cmprovision4 (1.6.6~dev6) unstable; urgency=medium
-
-  * Ethernet switch on the settings page: address, SNMP v2c or v3, lookup
-    method, a Test button listing port, MAC, VLAN and known module, and
-    hints for Cisco, Cisco Business, Huawei and MikroTik. The port lookup
-    now reads Q-BRIDGE-MIB, BRIDGE-MIB, HUAWEI-L2MAM-MIB and Cisco IOS
-    per-VLAN instances, maps bridge ports with HUAWEI-L2IF-MIB where
-    BRIDGE-MIB lacks it, prefers the access port over an uplink, shows
-    port descriptions, and remembers the method that worked.
-  * SNMPv3 VLAN contexts work: php-snmp kept a pointer to a freed context
-    name, so a Cisco switch was asked for garbage and never answered.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 12:05:22 +0300
-
-cmprovision4 (1.6.6~dev5) unstable; urgency=medium
-
-  * Notifications, set up on the settings page: Mattermost bot and
-    Telegram bot keep a thread per batch of modules (a summary with
-    project, image, EEPROM and counters, edited on every event, and a
-    reply per module); Mattermost/Slack incoming webhooks and JSON
-    webhooks get a message per event. Events: module started, done,
-    failed (with the reason). Sent after the module got its answer;
-    errors show on the channel. Test button, chat finder for Telegram,
-    Mattermost channel links resolved to ids, new batch button.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 11:36:45 +0300
-
-cmprovision4 (1.6.6~dev4) unstable; urgency=medium
-
-  * Live progress of every module on the dashboard: step (pre-install
-    script, writing, verifying, post-install script), progress bar with
+  * Live progress of every module on the dashboard: step, progress bar with
     percent, speed and time left while the image is written and verified,
-    failure reason, and a warning when a module stops reporting. The module
-    reports sectors from /sys/block/<dev>/stat every 5 seconds, best effort.
-  * A pre- or post-install script line no longer depends on a trailing
-    space in the template to keep its return code check on its own line.
+    total time, failure reason with where it stopped, and a warning when a
+    module stops reporting. Modules report sectors from /sys/block every
+    5 seconds, best effort; rows stay in port order.
+  * Notifications, set up on the settings page: Mattermost and Telegram
+    bots keep a thread per batch of modules (a summary edited on every
+    event, a reply per module); Mattermost/Slack incoming webhooks and JSON
+    webhooks get a message per event. Sent after the module got its answer;
+    errors show on the channel.
+  * Ethernet switch on the settings page: SNMP v2c or v3, lookup method,
+    Test button with port, MAC, VLAN and module, hints per vendor. The port
+    lookup reads Q-BRIDGE-MIB, BRIDGE-MIB (bridge ports mapped by
+    HUAWEI-L2IF-MIB where needed), HUAWEI-L2MAM-MIB and Cisco IOS per-VLAN
+    instances, prefers the access port over an uplink, shows port
+    descriptions and remembers the method that worked. SNMPv3 VLAN contexts
+    work around php-snmp keeping a pointer to a freed context name.
+  * Raspberry Pi OS Trixie (Debian 13, PHP 8.4): composer.lock installs
+    (league/commonmark pinned to 1.6), packages built there own the
+    application files as www-data again (Rules-Requires-Root), and times
+    are shown in the system time zone read from the OS.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 11:16:58 +0300
-
-cmprovision4 (1.6.6~dev3) unstable; urgency=medium
-
-  * Times are shown in the system time zone on Debian 13 too: it is read
-    from /etc/timezone or the /etc/localtime link, because PHP 8.4 there
-    reports UTC whatever the system is set to.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 10:08:38 +0300
-
-cmprovision4 (1.6.6~dev2) unstable; urgency=medium
-
-  * Packages built on Debian 13 own the application files as www-data
-    again (Rules-Requires-Root: binary-targets); dpkg 1.22 built them as
-    root:root, so the web interface failed with HTTP 500.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 09:57:26 +0300
-
-cmprovision4 (1.6.6~dev1) unstable; urgency=medium
-
-  * composer.lock installs on PHP 8.4 (Raspberry Pi OS Trixie):
-    league/commonmark pinned to 1.6, which drops nette/utils and
-    nette/schema (they declare php < 8.3).
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 09:54:53 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 14:58:25 +0300
 
 cmprovision4 (1.6.5) unstable; urgency=medium
 
