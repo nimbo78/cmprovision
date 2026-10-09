@@ -103,11 +103,11 @@ You can create a SD card that enables that with [Imager](https://www.raspberrypi
 ## Upgrading ##
 
 Install the new package over the old one with `sudo apt install ./cmprovision4_*.deb`; never `apt remove` it first, the package's removal step deletes the database and storage.
-Before upgrading, take a snapshot that can be restored in minutes:
+Before upgrading, take a snapshot that can be restored in minutes (the commands come with the package; in a checkout they are `tools/backup.sh` and `tools/restore.sh`):
 
 ```
-sudo tools/backup.sh            # /var/backups/cmprovision/<timestamp>-<version>/
-sudo tools/restore.sh /var/backups/cmprovision/<snapshot>
+sudo cmprovision-backup            # /var/backups/cmprovision/<timestamp>-<version>/
+sudo cmprovision-restore /var/backups/cmprovision/<snapshot>
 ```
 
 The package's post-installation step adjusts existing servers: `send_timeout 6h` for image downloads in the nginx site, `upload_tmp_dir` on disk next to the images, `APP_ENV=production` / `APP_DEBUG=false` in `.env`. The firmware store moves from the `stable`/`beta` channel names to `default`/`latest`; images downloaded earlier stay available to the projects that use them.

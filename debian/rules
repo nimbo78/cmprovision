@@ -5,6 +5,12 @@ WEB_CONTENT = debian/cmprovision4/var/lib/cmprovision/
 %:
 	dh $@ --with systemd
 
+# Backup/restore run as root: install them outside the www-data-owned application directory.
+override_dh_install:
+	dh_install
+	install -D -m 755 tools/backup.sh debian/cmprovision4/usr/sbin/cmprovision-backup
+	install -D -m 755 tools/restore.sh debian/cmprovision4/usr/sbin/cmprovision-restore
+
 override_dh_strip:
 	dh_strip --exclude=.elf
 

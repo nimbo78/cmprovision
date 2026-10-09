@@ -1,6 +1,6 @@
 #!/bin/sh
-# Roll an installation back to a snapshot made by tools/backup.sh:
-#   sudo tools/restore.sh /var/backups/cmprovision/<snapshot>
+# Roll an installation back to a snapshot made by cmprovision-backup:
+#   sudo cmprovision-restore /var/backups/cmprovision/<snapshot>      (installed by the package; tools/restore.sh in a checkout)
 # Reinstalls the packaged version from the snapshot (if it holds a .deb), then puts back the
 # application directory, the database and the system config, and restarts the services.
 set -e

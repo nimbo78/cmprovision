@@ -1,13 +1,13 @@
 #!/bin/sh
 # Snapshot of an installed cmprovision4 for rolling back a package upgrade.
-#   sudo tools/backup.sh [--with-uploads] [destination-dir]
+#   sudo cmprovision-backup [--with-uploads] [destination-dir]      (installed by the package; tools/backup.sh in a checkout)
 # Default destination: /var/backups/cmprovision/<timestamp>-<installed version>/ containing
 #   app.tar.gz           /var/lib/cmprovision (database, .env, firmware, storage, dnsmasq.conf; uploads only with --with-uploads)
 #   database.sqlite      consistent copy of the database (SQLite online backup)
 #   system-config.tar.gz files outside the app dir that the package or postinst touches
 #   cmprovision4_*.deb   reinstallable copy of the installed package (needs dpkg-repack)
 #   packages.txt         versions of the package and its runtime dependencies
-# Restore with tools/restore.sh <that directory>.
+# Restore with cmprovision-restore <that directory>.
 set -e
 APP=/var/lib/cmprovision
 WITH_UPLOADS=0
