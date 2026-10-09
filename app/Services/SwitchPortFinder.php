@@ -116,7 +116,7 @@ class SwitchPortFinder
      */
     public function scan()
     {
-        $result = ['method' => null, 'ports' => [], 'vlans' => [], 'tried' => []];
+        $result = ['method' => null, 'ports' => [], 'vlans' => [], 'tried' => [], 'answered' => false];
         foreach ($this->methods() as $method)
         {
             try
@@ -128,8 +128,10 @@ class SwitchPortFinder
                 $result['tried'][$method] = $e->getMessage();
                 if ($e->timeout)
                     break;
+                $result['answered'] = true;
                 continue;
             }
+            $result['answered'] = true;
             $result['tried'][$method] = count($rows).' entries';
             if (!$rows)
                 continue;

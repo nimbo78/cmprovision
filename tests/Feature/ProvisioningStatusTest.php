@@ -63,7 +63,18 @@ class ProvisioningStatusTest extends TestCase
             'progress_bytes' => 1, 'progress_total' => 100,
         ]);
 
-        Livewire::test(ProvisioningStatus::class)->assertSee('No report for 3 min');
+        Livewire::test(ProvisioningStatus::class)
+            ->assertSee('No report for 3 min')
+            ->assertDontSee(' left ')          // no speed or remaining time from stale numbers
+            ->assertDontSee('MB/s');
+    }
+
+    public function test_a_failed_module_shows_how_long_it_ran()
+    {
+        $this->module('1000000000000a08', ['phase' => 'failed', 'phase_detail' => 'Missing eMMC/SD card.',
+            'provisioning_started_at' => now()->subMinutes(10), 'phase_started_at' => now()->subMinutes(8)]);
+
+        Livewire::test(ProvisioningStatus::class)->assertSee('failed after 2:00');
     }
 
     public function test_scripts_may_run_quietly_for_a_while_without_being_flagged()

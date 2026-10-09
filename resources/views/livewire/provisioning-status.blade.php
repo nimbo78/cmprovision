@@ -26,7 +26,7 @@
             @php($left = $m->secondsLeft())
             @php($bar = $m->phase === 'failed' ? 'bg-red-500' : ($m->phase === 'done' ? 'bg-green-500' : 'bg-blue-500'))
             <tr @if ($m->phase === 'failed') class="bg-red-100" @endif wire:key="cm-{{ $m->id }}">
-                <td class="border px-2 py-1">{{ $m->provisioning_board }}</td>
+                <td class="border px-2 py-1" style="white-space: nowrap">{{ $m->provisioning_board }}</td>
                 <td class="border px-2 py-1"><span class="font-mono">{{ $m->serial }}</span><div class="text-xs text-gray-500 font-mono">{{ $m->mac }}</div></td>
                 <td class="border px-2 py-1">
                     {{ $m->phaseLabel() }}
@@ -45,8 +45,8 @@
                         <div class="text-xs text-gray-600">
                             {{ $percent }}%
                             @if ($m->progress_total) &middot; {{ $fmt::bytes($m->progress_bytes ?? 0) }} of {{ $fmt::bytes($m->progress_total) }} @endif
-                            @if ($speed && $m->isStreaming()) &middot; {{ $fmt::speed($speed) }} @endif
-                            @if ($left !== null && $m->isStreaming()) &middot; {{ $fmt::duration($left) }} left @endif
+                            @if ($speed && $m->isStreaming() && !$silent) &middot; {{ $fmt::speed($speed) }} @endif
+                            @if ($left !== null && $m->isStreaming() && !$silent) &middot; {{ $fmt::duration($left) }} left @endif
                         </div>
                     @elseif ($m->isStreaming() && $m->progress_bytes)
                         <div class="text-xs text-gray-600">
@@ -59,6 +59,9 @@
                         @if ($m->phase === 'done' && $m->provisioning_complete_at)
                             took {{ $fmt::duration($m->provisioning_complete_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }}
                             <div>{{ $m->provisioning_complete_at->local()->format('H:i') }}</div>
+                        @elseif ($m->phase === 'failed' && $m->phase_started_at)
+                            failed after {{ $fmt::duration($m->phase_started_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }}
+                            <div>{{ $m->phase_started_at->local()->format('H:i') }}</div>
                         @else
                             {{ $fmt::duration(now()->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }}
                             <div>since {{ $m->provisioning_started_at->local()->format('H:i') }}</div>

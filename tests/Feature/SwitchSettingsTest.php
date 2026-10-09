@@ -69,6 +69,17 @@ class SwitchSettingsTest extends TestCase
         $this->assertNull($this->setting('ip'), 'testing does not save');
     }
 
+    public function test_a_switch_that_does_not_answer_is_reported_as_such()
+    {
+        $this->fakeSwitch()->timeout = true;
+
+        Livewire::test(SwitchSettings::class)
+            ->set('host', '192.0.2.1')->set('version', '2c')->set('community', 'wrong')
+            ->call('test')
+            ->assertSee('did not answer')
+            ->assertDontSee('switch answered');
+    }
+
     public function test_v2c_settings_are_saved_and_an_empty_address_switches_the_lookup_off()
     {
         Livewire::test(SwitchSettings::class)

@@ -72,7 +72,9 @@ class SwitchSettings extends Component
             'rows' => $rows,
             'tried' => $tried,
         ];
-        if (!$rows)
+        if (!$scan['answered'])
+            $this->flash('The switch did not answer: check the address, the community or SNMPv3 user, and that SNMP is enabled for this server\'s address.', true);
+        else if (!$rows)
             $this->flash('The switch answered, but no method returned its MAC address table. See the answers below and the SNMP hints.', true);
     }
 
