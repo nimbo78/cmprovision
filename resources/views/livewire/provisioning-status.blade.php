@@ -27,7 +27,7 @@
             @php($bar = $m->phase === 'failed' ? 'bg-red-500' : ($m->phase === 'done' ? 'bg-green-500' : 'bg-blue-500'))
             <tr @if ($m->phase === 'failed') class="bg-red-100" @endif wire:key="cm-{{ $m->id }}">
                 <td class="border px-2 py-1" style="white-space: nowrap">{{ $m->provisioning_board }}</td>
-                <td class="border px-2 py-1"><span class="font-mono">{{ $m->serial }}</span><div class="text-xs text-gray-500 font-mono">{{ $m->mac }}</div></td>
+                <td class="border px-2 py-1"><a href="{{ route('cm', $m->serial) }}" class="font-mono text-blue-700 hover:underline">{{ $m->serial }}</a><div class="text-xs text-gray-500 font-mono">{{ $m->mac }}</div></td>
                 <td class="border px-2 py-1">
                     {{ $m->phaseLabel() }}
                     @if ($m->phase === 'failed' && $m->phase_detail)

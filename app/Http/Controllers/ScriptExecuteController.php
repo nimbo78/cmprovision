@@ -177,6 +177,7 @@ exit 1
             'progress_bytes' => null,
             'progress_total' => $image ? $image->uncompressed_size : null,
             'progress_updated_at' => null,
+            'timeline' => [],
             /* the module reports its bootloader once the script runs; the settings are flashed as stored in the image */
             'eeprom_before' => null,
             'eeprom_config_before' => null,

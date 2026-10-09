@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Livewire\Cms;
+use App\Http\Livewire\CmCard;
 use App\Http\Livewire\Images;
 use App\Http\Livewire\Labels;
 use App\Http\Livewire\Projects;
@@ -32,6 +33,7 @@ Route::middleware(['auth:sanctum', 'verified'])->get('/dashboard', function () {
 })->name('dashboard');
 
 Route::middleware(['auth:sanctum', 'verified'])->any('/cms', Cms::class)->name('cms');
+Route::middleware(['auth:sanctum', 'verified'])->get('/cms/{serial}', CmCard::class)->name('cm');
 Route::middleware(['auth:sanctum', 'verified'])->any('/images', Images::class)->name('images');
 Route::middleware(['auth:sanctum', 'verified'])->post('/addImage', [AddImageController::class, 'store']);
 Route::middleware(['auth:sanctum', 'verified'])->any('/projects', Projects::class)->name('projects');

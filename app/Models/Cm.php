@@ -20,6 +20,8 @@ class Cm extends Model
        verification report every few seconds, scripts only when they start */
     const STALE_AFTER_STREAMING = 60;
     const STALE_AFTER_SCRIPTS = 600;
+    /* A run has a dozen steps; the cap only guards against a script that keeps renaming itself */
+    const MAX_TIMELINE = 200;
 
     protected $fillable = [
         'serial','mac','model','memory_in_gb','storage','csd','cid','firmware',
@@ -27,6 +29,7 @@ class Cm extends Model
         'temp1', 'temp2', 'provisioning_board', 'provisioning_started_at', 'provisioning_complete_at', 'project_id',
         'phase', 'phase_detail', 'phase_started_at', 'progress_bytes', 'progress_total', 'progress_updated_at',
         'notification_batch_id', 'eeprom_before', 'eeprom_config_before', 'eeprom_config_after', 'eeprom_result',
+        'timeline',
     ];
 
     protected $casts = [
@@ -36,6 +39,7 @@ class Cm extends Model
         'progress_updated_at' => 'datetime',
         'progress_bytes' => 'integer',
         'progress_total' => 'integer',
+        'timeline' => 'array',
     ];
 
     public function project()
@@ -73,8 +77,9 @@ class Cm extends Model
         return self::eepromVersionOf($this->firmware);
     }
 
-    /* Enter a phase (or the next script within it); a change restarts the phase clock, and entering
-       a working phase restarts the byte counter (a failed module keeps how far it got) */
+    /* Enter a phase (or the next script within it); a change restarts the phase clock, goes into the
+       timeline of the run, and entering a working phase restarts the byte counter (a failed module
+       keeps how far it got) */
     public function setPhase($phase, $detail = null)
     {
         $detail = ($detail === null || $detail === '') ? null : Str::limit($detail, 250);
@@ -85,6 +90,11 @@ class Cm extends Model
             $this->phase = $phase;
             $this->phase_detail = $detail;
             $this->phase_started_at = now();
+
+            $timeline = $this->timeline ?: [];
+            if (count($timeline) < self::MAX_TIMELINE)
+                $timeline[] = ['phase' => $phase, 'detail' => $detail, 'at' => now()->getTimestamp()];
+            $this->timeline = $timeline;
         }
         $this->progress_updated_at = now();
         return $this;

@@ -15,7 +15,7 @@
                 @php($at = $l->created_at->local())
                 <tr wire:key="log-{{ $l->id }}" @if ($l->loglevel == 'error') class="bg-red-100" @endif>
                     <td class="border px-4 py-2">{{ $l->board }}</td>
-                    <td class="border px-4 py-2">{{ $l->cm }}</td>
+                    <td class="border px-4 py-2">@if ($l->cm)<a href="{{ route('cm', $l->cm) }}" class="text-blue-700 hover:underline">{{ $l->cm }}</a>@endif</td>
                     <td class="border px-4 py-2">{!! nl2br(e(($at->toDateString() === $today ? $at->format('H:i:s') : $at->format('d.m H:i:s')).' '.$l->msg), false) !!}</td>
                 </tr>
             @empty
