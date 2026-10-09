@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Целевая среда — Raspberry Pi OS на Pi 4: пакет `cmprovision4` ставится в `/var/lib/cmprovision` и работает поверх nginx + php-fpm, dnsmasq, rpiboot и systemd. Код вызывает Linux-утилиты (`systemctl`, `journalctl`, `sudo`, `bash`, `gzip`/`xz`/`bunzip2`, `sha256sum`), поэтому страница Settings и подсчёт хешей образов работают только на Linux, а сквозной провижининг проверяется только на Pi с подключёнными модулями.
 
-Рабочий провижинер пользователя — Debian 11 (bullseye) с PHP 7.4, поэтому код должен оставаться совместимым с PHP 7.4 (без `match`, именованных аргументов, `?->`, enum, `readonly`, `str_contains`); `composer.json` объявляет `^7.3|^8.0`.
+Рабочий провижинер пользователя — Debian 11 (bullseye) с PHP 7.4, поэтому код должен оставаться совместимым с PHP 7.4 (без `match`, именованных аргументов, `?->`, enum, `readonly`, `str_contains`); `composer.json` объявляет `^7.3|^8.0`. Один и тот же `composer.lock` должен ставиться и на PHP 7.4, и на 8.4 (Raspberry Pi OS Trixie): обновляйте его под PHP 7.4 (на сервере), а затем проверяйте `composer install` на 8.4 — пакеты с верхней границей PHP ломают сборку `.deb` на Trixie. Поэтому `league/commonmark` закреплён на `^1.6`: ветка 2.x тянет `nette/utils` 3 и `nette/schema` 1.2 с ограничением PHP < 8.3 (Markdown приложение не использует).
 
 ## Команды
 
