@@ -27,9 +27,6 @@
                   </div>
                 </div>
             @endif
-            @if($isOpen)
-                @include('livewire.viewcm')
-            @endif
             <table class="table-fixed w-full">
                 <thead>
                     <tr class="bg-gray-100">
@@ -43,12 +40,12 @@
                 <tbody>
                     @forelse($CMs as $c)
                     <tr>
-                        <td class="border px-4 py-2">{{ $c->serial }}</td>
+                        <td class="border px-4 py-2"><a href="{{ route('cm', $c->serial) }}" class="font-mono text-blue-700 hover:underline">{{ $c->serial }}</a></td>
                         <td class="border px-4 py-2">{{ $c->mac }}</td>
                         <td class="border px-4 py-2">{{ $c->model }}</td>
                         <td class="border px-4 py-2">@if ($c->provisioning_complete_at) {{ $c->provisioning_complete_at->local() }} @else No @endif</td>
                         <td class="border px-4 py-2">
-                            <button wire:click="edit({{ $c->id }})" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">View</button>
+                            <a href="{{ route('cm', $c->serial) }}" class="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">View</a>
                             <button wire:click="delete({{ $c->id }})" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</button>
                         </td>
                     </tr>

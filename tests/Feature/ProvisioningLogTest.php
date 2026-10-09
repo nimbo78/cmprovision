@@ -60,7 +60,7 @@ class ProvisioningLogTest extends TestCase
         $this->entry('Error during dd. Return code 1.', '2026-10-09 10:00:00', 'error');
 
         $html = Livewire::test(ProvisioningLog::class)->payload['effects']['html'];
-        $this->assertMatchesRegularExpression('/<tr[^>]*bg-red-100[^>]*>\s*<td[^>]*>GE0\/0\/4<\/td>\s*<td[^>]*>1000000000000d01<\/td>\s*<td[^>]*>13:00:00 Error during dd/s', $html);
+        $this->assertMatchesRegularExpression('/<tr[^>]*bg-red-100[^>]*>\s*<td[^>]*>GE0\/0\/4<\/td>\s*<td[^>]*><a [^>]*>1000000000000d01<\/a><\/td>\s*<td[^>]*>13:00:00 Error during dd/s', $html);
         $this->assertLessThan(strpos($html, 'Older entry'), strpos($html, 'Error during dd'));
     }
 

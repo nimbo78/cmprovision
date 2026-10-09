@@ -58,19 +58,20 @@ cat >/tmp/post-{{$script->id}}.sh << "CMPROVISIONINGEOF"
 CMPROVISIONINGEOF
 @endforeach
 
-@if (!$project->eeprom_firmware)
+# The bootloader as it is before provisioning: the EEPROM flash, if the project has one, is the first
+# pre-install script. Booted by rpiboot (boot mode 3) the module runs the bootloader sent over USB, so
+# the version comes from the flash chip itself, without the settings.
 echo Querying and registering EEPROM version
 @if ($bootmode == 3)
 flashrom -p "linux_spi:dev=/dev/spidev0.0,spispeed=16000" -r "/tmp/pieeprom.bin" || true
 strings /tmp/pieeprom.bin |grep VERSION: >/tmp/eeprom_version
 strings /tmp/pieeprom.bin |grep BUILD_TIMESTAMP= >>/tmp/eeprom_version
+: >/tmp/eeprom_config
 @else
 vcgencmd bootloader_version >/tmp/eeprom_version || true
+vcgencmd bootloader_config >/tmp/eeprom_config || true
 @endif
-if [ -f /tmp/eeprom_version ]; then
-    report -F 'eeprom_version=@/tmp/eeprom_version' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}"
-fi
-@endif
+report -F 'eeprom_version=@/tmp/eeprom_version' -F 'eeprom_config=@/tmp/eeprom_config' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}"
 
 @if ( count($preinstall_scripts) )
 echo "Running pre-install scripts"

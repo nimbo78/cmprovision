@@ -57,13 +57,7 @@ class ProjectActivator
             throw new RuntimeException("EEPROM firmware '$firmware' is no longer available in the firmware store; the module EEPROM will not be updated");
         }
 
-        /* The settings may arrive with CRLF from a browser or trimmed by the API: store them the
-           way rpi-eeprom-config does, LF-only with a single trailing newline */
-        $settings = rtrim(str_replace("\r", "", (string) $project->eeprom_settings));
-        if ($settings !== '')
-            $settings .= "\n";
-
-        if (!EepromImage::setConfig($data, $settings))
+        if (!EepromImage::setConfig($data, EepromImage::normalizeConfig($project->eeprom_settings)))
             throw new RuntimeException("EEPROM firmware '$firmware' could not be parsed for its configuration");
 
         $tmp = $target.'.part';

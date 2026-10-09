@@ -10,8 +10,6 @@ use Illuminate\Support\Facades\DB;
 class Cms extends Component
 {
     public $CMs;
-    public $isOpen = false;
-    public $cm;
     public $projectId = -1;
     public $projects;
 
@@ -35,32 +33,11 @@ class Cms extends Component
         return view('livewire.cms');
     }
 
-    public function openModal()
-    {
-        $this->isOpen = true;
-    }
-
-    public function closeModal()
-    {
-        $this->isOpen = false;
-    }
-
-    public function edit($id)
-    {
-        $this->cm = Cm::findOrFail($id);
-        $this->openModal();
-    }
-
     public function delete($id)
     {
         Cm::destroy($id);
         session()->flash('message', 'Cm deleted.');
     }
-
-    public function cancel()
-    {
-        $this->closeModal();
-    } 
 
     public function exportCSV()
     {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use App\Events\CmProvisioningComplete;
 use App\Events\CmProvisioningFailed;
 use App\Events\CmProvisioningStarted;
@@ -12,6 +13,7 @@ use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
+use App\Services\EepromImage;
 use App\Services\SwitchPortFinder;
 
 class ScriptExecuteController extends Controller
@@ -21,6 +23,8 @@ class ScriptExecuteController extends Controller
     const DECOMPRESSORS = ['gz' => 'gzip -dc', 'xz' => 'xz -dc', 'bz2' => 'bunzip2 -dc'];
     /* Phases a module may report with ?progress= (see progress_mark in scriptexecute.blade.php) */
     const PROGRESS_PHASES = ['preinstall', 'write', 'verify', 'postinstall'];
+    /* The line the generated flash script prints after flashrom: the chip was written, or it held the image already */
+    const EEPROM_RESULT_LINE = '/^EEPROM_RESULT=(written|identical)\s*$/m';
 
     /* What the output of a failed image write usually means. Pattern => explanation. */
     const WRITE_FAILURE_HINTS = [
@@ -173,6 +177,12 @@ exit 1
             'progress_bytes' => null,
             'progress_total' => $image ? $image->uncompressed_size : null,
             'progress_updated_at' => null,
+            'timeline' => [],
+            /* the module reports its bootloader once the script runs; the settings are flashed as stored in the image */
+            'eeprom_before' => null,
+            'eeprom_config_before' => null,
+            'eeprom_config_after' => $project && $project->eeprom_firmware ? EepromImage::normalizeConfig($project->eeprom_settings) : null,
+            'eeprom_result' => null,
         ]);
 
         if ($switchWarning)
@@ -232,11 +242,17 @@ exit 1
             $fscript->id = 0;
             $fscript->name = 'Flash EEPROM firmware ('.$project->eeprom_firmware.')';
             $fscript->bg = false;
+            /* flashrom leaves the chip alone when it holds the image already; the last line says which it
+               was (EEPROM_RESULT_LINE). The script runs under sh -v, which copies every script line into
+               the log as well, so the result is printed from a variable and never spelled out in the script. */
             $fscript->script = "#!/bin/sh\n"
                              . "set -e\n"
                              . "curl --retry 10 --silent --show-error -g -o pieeprom.bin \"$eeprom_url\"\n"
                              . "echo \"$eeprom_sha256  pieeprom.bin\" | sha256sum -c\n"
-                             . 'flashrom -p "linux_spi:dev=/dev/spidev0.0,spispeed=16000" -w "pieeprom.bin"'."\n";
+                             . 'flashrom -p "linux_spi:dev=/dev/spidev0.0,spispeed=16000" -w "pieeprom.bin" >flashrom.log 2>&1 || { cat flashrom.log; exit 1; }'."\n"
+                             . "cat flashrom.log\n"
+                             . "if grep -q \"identical\" flashrom.log; then RESULT=identical; else RESULT=written; fi\n"
+                             . "echo \"EEPROM_RESULT=\$RESULT\"\n";
             $preinstall_scripts->prepend($fscript);
         }
 
@@ -365,6 +381,10 @@ exit 1
         if ($phase == "preinstall")
         {
             $this->cm->pre_script_output = $logfile;
+            if (preg_match(self::EEPROM_RESULT_LINE, $logfile, $m))
+                $this->cm->eeprom_result = $m[1];
+            else if ($retcode && $this->cm->eeprom_config_after !== null)
+                $this->cm->eeprom_result = 'failed';   // the flash script runs first and did not get to its result
         }
         else if ($phase == "postinstall")
         {
@@ -411,17 +431,28 @@ exit 1
     }
 
 
+    /* The bootloader the module runs before anything is flashed: version, and the settings unless
+       the version was read from the flash chip */
     public function registerFirmware(Request $req)
     {
         $this->cm = Cm::where('serial', $this->serial)->firstOrFail();
-        $this->cm->firmware = $req->file('eeprom_version')->get();
+        $version = $req->file('eeprom_version')->get();
 
         $regs = [];
-        if (preg_match("/BUILD_TIMESTAMP=([0-9]+)/", $this->cm->firmware, $regs) )
+        if (preg_match("/BUILD_TIMESTAMP=([0-9]+)/", $version, $regs) )
         {
             /* If we only have a BUILD_TIMESTAMP, also convert it to a human friendly date/time string */
-            $this->cm->firmware .= date('r', $regs[1]);
+            $version .= date('r', $regs[1]);
         }
+        $this->cm->eeprom_before = $version;
+
+        /* vcgencmd answers "error=... error_msg=..." for a command the firmware does not know */
+        $config = $req->hasFile('eeprom_config') ? $req->file('eeprom_config')->get() : '';
+        $this->cm->eeprom_config_before = (trim($config) === '' || Str::contains($config, 'error_msg=')) ? null : $config;
+
+        /* A project that does not flash the EEPROM leaves it as it was */
+        if ($this->cm->eeprom_config_after === null)
+            $this->cm->firmware = $version;
         $this->cm->save();
     }
 

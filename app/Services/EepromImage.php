@@ -58,6 +58,14 @@ class EepromImage
         return substr($data, $offset + 4 + self::FILE_HDR_LEN, $datalen);
     }
 
+    /* Settings the way rpi-eeprom-config stores them: LF only, one newline at the end (none when
+       empty). They may arrive with CRLF from a browser or trimmed by the API. */
+    public static function normalizeConfig($settings)
+    {
+        $settings = rtrim(str_replace("\r", "", (string) $settings));
+        return $settings === '' ? '' : $settings."\n";
+    }
+
     /* Replaces the configuration text in the image (in place); false when the image is not usable */
     public static function setConfig(&$data, $settings)
     {
