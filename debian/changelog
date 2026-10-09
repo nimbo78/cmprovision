@@ -1,3 +1,11 @@
+cmprovision4 (1.6.6~dev2) unstable; urgency=medium
+
+  * Packages built on Debian 13 own the application files as www-data
+    again (Rules-Requires-Root: binary-targets); dpkg 1.22 built them as
+    root:root, so the web interface failed with HTTP 500.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 09:57:26 +0300
+
 cmprovision4 (1.6.6~dev1) unstable; urgency=medium
 
   * composer.lock installs on PHP 8.4 (Raspberry Pi OS Trixie):
