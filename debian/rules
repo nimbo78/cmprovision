@@ -3,7 +3,7 @@
 WEB_CONTENT = debian/cmprovision4/var/lib/cmprovision/
 
 %:
-	dh $@ --with systemd
+	dh $@
 
 # Backup/restore run as root: install them outside the www-data-owned application directory.
 override_dh_install:
@@ -14,6 +14,11 @@ override_dh_install:
 override_dh_strip:
 	dh_strip --exclude=.elf
 
+# The code belongs to root; the web server writes only to these (and the SQLite file, created by
+# postinst, in database/). postinst applies the same split to existing installations.
+WRITABLE = storage bootstrap/cache public/uploads etc
+
 override_dh_fixperms:
 	dh_fixperms
-	chown -R www-data:www-data $(WEB_CONTENT)
+	for d in $(WRITABLE); do chown -R www-data:www-data $(WEB_CONTENT)$$d; done
+	chown www-data:www-data $(WEB_CONTENT)database

@@ -45,9 +45,21 @@ class SwitchSettings extends Component
             return;
         }
 
+        $config = $this->formConfig();
+        if ($config['version'] === '2c' && $config['community'] === '')
+        {
+            $this->addError('community', 'Enter the community for this switch.');
+            return;
+        }
+        if ($config['version'] === '3' && $config['user'] === '')
+        {
+            $this->addError('user', 'Enter the SNMPv3 user.');
+            return;
+        }
+
         try
         {
-            $scan = SwitchPortFinder::forConfig($this->formConfig())->scan();
+            $scan = SwitchPortFinder::forConfig($config)->scan();
         }
         catch (\Throwable $e)
         {
@@ -116,37 +128,49 @@ class SwitchSettings extends Component
             'version' => 'required|in:2c,3',
             'method' => 'required|in:'.$methods,
         ];
+        $stored = SwitchPortFinder::config();
+        $same = $this->sameSwitch($stored);
+        $kept = function ($key) use ($stored, $same) {
+            return $same && $stored[$key] !== '';
+        };
         if ($this->version === '2c')
         {
-            $rules['community'] = ($this->stored['community'] ?? false ? 'nullable' : 'required').'|string|max:100';
+            $rules['community'] = ($kept('community') ? 'nullable' : 'required').'|string|max:100';
         }
         else
         {
             $rules['user'] = 'required|string|max:100';
             $rules['authProtocol'] = 'nullable|in:'.implode(',', PhpSnmpClient::authProtocols());
-            $rules['authPassword'] = ($this->authProtocol && !($this->stored['auth_password'] ?? false) ? 'required' : 'nullable').'|string|min:8|max:100';
+            $rules['authPassword'] = ($this->authProtocol && !$kept('auth_password') ? 'required' : 'nullable').'|string|min:8|max:100';
             $rules['privProtocol'] = 'nullable|in:'.implode(',', PhpSnmpClient::PRIV_PROTOCOLS);
-            $rules['privPassword'] = ($this->privProtocol && !($this->stored['priv_password'] ?? false) ? 'required' : 'nullable').'|string|min:8|max:100';
+            $rules['privPassword'] = ($this->privProtocol && !$kept('priv_password') ? 'required' : 'nullable').'|string|min:8|max:100';
         }
         return $rules;
     }
 
-    /* Settings from the form; secret fields left empty mean "the stored value" */
+    /* Settings from the form. A secret field left empty means "the stored value", but only for the
+       switch it was stored for: otherwise a new address would receive the hidden community or password. */
     protected function formConfig()
     {
         $stored = SwitchPortFinder::config();
+        $same = $this->sameSwitch($stored);
         return [
             'host' => trim($this->host),
             'version' => $this->version,
-            'community' => $this->community !== '' ? $this->community : $stored['community'],
+            'community' => $this->community !== '' ? $this->community : ($same ? $stored['community'] : ''),
             'user' => $this->user,
             'auth_protocol' => $this->authProtocol,
-            'auth_password' => $this->authPassword !== '' ? $this->authPassword : $stored['auth_password'],
+            'auth_password' => $this->authPassword !== '' ? $this->authPassword : ($same ? $stored['auth_password'] : ''),
             'priv_protocol' => $this->privProtocol,
-            'priv_password' => $this->privPassword !== '' ? $this->privPassword : $stored['priv_password'],
+            'priv_password' => $this->privPassword !== '' ? $this->privPassword : ($same ? $stored['priv_password'] : ''),
             'method' => $this->method,
             'detected' => null,
         ];
+    }
+
+    protected function sameSwitch(array $stored)
+    {
+        return $stored['host'] !== '' && trim($this->host) === $stored['host'] && $this->version === $stored['version'];
     }
 
     protected function flash($text, $error = false)

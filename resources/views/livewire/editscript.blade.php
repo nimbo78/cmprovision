@@ -1,4 +1,4 @@
-<div class="fixed z-10 inset-0 overflow-y-auto ease-out duration-400">
+<div class="fixed z-10 inset-0 overflow-y-auto ease-out duration-300">
   <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
       
     <div class="fixed inset-0 transition-opacity">
@@ -12,12 +12,12 @@
         <div class="">
               <div class="mb-4">
                   <label for="name" class="block text-gray-700 text-sm font-bold mb-2">Script name:</label>
-                  <input type="text" id="name" name="name" wire:model.defer="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                  <input type="text" id="name" name="name" wire:model.defer="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('name') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="script_type" class="block text-gray-700 text-sm font-bold mb-2">Script type:</label>
-                  <select id="script_type" name="script_type" wire:model.defer="script_type" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                  <select id="script_type" name="script_type" wire:model.defer="script_type" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                     <option value="preinstall">preinstall</option>
                     <option value="postinstall">postinstall</option>
                   </select>
@@ -25,7 +25,7 @@
               </div>
               <div class="mb-4">
                   <label for="priority" class="block text-gray-700 text-sm font-bold mb-2">Priority:</label>
-                  <input type="text" id="priority" name="priority" wire:model.defer="priority" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                  <input type="text" id="priority" name="priority" wire:model.defer="priority" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   <small>Script with lowest number is started first</small><br>
                   @error('priority') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
@@ -38,7 +38,7 @@
               </div>
               <div class="mb-4">
                   <label for="script" class="block text-gray-700 text-sm font-bold mb-2">Script:</label>
-                  <textarea wrap="off" type="text" id="script" name="script" wire:model.defer="script" class="h-48 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                  <textarea wrap="off" type="text" id="script" name="script" wire:model.defer="script" class="h-48 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring"></textarea>
                   <small>Available environment variables:<br>$SERVER $STORAGE $PART1 $PART2</small><br>
                   @error('script') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
@@ -48,13 +48,13 @@
   
       <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
         <span class="flex w-full rounded-md shadow-sm sm:ml-3 sm:w-auto">
-          <button wire:click="store()" type="button" class="inline-flex justify-center w-full rounded-md border border-transparent px-4 py-2 bg-green-600 text-base leading-6 font-medium text-white shadow-sm hover:bg-green-500 focus:outline-none focus:border-green-700 focus:shadow-outline-green transition ease-in-out duration-150 sm:text-sm sm:leading-5">
+          <button wire:click="store()" type="button" class="inline-flex justify-center w-full rounded-md border border-transparent px-4 py-2 bg-green-600 text-base leading-6 font-medium text-white shadow-sm hover:bg-green-500 focus:outline-none focus:border-green-700 focus:ring focus:ring-green-200 transition ease-in-out duration-150 sm:text-sm sm:leading-5">
             Save
           </button>
         </span>
         <span class="mt-3 flex w-full rounded-md shadow-sm sm:mt-0 sm:w-auto">
             
-          <button wire:click="closeModal()" type="button" class="inline-flex justify-center w-full rounded-md border border-gray-300 px-4 py-2 bg-white text-base leading-6 font-medium text-gray-700 shadow-sm hover:text-gray-500 focus:outline-none focus:border-blue-300 focus:shadow-outline-blue transition ease-in-out duration-150 sm:text-sm sm:leading-5">
+          <button wire:click="closeModal()" type="button" class="inline-flex justify-center w-full rounded-md border border-gray-300 px-4 py-2 bg-white text-base leading-6 font-medium text-gray-700 shadow-sm hover:text-gray-500 focus:outline-none focus:border-blue-300 focus:ring focus:ring-blue-200 transition ease-in-out duration-150 sm:text-sm sm:leading-5">
             Cancel
           </button>
         </span>
