@@ -23,13 +23,15 @@ cmprovision4 (1.6.5) unstable; urgency=medium
     time zone (storage stays UTC); upload_tmp_dir kept on disk (Debian 13
     has /tmp in RAM); production defaults in .env; [pi4] in config.txt so
     EEPROM flashing also works on a Pi 4. (upstream #24, #40, #41)
+  * Upgrades restart php-fpm, so opcache does not keep serving the code of
+    the previous version.
   * API: project scripts readable and changeable, script CRUD. (#55)
   * Ships public/uploads (#28) and the cmprovision-backup /
     cmprovision-restore commands; phpunit is no longer installed on the
     server (it was a production dependency);
     Docker test bench; README for NetworkManager-based Raspberry Pi OS.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 07:55:33 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 08:20:57 +0300
 
 cmprovision4 (1.6.4) unstable; urgency=medium
 

@@ -86,6 +86,10 @@ case "$1" in
         /var/lib/cmprovision/artisan migrate --seed --force
     else
         /var/lib/cmprovision/artisan migrate --force
+        # New PHP code: restart php-fpm so opcache stops serving the previous version. debhelper gives
+        # every file the timestamp of the changelog entry, so a rebuild of the same version is invisible
+        # to opcache's mtime check (seen as a fatal error from the old composer autoloader).
+        deb-systemd-invoke restart php${PHP_VERSION}-fpm || true
         # Restart rpiboot just in case an upgrade was triggered by the new version requirement in 'control' file
         deb-systemd-invoke restart cmprovision-rpiboot || true
         # Restart dnsmasq
