@@ -1,3 +1,10 @@
+cmprovision4 (1.6.7~dev1) unstable; urgency=medium
+
+  * Work in progress: live dashboard log, stored secrets bound to their
+    address, favicon, debhelper compat 13, code owned by root.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 15:31:13 +0300
+
 cmprovision4 (1.6.6) unstable; urgency=medium
 
   * Live progress of every module on the dashboard: step, progress bar with

@@ -8,6 +8,8 @@
         <title>CM provisioning</title>
 
         <!-- Styles -->
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+        <link rel="icon" href="/favicon.ico" sizes="32x32">
         <link rel="stylesheet" href="{{ mix('css/app.css') }}">
 
         @livewireStyles

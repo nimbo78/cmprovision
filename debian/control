@@ -2,10 +2,10 @@ Source: cmprovision4
 Section: admin
 Priority: optional
 Maintainer: Floris Bos <bos@je-eigen-domein.nl>
-Build-Depends: debhelper (>= 9.20160709)
+Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.5.0
-# override_dh_fixperms chowns the application to www-data; dpkg >= 1.22.13 (Debian 13) would
-# otherwise build without (fake)root and ship every file as root:root.
+# override_dh_fixperms gives www-data the places it writes to; dpkg >= 1.22.13 (Debian 13)
+# would otherwise build without (fake)root and ship every file as root:root.
 Rules-Requires-Root: binary-targets
 
 Package: cmprovision4

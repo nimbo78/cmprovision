@@ -23,10 +23,18 @@ if [ -f "$SRC/database.sqlite" ]; then
     install -o www-data -g www-data -m 600 "$SRC/database.sqlite" "$APP/database/database.sqlite"
 fi
 tar xzf "$SRC/system-config.tar.gz" -C / 2>/dev/null || true
-chown -R www-data:www-data "$APP"
 
 "$APP/artisan" config:clear >/dev/null
 "$APP/artisan" view:clear >/dev/null
+# Ownership as debian/postinst sets it (after artisan, which runs as root): code root's, the web server writes only to its own places
+find "$APP" -xdev \( -path "$APP/storage" -o -path "$APP/bootstrap/cache" -o -path "$APP/public/uploads" \
+    -o -path "$APP/etc" -o -path "$APP/.env" -o -path "$APP/database/database.sqlite*" \) -prune \
+    -o -user www-data -exec chown root:root {} +
+chown -R www-data:www-data "$APP/storage" "$APP/bootstrap/cache" "$APP/public/uploads" "$APP/etc"
+chown www-data:www-data "$APP/database"
+for f in "$APP/.env" "$APP"/database/database.sqlite*; do
+    if [ -e "$f" ]; then chown www-data:www-data "$f"; fi
+done
 systemctl restart 'php*-fpm' nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot
 systemctl is-active nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot | tr '\n' ' '; echo
 echo "restored from $SRC; installed package: $(dpkg-query -W -f='${Version}' cmprovision4)"
