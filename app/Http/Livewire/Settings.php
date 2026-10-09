@@ -40,7 +40,7 @@ class Settings extends Component
     protected function restartDnsmasq()
     {
         $output = $retcode = '';
-        exec("sudo -n /bin/systemctl restart cmprovision-dnsmasq", $output, $retcode);
+        exec(config('cmprovision.dnsmasq_restart'), $output, $retcode);
         return ($retcode == 0);
     }
 
@@ -73,14 +73,14 @@ class Settings extends Component
 
     protected function regenDnsmasqConfAndRestart()
     {
-        $confFile = base_path('etc/dnsmasq.conf');
+        $confFile = config('cmprovision.dnsmasq_conf');
         $extraConf = "";
         $hosts = Host::orderBy('ip')->get();
         foreach ($hosts as $host)
         {
             $extraConf .= "dhcp-host=".$host->mac.",set:client_is_a_pi,".$host->ip;
             if ($host->hostname)
-                $extraConf .= ','.$hostname;
+                $extraConf .= ','.$host->hostname;
             $extraConf .= "\n";
         }
 
@@ -118,7 +118,7 @@ class Settings extends Component
     public function deleteStaticIP($id)
     {
         Host::destroy($id);
-        session()->flash('message', 'Static IP deleted.');
+        $this->regenDnsmasqConfAndRestart();
     }
 
     public function addStaticIP()

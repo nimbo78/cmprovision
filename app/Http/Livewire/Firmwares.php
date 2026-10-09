@@ -3,69 +3,42 @@
 namespace App\Http\Livewire;
 
 use Livewire\Component;
+use Illuminate\Support\Carbon;
 use App\Models\Firmware;
-use Illuminate\Support\Str;
+use App\Models\Setting;
+use App\Services\FirmwareUpdater;
 
 class Firmwares extends Component
 {
-    public $firmware;
+    public $firmware, $lastUpdate;
 
     public function render()
     {
         $this->firmware = Firmware::all();
+        $setting = Setting::find('firmware_last_update');
+        $this->lastUpdate = $setting ? Carbon::parse($setting->value, 'UTC')->local()->toDateTimeString() : null;
+
         return view('livewire.firmware');
     }
 
     public function update()
     {
-        $path = Firmware::basedir();
-        if (!file_exists($path))
-            mkdir($path);
+        $result = (new FirmwareUpdater)->update();
 
-        $tmpfile = tempnam(sys_get_temp_dir(), "firmware-download");            
-        try
+        $added = count($result['added']);
+        $msg = $added
+            ? "Added $added new image(s): ".implode(', ', $result['added']).'.'
+            : 'No new images available.';
+
+        if (count($result['errors']))
         {
-            $client = new \GuzzleHttp\Client();
-            $r = $client->get('https://api.github.com/repos/raspberrypi/rpi-eeprom/zipball', ['sink' => $tmpfile]);
-            if ($r->getStatusCode() != 200)
-                throw new \Exception("Expected HTTP response code 200, but received ".$r->getStatusCode()." ".$r->getReasonPhrase() );
-
-            $zip = new \ZipArchive;
-            if (!$zip->open($tmpfile))
-                throw new \Exception("Error opening .zip file");
-
-            // We only want rpi-eeprom-something/firmware/* of the .zip
-            $prefix = $zip->getNameIndex(0);
-            if (!$prefix)
-                throw new \Exception("Error listing .zip file");
-
-            $prefix .= "firmware/";
-
-            for ($i = 1; $i < $zip->numFiles; $i++)
-            {
-                $name = Str::of($zip->getNameIndex($i));
-                if (!$name->startsWith($prefix) || $name->contains("../"))
-                    continue;
-
-                $nameWithoutPrefix = $name->substr(strlen($prefix));
-                if (substr($nameWithoutPrefix, -1) == "/")
-                {
-                    @mkdir($path."/".$nameWithoutPrefix, 0755, true);
-                }
-                else
-                {
-                    @file_put_contents($path."/".$nameWithoutPrefix, $zip->getFromIndex($i));
-                }
-            }
-
-            $zip->close();
-
-            session()->flash('message', 'Firmware updated');
+            $msg .= ' Errors: '.implode('; ', $result['errors']);
         }
-        catch (\Exception $e)
+        else
         {
-            session()->flash('message', 'Error: '.$e->getMessage() );
+            Setting::updateOrCreate(['key' => 'firmware_last_update'], ['value' => now()->toDateTimeString()]);
         }
-        @unlink($tmpfile);
+
+        session()->flash('message', $msg);
     }
 }

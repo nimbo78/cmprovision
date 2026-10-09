@@ -131,6 +131,9 @@ class EthernetSwitch
     function getPortNameByMac($m)
     {
         $mac2baseport = $this->getMac2basePortTable();
+        if (!$mac2baseport)
+            return false;
+
         foreach ($mac2baseport as $mac => $baseport)
         {
             if ($mac == $m)

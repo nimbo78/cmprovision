@@ -1,0 +1,32 @@
+# Test bench: one container per target OS, each with its own copy of the app in ./<name>/app
+# (filled by docker/bench.sh sync). Ports are bound to localhost only.
+services:
+  bullseye:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { DEBIAN: bullseye, PHPV: "7.4", UID: "${BENCH_UID:-1000}", GID: "${BENCH_GID:-1000}" }
+    image: cmprovision-bench:bullseye
+    container_name: cmprovision-bullseye
+    restart: unless-stopped
+    ports: ["127.0.0.1:8081:80"]
+    volumes:
+      - ./bullseye/app:/var/lib/cmprovision
+      - composer-bullseye:/home/app/.composer
+
+  trixie:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { DEBIAN: trixie, PHPV: "8.4", UID: "${BENCH_UID:-1000}", GID: "${BENCH_GID:-1000}" }
+    image: cmprovision-bench:trixie
+    container_name: cmprovision-trixie
+    restart: unless-stopped
+    ports: ["127.0.0.1:8082:80"]
+    volumes:
+      - ./trixie/app:/var/lib/cmprovision
+      - composer-trixie:/home/app/.composer
+
+volumes:
+  composer-bullseye:
+  composer-trixie:

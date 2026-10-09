@@ -15,6 +15,19 @@ class ScriptExecuteController extends Controller
 {
     public $serial, $cm;
     const MAX_LOG_SIZE = 1*1024*1024;
+    const DECOMPRESSORS = ['gz' => 'gzip -dc', 'xz' => 'xz -dc', 'bz2' => 'bunzip2 -dc'];
+
+    /* What the output of a failed image write usually means. Pattern => explanation. */
+    const WRITE_FAILURE_HINTS = [
+        '/curl exit code (18|56|55|52)\b/' => 'the connection to the provisioning server was closed before the download finished (server timeout, network problem or server restart)',
+        '/curl exit code (7|28)\b/'        => 'the module could not reach the provisioning server (connection refused or timed out)',
+        '/curl exit code 23\b/'            => 'the decompressor stopped accepting data; see its message below',
+        '/curl exit code 6\b/'             => 'the provisioning server name could not be resolved',
+        '/(invalid magic|not in gzip format|File format not recognized|unsupported compression|Not a bzip2 file)/i' => 'the downloaded data is not a valid compressed image (wrong file type, or an HTTP error page instead of the image)',
+        '/(unexpected end of (file|input)|corrupt|crc error|data integrity)/i' => 'the compressed image is truncated or corrupted (interrupted download or a bad upload)',
+        '/(No space left on device|cannot open .*mmcblk|No such file or directory)/i' => 'the storage device could not be written (missing, too small or failing eMMC/SD card)',
+        '/Input\/output error/i' => 'the storage device reported an I/O error (failing eMMC/SD card or power problem)',
+    ];
 
     /**
      * Handle the incoming request.
@@ -28,21 +41,38 @@ class ScriptExecuteController extends Controller
         if (!$this->serial)
             abort(401);
 
-        if ($req->query("alldone"))
+        try
         {
-            return $this->provisioningComplete($req);
+            if ($req->query("alldone"))
+            {
+                return $this->provisioningComplete($req);
+            }
+            else if ($req->hasFile("log"))
+            {
+                return $this->registerLogFile($req);
+            }
+            else if ($req->hasFile("eeprom_version"))
+            {
+                return $this->registerFirmware($req);
+            }
+            else
+            {
+                return $this->startProvisoning($req);
+            }
         }
-        else if ($req->hasFile("log"))
+        catch (\Throwable $e)
         {
-            return $this->registerLogFile($req);
-        }
-        else if ($req->hasFile("eeprom_version"))
-        {
-            return $this->registerFirmware($req);
-        }
-        else
-        {
-            return $this->startProvisoning($req);
+            /* The module runs whatever we answer and retries an HTTP 500 for a quarter of an hour,
+               so answer with a script that shows the problem, and keep it in the web log too */
+            report($e);
+            $msg = "Provisioning server error: ".$e->getMessage()." (".basename($e->getFile()).":".$e->getLine().")";
+            $this->logInfo($msg, 'error');
+
+            return response("#!/bin/sh
+echo ".escapeshellarg($msg)."
+exit 1
+", 200)
+                ->header('Content-Type', 'text/plain');
         }
     }
 
@@ -55,11 +85,25 @@ class ScriptExecuteController extends Controller
         $switchIpSetting = Setting::find('ethernetswitch_ip');
         $switchCommunitySetting = Setting::find('ethernetswitch_snmp_community');
 
+        $switchWarning = null;
         if ($switchIpSetting && $switchIpSetting->value && $req->query('mac')
             && $switchCommunitySetting && $switchCommunitySetting->value)
         {
-            $switch = new EthernetSwitch($switchIpSetting->value, $switchCommunitySetting->value);
-            $board = $switch->getPortNameByMac($req->query('mac'));
+            try
+            {
+                $switch = new EthernetSwitch($switchIpSetting->value, $switchCommunitySetting->value);
+                $board = $switch->getPortNameByMac($req->query('mac'));
+                if ($board === false)
+                {
+                    $board = null;
+                    $switchWarning = "Switch port unknown: ".$switchIpSetting->value." did not answer or does not know MAC ".$req->query('mac');
+                }
+            }
+            catch (\Throwable $e)
+            {
+                $board = null;
+                $switchWarning = "Switch port unknown: error talking to ".$switchIpSetting->value.": ".$e->getMessage();
+            }
         }
         else if ($jumper)
         {
@@ -102,6 +146,11 @@ class ScriptExecuteController extends Controller
             'provisioning_started_at' => now(),
             'provisioning_complete_at' => null
         ]);
+
+        if ($switchWarning)
+        {
+            $this->logInfo($switchWarning, 'warning');
+        }
 
         if (!$project)
         {
@@ -229,6 +278,7 @@ class ScriptExecuteController extends Controller
             'server' => $server,
             'image_url' => $image ? "http://$server/uploads/".$image->filename_on_server : null,
             'image_extension' => $image ? $image->filename_extension : null,
+            'decompress' => $image ? self::DECOMPRESSORS[$image->filename_extension] : null,
             'bootmode' => $bootmode,
             'preinstall_scripts' => $preinstall_scripts,
             'postinstall_scripts' => $postinstall_scripts
@@ -248,13 +298,14 @@ class ScriptExecuteController extends Controller
         {
             $msg .= " Verification successful.";
         }
-        if ($project->label_moment == 'postinstall' && $project->label)
+        $printLabel = $project && $project->label_moment == 'postinstall' && $project->label;
+        if ($printLabel)
         {
             $msg .= " Printing label.";
         }
         $this->logInfo($msg);
 
-        if ($project->label_moment == 'postinstall' && $project->label)
+        if ($printLabel)
         {
             $this->printLabel();
         }
@@ -292,7 +343,12 @@ class ScriptExecuteController extends Controller
                 $this->cm->image_sha256 = null;
             }
 
-            $this->logInfo("Error during $phase. Return code $retcode. Script output:\n\n".$logfile, 'error');
+            $msg = "Error during $phase. Return code $retcode.";
+            if ($phase == "dd" && ($diagnosis = self::diagnoseWriteFailure($logfile)))
+            {
+                $msg .= " Diagnosis: $diagnosis.";
+            }
+            $this->logInfo($msg." Script output:\n\n".$logfile, 'error');
         }
         else
         {
@@ -327,11 +383,22 @@ class ScriptExecuteController extends Controller
         $this->cm->save();
     }
 
+    /* Explanation of a failed image write from the log the module sent, or null when nothing is recognised */
+    public static function diagnoseWriteFailure($log)
+    {
+        foreach (self::WRITE_FAILURE_HINTS as $pattern => $hint)
+        {
+            if (preg_match($pattern, $log))
+                return $hint;
+        }
+        return null;
+    }
+
     public function logInfo($msg, $loglevel = 'info')
     {
         Cmlog::create([
             'cm' => $this->serial,
-            'board' => $this->cm->provisioning_board,
+            'board' => $this->cm ? $this->cm->provisioning_board : null,
             'loglevel' => $loglevel,
             'ip' => request()->ip(),
             'msg' => $msg

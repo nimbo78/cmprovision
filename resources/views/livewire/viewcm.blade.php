@@ -28,9 +28,9 @@
             <tr><td class="border px-4 py-2">Script return code:</td><td class="border px-4 py-2">{{ $cm->script_return_code }}</td></tr>
             <tr><td class="border px-4 py-2">Temp at start of provisioning:</td><td class="border px-4 py-2">{{ $cm->temp1 }}</td></tr>
             <tr><td class="border px-4 py-2">Temp at end of provisioning:</td><td class="border px-4 py-2">{{ $cm->temp2 }}</td></tr>
-            <tr><td class="border px-4 py-2">First seen at:</td><td class="border px-4 py-2">{{ $cm->created_at }}</td></tr>
-            <tr><td class="border px-4 py-2">Provisioning started at:</td><td class="border px-4 py-2">{{ $cm->provisioning_started_at }}</td></tr>
-            <tr><td class="border px-4 py-2">Provisioning complete at:</td><td class="border px-4 py-2">@if ($cm->provisioning_complete_at) {{ $cm->provisioning_complete_at }} @else Not completed yet @endif</td></tr>
+            <tr><td class="border px-4 py-2">First seen at:</td><td class="border px-4 py-2">{{ $cm->created_at->local() }}</td></tr>
+            <tr><td class="border px-4 py-2">Provisioning started at:</td><td class="border px-4 py-2">{{ $cm->provisioning_started_at ? $cm->provisioning_started_at->local() : '' }}</td></tr>
+            <tr><td class="border px-4 py-2">Provisioning complete at:</td><td class="border px-4 py-2">@if ($cm->provisioning_complete_at) {{ $cm->provisioning_complete_at->local() }} @else Not completed yet @endif</td></tr>
             <tr><td class="border px-4 py-2">Provisioning duration:</td><td class="border px-4 py-2">@if ($cm->provisioning_complete_at) {{ $cm->provisioning_complete_at->diffAsCarbonInterval($cm->provisioning_started_at) }} @else Not completed yet @endif</td></tr>
           </tbody>
           </table>

@@ -71,6 +71,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Display Timezone
+    |--------------------------------------------------------------------------
+    |
+    | Timestamps are stored in UTC (see above) and shown in this zone. The
+    | default is the zone PHP reports before Laravel switches to UTC, which
+    | on Debian is the system time zone (date.timezone when set).
+    |
+    */
+
+    'display_timezone' => env('APP_DISPLAY_TIMEZONE') ?: (date_default_timezone_get() ?: 'UTC'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |

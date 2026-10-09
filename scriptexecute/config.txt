@@ -3,7 +3,7 @@ gpio=5,13,21=pu
 
 initramfs scriptexecute.img
 
-[cm4]
+[pi4]
 dtoverlay=dwc2
 # For flashrom
 dtparam=audio=off

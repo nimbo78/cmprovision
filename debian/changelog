@@ -1,3 +1,38 @@
+cmprovision4 (1.6.5) unstable; urgency=medium
+
+  * EEPROM firmware download works again: images come from the
+    firmware-2711 default/latest channels on GitHub (only missing files,
+    checksum verified) and from the rpi-eeprom package; new artisan
+    command firmware:update. (upstream #43)
+  * Image upload shows progress, speed and remaining time, can be
+    cancelled and reports errors; the Images page refreshes itself while
+    the SHA256 is being computed.
+  * Image write failures are explained in the web log (curl exit code,
+    decompressor errors, diagnosis); nginx no longer drops slow downloads
+    (send_timeout 6h for /uploads/, added to existing installations);
+    a failed write clears the partition table so the module net-boots
+    again; module reports are retried for up to 10 minutes instead of
+    being lost. (upstream #59, #44)
+  * /scriptexecute never answers with an error page: an unreachable SNMP
+    switch, internal errors and a deleted project go to the web log.
+  * Project activation (EEPROM image build) is shared by the web UI and
+    the API, with settings normalised and the firmware path allowlisted.
+  * Settings: deleting a static IP updates dnsmasq.conf; hostnames are
+    written correctly.
+  * Images page tolerates missing files; timestamps shown in the server's
+    time zone (storage stays UTC); upload_tmp_dir kept on disk (Debian 13
+    has /tmp in RAM); production defaults in .env; [pi4] in config.txt so
+    EEPROM flashing also works on a Pi 4. (upstream #24, #40, #41)
+  * Upgrades restart php-fpm, so opcache does not keep serving the code of
+    the previous version.
+  * API: project scripts readable and changeable, script CRUD. (#55)
+  * Ships public/uploads (#28) and the cmprovision-backup /
+    cmprovision-restore commands; phpunit is no longer installed on the
+    server (it was a production dependency);
+    Docker test bench; README for NetworkManager-based Raspberry Pi OS.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 08:20:57 +0300
+
 cmprovision4 (1.6.4) unstable; urgency=medium
 
   * Add support for detecting which network port devices are connected
