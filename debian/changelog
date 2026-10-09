@@ -1,76 +1,33 @@
-cmprovision4 (1.6.5~dev9) unstable; urgency=medium
+cmprovision4 (1.6.5) unstable; urgency=medium
 
-  * postinst: run migrations with --force (APP_ENV=production).
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 02:40:03 +0300
-
-cmprovision4 (1.6.5~dev8) unstable; urgency=medium
-
-  * /scriptexecute never answers with an error page; switch lookup
-    failures and internal errors go to the web log.
-  * Project activation (EEPROM image) shared by UI and API; settings
-    normalised; firmware path allowlisted.
-  * Settings: deleting a static IP updates dnsmasq.conf.
-  * Images page tolerates missing files; local time display; [pi4] in
-    config.txt; upload_tmp_dir on disk; production .env defaults.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 02:34:43 +0300
-
-cmprovision4 (1.6.5~dev7) unstable; urgency=medium
-
-  * Module reports (logs, EEPROM version, completion) are retried for up
-    to 10 minutes instead of being lost when the server is unreachable
-    for a moment.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 02:06:13 +0300
-
-cmprovision4 (1.6.5~dev6) unstable; urgency=medium
-
-  * After a failed image write the first MiB of the storage is cleared,
-    so the module returns to network boot on the next power cycle.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 01:27:56 +0300
-
-cmprovision4 (1.6.5~dev5) unstable; urgency=medium
-
-  * Image write failures are explained in the web log (curl exit code,
-    decompressor errors, diagnosis); nginx no longer drops slow image
-    downloads (send_timeout 6h for /uploads/, added on upgrade too).
-
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 01:20:25 +0300
-
-cmprovision4 (1.6.5~dev4) unstable; urgency=medium
-
-  * Upload dialog: no leave-page prompt after a successful upload,
-    single Livewire root element on the Images page.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Thu, 08 Oct 2026 22:55:37 +0300
-
-cmprovision4 (1.6.5~dev3) unstable; urgency=medium
-
+  * EEPROM firmware download works again: images come from the
+    firmware-2711 default/latest channels on GitHub (only missing files,
+    checksum verified) and from the rpi-eeprom package; new artisan
+    command firmware:update. (upstream #43)
   * Image upload shows progress, speed and remaining time, can be
-    cancelled and reports errors; Images page refreshes while the
-    SHA256 is being computed.
+    cancelled and reports errors; the Images page refreshes itself while
+    the SHA256 is being computed.
+  * Image write failures are explained in the web log (curl exit code,
+    decompressor errors, diagnosis); nginx no longer drops slow downloads
+    (send_timeout 6h for /uploads/, added to existing installations);
+    a failed write clears the partition table so the module net-boots
+    again; module reports are retried for up to 10 minutes instead of
+    being lost. (upstream #59, #44)
+  * /scriptexecute never answers with an error page: an unreachable SNMP
+    switch, internal errors and a deleted project go to the web log.
+  * Project activation (EEPROM image build) is shared by the web UI and
+    the API, with settings normalised and the firmware path allowlisted.
+  * Settings: deleting a static IP updates dnsmasq.conf; hostnames are
+    written correctly.
+  * Images page tolerates missing files; timestamps shown in the server's
+    time zone (storage stays UTC); upload_tmp_dir kept on disk (Debian 13
+    has /tmp in RAM); production defaults in .env; [pi4] in config.txt so
+    EEPROM flashing also works on a Pi 4. (upstream #24, #40, #41)
+  * API: project scripts readable and changeable, script CRUD. (#55)
+  * Ships public/uploads (#28); tools/backup.sh and tools/restore.sh;
+    Docker test bench; README for NetworkManager-based Raspberry Pi OS.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Thu, 08 Oct 2026 22:47:41 +0300
-
-cmprovision4 (1.6.5~dev2) unstable; urgency=medium
-
-  * Fix EEPROM firmware download: images now come from firmware-2711
-    default/latest on GitHub (only missing files, checksum verified)
-    and from the rpi-eeprom package; artisan firmware:update (#43).
-
- -- nimbo78 <igor.sin.78@gmail.com>  Thu, 08 Oct 2026 02:56:30 +0300
-
-cmprovision4 (1.6.5~dev1) unstable; urgency=medium
-
-  * Fork maintenance build: no functional changes yet.
-  * Ship public/uploads so a package built from source has the
-    directory (upstream issue #28).
-  * tools/backup.sh and tools/restore.sh for package-level snapshots
-    and rollback; Docker test bench in docker/.
-
- -- nimbo78 <igor.sin.78@gmail.com>  Thu, 08 Oct 2026 02:37:52 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 09 Oct 2026 07:55:33 +0300
 
 cmprovision4 (1.6.4) unstable; urgency=medium
 
