@@ -228,11 +228,28 @@ class Notifier
             $parts[] = 'board '.$cm->provisioning_board;
         if ($event === 'completed' && $cm->provisioning_started_at && $cm->provisioning_complete_at)
             $parts[] = self::duration($cm->provisioning_complete_at->getTimestamp() - $cm->provisioning_started_at->getTimestamp());
+        if ($event === 'completed' && ($eeprom = self::eepromChange($cm)))
+            $parts[] = $eeprom;
         if ($event === 'failed' && $cm->phase_detail)
             $parts[] = $cm->phase_detail;
         if ($event === 'started')
             $parts[] = 'started';
         return (self::ICONS[$event] ?? '').' '.implode(' · ', $parts);
+    }
+
+    /* "EEPROM 2021-02-16 → 2026-09-23" when flashrom wrote it, "EEPROM 2026-09-23 (unchanged)" when it
+       held the image already, the version alone when the project does not flash it */
+    public static function eepromChange(Cm $cm)
+    {
+        $before = $cm->eepromVersionBefore();
+        $after = $cm->eepromVersionAfter();
+        if ($cm->eeprom_result === 'written' && $after)
+            return 'EEPROM '.($before ?: '?').' → '.$after;
+        if ($cm->eeprom_result === 'identical' && $after)
+            return 'EEPROM '.$after.' (unchanged)';
+        if ($cm->eeprom_config_after === null && $before)
+            return 'EEPROM '.$before;
+        return null;
     }
 
     protected function projectPrefix(Cm $cm)
@@ -251,6 +268,7 @@ class Notifier
             'project' => $cm->project ? $cm->project->name : null,
             'image' => $cm->image_filename,
             'eeprom_firmware' => $cm->project ? $cm->project->eeprom_firmware : null,
+            'eeprom' => ['before' => $cm->eepromVersionBefore(), 'after' => $cm->eepromVersionAfter(), 'result' => $cm->eeprom_result],
             'phase' => $cm->phase,
             'detail' => $cm->phase_detail,
             'started_at' => $cm->provisioning_started_at ? $cm->provisioning_started_at->toIso8601ZuluString() : null,

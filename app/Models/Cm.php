@@ -26,7 +26,7 @@ class Cm extends Model
         'image_filename', 'image_sha256', 'pre_script_output', 'post_script_output', 'script_return_code',
         'temp1', 'temp2', 'provisioning_board', 'provisioning_started_at', 'provisioning_complete_at', 'project_id',
         'phase', 'phase_detail', 'phase_started_at', 'progress_bytes', 'progress_total', 'progress_updated_at',
-        'notification_batch_id',
+        'notification_batch_id', 'eeprom_before', 'eeprom_config_before', 'eeprom_config_after', 'eeprom_result',
     ];
 
     protected $casts = [
@@ -41,6 +41,36 @@ class Cm extends Model
     public function project()
     {
         return $this->belongsTo(Project::class);
+    }
+
+    /* Bootloader release date (YYYY-MM-DD) in a firmware file name (pieeprom-2026-09-23.bin), in what
+       vcgencmd reports ("2026/09/23 12:02:14") or in a version read from the flash chip
+       (BUILD_TIMESTAMP=<unix time>); null when there is none */
+    public static function eepromVersionOf($text)
+    {
+        if ($text === null || $text === '')
+            return null;
+        if (preg_match('/pieeprom-(\d{4}-\d{2}-\d{2})\.bin/', $text, $m))
+            return $m[1];
+        if (preg_match('/^(\d{4})\/(\d{2})\/(\d{2})\b/m', $text, $m))
+            return $m[1].'-'.$m[2].'-'.$m[3];
+        if (preg_match('/BUILD_TIMESTAMP=(\d+)/', $text, $m))
+            return gmdate('Y-m-d', (int) $m[1]);
+        return null;
+    }
+
+    public function eepromVersionBefore()
+    {
+        return self::eepromVersionOf($this->eeprom_before);
+    }
+
+    /* What the EEPROM holds after provisioning: the flashed image, or what it had when the project
+       does not flash it. Unknown after a failed flash. */
+    public function eepromVersionAfter()
+    {
+        if ($this->eeprom_result === 'failed')
+            return null;
+        return self::eepromVersionOf($this->firmware);
     }
 
     /* Enter a phase (or the next script within it); a change restarts the phase clock, and entering
