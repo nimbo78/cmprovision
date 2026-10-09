@@ -1,4 +1,4 @@
-<div class="fixed z-10 inset-0 overflow-y-auto ease-out duration-400">
+<div class="fixed z-10 inset-0 overflow-y-auto ease-out duration-300">
   <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
 
     <div class="fixed inset-0 transition-opacity">
@@ -12,12 +12,12 @@
         <div class="">
               <div class="mb-4">
                   <label for="name" class="block text-gray-700 text-sm font-bold mb-2">Project name:</label>
-                  <input type="text" id="name" name="name" wire:model.defer="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                  <input type="text" id="name" name="name" wire:model.defer="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('name') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="image_id" class="block text-gray-700 text-sm font-bold mb-2">Image to write:</label>
-                  <select id="image_id" name="image_id" wire:model.defer="image_id" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                  <select id="image_id" name="image_id" wire:model.defer="image_id" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                     <option value="">-none-</option>
                     @foreach ($images as $image)
                     <option value="{{ $image->id }}">{{ $image->filename }} (added {{ date_format($image->created_at, "d-M-Y") }})</option>
@@ -34,12 +34,12 @@
               </div>
               <div class="mb-4">
                   <label for="storage" class="block text-gray-700 text-sm font-bold mb-2">Destination storage device:</label>
-                  <input type="text" id="storage" name="storage" wire:model.defer="storage" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                  <input type="text" id="storage" name="storage" wire:model.defer="storage" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('storage') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="firmware" class="block text-gray-700 text-sm font-bold mb-2">EEPROM firmware update to apply:</label>
-                  <select id="firmware" name="firmware" wire:model="firmware" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                  <select id="firmware" name="firmware" wire:model="firmware" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                     <option value="">-none-</option>
                       @foreach ($firmwareChannels as $channel => $images)
                       <optgroup label="{{ $channel }}{{ $channel == 'default' ? ' (recommended by Raspberry Pi)' : (in_array($channel, ['stable', 'beta', 'critical']) ? ' (old channel name, images downloaded years ago)' : '') }}">
@@ -59,7 +59,7 @@
                       <p class="text-sm">You are currently using custom EEPROM settings which
                                          differ from the default settings of the newly selected EEPROM image.</p>
                       <div class="mt-3 flex w-full rounded-md shadow-sm sm:mt-0 sm:w-auto">
-                        <button wire:click="resetEEPROMsettings" class="border border-gray-300 px-4 py-2 bg-white text-base leading-6 font-medium text-gray-700 shadow-sm hover:text-gray-500 focus:outline-none focus:border-blue-300 focus:shadow-outline-blue transition ease-in-out duration-150 sm:text-sm sm:leading-5">
+                        <button wire:click="resetEEPROMsettings" class="border border-gray-300 px-4 py-2 bg-white text-base leading-6 font-medium text-gray-700 shadow-sm hover:text-gray-500 focus:outline-none focus:border-blue-300 focus:ring focus:ring-blue-200 transition ease-in-out duration-150 sm:text-sm sm:leading-5">
                           Reset settings to default
                         </button>
                       </div>
@@ -69,13 +69,13 @@
               @endif
               <div class="mb-4">
                   <label for="eeprom_settings" class="block text-gray-700 text-sm font-bold mb-2">EEPROM settings:</label>
-                  <textarea type="text" id="eeprom_settings" name="eeprom_settings" wire:model.defer="eeprom_settings" class="h-28 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                  <textarea type="text" id="eeprom_settings" name="eeprom_settings" wire:model.defer="eeprom_settings" class="h-28 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring"></textarea>
                   @error('eeprom_settings') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               @endif
               <div class="mb-4">
                   <label for="label_moment" class="block text-gray-700 text-sm font-bold mb-2">When to print label:</label>
-                  <select id="label_moment" name="label_moment" wire:model="label_moment" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                  <select id="label_moment" name="label_moment" wire:model="label_moment" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                     <option value="never">Never</option>
                     <option value="preinstall">Before provisioning</option>
                     <option value="postinstall">After provisioning completed successfully</option>
@@ -85,7 +85,7 @@
               @if ($label_moment != "never")
               <div class="mb-4">
                   <label for="label_id" class="block text-gray-700 text-sm font-bold mb-2">Label to print:</label>
-                  <select id="label_id" name="label_id" wire:model.defer="label_id" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                  <select id="label_id" name="label_id" wire:model.defer="label_id" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                     @foreach ($labels as $label)
                     <option value="{{ $label->id }}">{{ $label->name }}</option>
                     @endforeach
@@ -120,13 +120,13 @@
   
       <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
         <span class="flex w-full rounded-md shadow-sm sm:ml-3 sm:w-auto">
-          <button wire:click="store()" type="button" class="inline-flex justify-center w-full rounded-md border border-transparent px-4 py-2 bg-green-600 text-base leading-6 font-medium text-white shadow-sm hover:bg-green-500 focus:outline-none focus:border-green-700 focus:shadow-outline-green transition ease-in-out duration-150 sm:text-sm sm:leading-5">
+          <button wire:click="store()" type="button" class="inline-flex justify-center w-full rounded-md border border-transparent px-4 py-2 bg-green-600 text-base leading-6 font-medium text-white shadow-sm hover:bg-green-500 focus:outline-none focus:border-green-700 focus:ring focus:ring-green-200 transition ease-in-out duration-150 sm:text-sm sm:leading-5">
             Save
           </button>
         </span>
         <span class="mt-3 flex w-full rounded-md shadow-sm sm:mt-0 sm:w-auto">
             
-          <button wire:click="closeModal()" type="button" class="inline-flex justify-center w-full rounded-md border border-gray-300 px-4 py-2 bg-white text-base leading-6 font-medium text-gray-700 shadow-sm hover:text-gray-500 focus:outline-none focus:border-blue-300 focus:shadow-outline-blue transition ease-in-out duration-150 sm:text-sm sm:leading-5">
+          <button wire:click="closeModal()" type="button" class="inline-flex justify-center w-full rounded-md border border-gray-300 px-4 py-2 bg-white text-base leading-6 font-medium text-gray-700 shadow-sm hover:text-gray-500 focus:outline-none focus:border-blue-300 focus:ring focus:ring-blue-200 transition ease-in-out duration-150 sm:text-sm sm:leading-5">
             Cancel
           </button>
         </span>

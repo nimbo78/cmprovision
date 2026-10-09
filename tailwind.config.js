@@ -1,4 +1,5 @@
 const defaultTheme = require('tailwindcss/defaultTheme');
+const colors = require('tailwindcss/colors');
 
 module.exports = {
     purge: [
@@ -13,12 +14,22 @@ module.exports = {
             fontFamily: {
                 sans: ['Nunito', ...defaultTheme.fontFamily.sans],
             },
+            // the message boxes use teal (saved) and orange (warnings), which Tailwind 2
+            // left out of its default palette
+            colors: {
+                teal: colors.teal,
+                orange: colors.orange,
+            },
+            width: {
+                '1/8': '12.5%',
+            },
         },
     },
 
     variants: {
         extend: {
             opacity: ['disabled'],
+            backgroundColor: ['active'],
         },
     },
 
