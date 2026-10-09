@@ -81,7 +81,8 @@ class ProvisioningStatusTest extends TestCase
     public function test_failed_and_finished_modules_stay_visible_for_a_while()
     {
         $this->module('1000000000000a04', ['phase' => 'failed', 'phase_detail' => 'Error during dd. Return code 1.',
-                                           'phase_started_at' => now()->subMinutes(10)]);
+                                           'phase_started_at' => now()->subMinutes(10),
+                                           'progress_bytes' => 24, 'progress_total' => 100]);
         $this->module('1000000000000a05', ['phase' => 'done', 'phase_started_at' => now()->subMinutes(20),
                                            'provisioning_complete_at' => now()->subMinutes(20)]);
         $this->module('1000000000000a06', ['phase' => 'done', 'phase_started_at' => now()->subHours(5),
@@ -90,6 +91,7 @@ class ProvisioningStatusTest extends TestCase
 
         Livewire::test(ProvisioningStatus::class)
             ->assertSee('Error during dd. Return code 1.')
+            ->assertSee('24%')
             ->assertSee('1000000000000a05')
             ->assertSee('Done')
             ->assertDontSee('1000000000000a06');
@@ -102,6 +104,18 @@ class ProvisioningStatusTest extends TestCase
 
         $this->actingAs(User::factory()->create())->get('/dashboard')
             ->assertOk()->assertSee('1000000000000a07')->assertSee('Verifying');
+    }
+
+    public function test_modules_are_listed_in_port_order_so_rows_stay_in_place()
+    {
+        $this->module('1000000000000b10', ['provisioning_board' => 'GE0/0/10', 'phase' => 'write',
+                                           'phase_started_at' => now(), 'progress_updated_at' => now()]);
+        $this->module('1000000000000b02', ['provisioning_board' => 'GE0/0/2', 'phase' => 'done',
+                                           'phase_started_at' => now(), 'provisioning_complete_at' => now()]);
+        $this->module('1000000000000b03', ['provisioning_board' => 'GE0/0/3', 'phase' => 'failed',
+                                           'phase_started_at' => now()]);
+
+        Livewire::test(ProvisioningStatus::class)->assertSeeInOrder(['GE0/0/2', 'GE0/0/3', 'GE0/0/10']);
     }
 
     public function test_nothing_to_show_says_so()

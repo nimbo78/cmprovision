@@ -26,7 +26,13 @@ class ProvisioningStatus extends Component
             })
             ->orderByDesc('provisioning_started_at')
             ->limit(self::MAX_ROWS)
-            ->get();
+            ->get()
+            // port (or jumper board) order: every row stays where its module is plugged in
+            ->sort(function ($a, $b) {
+                return strnatcasecmp((string) $a->provisioning_board, (string) $b->provisioning_board)
+                    ?: strcmp($a->serial, $b->serial);
+            })
+            ->values();
 
         return view('livewire.provisioning-status', [
             'modules' => $modules,

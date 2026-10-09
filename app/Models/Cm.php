@@ -42,16 +42,18 @@ class Cm extends Model
         return $this->belongsTo(Project::class);
     }
 
-    /* Enter a phase (or the next script within it); a change restarts the phase clock and counter */
+    /* Enter a phase (or the next script within it); a change restarts the phase clock, and entering
+       a working phase restarts the byte counter (a failed module keeps how far it got) */
     public function setPhase($phase, $detail = null)
     {
         $detail = ($detail === null || $detail === '') ? null : Str::limit($detail, 250);
         if ($this->phase !== $phase || $this->phase_detail !== $detail)
         {
+            if (in_array($phase, self::ACTIVE_PHASES, true))
+                $this->progress_bytes = null;
             $this->phase = $phase;
             $this->phase_detail = $detail;
             $this->phase_started_at = now();
-            $this->progress_bytes = null;
         }
         $this->progress_updated_at = now();
         return $this;
@@ -85,7 +87,7 @@ class Cm extends Model
     {
         if ($this->phase === 'done')
             return 100;
-        if (!$this->isStreaming() || !$this->progress_total || $this->progress_bytes === null)
+        if (!($this->isStreaming() || $this->phase === 'failed') || !$this->progress_total || $this->progress_bytes === null)
             return null;
         return (int) min(100, floor($this->progress_bytes * 100 / $this->progress_total));
     }

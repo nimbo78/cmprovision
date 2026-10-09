@@ -141,6 +141,7 @@ class ProvisioningProgressTest extends TestCase
         $cm = $this->cm();
         $this->assertSame('failed', $cm->phase);
         $this->assertStringContainsString('connection to the provisioning server was closed', $cm->phase_detail);
+        $this->assertEquals(2048 * 512, $cm->progress_bytes, 'how far it got stays visible');
 
         $this->progress('progress=write&sectors=4096');
         $this->assertSame('failed', $this->cm()->phase, 'a late progress report does not revive a failed module');
