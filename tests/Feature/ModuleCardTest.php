@@ -215,6 +215,22 @@ class ModuleCardTest extends TestCase
             ->assertSee('not recorded for this run');
     }
 
+    public function test_a_module_from_before_the_live_status_shows_whether_it_completed()
+    {
+        /* rows from 1.6.5 or older have no phase at all */
+        Cm::create(['serial' => self::SERIAL, 'mac' => 'e4:5f:01:62:9f:d3',
+                    'provisioning_started_at' => Carbon::parse('2024-10-30 23:37:49'),
+                    'provisioning_complete_at' => Carbon::parse('2024-10-30 23:39:36')]);
+        Cm::create(['serial' => '10000000aaaaaaaa', 'mac' => 'e4:5f:01:00:00:aa',
+                    'provisioning_started_at' => Carbon::parse('2024-10-30 23:37:49')]);
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->get('/cms/'.self::SERIAL)->assertOk()
+            ->assertSee('Done')->assertDontSee('Not provisioned');
+        $this->actingAs($user)->get('/cms/10000000aaaaaaaa')->assertOk()
+            ->assertSee('Not completed')->assertDontSee('Not provisioned');
+    }
+
     public function test_the_card_shows_the_run_the_bootloader_the_logs_and_the_history()
     {
         $this->sensor0Run();

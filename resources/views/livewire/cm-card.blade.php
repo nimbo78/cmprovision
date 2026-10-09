@@ -27,13 +27,16 @@
                 <tr>
                     <td class="pr-4 py-1 text-gray-600">Status</td>
                     <td class="py-1">
-                        @if ($cm->phase === 'done')
+                        {{-- modules provisioned before 1.6.6 have no phase, only their start and completion --}}
+                        @if ($cm->phase === 'done' || ($cm->phase === null && $cm->provisioning_complete_at))
                             <span class="font-semibold text-green-700">Done</span>
                         @elseif ($cm->phase === 'failed')
                             <span class="font-semibold text-red-700">Failed</span>
                         @elseif ($cm->isActive())
                             <span class="font-semibold">{{ $cm->phaseLabel() }}</span>
                             @if (($percent = $cm->progressPercent()) !== null) &middot; {{ $percent }}% @endif
+                        @elseif ($cm->provisioning_started_at)
+                            Not completed
                         @else
                             Not provisioned
                         @endif
@@ -165,7 +168,7 @@
                 <tbody>
                 @forelse ($history as $l)
                     <tr wire:key="log-{{ $l->id }}" @if ($l->loglevel == 'error') class="bg-red-100" @endif>
-                        <td class="border px-2 py-1 font-mono align-top whitespace-nowrap">{{ $l->created_at->local()->format('d.m.Y H:i:s') }}</td>
+                        <td class="border px-2 py-1 font-mono align-top whitespace-nowrap" style="width: 1%">{{ $l->created_at->local()->format('d.m.Y H:i:s') }}</td>
                         <td class="border px-2 py-1">{!! nl2br(e(\Illuminate\Support\Str::limit($l->msg, \App\Http\Livewire\CmCard::HISTORY_MESSAGE_LENGTH)), false) !!}</td>
                     </tr>
                 @empty
