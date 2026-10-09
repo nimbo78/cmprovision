@@ -5,6 +5,9 @@ Pi 4 boards can also be provisioned, but that requires that network boot is enab
 
 ![screenshot](https://user-images.githubusercontent.com/1123701/209007803-7cc38d14-7f07-4910-8108-87323d25ac20.png)
 
+This is a maintained fork of [raspberrypi/cmprovision](https://github.com/raspberrypi/cmprovision) (last upstream release: v1.6.3, 2023).
+It fixes the open upstream issues around EEPROM firmware downloads, silent provisioning failures and current Raspberry Pi OS releases; see `debian/changelog` for the full list and the [Upgrading](#upgrading) section before installing over an existing server.
+
 ## Documentation ##
 
 Full documentation is available on the Product Information Portal: [Using the Compute Module Provisioner.pdf](https://pip.raspberrypi.com/categories/685-whitepapers-app-notes/documents/RP-003468-WP/Using-the-Compute-Module-Provisioner.pdf)
@@ -19,20 +22,21 @@ This process requires a Raspberry Pi 4 which will be used solely to mass program
     
     **NOTE:** If you intend to write images larger than 2 GB, you MUST install the **64-bit** edition of Raspberry Pi OS (Lite), which is available in Raspberry Pi Imager under the category "Raspberry Pi OS (other)" -> "Raspberry Pi OS Lite (64-bit)".
 
-1. Configure eth0 to have a static IP of 172.20.0.1 inside a /16 subnet (netmask 255.255.0.0):  
-    
+1. Configure eth0 to have a static IP of 172.20.0.1 inside a /16 subnet (netmask 255.255.0.0). Do not set a default gateway.
+
+    On Raspberry Pi OS **Bookworm or later** the network is managed by NetworkManager:
+
     ```
-    sudo nano /etc/dhcpcd.conf  
+    sudo nmcli connection add type ethernet ifname eth0 con-name cmprovision         ipv4.method manual ipv4.addresses 172.20.0.1/16 ipv4.never-default yes         ipv6.method link-local ipv6.addr-gen-mode eui64 connection.autoconnect yes
+    sudo nmcli connection up cmprovision
     ```
-    
-    Add to bottom of file:  
+
+    On **Bullseye** (dhcpcd) add to the bottom of `/etc/dhcpcd.conf` and reboot:
 
     ```
     interface eth0
     static ip_address=172.20.0.1/16  
     ```
-
-    Do not set a default gateway. Reboot afterwards.
 
 1. Run `sudo apt update` to make sure the package information on your Pi is up to date, and it is able to install dependencies.
 
@@ -83,6 +87,12 @@ You can now access the web interface with a web browser on the wireless LAN IP a
 
 During provisioning of CM3 and CM3+ devices, a small utility operating system, `scriptexecute`, is USB booted on each compute module. This configures the compute modules as  USB network adapters, and expects to be able to reach the provisioning server on predictable IPv6 link-local addresses that can be calculated based on the MAC address that each compute module chooses for its USB network interface. On Raspberry Pi OS, this is configured automatically by putting `slaac hwaddr` in `/etc/dhcpcd.conf`, however if your OS does not use `dhcpcd` as its network manager, then you will need to set this up manually. Examples of alternate network managers include `systemd-networkd` and `Network Manager`. How you set this up depends on the exact network manager used by your Linux distribution, so we cannot advise on how to do this.
 
+On Raspberry Pi OS Bookworm or later (NetworkManager) the USB Ethernet gadget interface of each compute module appears as `usb0`, `usb1`, ... on the server and needs an EUI-64 link-local address. A profile like the following should give it one (untested by the fork maintainers, who provision CM4 over Ethernet):
+
+```
+sudo nmcli connection add type ethernet con-name cmprovision-usb ifname 'usb*'     ipv4.method disabled ipv6.method link-local ipv6.addr-gen-mode eui64 connection.autoconnect yes
+```
+
 ## Provisioning Raspberry Pi 4 boards ##
 
 It is also possible to use the system to provision regular Raspberry Pi 4 boards, instead of CM4 modules.
@@ -90,16 +100,40 @@ However that requires that network boot is enabled first in the EEPROM settings 
 
 You can create a SD card that enables that with [Imager](https://www.raspberrypi.com/software/), by going to: "Choose OS" -> "Misc utility images" -> "Bootloader" -> "Network boot"
 
+## Upgrading ##
+
+Install the new package over the old one with `sudo apt install ./cmprovision4_*.deb`; never `apt remove` it first, the package's removal step deletes the database and storage.
+Before upgrading, take a snapshot that can be restored in minutes:
+
+```
+sudo tools/backup.sh            # /var/backups/cmprovision/<timestamp>-<version>/
+sudo tools/restore.sh /var/backups/cmprovision/<snapshot>
+```
+
+The package's post-installation step adjusts existing servers: `send_timeout 6h` for image downloads in the nginx site, `upload_tmp_dir` on disk next to the images, `APP_ENV=production` / `APP_DEBUG=false` in `.env`. The firmware store moves from the `stable`/`beta` channel names to `default`/`latest`; images downloaded earlier stay available to the projects that use them.
+
+## API ##
+
+Create a token on the profile page (permissions: create, read, update, delete) and send it as `Authorization: Bearer <token>`.
+
+* `GET /api/cms`, `/api/projects`, `/api/projects/{id}`, `/api/projects/{id}/cms`, `/api/images`, `/api/firmware`, `/api/scripts`, `/api/labels`
+* `POST /api/images` (multipart field `image`), `DELETE /api/images/{id}`
+* `PATCH /api/projects/{id}` with any project fields and `scripts` (list of script ids); changing the active project rebuilds the EEPROM image the modules download
+* `POST /api/scripts`, `GET|PATCH|DELETE /api/scripts/{id}`
+
 ## Development ##
 
 This PHP web application uses the Laravel framework.
 Make sure you familarize yourself with the fine documentation: https://laravel.com/docs/8.x/.
 
 In particular note:
-* run `composer --install` to install the dependencies living in the `vendor` directory.
+* run `composer install` to install the dependencies living in the `vendor` directory.
 * you probably also want to `npm install` to be able to rebuild resources.
 * if you want to use Tailwind css styles not already used in the application run: `npm run prod` after adding the html to have the .css file rebuild with the used styles included. (alternatively can run `npm run dev` to include all styles. But will result in a large .css file, so only use that during development).
 * if you modify .blade files make sure you regenerate the cache with: `./artisan view:cache`.
+* tests: `DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test` and `npm run test:js`. The code must keep working on PHP 7.4 (Debian 11).
+* `docker/` holds a test bench (Debian 11 with PHP 7.4 and Debian 13 with PHP 8.4) laid out like the installed package, see `docker/README.md`.
+* build the package with `dpkg-buildpackage -b -us -uc` from a clean checkout without a `vendor/` directory (the build installs production dependencies itself).
 
 ## Licence ##
 
