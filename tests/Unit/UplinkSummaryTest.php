@@ -67,7 +67,7 @@ class UplinkSummaryTest extends TestCase
         $this->assertNull($v['warning']);
         $this->assertSame([
             ['Network', '78'],
-            ['Speed', '1.2 Gbit/s both ways, 2 streams'],
+            ['Speed', '1.2 Gbit/s, 2 streams'],
             ['Signal', 'Excellent, −45 dBm'],
             ['Band', '5 GHz, channel 153, 80 MHz wide'],
             ['Adapter', 'M.2 card (wlan1)'],
@@ -75,7 +75,7 @@ class UplinkSummaryTest extends TestCase
         ], $v['rows']);
         $this->assertSame(4, $v['bars']);
         $this->assertSame([
-            ['Backup: built-in Wi-Fi (wlan0)', 'Connected, −54 dBm, 98 Mbit/s down, 24 Mbit/s up, 192.168.25.30'],
+            ['Backup: built-in Wi-Fi (wlan0)', 'Connected, −54 dBm, 24 Mbit/s, 192.168.25.30'],
             ['Modules network: Ethernet (eth0)', '1 Gbit/s full duplex, 172.20.0.1/16'],
         ], $v['sections']);
         $this->assertSame('Checked at 23:20:14', $v['checked']);
@@ -91,8 +91,8 @@ class UplinkSummaryTest extends TestCase
         $this->assertNull($v['badge']);
         $this->assertNull($v['note']);
         $this->assertSame('Preferred connection uplink-m2 is not connected, the backup carries the traffic.', $v['warning']);
-        $this->assertSame('Internet via Wi-Fi, excellent signal, 98 Mbit/s. Preferred connection uplink-m2 is not connected', $v['label']);
-        $this->assertContains(['Speed', '98 Mbit/s down, 24 Mbit/s up'], $v['rows']);
+        $this->assertSame('Internet via Wi-Fi, excellent signal, 24 Mbit/s. Preferred connection uplink-m2 is not connected', $v['label']);
+        $this->assertContains(['Speed', '24 Mbit/s'], $v['rows']);
         $this->assertContains(['Adapter', 'Built-in (wlan0)'], $v['rows']);
         $this->assertSame([['Modules network: Ethernet (eth0)', '1 Gbit/s full duplex, 172.20.0.1/16']], $v['sections']);
     }
@@ -144,6 +144,17 @@ class UplinkSummaryTest extends TestCase
         $v = UplinkSummary::from(self::snapshot(['modules' => $port]));
 
         $this->assertContains(['Modules network: Ethernet (eth0)', 'No link, 172.20.0.1/16'], $v['sections']);
+    }
+
+    public function test_speed_is_the_transmit_rate_since_an_idle_link_receives_at_the_basic_rate()
+    {
+        $card = self::card();
+        $card['wifi']['rx'] = 6.0;   // seen on the provisioner between transfers: the last frame was a broadcast
+
+        $v = UplinkSummary::from(self::snapshot(['uplink' => $card]));
+
+        $this->assertContains(['Speed', '1.2 Gbit/s, 2 streams'], $v['rows']);
+        $this->assertSame('Internet via Wi-Fi 6, excellent signal, 1.2 Gbit/s', $v['label']);
     }
 
     public function test_weaker_signal_lights_fewer_arcs()

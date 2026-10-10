@@ -55,7 +55,7 @@ class UplinkSummary
         if ($signal !== null) {
             $label .= ', '.strtolower(WifiLink::quality($signal)).' signal';
         }
-        $rate = $w['rx'] !== null ? $w['rx'] : $w['tx'];
+        $rate = self::linkRate($w);
         if ($rate !== null) {
             $label .= ', '.self::speed($rate);
         }
@@ -132,18 +132,23 @@ class UplinkSummary
         return implode(', ', array_merge([self::wiredSpeed($modules)], $modules['addresses']));
     }
 
-    /** "1.2 Gbit/s both ways, 2 streams", "98 Mbit/s down, 24 Mbit/s up" */
+    /**
+     * The link speed is the transmit rate, as NetworkManager and Windows show it: an idle link's receive rate
+     * is that of its last frame, often a broadcast at the 6 Mbit/s basic rate.
+     */
+    private static function linkRate(array $w): ?float
+    {
+        return $w['tx'] !== null ? $w['tx'] : $w['rx'];
+    }
+
+    /** "1.2 Gbit/s, 2 streams" */
     private static function wifiSpeed(array $w): ?string
     {
-        if ($w['rx'] !== null && $w['tx'] !== null) {
-            $down = self::speed($w['rx']);
-            $up = self::speed($w['tx']);
-            $text = $down === $up ? $down.' both ways' : $down.' down, '.$up.' up';
-        } elseif ($w['rx'] !== null || $w['tx'] !== null) {
-            $text = self::speed($w['rx'] !== null ? $w['rx'] : $w['tx']);
-        } else {
+        $rate = self::linkRate($w);
+        if ($rate === null) {
             return null;
         }
+        $text = self::speed($rate);
         if ($w['streams'] !== null) {
             $text .= ', '.$w['streams'].($w['streams'] === 1 ? ' stream' : ' streams');
         }

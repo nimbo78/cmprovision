@@ -55,7 +55,7 @@ class UplinkIndicatorTest extends TestCase
         Livewire::test(UplinkIndicator::class)
             ->assertSeeHtml('aria-label="Internet via Wi-Fi 6, excellent signal, 1.2 Gbit/s"')
             ->assertSee('Internet via Wi-Fi')
-            ->assertSee('1.2 Gbit/s both ways, 2 streams')
+            ->assertSee('1.2 Gbit/s, 2 streams')
             ->assertSee('M.2 card (wlan1)')
             ->assertSee('Backup: built-in Wi-Fi (wlan0)')
             ->assertSee('1 Gbit/s full duplex, 172.20.0.1/16')

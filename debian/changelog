@@ -1,4 +1,4 @@
-cmprovision4 (1.6.11~dev1) unstable; urgency=medium
+cmprovision4 (1.6.11~dev2) unstable; urgency=medium
 
   * The top bar shows how the server reaches the network: a Wi-Fi icon with
     the signal and the Wi-Fi generation, or an Ethernet icon with the
