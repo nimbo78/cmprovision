@@ -62,7 +62,7 @@ EEPROM «до и после»: сервер хранит доложенный з
 ## Связи между файлами
 
 - Параметры запроса модуля задаются плейсхолдерами в `scriptexecute/cmdline.txt` и `cmdline.txt.ipv6ll` (их подставляет initramfs) и читаются в `ScriptExecuteController::startProvisoning()`. Меняйте обе стороны вместе.
-- Подсеть 172.20.0.0/16 с сервером 172.20.0.1 зашита в `etc/dnsmasq.conf`, `scriptexecute/cmdline.txt`, `Host::firstAvailableIP()` и README.
+- Подсеть 172.20.0.0/16 с сервером 172.20.0.1 зашита в `etc/dnsmasq.conf`, `scriptexecute/cmdline.txt`, `Host::firstAvailableIP()`, `NetworkStatus::SERVER_ADDRESS` и README.
 - `scriptexecute.blade.php` рендерит shell, а `{{ }}` экранирует HTML (`&` → `&amp;`): сырой shell-код вставляйте через `{!! !!}`. Пользовательские скрипты записываются в файлы через quoted heredoc с маркером `CMPROVISIONINGEOF`. Директива Blade в конце строки с shell-кодом (`... @endif`) компилируется в `?>`, после которого PHP съедает перевод строки, и следующая строка склеивается с этой; хвост строки выводите через `{!! !!}` (после echo Blade перевод строки сохраняет). Так однажды `RETCODE=$?` приклеился к запуску скрипта.
 - Строки `dhcp-host=` в `etc/dnsmasq.conf` генерирует `Settings::regenDnsmasqConfAndRestart()` из таблицы `hosts`, остальные строки сохраняются. Файл объявлен conffile в `debian/conffiles`.
 - Через `sudo` веб-приложению разрешён только `systemctl restart cmprovision-dnsmasq` (`debian/010_cmprovision`); журналы читаются благодаря группе `systemd-journal`, которую выдаёт `postinst`. Новый привилегированный вызов требует правки sudoers-файла.
@@ -89,3 +89,12 @@ EEPROM «до и после»: сервер хранит доложенный з
 - Собранные `public/css`, `public/js` и `public/mix-manifest.json` закоммичены и попадают в `.deb` как есть: при упаковке ассеты не собираются. Добавив Tailwind-класс, которого ещё нет в шаблонах, выполните `npm run prod` и закоммитьте результат. Purge сканирует и `vendor/laravel/jetstream`, поэтому `composer install` выполняется до сборки ассетов.
 - README предписывает после правки `.blade` выполнять `php artisan view:cache`; скомпилированные шаблоны (`storage/framework/views`) тоже входят в purge-пути Tailwind.
 - Загрузка образа идёт XMLHttpRequest'ом из Alpine-компонента `imageUploader()` (определён в `images.blade.php`, форма в `addimage.blade.php`) на тот же `POST /addImage`; расчёт скорости и остатка — `public/js/upload-progress.js`, обычный скрипт без сборки, покрыт `tests/js`. Пока у какого-то образа не посчитан SHA256, страница Images опрашивает сервер (`wire:poll`), кроме момента, когда открыт диалог.
+- Значок подключения сервера в верхней панели — компонент `UplinkIndicator`, один экземпляр на все размеры экрана. Данные собирает `App\Services\NetworkStatus` так, как может пользователь www-data:
+  - маршрут по умолчанию — из `/proc/net/route`;
+  - тип, шина и драйвер интерфейса — из `/sys/class/net`;
+  - Wi-Fi — через `iw dev <if> link|info` (`App\Support\WifiLink`, поколение по признакам HT/VHT/HE/EHT);
+  - адреса — из `net_get_interfaces()`;
+  - «предпочтительное подключение не подключено» — по профилям `nmcli` с меньшей метрикой.
+
+  Тексты значка и подсказки готовит `App\Support\UplinkSummary`. Снимок лежит в кэше под ключом `network-status`. Значок сам обновляется раз в `POLL_SECONDS` (300 с) и берёт снимок не старше `PASSIVE_MAX_AGE`, а наведение или нажатие — не старше `FRESH_MAX_AGE` (10 с).
+- Тестовый помощник Livewire 2 вырезает `wire:initial-data` жадной регуляркой до последнего `}"` в первой строке корневого тега, а вместе с ним и соседние атрибуты. Поэтому `x-data="{ ... }"` в корне компонента ставьте на вторую строку тега.

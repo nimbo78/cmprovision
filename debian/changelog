@@ -1,3 +1,14 @@
+cmprovision4 (1.6.11) unstable; urgency=medium
+
+  * The top bar shows how the server reaches the network: a Wi-Fi icon with
+    the signal and the Wi-Fi generation, or an Ethernet icon with the
+    speed; crossed out without a default route, amber while the preferred
+    NetworkManager connection is down. Its tooltip lists the network,
+    speed, signal, band and address, the backup connection and the
+    modules' network. It refreshes every 5 minutes and when pointed at.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 11 Oct 2026 00:43:15 +0300
+
 cmprovision4 (1.6.10) unstable; urgency=medium
 
   * Runs on WLAN Pi OS 26.10: the nginx site is enabled as cmprovision.conf,
