@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Целевая среда — Raspberry Pi OS на Pi 4: пакет `cmprovision4` ставится в `/var/lib/cmprovision` и работает поверх nginx + php-fpm, dnsmasq, rpiboot и systemd. Код вызывает Linux-утилиты (`systemctl`, `journalctl`, `sudo`, `bash`, `gzip`/`xz`/`bunzip2`, `sha256sum`), поэтому страница Settings и подсчёт хешей образов работают только на Linux, а сквозной провижининг проверяется только на Pi с подключёнными модулями.
 
-Рабочий провижинер пользователя — Debian 11 (bullseye) с PHP 7.4, поэтому код должен оставаться совместимым с PHP 7.4 (без `match`, именованных аргументов, `?->`, enum, `readonly`, `str_contains`); `composer.json` объявляет `^7.3|^8.0`. Один и тот же `composer.lock` должен ставиться и на PHP 7.4, и на 8.4 (Raspberry Pi OS Trixie): обновляйте его под PHP 7.4 (на сервере), а затем проверяйте `composer install` на 8.4 — пакеты с верхней границей PHP ломают сборку `.deb` на Trixie. Поэтому `league/commonmark` закреплён на `^1.6`: ветка 2.x тянет `nette/utils` 3 и `nette/schema` 1.2 с ограничением PHP < 8.3 (Markdown приложение не использует).
+Рабочий провижинер пользователя с 10 октября 2026 (1.6.10) — Raspberry Pi OS Trixie (Debian 13, PHP 8.4, NetworkManager) на WLAN Pi M4+, до этого был Debian 11 (bullseye) с PHP 7.4. Ветка 1.6.x остаётся для старых серверов, поэтому код должен оставаться совместимым с PHP 7.4 (без `match`, именованных аргументов, `?->`, enum, `readonly`, `str_contains`); `composer.json` объявляет `^7.3|^8.0`. Один и тот же `composer.lock` должен ставиться и на PHP 7.4, и на 8.4: обновляйте его под PHP 7.4 (стенд bullseye из `docker/bench.sh`), а затем проверяйте `composer install` на 8.4 — пакеты с верхней границей PHP ломают сборку `.deb` на Trixie. Поэтому `league/commonmark` закреплён на `^1.6`: ветка 2.x тянет `nette/utils` 3 и `nette/schema` 1.2 с ограничением PHP < 8.3 (Markdown приложение не использует).
 
 ## Команды
 
@@ -35,7 +35,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Модуль загружает `scriptexecute` — готовые бинарники из `scriptexecute/` (ядро, initramfs `scriptexecute.img`, загрузочные файлы, оверлеи; исходников в репозитории нет):
 
 - **CM4 / Pi 4 — по Ethernet.** `etc/dnsmasq.conf` (сервис `cmprovision-dnsmasq`) раздаёт DHCP в 172.20.0.0/16, узнаёт Pi по сигнатуре в GUID из DHCP option 97 (в обоих порядках байтов) и отдаёт `scriptexecute/` по TFTP.
-- **CM3/3+ — по USB.** `rpiboot -l -d scriptexecute` (сервис `cmprovision-rpiboot`). Модуль поднимает USB-Ethernet gadget и обращается к серверу по IPv6 link-local (секция `[pi3]` в `scriptexecute/config.txt` → `cmdline.txt.ipv6ll`). Поэтому `postinst` переключает dhcpcd на `slaac hwaddr`, а контроллер превращает `[addr]` в `[addr%usb0]`.
+- **CM3/3+ — по USB.** `rpiboot -l -d scriptexecute` (сервис `cmprovision-rpiboot`). Модуль поднимает USB-Ethernet gadget и обращается к серверу по IPv6 link-local (секция `[pi3]` в `scriptexecute/config.txt` → `cmdline.txt.ipv6ll`). Поэтому `postinst` переключает dhcpcd на `slaac hwaddr`, а контроллер превращает `[addr]` в `[addr%usb0]`. С Bookworm сетью управляет NetworkManager, и dhcpcd нет: такой адрес должен дать профиль `ifname 'usb*'` с `ipv6.addr-gen-mode eui64` из README. Путь CM3 на Trixie не проверялся.
 
 Дальше модуль общается с `/scriptexecute` → `ScriptExecuteController`. Маршрут намеренно открыт без аутентификации и исключён из CSRF (`VerifyCsrfToken::$except`): клиент — `curl` на модуле в изолированной сети.
 

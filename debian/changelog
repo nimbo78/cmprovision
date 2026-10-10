@@ -1,4 +1,4 @@
-cmprovision4 (1.6.10~dev1) unstable; urgency=medium
+cmprovision4 (1.6.10) unstable; urgency=medium
 
   * Runs on WLAN Pi OS 26.10: the nginx site is enabled as cmprovision.conf,
     since WLAN Pi OS loads only sites-enabled/*.conf; existing installations
@@ -9,8 +9,11 @@ cmprovision4 (1.6.10~dev1) unstable; urgency=medium
     database, .env (APP_KEY), the firmware store, the uploaded images and
     the dnsmasq config, without the old system's nginx, PHP and network
     configuration.
+  * Checked as the production provisioner on Raspberry Pi OS 13 (trixie)
+    with PHP 8.4 and NetworkManager: data moved from Debian 11 with
+    --data-only, network boot, provisioning and Telegram notifications.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Sat, 10 Oct 2026 20:28:34 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 10 Oct 2026 23:07:29 +0300
 
 cmprovision4 (1.6.9) unstable; urgency=medium
 
