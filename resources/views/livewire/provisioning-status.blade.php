@@ -36,6 +36,16 @@
                     @if ($silent)
                         <div class="text-xs font-semibold" style="color: #b45309">No report for {{ intdiv($silent, 60) }} min</div>
                     @endif
+                    @if ($m->canIdentify())
+                        <div class="mt-1">
+                            @if ($m->isIdentifying())
+                                <button wire:click="stopIdentify({{ $m->id }})" class="bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Stop</button>
+                                <span class="ml-2 text-xs font-semibold">blinking</span>
+                            @else
+                                <button wire:click="identify({{ $m->id }})" class="bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Identify</button>
+                            @endif
+                        </div>
+                    @endif
                 </td>
                 <td class="border px-2 py-1">
                     @if ($percent !== null)

@@ -42,6 +42,9 @@ progress_stop() {
     if [ -n "$PROGRESS_PID" ]; then kill "$PROGRESS_PID" 2>/dev/null; PROGRESS_PID=""; fi
 }
 
+@include('scriptexecute.leds', ['serial' => $cm->serial])
+led_init
+
 # Make sure we have random entropy
 echo "{{Str::random(64)}}" >/dev/urandom
 
@@ -85,11 +88,15 @@ RETCODE=$?
 if [ $RETCODE -ne 0 ]; then
     echo "Pre-installation script failed."
     report -F 'log=@/tmp/pre.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=preinstall"
-    exit 1
+    finish fail
 fi
 @endforeach
 report -F 'log=@/tmp/pre.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=0&phase=preinstall"
 @endif
+
+# flashrom is done with the SPI bus (the EEPROM flash is a pre-install script): ACT can show progress
+led_take_act
+led_mode progress
 
 @if ($image_url)
 progress_mark write 'Discarding old data'
@@ -114,7 +121,7 @@ else
     # module returns to network boot (provisioning) on the next power cycle.
     dd if=/dev/zero of=$STORAGE bs=1M count=1 conv=fsync 2>/dev/null || true
     report -F 'log=@/tmp/dd.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=dd"
-    exit 1
+    finish fail
 fi
 
 partprobe $STORAGE
@@ -140,7 +147,7 @@ progress_stop
 if [ $RETCODE -ne 0 ]; then
     echo "Postinstallation script failed."
     report -F 'log=@/tmp/post.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=postinstall"
-    exit 1
+    finish fail
 fi
 @endforeach
 report -F 'log=@/tmp/post.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=0&phase=postinstall"
@@ -158,16 +165,4 @@ if [ -f /sys/kernel/config/usb_gadget/g1/UDC ]; then
     echo "" > /sys/kernel/config/usb_gadget/g1/UDC
 fi
 
-if [ -e /sys/class/leds/led1 ]; then
-    while true; do
-        echo 255 > /sys/class/leds/led0/brightness
-        echo 0 > /sys/class/leds/led1/brightness
-        sleep 0.5
-        echo 0 > /sys/class/leds/led0/brightness
-        echo 255 > /sys/class/leds/led1/brightness
-        sleep 0.5
-    done
-fi
-if [ -e /sys/class/leds/led0 ]; then
-    echo 255 > /sys/class/leds/led0/brightness
-fi
+finish done

@@ -68,7 +68,7 @@ class ScriptExecuteRobustnessTest extends TestCase
 
         $response->assertOk()->assertHeader('Content-Type', 'text/plain; charset=UTF-8');
         $this->assertStringContainsString('Provisioning server error', $response->getContent());
-        $this->assertStringContainsString('exit 1', $response->getContent());
+        $this->assertStringContainsString("\nfinish fail\n", $response->getContent(), 'the module shows the failure on its LEDs');
         $entry = Cmlog::where('cm', self::SERIAL)->where('loglevel', 'error')->first();
         $this->assertNotNull($entry);
         $this->assertStringContainsString('Provisioning server error', $entry->msg);

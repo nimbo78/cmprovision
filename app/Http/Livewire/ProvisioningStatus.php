@@ -12,6 +12,21 @@ class ProvisioningStatus extends Component
     const ACTIVE_HOURS = 12;     // a module still "in progress" after this long was unplugged
     const MAX_ROWS = 50;
 
+    /* The module blinks for the operator the next time it asks the server */
+    public function identify($id)
+    {
+        $cm = Cm::find($id);
+        if ($cm)
+            $cm->identify();
+    }
+
+    public function stopIdentify($id)
+    {
+        $cm = Cm::find($id);
+        if ($cm)
+            $cm->stopIdentify();
+    }
+
     public function render()
     {
         $recent = now()->subHours(self::RECENT_HOURS);

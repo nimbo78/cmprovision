@@ -52,7 +52,11 @@ class ScriptExecuteController extends Controller
 
         try
         {
-            if ($req->query("alldone"))
+            if ($req->query("identify"))
+            {
+                return $this->identifyPoll();
+            }
+            else if ($req->query("alldone"))
             {
                 return $this->provisioningComplete($req);
             }
@@ -92,12 +96,42 @@ class ScriptExecuteController extends Controller
             {
             }
 
-            return response("#!/bin/sh
+            try
+            {
+                return $this->failureScript($req, $msg);
+            }
+            catch (\Throwable $ignored)
+            {
+                return response("#!/bin/sh
 echo ".escapeshellarg($msg)."
 exit 1
 ", 200)
-                ->header('Content-Type', 'text/plain');
+                    ->header('Content-Type', 'text/plain');
+            }
         }
+    }
+
+    /* Address of this server as the module reaches it: from the CM's side an IPv6 link-local
+       address ends in %usb0 */
+    protected function moduleServer(Request $req)
+    {
+        $server = (string) $req->server('HTTP_HOST');
+        if ($server !== '' && $server[0] == '[')
+        {
+            $server = substr($server, 0, -1).'%usb0]';
+        }
+        return $server;
+    }
+
+    /* What a module runs when it cannot be provisioned: the reason on its console, the failed state
+       on its LEDs, and it waits for the operator (resources/views/scriptexecute/failed.blade.php) */
+    protected function failureScript(Request $req, $message)
+    {
+        return response()->view('scriptexecute.failed', [
+            'message' => $message,
+            'server' => $this->moduleServer($req),
+            'serial' => $this->serial,
+        ])->header('Content-Type', 'text/plain');
     }
 
     public function startProvisoning(Request $req)
@@ -178,6 +212,8 @@ exit 1
             'progress_total' => $image ? $image->uncompressed_size : null,
             'progress_updated_at' => null,
             'timeline' => [],
+            'polled_at' => null,
+            'identify_until' => null,
             /* the module reports its bootloader once the script runs; the settings are flashed as stored in the image */
             'eeprom_before' => null,
             'eeprom_config_before' => null,
@@ -226,12 +262,7 @@ exit 1
         $preinstall_scripts = $project->scripts()->where('script_type','preinstall')->orderBy('priority')->orderBy('id')->get();
         $postinstall_scripts = $project->scripts()->where('script_type','postinstall')->orderBy('priority')->orderBy('id')->get();
 
-        $server = $req->server('HTTP_HOST');
-        if ($server[0] == '[')
-        {
-            // From the CM's side IPv6LL address will end in %usb0
-            $server = substr($server, 0, -1).'%usb0]';
-        }
+        $server = $this->moduleServer($req);
 
         if ($project->eeprom_firmware)
         {
@@ -456,6 +487,22 @@ exit 1
         $this->cm->save();
     }
 
+    /* ?identify=poll: a module that finished asks every few seconds whether the operator wants it to
+       blink. No log entry; the module is noted as on the bench (polled_at) at most once a minute. */
+    public function identifyPoll()
+    {
+        $this->cm = Cm::where('serial', $this->serial)->first();
+        if (!$this->cm)
+            return '';
+
+        if (!$this->cm->polled_at || $this->cm->polled_at->getTimestamp() <= now()->getTimestamp() - Cm::POLL_NOTE_SECONDS)
+        {
+            $this->cm->polled_at = now();
+            $this->cm->save();
+        }
+        return $this->cm->isIdentifying() ? 'identify' : '';
+    }
+
     /* ?progress=<phase>[&detail=<script name>][&sectors=<n>]: where the module is, sent every few seconds
        while the image is written or verified. Best effort on both sides, so never an error and no log entry. */
     public function registerProgress(Request $req)
@@ -477,7 +524,8 @@ exit 1
         return '';
     }
 
-    /* Do not provision: tell the web log, mark the module failed and show the reason on its console */
+    /* Do not provision: tell the web log, mark the module failed, show the reason on its console and
+       the failed state on its LEDs */
     protected function refuse($reason, $consoleMessage = null)
     {
         $this->logInfo($reason, 'error');
@@ -487,7 +535,7 @@ exit 1
             $this->failed();
         }
 
-        return "echo ".escapeshellarg($consoleMessage ?: $reason);
+        return $this->failureScript(request(), $consoleMessage ?: $reason);
     }
 
     /* The module's provisioning stopped: keep its batch alive and tell the notification channels */
