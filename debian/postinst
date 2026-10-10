@@ -39,9 +39,9 @@ case "$1" in
         sed -i "s/max_input_time = 60/max_input_time = 86400/" "$PHP_INI"
         deb-systemd-invoke restart php${PHP_VERSION}-fpm || true
 
-        # Enable site in nginx
+        # Enable site in nginx (as *.conf: some nginx setups load only sites-enabled/*.conf)
         echo "Enabling CM provision webinterface in nginx"
-        ln -sf /etc/nginx/sites-available/cmprovision /etc/nginx/sites-enabled/cmprovision
+        ln -sf /etc/nginx/sites-available/cmprovision /etc/nginx/sites-enabled/cmprovision.conf
         rm -f /etc/nginx/sites-enabled/default
         deb-systemd-invoke restart nginx || true
     fi
@@ -53,6 +53,24 @@ case "$1" in
         echo "Adding image download timeout to $NGINX_SITE"
         sed -i 's#^    location / {#    location /uploads/ {\n        send_timeout 6h;\n    }\n\n    location / {#' "$NGINX_SITE"
         nginx -t >/dev/null 2>&1 && deb-systemd-invoke reload nginx || echo "nginx configuration test failed, not reloaded"
+    fi
+
+    # The site is enabled as cmprovision.conf: WLAN Pi OS points nginx.conf to wlanpi-core's, which
+    # loads only sites-enabled/*.conf. Debian loads every name, so the old link must go, or the site
+    # would be there twice (duplicate default server).
+    if [ -L /etc/nginx/sites-enabled/cmprovision ]; then
+        echo "Enabling the nginx site as cmprovision.conf"
+        rm -f /etc/nginx/sites-enabled/cmprovision
+        ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/cmprovision.conf
+        nginx -t >/dev/null 2>&1 && deb-systemd-invoke reload nginx || echo "nginx configuration test failed, not reloaded"
+    fi
+
+    # Modules load their boot files over TFTP from cmprovision-dnsmasq, which needs UDP port 69.
+    # Another TFTP server there (WLAN Pi OS runs tftpd-hpa on all addresses) keeps it from starting.
+    TFTP_OWNER=$(ss -Hlunp 'sport = :69' 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | grep -v '^dnsmasq$' | head -1)
+    if [ -n "$TFTP_OWNER" ]; then
+        echo "WARNING: UDP port 69 is taken by $TFTP_OWNER: modules cannot network boot until it is stopped"
+        echo "         (for tftpd-hpa: systemctl disable --now tftpd-hpa), then: systemctl restart cmprovision-dnsmasq"
     fi
 
     # Uploaded images pass through PHP's temporary directory. Keep it on disk next to the images:
