@@ -4,15 +4,15 @@
 #   progress  ACT blinks 10 times a second, PWR on (kernel timer)
 #   done      ACT and PWR take turns, each fading in and out
 #   fail      ACT dim, PWR flashes twice, then a second dark
-#   identify  ACT and PWR alternate fast, for 30 s when the operator asks in the web interface
+#   identify  ACT and PWR alternate fast while the operator wants it (web interface: Identify, Stop)
 # Fading and dimming come from the ledpattern helper (software PWM) downloaded from the server;
 # without it the same states are shown with kernel triggers.
 LEDS=${LEDS:-/sys/class/leds}
 LEDS_DRIVER=${LEDS_DRIVER:-/sys/bus/platform/drivers/leds-gpio}
 LED_TMP=${LED_TMP:-/tmp}
 LEDPATTERN=$LED_TMP/ledpattern
-LED_IDENTIFY_SECONDS=${LED_IDENTIFY_SECONDS:-30}
 LED_POLL_SECONDS=${LED_POLL_SECONDS:-5}
+LED_IDENTIFY_POLL_SECONDS=${LED_IDENTIFY_POLL_SECONDS:-2}
 LED_PID=""
 LED_ACT=$LEDS/led0; [ -e "$LEDS/ACT" ] && LED_ACT=$LEDS/ACT
 LED_PWR=$LEDS/led1; [ -e "$LEDS/PWR" ] && LED_PWR=$LEDS/PWR
@@ -71,13 +71,17 @@ led_mode() {   # led_mode progress|done|fail|identify
     esac
 }
 
-# Blink for the operator when the web interface asks for it, then return to the final state
+led_asked() {   # does the operator want this module to identify itself?
+    [ "$(curl --silent --max-time 4 -g "http://{{ $server }}/scriptexecute?serial={{ $serial }}&identify=poll")" = identify ]
+}
+
+# Blink for the operator as long as the server says so (it stops by itself after a while, or when the
+# operator presses Stop), then return to the final state
 led_poll_once() {   # led_poll_once done|fail
-    if [ "$(curl --silent --max-time 4 -g "http://{{ $server }}/scriptexecute?serial={{ $serial }}&identify=poll")" = identify ]; then
-        led_mode identify
-        sleep "$LED_IDENTIFY_SECONDS"
-        led_mode "$1"
-    fi
+    led_asked || return 0
+    led_mode identify
+    while sleep "$LED_IDENTIFY_POLL_SECONDS" && led_asked; do :; done
+    led_mode "$1"
 }
 
 # Every run ends here, successful or not: the module shows its result and keeps asking the server

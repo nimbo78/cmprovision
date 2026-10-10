@@ -38,8 +38,12 @@
                     @endif
                     @if ($m->canIdentify())
                         <div class="mt-1">
-                            <button wire:click="identify({{ $m->id }})" class="bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Identify</button>
-                            @if ($m->isIdentifying()) <span class="ml-2 text-xs font-semibold">blinking</span> @endif
+                            @if ($m->isIdentifying())
+                                <button wire:click="stopIdentify({{ $m->id }})" class="bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Stop</button>
+                                <span class="ml-2 text-xs font-semibold">blinking</span>
+                            @else
+                                <button wire:click="identify({{ $m->id }})" class="bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Identify</button>
+                            @endif
                         </div>
                     @endif
                 </td>

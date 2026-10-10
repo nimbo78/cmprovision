@@ -52,15 +52,25 @@ class ModuleLedsTest extends TestCase
         parent::tearDown();
     }
 
-    /** curl answers the identify poll with $poll, and serves the helper only when $serveHelper */
-    protected function fakeCurl($poll = '', $serveHelper = false)
+    /** curl answers the identify polls with the answers in $polls, one per poll and then nothing, and
+        serves the helper only when $serveHelper */
+    protected function fakeCurl($polls = [], $serveHelper = false)
     {
+        file_put_contents($this->dir.'/answers', implode('', array_map(function ($a) { return $a."\n"; }, (array) $polls)));
         $serve = $serveHelper ? "cp {$this->dir}/helper \"\$out\"" : 'exit 7';
         file_put_contents($this->dir.'/bin/curl', "#!/bin/sh\n"
             ."echo \"\$*\" >> {$this->dir}/curl.log\n"
             ."out=''; prev=''; for a in \"\$@\"; do [ \"\$prev\" = -o ] && out=\$a; prev=\$a; done\n"
-            ."case \"\$*\" in *identify=poll*) printf '%s' ".escapeshellarg($poll)." ;; *) $serve ;; esac\n");
+            ."case \"\$*\" in\n"
+            ."    *identify=poll*) a=\$(head -n 1 {$this->dir}/answers); sed -i 1d {$this->dir}/answers; printf '%s' \"\$a\" ;;\n"
+            ."    *) $serve ;;\n"
+            ."esac\n");
         chmod($this->dir.'/bin/curl', 0755);
+    }
+
+    protected function polls()
+    {
+        return substr_count(file_get_contents($this->dir.'/curl.log'), 'identify=poll');
     }
 
     protected function installHelper()
@@ -78,7 +88,7 @@ class ModuleLedsTest extends TestCase
         file_put_contents($this->dir.'/leds.sh', $script."\n".$commands."\n".'[ -n "$LED_PID" ] && kill "$LED_PID"'."\n");
         exec('cd '.escapeshellarg($this->dir).' && PATH='.escapeshellarg($this->dir.'/bin').':"$PATH"'
              .' LEDS='.escapeshellarg($this->dir.'/leds').' LEDS_DRIVER='.escapeshellarg($this->dir.'/driver')
-             .' LED_TMP='.escapeshellarg($this->dir.'/tmp').' LED_IDENTIFY_SECONDS=0 LED_POLL_SECONDS=0 sh leds.sh 2>&1', $out);
+             .' LED_TMP='.escapeshellarg($this->dir.'/tmp').' LED_IDENTIFY_POLL_SECONDS=0 LED_POLL_SECONDS=0 sh leds.sh 2>&1', $out);
         return implode("\n", $out);
     }
 
@@ -173,6 +183,17 @@ class ModuleLedsTest extends TestCase
 
         $this->assertSame(['done', 'identify', 'done'], $this->patterns());
         $this->assertStringContainsString('serial='.self::SERIAL.'&identify=poll', file_get_contents($this->dir.'/curl.log'));
+    }
+
+    public function test_the_module_blinks_as_long_as_the_server_says_so_and_stops_when_it_does_not()
+    {
+        $this->installHelper();
+        $this->fakeCurl(['identify', 'identify', 'identify', '']);
+
+        $this->sh('led_mode done; sleep 0.2; led_poll_once done; sleep 0.2');
+
+        $this->assertSame(['done', 'identify', 'done'], $this->patterns(), 'one identify pattern for the whole request');
+        $this->assertSame(4, $this->polls(), 'it keeps asking while it blinks: the operator may stop it');
     }
 
     public function test_without_a_request_the_module_keeps_its_state()

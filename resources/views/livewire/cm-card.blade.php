@@ -48,11 +48,12 @@
                     <td class="py-1">
                         @if ($cm->canIdentify())
                             yes
-                            <button wire:click="identify" class="ml-2 bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Identify</button>
                             @if ($cm->isIdentifying())
+                                <button wire:click="stopIdentify" class="ml-2 bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Stop</button>
                                 <span class="ml-2 font-semibold">Blinking until {{ $cm->identify_until->local()->format('H:i:s') }}</span>
                             @else
-                                <span class="ml-2 text-xs text-gray-500">ACT and PWR alternate fast for {{ \App\Models\Cm::IDENTIFY_SECONDS }} s</span>
+                                <button wire:click="identify" class="ml-2 bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Identify</button>
+                                <span class="ml-2 text-xs text-gray-500">ACT and PWR alternate fast for {{ \App\Models\Cm::IDENTIFY_SECONDS }} s, or until Stop</span>
                             @endif
                         @else
                             <span class="text-gray-500">not known: the module does not ask the server (switched off, started its own OS, or provisioned by a version before 1.6.9)</span>

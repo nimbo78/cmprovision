@@ -20,6 +20,13 @@ class ProvisioningStatus extends Component
             $cm->identify();
     }
 
+    public function stopIdentify($id)
+    {
+        $cm = Cm::find($id);
+        if ($cm)
+            $cm->stopIdentify();
+    }
+
     public function render()
     {
         $recent = now()->subHours(self::RECENT_HOURS);

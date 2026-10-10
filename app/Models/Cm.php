@@ -23,8 +23,9 @@ class Cm extends Model
     /* A run has a dozen steps; the cap only guards against a script that keeps renaming itself */
     const MAX_TIMELINE = 200;
     /* A finished module asks every 5 s whether to blink (led_poll_once in scriptexecute/leds.blade.php)
-       and then blinks for LED_IDENTIFY_SECONDS = IDENTIFY_SECONDS. polled_at is written at most once
-       per POLL_NOTE_SECONDS, so a module counts as on the bench for ON_BENCH_SECONDS after it. */
+       and, while it blinks, every 2 s whether to go on: it blinks until identify_until, IDENTIFY_SECONDS
+       after the operator pressed Identify, or until Stop. polled_at is written at most once per
+       POLL_NOTE_SECONDS, so a module counts as on the bench for ON_BENCH_SECONDS after it. */
     const IDENTIFY_SECONDS = 30;
     const POLL_NOTE_SECONDS = 60;
     const ON_BENCH_SECONDS = 120;
@@ -68,6 +69,17 @@ class Cm extends Model
         if ($this->canIdentify())
         {
             $this->identify_until = now()->addSeconds(self::IDENTIFY_SECONDS);
+            $this->save();
+        }
+        return $this;
+    }
+
+    /* The operator has found it: the module returns to its state at its next question */
+    public function stopIdentify()
+    {
+        if ($this->identify_until)
+        {
+            $this->identify_until = null;
             $this->save();
         }
         return $this;

@@ -141,6 +141,33 @@ class ModuleIdentifyTest extends TestCase
         $this->assertEquals(now()->addSeconds(30), Cm::first()->identify_until);
     }
 
+    public function test_the_operator_can_stop_the_blinking_on_the_card()
+    {
+        $this->module(['polled_at' => now(), 'identify_until' => now()->addSeconds(20)]);
+
+        Livewire::test('cm-card', ['serial' => self::SERIAL])
+            ->assertSee('wire:click="stopIdentify"', false)
+            ->assertDontSee('wire:click="identify"', false)
+            ->call('stopIdentify')
+            ->assertDontSee('Blinking until')
+            ->assertSee('wire:click="identify"', false);
+
+        $this->assertNull(Cm::first()->identify_until);
+        $this->assertSame('', $this->poll(), 'the module stops at its next question');
+    }
+
+    public function test_the_operator_can_stop_the_blinking_on_the_dashboard()
+    {
+        $cm = $this->module(['polled_at' => now(), 'identify_until' => now()->addSeconds(20)]);
+
+        Livewire::test(ProvisioningStatus::class)
+            ->assertSee('Stop')
+            ->call('stopIdentify', $cm->id)
+            ->assertDontSee('blinking');
+
+        $this->assertNull(Cm::first()->identify_until);
+    }
+
     public function test_the_card_page_with_identify_needs_a_login()
     {
         $this->module(['polled_at' => now()]);

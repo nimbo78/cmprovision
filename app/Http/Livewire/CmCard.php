@@ -29,6 +29,11 @@ class CmCard extends Component
         Cm::where('serial', $this->serial)->firstOrFail()->identify();
     }
 
+    public function stopIdentify()
+    {
+        Cm::where('serial', $this->serial)->firstOrFail()->stopIdentify();
+    }
+
     public function render()
     {
         $cm = Cm::where('serial', $this->serial)->firstOrFail();
