@@ -612,6 +612,10 @@ exit 1
                     throw new \Exception("Error executing '$cmd'");
                 if ($retcode)
                     throw new \Exception("Executing '$cmd' returned exit code $retcode. Program output:\n".implode("\n", $output));
+                // a command can report trouble and still exit 0 (a CSV it cannot write): keep what it said
+                $said = trim(implode("\n", $output));
+                if ($said !== '')
+                    $this->logInfo('Label command output: '.$said);
             }
         }
         catch (\Exception $e)
