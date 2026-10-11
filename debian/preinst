@@ -7,24 +7,26 @@ set -e
 # installed, and while this script runs the old version is half-installed: pack it the way dpkg-repack
 # would, from the files dpkg lists for it and its control information.
 pack_old_version() {
-    tree=$(mktemp -d /var/tmp/cmprovision-old.XXXXXX) || return 1
-    mkdir -m 755 "$tree/DEBIAN"
+    # everything temporary stays inside the private directory mktemp makes: /var/tmp is world-writable
+    work=$(mktemp -d /var/tmp/cmprovision-old.XXXXXX) || return 1
+    tree=$work/tree
+    mkdir -m 755 "$tree" "$tree/DEBIAN"
     dpkg-query -W -f='Package: ${Package}\nVersion: ${Version}\nArchitecture: ${Architecture}\nMaintainer: ${Maintainer}\nInstalled-Size: ${Installed-Size}\nDepends: ${Depends}\nConflicts: ${Conflicts}\nSection: ${Section}\nPriority: ${Priority}\nDescription: ${Description}\n' cmprovision4 \
         | grep -v ': $' > "$tree/DEBIAN/control"
     for f in preinst postinst prerm postrm conffiles; do
         if [ -f "/var/lib/dpkg/info/cmprovision4.$f" ]; then cp -p "/var/lib/dpkg/info/cmprovision4.$f" "$tree/DEBIAN/$f"; fi
     done
-    dpkg-query -L cmprovision4 | grep '^/.' > "$tree.list"
+    dpkg-query -L cmprovision4 | grep '^/.' > "$work/list"
     # directories as directories, also where this system has a symlink (merged /usr: /lib -> usr/lib)
     while IFS= read -r p; do
         if [ -d "$p" ]; then
             stat -L -c '%a %u %g' "$p" | { read -r m u g; install -d -m "$m" -o "$u" -g "$g" "$tree$p"; }
         fi
-    done < "$tree.list"
-    while IFS= read -r p; do if [ ! -d "$p" ]; then printf '%s\n' "$p"; fi; done < "$tree.list" \
-        | tar -C / --no-recursion --ignore-failed-read -cf - -T - 2>/dev/null | tar -C "$tree" -xpf -
+    done < "$work/list"
+    while IFS= read -r p; do if [ ! -d "$p" ]; then printf '%s\n' "$p"; fi; done < "$work/list" \
+        | tar -C / --no-recursion --verbatim-files-from --ignore-failed-read -cf - -T - 2>/dev/null | tar -C "$tree" -xpf -
     dpkg-deb -Zgzip --build "$tree" "$1/" > /dev/null; ret=$?
-    rm -rf "$tree" "$tree.list"
+    rm -rf "$work"
     return $ret
 }
 
