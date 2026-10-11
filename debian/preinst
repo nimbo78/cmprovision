@@ -3,9 +3,42 @@
 # cmprovision-restore <snapshot> puts 1.x back. Uploaded images are not in it: the upgrade leaves them alone.
 set -e
 
+# The snapshot's reinstallable .deb comes from dpkg-repack, which refuses a package that is not fully
+# installed, and while this script runs the old version is half-installed: pack it the way dpkg-repack
+# would, from the files dpkg lists for it and its control information.
+pack_old_version() {
+    tree=$(mktemp -d /var/tmp/cmprovision-old.XXXXXX) || return 1
+    mkdir -m 755 "$tree/DEBIAN"
+    dpkg-query -W -f='Package: ${Package}\nVersion: ${Version}\nArchitecture: ${Architecture}\nMaintainer: ${Maintainer}\nInstalled-Size: ${Installed-Size}\nDepends: ${Depends}\nConflicts: ${Conflicts}\nSection: ${Section}\nPriority: ${Priority}\nDescription: ${Description}\n' cmprovision4 \
+        | grep -v ': $' > "$tree/DEBIAN/control"
+    for f in preinst postinst prerm postrm conffiles; do
+        if [ -f "/var/lib/dpkg/info/cmprovision4.$f" ]; then cp -p "/var/lib/dpkg/info/cmprovision4.$f" "$tree/DEBIAN/$f"; fi
+    done
+    dpkg-query -L cmprovision4 | grep '^/.' > "$tree.list"
+    # directories as directories, also where this system has a symlink (merged /usr: /lib -> usr/lib)
+    while IFS= read -r p; do
+        if [ -d "$p" ]; then
+            stat -L -c '%a %u %g' "$p" | { read -r m u g; install -d -m "$m" -o "$u" -g "$g" "$tree$p"; }
+        fi
+    done < "$tree.list"
+    while IFS= read -r p; do if [ ! -d "$p" ]; then printf '%s\n' "$p"; fi; done < "$tree.list" \
+        | tar -C / --no-recursion --ignore-failed-read -cf - -T - 2>/dev/null | tar -C "$tree" -xpf -
+    dpkg-deb -Zgzip --build "$tree" "$1/" > /dev/null; ret=$?
+    rm -rf "$tree" "$tree.list"
+    return $ret
+}
+
 if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.0.0~"; then
     if [ -x /usr/sbin/cmprovision-backup ]; then
-        /usr/sbin/cmprovision-backup || echo "cmprovision: the snapshot before the upgrade failed, continuing" >&2
+        if /usr/sbin/cmprovision-backup; then
+            snap=$(ls -td /var/backups/cmprovision/*-"$2" 2>/dev/null | head -1)
+            if [ -d "$snap" ] && ! ls "$snap"/cmprovision4_*.deb > /dev/null 2>&1; then
+                pack_old_version "$snap" && echo "cmprovision: $2 packed into $snap for cmprovision-restore" \
+                    || echo "cmprovision: could not pack $2 into $snap; install its .deb again before cmprovision-restore" >&2
+            fi
+        else
+            echo "cmprovision: the snapshot before the upgrade failed, continuing" >&2
+        fi
     fi
 fi
 
