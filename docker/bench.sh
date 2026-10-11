@@ -1,12 +1,12 @@
 #!/bin/sh
 # Helper for the Docker test bench. Run on the Docker host from anywhere:
-#   docker/bench.sh sync    [bullseye|trixie]   copy the source tree into the container's app dir
-#   docker/bench.sh up      [bullseye|trixie]   build the image if needed and start the container
-#   docker/bench.sh restart [bullseye|trixie]   restart (the queue worker only sees new code after this)
-#   docker/bench.sh test    [bullseye|trixie] [phpunit args]   run the test-suite on in-memory SQLite
-#   docker/bench.sh shell   [bullseye|trixie]   shell inside the container as the app user
-#   docker/bench.sh deb     [bullseye|trixie]   build the .deb from a clean export (default: bullseye)
-#   docker/bench.sh logs    [bullseye|trixie]
+#   docker/bench.sh sync      copy the source tree into the container's app dir
+#   docker/bench.sh up        build the image if needed and start the container
+#   docker/bench.sh restart   restart (the queue worker only sees new code after this)
+#   docker/bench.sh test      [phpunit args]   run the test-suite on in-memory SQLite
+#   docker/bench.sh shell     shell inside the container as the app user
+#   docker/bench.sh deb       build the .deb from a clean export
+#   docker/bench.sh logs
 # The source tree is the repository checkout this script lives in. Runtime state in the app dir
 # (.env, database, storage, uploads, vendor) is left alone by sync.
 set -e
@@ -16,8 +16,8 @@ cd "$HERE"
 export BENCH_UID=$(id -u) BENCH_GID=$(id -g)
 
 cmd=${1:-help}; [ $# -gt 0 ] && shift
-svc=bullseye
-case "${1:-}" in bullseye|trixie) svc=$1; shift ;; esac
+svc=trixie
+case "${1:-}" in trixie) svc=$1; shift ;; esac
 APPDIR="$HERE/$svc/app"
 EXCLUDES="--exclude=/.git --exclude=/.serena --exclude=/.remember --exclude=/.vscode --exclude=/node_modules --exclude=/docker --exclude=/.env --exclude=/vendor"
 

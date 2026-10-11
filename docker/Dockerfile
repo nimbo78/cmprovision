@@ -1,22 +1,13 @@
 # Test bench image: Debian + nginx + php-fpm, laid out like the cmprovision4 .deb
 # (app in /var/lib/cmprovision, nginx site from debian/cmprovision).
-# Build args pick the Debian release and matching PHP version:
-#   bullseye + 7.4  (what the production provisioner runs)
-#   trixie   + 8.4  (current Raspberry Pi OS)
-ARG DEBIAN=bullseye
+# Debian 13 (trixie) with PHP 8.4, like the Raspberry Pi OS Trixie the provisioner runs.
+ARG DEBIAN=trixie
 FROM debian:${DEBIAN}-slim
 ARG DEBIAN
-ARG PHPV=7.4
+ARG PHPV=8.4
 ARG UID=1000
 ARG GID=1000
 ENV DEBIAN_FRONTEND=noninteractive PHPV=${PHPV}
-
-# bullseye is end-of-life: its packages only live on archive.debian.org now.
-RUN if [ "$DEBIAN" = bullseye ]; then \
-        printf 'deb http://archive.debian.org/debian bullseye main\ndeb http://archive.debian.org/debian-security bullseye-security main\n' > /etc/apt/sources.list \
-        && rm -rf /etc/apt/sources.list.d/* \
-        && echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99archive; \
-    fi
 
 # Same PHP extensions as debian/control (no php-curl on purpose: the package does not depend on it).
 # Build tools are here so the same container can build the .deb.

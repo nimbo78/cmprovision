@@ -4,18 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Обзор
 
-Веб-приложение для массовой прошивки Raspberry Pi Compute Module 3/3+/4 (и Pi 4 с включённой сетевой загрузкой). Стек: Laravel 8, Jetstream (Livewire 2 + Fortify + Sanctum), Tailwind 2 через Laravel Mix, SQLite. Форк `raspberrypi/cmprovision`.
+Веб-приложение для массовой прошивки Raspberry Pi Compute Module 3/3+/4 (и Pi 4 с включённой сетевой загрузкой). Стек: Laravel 13, Jetstream 5.5 (Livewire 3 + Fortify + Sanctum 4), Tailwind 3.4 (самостоятельный бинарник, без Node), SQLite. Форк `raspberrypi/cmprovision`.
 
 Целевая среда — Raspberry Pi OS на Pi 4: пакет `cmprovision4` ставится в `/var/lib/cmprovision` и работает поверх nginx + php-fpm, dnsmasq, rpiboot и systemd. Код вызывает Linux-утилиты (`systemctl`, `journalctl`, `sudo`, `bash`, `gzip`/`xz`/`bunzip2`, `sha256sum`), поэтому страница Settings и подсчёт хешей образов работают только на Linux, а сквозной провижининг проверяется только на Pi с подключёнными модулями.
 
-Рабочий провижинер пользователя с 10 октября 2026 (1.6.10) — Raspberry Pi OS Trixie (Debian 13, PHP 8.4, NetworkManager) на WLAN Pi M4+, до этого был Debian 11 (bullseye) с PHP 7.4. Ветка 1.6.x остаётся для старых серверов, поэтому код должен оставаться совместимым с PHP 7.4 (без `match`, именованных аргументов, `?->`, enum, `readonly`, `str_contains`); `composer.json` объявляет `^7.3|^8.0`. Один и тот же `composer.lock` должен ставиться и на PHP 7.4, и на 8.4: обновляйте его под PHP 7.4 (стенд bullseye из `docker/bench.sh`), а затем проверяйте `composer install` на 8.4 — пакеты с верхней границей PHP ломают сборку `.deb` на Trixie. Поэтому `league/commonmark` закреплён на `^1.6`: ветка 2.x тянет `nette/utils` 3 и `nette/schema` 1.2 с ограничением PHP < 8.3 (Markdown приложение не использует).
+С 2.0 приложение требует PHP 8.3 и новее и ставится только на Debian 13 / Raspberry Pi OS Trixie (в `debian/control` зависимости `php-*` с эпохой: `>= 2:8.3`). `composer.json` закрепляет `config.platform.php = 8.3.0`, чтобы lock подходил и для 8.3, и для 8.4. Ветка 1.6.x (Laravel 8, PHP 7.4) заморожена на теге `v1.6.11`; рабочий провижинер пользователя — Raspberry Pi OS Trixie (Debian 13, PHP 8.4, NetworkManager) на WLAN Pi M4+.
 
 ## Команды
 
-- Стенд: `docker/bench.sh` поднимает контейнеры bullseye (PHP 7.4) и trixie (PHP 8.4) с nginx и php-fpm в раскладке пакета; подробности в [docker/README.md](docker/README.md). На Windows ничего не запускается — стенд живёт на Docker-хосте.
-- Зависимости: `composer install`, `npm install`.
-- Ассеты: `npm run prod` — сборка с purge, её результат коммитится (см. «Фронтенд»); `npm run dev` — без purge, только для разработки. Собирайте не в OneDrive (там нельзя `node_modules/`): в WSL-стенде скрипт `/root/bench/08-assets.sh` берёт исходники из `/root/assets-in`, Node из Debian, шаблоны Jetstream для purge — из `/root/dev/vendor`.
-- Тесты: `DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test`; для одного класса или метода добавьте `--filter=AuthenticationTest`. Зачем переменные — см. «Тесты». JS без сборки: `npm run test:js` (Node ≥ 20, `tests/js/`).
+- Стенд: `docker/bench.sh` поднимает контейнер trixie (PHP 8.4) с nginx и php-fpm в раскладке пакета; подробности в [docker/README.md](docker/README.md). На Windows ничего не запускается — стенд живёт на Docker-хосте или в WSL-дистрибутиве.
+- Зависимости: `composer install`. Node нужен только для `npm run test:js`.
+- Стили: `php artisan view:cache`, затем `tailwindcss -c tailwind.config.js -i resources/css/app.css -o public/css/app.css --minify` бинарником Tailwind CLI 3.4.19 (плагины forms и typography внутри); результат коммитится. Собирайте не в OneDrive (там нельзя `vendor/`): в WSL-стенде это `/root/bench/25-css.sh`.
+- Тесты: `php artisan test` (база в памяти задана в `phpunit.xml`); для одного класса или метода добавьте `--filter=AuthenticationTest`. JS без сборки: `npm run test:js` (Node ≥ 20, `tests/js/`).
 - Линтера и форматтера в проекте нет.
 - Помощник светодиодов `public/tools/ledpattern` — статический 32-битный ARM-бинарник из `tools/ledpattern/ledpattern.c`, закоммичен: при сборке пакета он не собирается, `dh_strip` его не трогает. Пересборка: `sh tools/ledpattern/build.sh` с кросс-компилятором `gcc-arm-linux-gnueabihf` (в WSL-стенде — `/root/bench/18-ledpattern.sh`, исходники на stdin). Провижинер на arm64 умеет его запускать: `public/tools/ledpattern` без аргументов печатает подсказку.
 - Artisan-команды проекта: `auth:create-user` — штатный способ завести пользователя (регистрация выключена в `config/fortify.php`); `ethernetswitch:configure` — настройка SNMP-коммутатора (только v2c; полная настройка — на странице Settings).
@@ -27,8 +27,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Тесты
 
-- Feature-тесты используют `RefreshDatabase` (то есть `migrate:fresh`), а переопределение на in-memory SQLite в `phpunit.xml` закомментировано. Без переменных из команды выше тесты сотрут БД, указанную в `.env`.
-- Тесты покрывают провижининг: скрипт модуля и его отчёты, прогресс, отказы и расшифровку ошибок, прошивки EEPROM и их итог «до и после», карточку модуля с советами по каждому виду сбоя, загрузку образов, уведомления (`Http::fake()`), поиск порта на коммутаторе (`Tests\Support\FakeSnmp`), страницы Livewire, API и часовой пояс; рядом остались заготовки Jetstream. Гоняйте их на PHP 7.4 и 8.4. `EepromTransparencyTest` запускает сгенерированный скрипт прошивки настоящим `sh -v` с подставными `curl`, `sha256sum` и `flashrom`, поэтому нужен POSIX shell (без него тест пропускается). `tests/Feature/SnmpAgentTest` идёт против симулятора snmpsim только с переменной `SNMPSIM_ENDPOINT` (см. `docker/README.md`), без неё пропускается.
+- Feature-тесты используют `RefreshDatabase` (то есть `migrate:fresh`); `phpunit.xml` задаёт SQLite в памяти, поэтому тесты не трогают базу из `.env`.
+- Тесты покрывают провижининг: скрипт модуля и его отчёты, прогресс, отказы и расшифровку ошибок, прошивки EEPROM и их итог «до и после», карточку модуля с советами по каждому виду сбоя, загрузку образов, уведомления (`Http::fake()`), поиск порта на коммутаторе (`Tests\Support\FakeSnmp`), страницы Livewire, API и часовой пояс; рядом остались заготовки Jetstream. Гоняйте их на PHP 8.4 (стенд). `EepromTransparencyTest` запускает сгенерированный скрипт прошивки настоящим `sh -v` с подставными `curl`, `sha256sum` и `flashrom`, поэтому нужен POSIX shell (без него тест пропускается). `tests/Feature/SnmpAgentTest` идёт против симулятора snmpsim только с переменной `SNMPSIM_ENDPOINT` (см. `docker/README.md`), без неё пропускается.
 
 ## Провижининг: сквозной поток
 
@@ -86,8 +86,9 @@ EEPROM «до и после»: сервер хранит доложенный з
 ## Фронтенд
 
 - Страницы — full-page Livewire-компоненты (`app/Http/Livewire/*` + `resources/views/livewire/*`), подключённые прямо в `routes/web.php`.
-- Собранные `public/css`, `public/js` и `public/mix-manifest.json` закоммичены и попадают в `.deb` как есть: при упаковке ассеты не собираются. Добавив Tailwind-класс, которого ещё нет в шаблонах, выполните `npm run prod` и закоммитьте результат. Purge сканирует и `vendor/laravel/jetstream`, поэтому `composer install` выполняется до сборки ассетов.
-- README предписывает после правки `.blade` выполнять `php artisan view:cache`; скомпилированные шаблоны (`storage/framework/views`) тоже входят в purge-пути Tailwind.
+- Livewire 3: классы компонентов остаются в `App\Http\Livewire` (`class_namespace` в `config/livewire.php`), макет полностраничных компонентов — `layouts.app`. Простой `wire:model` отправляет значение с действием, `wire:model.live` — сразу. Методы компонента, которые не должны вызываться из браузера, — `protected`: всё публичное доступно как действие. Объекты, которые Livewire 3 не сериализует (например, `App\Models\Firmware`), передаются в шаблон данными `render()`, а не публичными свойствами.
+- Шаблоны Jetstream 5 опубликованы в `resources/views/{components,api,profile,auth}` (компоненты `<x-…>` без префикса). В них есть классы `dark:`, поэтому в `tailwind.config.js` стоит `darkMode: 'class'`: тёмная тема ОС интерфейс не перекрашивает.
+- Собранный `public/css/app.css` закоммичен и попадает в `.deb` как есть. Своего JS-бандла нет: Alpine 3 приходит со скриптами Livewire, `public/js/upload-progress.js` — обычный скрипт без сборки, покрыт `tests/js`.
 - Загрузка образа идёт XMLHttpRequest'ом из Alpine-компонента `imageUploader()` (определён в `images.blade.php`, форма в `addimage.blade.php`) на тот же `POST /addImage`; расчёт скорости и остатка — `public/js/upload-progress.js`, обычный скрипт без сборки, покрыт `tests/js`. Пока у какого-то образа не посчитан SHA256, страница Images опрашивает сервер (`wire:poll`), кроме момента, когда открыт диалог.
 - Значок подключения сервера в верхней панели — компонент `UplinkIndicator`, один экземпляр на все размеры экрана. Данные собирает `App\Services\NetworkStatus` так, как может пользователь www-data:
   - маршрут по умолчанию — из `/proc/net/route`;
@@ -97,4 +98,3 @@ EEPROM «до и после»: сервер хранит доложенный з
   - «предпочтительное подключение не подключено» — по профилям `nmcli` с меньшей метрикой.
 
   Тексты значка и подсказки готовит `App\Support\UplinkSummary`. Снимок лежит в кэше под ключом `network-status`. Значок сам обновляется раз в `POLL_SECONDS` (300 с) и берёт снимок не старше `PASSIVE_MAX_AGE`, а наведение или нажатие — не старше `FRESH_MAX_AGE` (10 с).
-- Тестовый помощник Livewire 2 вырезает `wire:initial-data` жадной регуляркой до последнего `}"` в первой строке корневого тега, а вместе с ним и соседние атрибуты. Поэтому `x-data="{ ... }"` в корне компонента ставьте на вторую строку тега.

@@ -1,3 +1,21 @@
+cmprovision4 (2.0.0~dev1) unstable; urgency=medium
+
+  * Laravel 13 on PHP 8.3 or newer: Debian 13 / Raspberry Pi OS Trixie only.
+    Livewire 3, Jetstream 5.5 (Fortify, Sanctum 4), PHPUnit 12. The 1.6
+    line stays on Debian 11 and 12 and gets no new features.
+  * Two-factor login now asks for a code once before it is switched on.
+    Account deletion and password reset by email are off; a forgotten
+    password is replaced on the server with auth:create-user.
+  * The styles are built with the standalone Tailwind CLI 3.4; the
+    package needs no Node and ships no JavaScript bundle (Alpine comes
+    with Livewire). The look is unchanged.
+  * Upgrading from 1.x first takes a cmprovision-backup snapshot of the
+    data; cmprovision-restore <snapshot> goes back.
+  * A label print command's output goes to the module log even when the
+    command exits 0. A project takes only images of the firmware store.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 11 Oct 2026 12:43:28 +0300
+
 cmprovision4 (1.6.11) unstable; urgency=medium
 
   * The top bar shows how the server reaches the network: a Wi-Fi icon with

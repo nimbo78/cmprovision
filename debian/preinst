@@ -1,0 +1,14 @@
+#!/bin/sh
+# Before an upgrade from 1.x to 2.0 (Laravel 13, new database columns) keep a snapshot of the data:
+# cmprovision-restore <snapshot> puts 1.x back. Uploaded images are not in it: the upgrade leaves them alone.
+set -e
+
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.0.0~"; then
+    if [ -x /usr/sbin/cmprovision-backup ]; then
+        /usr/sbin/cmprovision-backup || echo "cmprovision: the snapshot before the upgrade failed, continuing" >&2
+    fi
+fi
+
+#DEBHELPER#
+
+exit 0
