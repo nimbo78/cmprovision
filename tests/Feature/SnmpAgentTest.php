@@ -91,4 +91,48 @@ class SnmpAgentTest extends TestCase
             $this->assertTrue($e->timeout);
         }
     }
+
+    protected function snapshot($community)
+    {
+        $snmp = new PhpSnmpClient(['host' => getenv('SNMPSIM_ENDPOINT'), 'community' => $community]);
+        return (new \App\Services\Switch\SwitchSnapshot($snmp, new \App\Services\Switch\MacTable($snmp), new \App\Services\Switch\Poe($snmp), 'snmpsim'))->take();
+    }
+
+    public function test_snapshot_of_a_huawei_s5731_with_poe_by_interface()
+    {
+        $s = $this->snapshot('s5731');
+        $this->assertSame('S5731-S24P4X', $s['model']);
+        $this->assertCount(28, $s['ports'], '24 GE and 4 XGE, not Vlanif1');
+        $this->assertSame([self::MODULE], $s['ports'][3]['macs']);
+        $this->assertSame(['state' => 'delivering', 'class' => null, 'watts' => 6.9], $s['ports'][3]['poe']);
+        $this->assertSame('searching', $s['ports'][4]['poe']['state']);
+        $this->assertNull($s['ports'][25]['poe']);
+        $this->assertCount(5, $s['ports'][25]['macs'], 'the office LAN behind the uplink');
+        $this->assertSame(100, $s['ports'][1]['changed'], 'TimeTicks come through php-snmp as hundredths');
+        $this->assertSame(999990, $s['ports'][2]['changed']);
+    }
+
+    public function test_snapshot_of_a_cisco_ios_switch_with_poe_through_entity_mib()
+    {
+        $s = $this->snapshot('c9200');
+        $this->assertSame([self::MODULE], $s['ports'][10105]['macs'], 'from the VLAN 20 instance');
+        $this->assertSame(['state' => 'delivering', 'class' => 4, 'watts' => 7.1], $s['ports'][10105]['poe']);
+        $this->assertSame(['00:11:22:33:44:55'], $s['ports'][10201]['macs']);
+    }
+
+    public function test_snapshot_of_a_cisco_business_switch_with_poe_by_interface_index()
+    {
+        $s = $this->snapshot('cbs350');
+        $this->assertSame([self::MODULE], $s['ports'][2]['macs']);
+        $this->assertSame('delivering', $s['ports'][2]['poe']['state']);
+        $this->assertNull($s['ports'][9]['poe'], 'the uplink ports have no PoE');
+    }
+
+    public function test_snapshot_of_a_mikrotik_without_poe()
+    {
+        $s = $this->snapshot('crs');
+        $this->assertSame(['ether1', 'ether2', 'ether3', 'ether4', 'ether5', 'ether6', 'ether7', 'ether8', 'sfp-sfpplus1'], array_column($s['ports'], 'name'));
+        $this->assertFalse($s['poe']);
+        $this->assertSame([self::MODULE], $s['ports'][4]['macs']);
+    }
 }
