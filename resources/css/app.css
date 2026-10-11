@@ -34,3 +34,47 @@
          url('../fonts/nunito-v16-latin-700.woff2') format('woff2'), /* Chrome 26+, Opera 23+, Firefox 39+ */
          url('../fonts/nunito-v16-latin-700.woff') format('woff'); /* Chrome 6+, Firefox 3.6+, IE 9+, Safari 5.1+ */
   }
+
+/* Ports page: the switch's front panel (resources/views/livewire/ports.blade.php). JetBrains Mono (OFL,
+   public/fonts/JetBrainsMono-OFL.txt) keeps 0/O and 1/l apart in the serial numbers. */
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 700;
+    src: url('../fonts/jetbrains-mono-700.woff2') format('woff2');
+}
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 800;
+    src: url('../fonts/jetbrains-mono-800.woff2') format('woff2');
+}
+.ports-serial { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.ports-chassis { background: #2b2f36; border-radius: 8px; padding: 10px 12px 12px; display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; }
+.ports-model { width: 100%; display: flex; justify-content: space-between; gap: 12px; color: #c9ced6; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.ports-block { display: grid; grid-auto-flow: column; grid-template-rows: auto 50px 50px auto; gap: 4px 5px; }
+.ports-block.one-row { grid-auto-flow: row; grid-template-rows: auto 50px; }
+.ports-block.uplinks { padding-left: 14px; border-left: 1px solid #454b55; }
+.ports-num { color: #c9ced6; font: 700 10px 'JetBrains Mono', ui-monospace, monospace; text-align: center; }
+.ports-tile { position: relative; width: 50px; height: 50px; border-radius: 6px; border: 2px solid transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; cursor: pointer; transition: opacity .15s ease, filter .15s ease; }
+.ports-tile.cage { border-radius: 3px; border-style: dashed; }
+.ports-tile .short { font: 800 13px/1 'JetBrains Mono', ui-monospace, monospace; letter-spacing: .02em; }
+.ports-tile .mark { font-weight: 800; font-size: 10px; line-height: 1; }
+.ports-tile .bolt { position: absolute; top: 2px; right: 3px; font-size: 10px; line-height: 1; }
+.ports-tile.selected { box-shadow: 0 0 0 3px #2b2f36, 0 0 0 5px #fff; }
+.ports-tile.dim { opacity: .22; filter: grayscale(.6); }
+.ports-tile:focus-visible { outline: 3px solid #6366f1; outline-offset: 2px; }
+.ports-ok { background: #d1fae5; color: #047857; border-color: #047857; }
+.ports-run { background: #dbeafe; color: #1d4ed8; border-color: #1d4ed8; }
+.ports-fail { background: #fee2e2; color: #b91c1c; border-color: #b91c1c; }
+.ports-stale { background: #fef3c7; color: #b45309; border-color: #b45309; }
+.ports-unknown { background: #f3f4f6; color: #4b5563; border-color: #9ca3af; }
+.ports-boot { background: #cffafe; color: #0e7490; border-color: #0e7490; }
+.ports-foreign { background: #ede9fe; color: #6d28d9; border-color: #6d28d9; }
+.ports-uplink { background: #e5e7eb; color: #374151; border-color: #9ca3af; }
+.ports-free { background: #3a3f48; color: #9aa1ac; border-color: #4a505a; }
+.ports-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; border: 1px solid transparent; }
+.ports-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.ports-chip.pressed { box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor; }
+.ports-chip.faded { opacity: .45; }
+.ports-chip.ports-free { border-color: #e5e7eb; background: #f9fafb; color: #6b7280; }
