@@ -11,55 +11,55 @@
                 </div>
 
                 <!-- Navigation Links -->
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-8 sm:-my-px sm:ml-6 xl:ml-10 sm:flex">
                     <x-nav-link href="{{ route('dashboard') }}" :active="request()->routeIs('dashboard')">
                         {{ __('Dashboard') }}
                     </x-nav-link>
                 </div>
 
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-8 sm:-my-px sm:ml-6 xl:ml-10 sm:flex">
                     <x-nav-link href="{{ route('cms') }}" :active="request()->routeIs('cms')">
                         {{ __('CMs') }}
                     </x-nav-link>
                 </div>
 
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-8 sm:-my-px sm:ml-6 xl:ml-10 sm:flex">
                     <x-nav-link href="{{ route('ports') }}" :active="request()->routeIs('ports')">
                         {{ __('Ports') }}
                     </x-nav-link>
                 </div>
 
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-8 sm:-my-px sm:ml-6 xl:ml-10 sm:flex">
                     <x-nav-link href="{{ route('images') }}" :active="request()->routeIs('images')">
                         {{ __('Images') }}
                     </x-nav-link>
                 </div>
 
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-8 sm:-my-px sm:ml-6 xl:ml-10 sm:flex">
                     <x-nav-link href="{{ route('projects') }}" :active="request()->routeIs('projects')">
                         {{ __('Projects') }}
                     </x-nav-link>
                 </div>
 
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-8 sm:-my-px sm:ml-6 xl:ml-10 sm:flex">
                     <x-nav-link href="{{ route('scripts') }}" :active="request()->routeIs('scripts')">
                         {{ __('Scripts') }}
                     </x-nav-link>
                 </div>
 
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-8 sm:-my-px sm:ml-6 xl:ml-10 sm:flex">
                     <x-nav-link href="{{ route('labels') }}" :active="request()->routeIs('labels')">
                         {{ __('Labels') }}
                     </x-nav-link>
                 </div>
 
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-8 sm:-my-px sm:ml-6 xl:ml-10 sm:flex">
                     <x-nav-link href="{{ route('firmware') }}" :active="request()->routeIs('firmware')">
                         {{ __('Firmware') }}
                     </x-nav-link>
                 </div>
 
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-8 sm:-my-px sm:ml-6 xl:ml-10 sm:flex">
                     <x-nav-link href="{{ route('settings') }}" :active="request()->routeIs('settings')">
                         {{ __('Other settings') }}
                     </x-nav-link>

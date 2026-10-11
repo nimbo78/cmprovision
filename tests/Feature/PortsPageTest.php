@@ -144,4 +144,24 @@ class PortsPageTest extends TestCase
         $this->fake->timeout = true;
         Livewire::test(Ports::class)->assertSee('Cannot read the switch: No response from 192.0.2.1');
     }
+
+    public function test_booting_and_silent_ports_count_as_in_progress_not_as_running()
+    {
+        $cm = $this->switchWithModule();
+        $cm->update(['phase' => 'write', 'provisioning_complete_at' => null, 'progress_updated_at' => now()]);
+        $this->fake->tables[''][SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;   // GE0/0/1: a link, nothing heard yet
+        Livewire::test(Ports::class)
+            ->assertSee('1 running')
+            ->assertSee('1 booting')
+            ->assertSee('2 still in progress, 0 failed: keep the batch on the stand');
+    }
+
+    public function test_a_chip_whose_count_drops_to_zero_stays_while_it_is_selected()
+    {
+        $this->switchWithModule();
+        // nothing runs now: the "running" chip is hidden unless the operator's filter holds it
+        Livewire::test(Ports::class)
+            ->assertSeeHtml('x-show="filter.includes(\'run\')" style="display: none"')
+            ->assertSee('1 done');
+    }
 }

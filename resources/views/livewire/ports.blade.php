@@ -43,19 +43,19 @@
             </div>
             <div class="flex flex-wrap gap-2 items-center" role="group" aria-label="Show only">
                 @foreach ($words as $key => $word)
-                    @if ($s['counts'][$key])
-                        <button type="button" class="ports-chip ports-{{ $key }}" x-on:click="toggle('{{ $key }}')"
-                                x-bind:aria-pressed="filter.includes('{{ $key }}') ? 'true' : 'false'"
-                                x-bind:class="{ 'pressed': filter.includes('{{ $key }}'), 'faded': filter.length > 0 && !filter.includes('{{ $key }}') }">
-                            <span class="dot"></span>{{ $s['counts'][$key] }} {{ $word }}
-                        </button>
-                    @endif
+                    {{-- a chip at zero stays only while the filter holds it, so the operator can let it go --}}
+                    <button type="button" class="ports-chip ports-{{ $key }}" x-on:click="toggle('{{ $key }}')"
+                            @if (!$s['counts'][$key]) x-show="filter.includes('{{ $key }}')" style="display: none" @endif
+                            x-bind:aria-pressed="filter.includes('{{ $key }}') ? 'true' : 'false'"
+                            x-bind:class="{ 'pressed': filter.includes('{{ $key }}'), 'faded': filter.length > 0 && !filter.includes('{{ $key }}') }">
+                        <span class="dot"></span>{{ $s['counts'][$key] }} {{ $word }}
+                    </button>
                 @endforeach
                 <button type="button" x-show="filter.length > 0" x-cloak x-on:click="filter = []" class="text-sm font-semibold text-indigo-600 px-2">Show all</button>
             </div>
             <div class="text-sm font-bold rounded px-3 py-2 {{ $verdictColor }}">
                 @if ($s['verdict'] === 'running')
-                    {{ $s['busy'] }} still running, {{ $s['counts']['fail'] }} failed: keep the batch on the stand
+                    {{ $s['busy'] }} still in progress, {{ $s['counts']['fail'] }} failed: keep the batch on the stand
                 @elseif ($s['verdict'] === 'failed')
                     All finished, {{ $s['counts']['fail'] }} failed{{ $s['counts']['unknown'] ? ', '.$s['counts']['unknown'].' without data' : '' }}: restart or replace them
                 @elseif ($s['verdict'] === 'done')
