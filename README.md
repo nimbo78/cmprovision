@@ -96,9 +96,13 @@ You can create a SD card that enables that with [Imager](https://www.raspberrypi
 ## Upgrading ##
 
 Install the new package over the old one with `sudo apt install ./cmprovision4_*.deb`; never `apt remove` it first, the package's removal step deletes the database and storage.
-Before upgrading, take a snapshot that can be restored in minutes (the commands come with the package; in a checkout they are `tools/backup.sh` and `tools/restore.sh`):
+
+Upgrading from 1.x to 2.0 takes a snapshot by itself first: `/var/backups/cmprovision/<timestamp>-<old version>/`, with the old package inside, and `sudo cmprovision-restore <that directory>` goes back to 1.x with its data. If no snapshot can be taken (three tries), the upgrade stops and 1.x stays installed: try again while no module is on the stand, or upgrade without a way back with `sudo CMPROVISION_NO_SNAPSHOT=1 apt install ./cmprovision4_*.deb`. Reload browser tabs that were open during the upgrade.
+
+For other upgrades take the snapshot yourself (the commands come with the package; in a checkout they are `tools/backup.sh` and `tools/restore.sh`). Only with `dpkg-repack` installed does it hold the installed package; without one, `cmprovision-restore` refuses it while another version is installed:
 
 ```
+sudo apt install dpkg-repack       # once
 sudo cmprovision-backup            # /var/backups/cmprovision/<timestamp>-<version>/
 sudo cmprovision-restore /var/backups/cmprovision/<snapshot>
 ```

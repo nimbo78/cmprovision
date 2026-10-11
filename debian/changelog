@@ -1,4 +1,4 @@
-cmprovision4 (2.0.0~dev5) unstable; urgency=medium
+cmprovision4 (2.0.0~dev6) unstable; urgency=medium
 
   * Laravel 13 on PHP 8.3 or newer: Debian 13 / Raspberry Pi OS Trixie only.
     Livewire 3, Jetstream 5.5 (Fortify, Sanctum 4), PHPUnit 12. The 1.6
@@ -14,7 +14,7 @@ cmprovision4 (2.0.0~dev5) unstable; urgency=medium
   * A label print command's output goes to the module log even when the
     command exits 0. A project takes only images of the firmware store.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Sun, 11 Oct 2026 13:43:10 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 11 Oct 2026 14:41:51 +0300
 
 cmprovision4 (1.6.11) unstable; urgency=medium
 

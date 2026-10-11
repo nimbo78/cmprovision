@@ -30,17 +30,45 @@ pack_old_version() {
     return $ret
 }
 
-if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.0.0~"; then
-    if [ -x /usr/sbin/cmprovision-backup ]; then
-        if /usr/sbin/cmprovision-backup; then
-            snap=$(ls -td /var/backups/cmprovision/*-"$2" 2>/dev/null | head -1)
-            if [ -d "$snap" ] && ! ls "$snap"/cmprovision4_*.deb > /dev/null 2>&1; then
-                pack_old_version "$snap" && echo "cmprovision: $2 packed into $snap for cmprovision-restore" \
-                    || echo "cmprovision: could not pack $2 into $snap; install its .deb again before cmprovision-restore" >&2
+# The old version's cmprovision-backup takes the snapshot. On a server in use it can fail (tar sees the
+# database or a log change while it reads), so it gets three tries; without a snapshot the upgrade stops
+# and the old version stays installed, unless CMPROVISION_NO_SNAPSHOT is set.
+take_snapshot() {
+    for attempt in 1 2 3; do
+        # each try in a directory of its own, so a failed one leaves nothing behind
+        dest=/var/backups/cmprovision/.before-2.0
+        rm -rf "$dest"
+        if /usr/sbin/cmprovision-backup "$dest"; then
+            snap=$(ls -d "$dest"/*-"$1" 2>/dev/null | head -1)
+            if [ -n "$snap" ] && mv "$snap" /var/backups/cmprovision/; then
+                rm -rf "$dest"
+                snap=/var/backups/cmprovision/$(basename "$snap")
+                return 0
             fi
-        else
-            echo "cmprovision: the snapshot before the upgrade failed, continuing" >&2
         fi
+        rm -rf "$dest"
+        echo "cmprovision: snapshot attempt $attempt of 3 failed" >&2
+        [ $attempt = 3 ] || sleep 5
+    done
+    return 1
+}
+
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.0.0~"; then
+    if [ -n "${CMPROVISION_NO_SNAPSHOT:-}" ]; then
+        echo "cmprovision: CMPROVISION_NO_SNAPSHOT is set: upgrading from $2 without a snapshot" >&2
+    elif [ ! -x /usr/sbin/cmprovision-backup ]; then
+        echo "cmprovision: $2 has no cmprovision-backup: upgrading without a snapshot" >&2
+    elif take_snapshot "$2"; then
+        if ! ls "$snap"/cmprovision4_*.deb > /dev/null 2>&1; then
+            pack_old_version "$snap" \
+                || echo "cmprovision: could not pack $2 into $snap; install its .deb again before cmprovision-restore" >&2
+        fi
+        echo "cmprovision: snapshot of $2 in $snap: cmprovision-restore $snap goes back"
+    else
+        echo "cmprovision: no snapshot of $2 could be taken (see above). The upgrade stops and $2 stays installed." >&2
+        echo "cmprovision: try again when no module is on the stand, or upgrade without a way back:" >&2
+        echo "cmprovision:   sudo CMPROVISION_NO_SNAPSHOT=1 apt install <the 2.0 package>" >&2
+        exit 1
     fi
 fi
 

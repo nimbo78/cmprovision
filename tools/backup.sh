@@ -2,7 +2,7 @@
 # Snapshot of an installed cmprovision4 for rolling back a package upgrade.
 #   sudo cmprovision-backup [--with-uploads] [destination-dir]      (installed by the package; tools/backup.sh in a checkout)
 # Default destination: /var/backups/cmprovision/<timestamp>-<installed version>/ containing
-#   app.tar.gz           /var/lib/cmprovision (database, .env, firmware, storage, dnsmasq.conf; uploads only with --with-uploads)
+#   app.tar.gz           /var/lib/cmprovision (.env, firmware, storage, dnsmasq.conf; uploads only with --with-uploads)
 #   database.sqlite      consistent copy of the database (SQLite online backup)
 #   system-config.tar.gz files outside the app dir that the package or postinst touches
 #   cmprovision4_*.deb   reinstallable copy of the installed package (needs dpkg-repack)
@@ -21,12 +21,15 @@ umask 077
 mkdir -p -m 700 "$DEST"
 mkdir -m 700 "$OUT"
 
-sqlite3 "$APP/database/database.sqlite" ".backup '$OUT/database.sqlite'"
+# .timeout: on a server in use, wait for a writer instead of failing
+sqlite3 -cmd '.timeout 10000' "$APP/database/database.sqlite" ".backup '$OUT/database.sqlite'"
 
 EXCLUDE="--exclude=$APP/public/uploads"
 [ "$WITH_UPLOADS" = 1 ] && EXCLUDE=""
+# The database comes from the consistent copy above. A log or cache file that changes while tar
+# reads it is still archived; tar only warns about it and exits 1.
 # shellcheck disable=SC2086
-tar czf "$OUT/app.tar.gz" $EXCLUDE "$APP"
+tar czf "$OUT/app.tar.gz" --warning=no-file-changed --exclude="$APP/database/database.sqlite*" $EXCLUDE "$APP" || [ $? = 1 ]
 
 tar czf "$OUT/system-config.tar.gz" --ignore-failed-read \
     /etc/nginx/sites-available/cmprovision /etc/php/*/fpm/php.ini \
