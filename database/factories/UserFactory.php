@@ -44,4 +44,13 @@ class UserFactory extends Factory
             ];
         });
     }
+
+    /**
+     * Jetstream's tests ask for a personal team; teams are off in cmprovision, so there is none to add
+     * (Jetstream's own factory does the same when Features::hasTeamFeatures() is false).
+     */
+    public function withPersonalTeam(?callable $callback = null)
+    {
+        return $this->state([]);
+    }
 }

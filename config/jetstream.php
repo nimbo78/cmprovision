@@ -50,7 +50,7 @@ return [
         // Features::profilePhotos(),
         Features::api(),
         // Features::teams(['invitations' => true]),
-        Features::accountDeletion(),
+        // account deletion is off: it could remove the last administrator
     ],
 
     /*
