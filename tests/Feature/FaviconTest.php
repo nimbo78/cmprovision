@@ -9,7 +9,9 @@ class FaviconTest extends TestCase
 {
     public function test_pages_link_a_real_icon()
     {
-        $this->get('/login')->assertOk()->assertSee('<link rel="icon" href="/favicon.svg" type="image/svg+xml">', false);
+        // the file's time in the address: a new icon gets a new address, and browsers drop the one they cached
+        $this->get('/login')->assertOk()->assertSee(
+            '<link rel="icon" href="/favicon.svg?v='.filemtime(public_path('favicon.svg')).'" type="image/svg+xml">', false);
 
         $ico = file_get_contents(public_path('favicon.ico'));
         $this->assertSame("\0\0\1\0", substr($ico, 0, 4), 'an ICO header');

@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/cmprovision-horizontal-white.svg">
+  <img src="docs/brand/cmprovision-horizontal.svg" alt="cmprovision" height="48">
+</picture>
+
 # Raspberry Pi Compute Module Provisioning System #
 
 Web application to mass program compute modules; designed to run on a Raspberry Pi 4. Compute Module 3, 3+ and 4 are supported out-of-the-box.

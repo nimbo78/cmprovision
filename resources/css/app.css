@@ -35,6 +35,13 @@
          url('../fonts/nunito-v16-latin-700.woff') format('woff'); /* Chrome 6+, Firefox 3.6+, IE 9+, Safari 5.1+ */
   }
 
+/* The cmprovision lockup on the sign-in pages (docs/brand): the 48 px mark, a gap of 11/28 of it and the name at
+   17/28 of it. The name is trimmed to its x-height and baseline, so its lowercase band sits on the tile's middle
+   line (text-box: Chrome, Edge and Safari; Firefox centres the whole line, a couple of pixels lower). */
+.cmp-lockup { display: inline-flex; align-items: center; gap: 19px; color: #2a1a0c; }
+.cmp-lockup svg { width: 48px; height: 48px; flex-shrink: 0; }
+.cmp-lockup .name { font-size: 29px; font-weight: 700; line-height: 1; text-box: trim-both ex alphabetic; }
+
 /* Ports page: the switch's front panel (resources/views/livewire/ports.blade.php). JetBrains Mono (OFL,
    public/fonts/JetBrainsMono-OFL.txt) keeps 0/O and 1/l apart in the serial numbers. */
 @font-face {
