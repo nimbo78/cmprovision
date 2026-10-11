@@ -62,6 +62,70 @@ FILES = {
     ] + interfaces({9: 'GE0/0/3'}),
 }
 
+# Ports page: whole switches with IF-MIB, MAC tables and PoE
+IFTYPE = '1.3.6.1.2.1.2.2.1.3'
+IFOPER = '1.3.6.1.2.1.2.2.1.8'
+IFHIGH = '1.3.6.1.2.1.31.1.1.1.15'
+IFCONN = '1.3.6.1.2.1.31.1.1.1.17'
+PETH_DET = '1.3.6.1.2.1.105.1.1.1.6'
+PETH_CLASS = '1.3.6.1.2.1.105.1.1.1.10'
+HW_POE_STATUS = '1.3.6.1.4.1.2011.5.25.195.3.1.7'
+HW_POE_POWER = '1.3.6.1.4.1.2011.5.25.195.3.1.10'
+CPE_POWER = '1.3.6.1.4.1.9.9.402.1.2.1.9'
+CPE_ENTPHY = '1.3.6.1.4.1.9.9.402.1.2.1.11'
+ENT_ALIAS = '1.3.6.1.2.1.47.1.3.2.1.2'
+
+def ports(spec):
+    """spec: {ifIndex: (name, ifType, connector, oper, highSpeed)}"""
+    recs = []
+    for i, (name, typ, conn, oper, high) in spec.items():
+        recs += [(f'{IFDESCR}.{i}', 4, name), (f'{IFNAME}.{i}', 4, name), (f'{IFALIAS}.{i}', 4, ''),
+                 (f'{IFTYPE}.{i}', 2, typ), (f'{IFCONN}.{i}', 2, conn), (f'{IFOPER}.{i}', 2, oper), (f'{IFHIGH}.{i}', 66, high)]
+    return recs
+
+# Huawei S5731-S24P4X: 24 GE PoE + 4 XGE, HUAWEI-L2MAM and HUAWEI-POE-MIB by interface; the office LAN
+# (00:11:22:33:44:55..59) behind XGE0/0/1
+S5731 = {i: (f'GE0/0/{i}', 6, 1, 1 if i in (1, 3) else 2, 1000) for i in range(1, 25)}
+S5731.update({24 + i: (f'XGE0/0/{i}', 6, 1, 1 if i == 1 else 2, 10000) for i in range(1, 5)})
+S5731[50] = ('Vlanif1', 136, 2, 1, 1000)
+FILES['s5731'] = [
+    (SYSDESCR, 4, 'S5731-S24P4X'),
+    (f'{HWFDB}.{MODULE}.10.0', 2, 3),
+    (f'{HW_POE_STATUS}.3', 4, 'Powered'), (f'{HW_POE_POWER}.3', 2, 6900),
+] + [(f'{HWFDB}.0.17.34.51.68.{85 + n}.1.0', 2, 25) for n in range(5)] \
+  + [(f'{HW_POE_STATUS}.{i}', 4, 'Detecting') for i in range(1, 25) if i != 3] + ports(S5731)
+
+# Cisco IOS (Catalyst 9200L-like): 8 Gi PoE + 2 Te, BRIDGE-MIB per VLAN, PoE through ENTITY-MIB
+C9200 = {10100 + i: (f'Gi1/0/{i}', 6, 1, 1 if i == 5 else 2, 1000) for i in range(1, 9)}
+C9200.update({10200 + i: (f'Te1/1/{i}', 6, 1, 1 if i == 1 else 2, 10000) for i in range(1, 3)})
+FILES['c9200'] = [
+    (SYSDESCR, 4, 'Cisco IOS Software, C9200L'),
+    (f'{FDB}.{UPLINK_PEER}', 2, 9), (f'{BASE}.9', 2, 10201),
+    (f'{VTP}.1.1', 2, 1), (f'{VTP}.1.20', 2, 1),
+] + [(f'{PETH_DET}.1.{i}', 2, 3 if i == 5 else 2) for i in range(1, 9)] \
+  + [(f'{PETH_CLASS}.1.5', 2, 5), (f'{CPE_POWER}.1.5', 66, 7100)] \
+  + [(f'{CPE_ENTPHY}.1.{i}', 2, 1000 + i) for i in range(1, 9)] \
+  + [(f'{ENT_ALIAS}.{1000 + i}.0', 6, f'1.3.6.1.2.1.2.2.1.1.{10100 + i}') for i in range(1, 9)] + ports(C9200)
+FILES['c9200@1'] = [(f'{FDB}.{UPLINK_PEER}', 2, 9), (f'{BASE}.9', 2, 10201)]
+FILES['c9200@20'] = [(f'{FDB}.{MODULE}', 2, 5), (f'{BASE}.5', 2, 10105)]
+
+# Cisco Business CBS350-8P-2G: Q-BRIDGE with interface indexes, RFC 3621 port number = ifIndex
+CBS350 = {i: (f'gi{i}', 6, 1, 1 if i == 2 else 2, 1000) for i in range(1, 11)}
+FILES['cbs350'] = [
+    (SYSDESCR, 4, 'CBS350-8P-2G 8-Port Gigabit PoE Managed Switch'),
+    (f'{QFDB}.1.{MODULE}', 2, 2),
+] + [(f'{PETH_DET}.1.{i}', 2, 3 if i == 2 else 2) for i in range(1, 9)] + ports(CBS350)
+
+# MikroTik CRS309-like: ether ports, an sfp+ cage, the bridge interface; no PoE
+CRS = {i: (f'ether{i}', 6, 1, 1 if i == 4 else 2, 1000) for i in range(1, 9)}
+CRS[9] = ('sfp-sfpplus1', 6, 1, 2, 10000)
+CRS[12] = ('bridge', 209, 2, 1, 1000)
+FILES['crs'] = [
+    (SYSDESCR, 4, 'RouterOS CRS309'),
+    (f'{QFDB}.0.{MODULE}', 2, 4),
+    (f'{BASE}.4', 2, 4),
+] + ports(CRS)
+
 def key(rec):
     return tuple(int(p) for p in rec[0].split('.'))
 
