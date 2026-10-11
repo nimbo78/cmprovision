@@ -100,6 +100,22 @@ class NetworkStatus
         ];
     }
 
+    /** MAC of the interface holding SERVER_ADDRESS (the modules' network), lower case; null when there is none */
+    public function serverMac(): ?string
+    {
+        foreach ($this->ipv4(call_user_func($this->addresses)) as $name => $addresses) {
+            foreach ($addresses as $address) {
+                if (explode('/', $address)[0] === self::SERVER_ADDRESS) {
+                    $mac = $this->value($this->net.'/'.$name.'/address');
+
+                    return $mac ? strtolower($mac) : null;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /** interface => metric of its default route, best first; null when the routing table cannot be read */
     private function defaultRoutes(): ?array
     {

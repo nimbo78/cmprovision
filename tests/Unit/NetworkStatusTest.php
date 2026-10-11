@@ -215,4 +215,21 @@ class NetworkStatusTest extends TestCase
 
         $this->assertNull($this->readStatus());
     }
+
+    public function test_the_server_mac_is_that_of_the_interface_holding_the_modules_address()
+    {
+        $status = new NetworkStatus($this->root.'/net', $this->root.'/route', function () { return null; }, function () {
+            return [
+                'wlan1' => ['unicast' => [['family' => 2, 'address' => '192.168.25.30', 'netmask' => '255.255.255.0']]],
+                'eth0' => ['unicast' => [['family' => 2, 'address' => '172.20.0.1', 'netmask' => '255.255.0.0']]],
+            ];
+        });
+        $this->assertSame('2c:cf:67:30:7d:a2', $status->serverMac());
+    }
+
+    public function test_no_server_mac_without_the_modules_address()
+    {
+        $status = new NetworkStatus($this->root.'/net', $this->root.'/route', function () { return null; }, function () { return []; });
+        $this->assertNull($status->serverMac());
+    }
 }
