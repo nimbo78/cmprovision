@@ -111,6 +111,34 @@ class StandMapTest extends TestCase
         $this->assertSame(1, $map['summary']['counts']['fail']);
     }
 
+    public function test_four_modules_behind_one_port_are_modules_not_an_uplink()
+    {
+        $macs = ['aa:00:00:00:00:01', 'aa:00:00:00:00:02', 'aa:00:00:00:00:03', 'aa:00:00:00:00:04'];
+        $modules = [];
+        foreach ($macs as $i => $mac)
+            $modules[] = $this->module('10000000000000a'.($i + 1), $mac);
+        // a desktop switch: four modules and a laptop
+        $map = $this->build([$this->port(1, 'GE0/0/1', true, array_merge($macs, ['3c:22:fb:91:0a:5e']))], $modules);
+
+        $this->assertSame(['module', '×4'], [$map['tiles']['p1']['state'], $map['tiles']['p1']['mark']]);
+        $this->assertSame(4, $map['summary']['modules']);
+    }
+
+    public function test_a_module_that_left_gives_way_to_the_one_now_on_its_port()
+    {
+        Carbon::setTestNow('2026-10-12 10:00:00');
+        // the switch still lists the MAC of the module taken away next to the one put in its place
+        $map = $this->build([$this->port(1, 'GE0/0/1', true, ['aa:00:00:00:00:01', 'aa:00:00:00:00:02'])], [
+            $this->module('10000000000000a1', 'aa:00:00:00:00:01', ['phase' => 'failed', 'polled_at' => Carbon::now()->subMinutes(10)]),
+            $this->module('10000000000000a2', 'aa:00:00:00:00:02', ['phase' => 'write', 'progress_bytes' => 100, 'progress_total' => 1000, 'progress_updated_at' => Carbon::now()]),
+        ]);
+
+        $tile = $map['tiles']['p1'];
+        $this->assertSame(['run', '10%', '00A2'], [$tile['filter'], $tile['mark'], $tile['short']]);
+        $this->assertSame(1, $map['summary']['modules']);
+        $this->assertSame(0, $map['summary']['counts']['fail']);
+    }
+
     public function test_a_module_moved_to_another_port_shows_on_the_new_one_only()
     {
         $map = $this->build([

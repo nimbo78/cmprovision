@@ -59,7 +59,8 @@ class SnapshotCache
 
     protected function poll(array $state): array
     {
-        $now = Carbon::now()->getTimestamp();
+        $started = Carbon::now();
+        $now = $started->getTimestamp();
         try
         {
             $snapshot = ($this->take)();
@@ -67,13 +68,16 @@ class SnapshotCache
                 Log::info('Switch '.$this->id.' answers again');
             $state = ['snapshot' => $snapshot, 'error' => null, 'checked_at' => $now];
         }
-        catch (SnmpError $e)
+        catch (\Throwable $e)
         {
+            // mostly SnmpError; php-snmp also warns outside it, e.g. about a host name it cannot resolve
             if (!$state['error'])
-                Log::warning('Switch '.$this->id.' does not answer: '.$e->getMessage());
+                Log::warning('Switch '.$this->id.' does not answer: '.$e->getMessage(), $e instanceof SnmpError ? [] : ['exception' => $e]);
             $state['error'] = ['message' => $e->getMessage(), 'since' => $state['error']['since'] ?? $now];
             $state['checked_at'] = $now;
         }
+        // a poll that fails slowly holds the switch back as long as a slow good one
+        $state['took'] = round((Carbon::now()->getPreciseTimestamp(3) - $started->getPreciseTimestamp(3)) / 1000, 3);
         Cache::put('switch-snapshot:'.$this->id, $state, self::KEEP_SECONDS);
         return $state;
     }
@@ -84,12 +88,12 @@ class SnapshotCache
         return is_array($state) ? $state : ['snapshot' => null, 'error' => null, 'checked_at' => null];
     }
 
-    /* Checked less than FRESH_SECONDS ago, or twice the last poll's duration for a slow switch */
+    /* Checked less than FRESH_SECONDS ago, or twice the poll's duration (the good one's or the last attempt's) for a slow switch */
     protected function fresh(array $state): bool
     {
         if (!$state['checked_at'])
             return false;
-        $duration = (float) ($state['snapshot']['duration'] ?? 0);
+        $duration = max((float) ($state['snapshot']['duration'] ?? 0), (float) ($state['took'] ?? 0));
         $life = $duration > self::SLOW_POLL ? 2 * $duration : self::FRESH_SECONDS;
         return Carbon::now()->getTimestamp() - $state['checked_at'] < $life;
     }

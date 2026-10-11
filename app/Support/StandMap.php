@@ -10,7 +10,7 @@ use App\Models\Cm;
  */
 class StandMap
 {
-    /* More MAC addresses than this on one port make it an uplink */
+    /* More MAC addresses than this that are not modules make a port an uplink */
     const UPLINK_MACS = 3;
     /* Main ports per block: six pairs, odd ones on top as on the case */
     const BLOCK = 12;
@@ -94,13 +94,15 @@ class StandMap
         foreach ($macs as $mac)
             if (isset($this->modules[$mac]))
                 $modules[] = $this->modules[$mac];
+        $others = count($macs) - count($modules);
+        $modules = $this->present($modules);
         usort($modules, function ($a, $b) {
             return array_search(self::moduleState($a), self::SEVERITY, true) - array_search(self::moduleState($b), self::SEVERITY, true);
         });
 
         if (!$port['up'])
             $state = 'free';   // a pulled module's MAC stays in the switch table for minutes
-        elseif (($this->serverMac && in_array($this->serverMac, $macs, true)) || count($macs) > self::UPLINK_MACS)
+        elseif (($this->serverMac && in_array($this->serverMac, $macs, true)) || $others > self::UPLINK_MACS)
             $state = 'uplink';
         elseif ($modules)
             $state = 'module';
@@ -124,6 +126,16 @@ class StandMap
             'short' => $state === 'module' ? strtoupper(substr($modules[0]->serial, -4))
                 : (['uplink' => 'UP', 'foreign' => 'MAC', 'boot' => '···'][$state] ?? ''),
         ];
+    }
+
+    /* Several modules on one port: a switch that keeps a MAC after the link drops lists the module taken
+       away next to the one put in its place. Those that neither run nor poll give way to one that does. */
+    protected function present(array $modules): array
+    {
+        if (count($modules) < 2)
+            return $modules;
+        $alive = array_values(array_filter($modules, function ($cm) { return $cm->isActive() || $cm->canIdentify(); }));
+        return $alive ?: $modules;
     }
 
     protected function cage(array $port): bool

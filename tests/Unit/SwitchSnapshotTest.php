@@ -128,6 +128,26 @@ class SwitchSnapshotTest extends TestCase
         $this->take([]);
     }
 
+    public function test_old_fast_ethernet_types_are_ports_too()
+    {
+        $s = $this->take([
+            SwitchSnapshot::OID_IFDESCR.'.1' => 'FastEthernet0/1', SwitchSnapshot::OID_IFTYPE.'.1' => 62, SwitchSnapshot::OID_IFOPERSTATUS.'.1' => 1,
+            SwitchSnapshot::OID_IFDESCR.'.2' => 'FastEthernet0/2 FX', SwitchSnapshot::OID_IFTYPE.'.2' => 69, SwitchSnapshot::OID_IFOPERSTATUS.'.2' => 2,
+        ]);
+
+        $this->assertSame(['FastEthernet0/1', 'FastEthernet0/2 FX'], array_column($s['ports'], 'name'));
+    }
+
+    public function test_a_switch_without_ethernet_ports_is_an_error_not_an_empty_stand()
+    {
+        $this->expectException(SnmpError::class);
+        $this->expectExceptionMessage('no Ethernet ports');
+        $this->take([
+            SwitchSnapshot::OID_IFNAME.'.1' => 'Vlanif1', SwitchSnapshot::OID_IFTYPE.'.1' => 136,
+            SwitchSnapshot::OID_IFNAME.'.2' => 'NULL0', SwitchSnapshot::OID_IFTYPE.'.2' => 1,
+        ]);
+    }
+
     public function test_poe_lands_on_its_port()
     {
         $snmp = new FakeSnmp(['' => $this->interfaces([8 => ['GE0/0/3', 6, 1, 1, 1000]]) + [

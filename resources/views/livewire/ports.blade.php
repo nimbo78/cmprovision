@@ -22,11 +22,15 @@
         @endif
     </div>
 
+    @if ($snapshot)
+        @php($taken = \Illuminate\Support\Carbon::createFromTimestamp($snapshot['taken_at'])->local())
+        @php($takenAt = $taken->format($taken->isToday() ? 'H:i:s' : 'j M H:i'))
+    @endif
     @if ($error)
         <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-900 px-4 py-3 rounded" role="alert">
             @if ($snapshot)
                 The switch has not answered for {{ max(0, $now - $error['since']) }} s ({{ $error['message'] }});
-                showing what it said at {{ \Illuminate\Support\Carbon::createFromTimestamp($snapshot['taken_at'])->local()->format('H:i:s') }}.
+                showing what it said at {{ $takenAt }}.
             @else
                 Cannot read the switch: {{ $error['message'] }}
             @endif
@@ -53,16 +57,12 @@
                 @endforeach
                 <button type="button" x-show="filter.length > 0" x-cloak x-on:click="filter = []" class="text-sm font-semibold text-indigo-600 px-2">Show all</button>
             </div>
-            <div class="text-sm font-bold rounded px-3 py-2 {{ $verdictColor }}">
-                @if ($s['verdict'] === 'running')
-                    {{ $s['busy'] }} still in progress, {{ $s['counts']['fail'] }} failed: keep the batch on the stand
-                @elseif ($s['verdict'] === 'failed')
-                    All finished, {{ $s['counts']['fail'] }} failed{{ $s['counts']['unknown'] ? ', '.$s['counts']['unknown'].' without data' : '' }}: restart or replace them
-                @elseif ($s['verdict'] === 'done')
-                    All done: the batch can be replaced
-                @else
-                    No modules on the stand
-                @endif
+            {{-- one-line php directives only: Blade would read a php block here, or even its closing word in a comment, as running from the first one-line directive above --}}
+            @php($unknown = $s['counts']['unknown'] ? ', '.$s['counts']['unknown'].' without data' : '')
+            @php($verdict = ['running' => $s['busy'].' still in progress, '.$s['counts']['fail'].' failed: keep the batch on the stand', 'failed' => 'All finished, '.$s['counts']['fail'].' failed'.$unknown.': restart or replace them', 'done' => 'All done: the batch can be replaced', 'empty' => 'No modules on the stand'][$s['verdict']])
+            {{-- a map from before the switch went silent may no longer be the stand --}}
+            <div class="text-sm font-bold rounded px-3 py-2 {{ $error ? 'bg-gray-100 text-gray-700' : $verdictColor }}">
+                {{ ($error ? 'As of '.$takenAt.', before the switch went silent: ' : '').$verdict }}
             </div>
         </section>
 

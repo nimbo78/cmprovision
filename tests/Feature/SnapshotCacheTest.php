@@ -15,12 +15,14 @@ use Tests\TestCase;
  */
 class SnapshotCacheTest extends TestCase
 {
-    protected $polls = 0, $duration = 0.2, $silent = false;
+    protected $polls = 0, $duration = 0.2, $silent = false, $slow = 0;
 
     protected function cache()
     {
         return new SnapshotCache('192.0.2.10', function () {
             $this->polls++;
+            if ($this->slow)
+                Carbon::setTestNow(Carbon::now()->addSeconds($this->slow));
             if ($this->silent)
                 throw new SnmpError('No response from 192.0.2.10', true);
             return ['ports' => [], 'duration' => $this->duration, 'taken_at' => Carbon::now()->getTimestamp()];
@@ -101,6 +103,34 @@ class SnapshotCacheTest extends TestCase
         $state = $this->cache()->current();
         $this->assertNull($state['snapshot']);
         $this->assertSame('No response from 192.0.2.10', $state['error']['message']);
+    }
+
+    public function test_a_poll_that_fails_slowly_is_not_repeated_sooner_either()
+    {
+        $this->silent = true;
+        $this->slow = 4;
+        Carbon::setTestNow('2026-10-12 10:00:00');
+        $this->cache()->current();
+        $this->slow = 0;
+        Carbon::setTestNow('2026-10-12 10:00:07');
+        $this->cache()->current();
+        $this->assertSame(1, $this->polls, 'a failed poll that took 4 s holds for 8 s');
+        Carbon::setTestNow('2026-10-12 10:00:08');
+        $this->cache()->current();
+        $this->assertSame(2, $this->polls);
+    }
+
+    public function test_any_other_failure_of_the_snmp_extension_is_a_switch_error_too()
+    {
+        Log::spy();
+        $state = (new SnapshotCache('switch.invalid', function () {
+            // php-snmp warns about a host it cannot resolve; Laravel makes the warning an ErrorException
+            throw new \ErrorException('SNMP::__construct(): Unknown host switch.invalid');
+        }))->current();
+
+        $this->assertNull($state['snapshot']);
+        $this->assertSame('SNMP::__construct(): Unknown host switch.invalid', $state['error']['message']);
+        Log::shouldHaveReceived('warning')->once();
     }
 
     public function test_a_page_waiting_for_another_pages_poll_shows_what_there_is()

@@ -22,8 +22,8 @@ class SwitchSnapshot
     const OID_IFHIGHSPEED = '.1.3.6.1.2.1.31.1.1.1.15';   // Mbit/s
     const OID_IFCONNECTOR = '.1.3.6.1.2.1.31.1.1.1.17';   // 1 a physical connector, 2 none
     const OID_IFALIAS = '.1.3.6.1.2.1.31.1.1.1.18';
-    /* ethernetCsmacd; some switches report gigabitEthernet(117) */
-    const ETHERNET_TYPES = [6, 117];
+    /* ethernetCsmacd; old agents report fastEther(62) and fastEtherFX(69), some gigabitEthernet(117) */
+    const ETHERNET_TYPES = [6, 62, 69, 117];
 
     protected $snmp, $macs, $poe, $id, $lastError;
 
@@ -46,7 +46,7 @@ class SwitchSnapshot
      * ['id', 'model', 'taken_at' (unix time), 'duration' (seconds), 'mac_method', 'poe' (any PoE data),
      *  'ports' => [ifIndex => ['ifIndex', 'name', 'alias', 'up', 'speed' (Mbit/s as the switch reports
      *  it, also without a link; null when unknown), 'macs' => [...], 'poe' => Poe::read() entry or null]]].
-     * Throws SnmpError when the switch does not answer or lists no interfaces.
+     * Throws SnmpError when the switch does not answer or lists no interfaces or no Ethernet ports.
      */
     public function take(): array
     {
@@ -80,6 +80,8 @@ class SwitchSnapshot
                 'poe' => null,
             ];
         }
+        if (!$ports)
+            throw new SnmpError('The switch lists no Ethernet ports (IF-MIB ifType 6, 62, 69 or 117)');
 
         $table = $this->macs->entries();
         foreach ($table['rows'] as $row)

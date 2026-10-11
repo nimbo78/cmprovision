@@ -145,6 +145,41 @@ class PortsPageTest extends TestCase
         Livewire::test(Ports::class)->assertSee('Cannot read the switch: No response from 192.0.2.1');
     }
 
+    public function test_a_switch_name_that_does_not_resolve_says_so_instead_of_breaking_the_page()
+    {
+        Setting::create(['key' => 'ethernetswitch_ip', 'value' => 'switch.invalid']);
+        $this->app->bind(SnmpClient::class, function () {
+            throw new \ErrorException('SNMP::__construct(): Unknown host switch.invalid');
+        });
+
+        Livewire::test(Ports::class)->assertSee('Cannot read the switch: SNMP::__construct(): Unknown host switch.invalid');
+    }
+
+    public function test_four_modules_behind_one_port_are_all_on_the_map()
+    {
+        $this->switchWithModule();
+        foreach ([2, 3, 4] as $n) {
+            $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.98.159.'.(211 + $n).'.10.0'] = 8;
+            // finished and still on the stand: it asks the server whether to blink
+            Cm::create(['serial' => '10000000e61111'.sprintf('%02d', $n), 'mac' => sprintf('e4:5f:01:62:9f:%02x', 211 + $n),
+                'phase' => 'done', 'timeline' => [], 'provisioning_complete_at' => now(), 'polled_at' => now()]);
+        }
+
+        Livewire::test(Ports::class)
+            ->assertSee('4 modules on the stand')
+            ->assertSee('×4');
+    }
+
+    public function test_a_map_from_before_the_switch_went_silent_says_so_in_the_verdict()
+    {
+        Carbon::setTestNow('2026-10-12 10:00:00');
+        $this->switchWithModule();
+        $page = Livewire::test(Ports::class);
+        $this->fake->timeout = true;
+        Carbon::setTestNow('2026-10-12 10:00:30');
+        $page->call('$refresh')->assertSee('before the switch went silent: All done: the batch can be replaced');
+    }
+
     public function test_booting_and_silent_ports_count_as_in_progress_not_as_running()
     {
         $cm = $this->switchWithModule();

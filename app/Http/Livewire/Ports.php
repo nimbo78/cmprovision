@@ -18,6 +18,10 @@ use Livewire\Component;
  */
 class Ports extends Component
 {
+    /* Modules are looked for on ports with at most this many MAC addresses: a desktop switch full of
+       modules, not the office network behind an uplink */
+    const LOOKUP_MACS = 48;
+
     /** key of the port whose details are open, e.g. "p10003" */
     public $selected = null;
 
@@ -70,9 +74,13 @@ class Ports extends Component
     {
         $macs = [];
         foreach ($snapshot['ports'] as $port)
-            if ($port['up'] && count($port['macs']) <= StandMap::UPLINK_MACS)
+            if ($port['up'] && count($port['macs']) <= self::LOOKUP_MACS)
                 foreach ($port['macs'] as $mac)
-                    $macs[] = strtolower($mac);
-        return $macs ? Cm::whereIn(DB::raw('lower(mac)'), $macs)->get() : [];
+                    $macs[strtolower($mac)] = true;
+        $modules = [];
+        foreach (array_chunk(array_keys($macs), 500) as $chunk)
+            foreach (Cm::whereIn(DB::raw('lower(mac)'), $chunk)->get() as $cm)
+                $modules[] = $cm;
+        return $modules;
     }
 }
