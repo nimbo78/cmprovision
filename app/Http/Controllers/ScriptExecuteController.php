@@ -608,7 +608,8 @@ exit 1
             {
                 $cmd = str_replace('$file', escapeshellarg($tmpfile), $labelsettings->print_command);
                 $output = $retcode = null;
-                if (@exec($cmd, $output, $retcode) === false)
+                // stderr too: sh reports a file it cannot write there; the newline survives a trailing comment
+                if (@exec('{ '.$cmd."\n} 2>&1", $output, $retcode) === false)
                     throw new \Exception("Error executing '$cmd'");
                 if ($retcode)
                     throw new \Exception("Executing '$cmd' returned exit code $retcode. Program output:\n".implode("\n", $output));

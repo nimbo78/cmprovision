@@ -59,6 +59,27 @@ class LabelPrintingTest extends TestCase
             ->where('msg', 'Label command output: cannot write /home/wlanpi/cmprovision.csv')->count());
     }
 
+    public function test_what_the_print_command_says_on_stderr_goes_to_the_log_too()
+    {
+        // project 78's logger: sh reports the CSV it cannot create on stderr, and the script still exits 0
+        $this->projectPrintingWith('echo "$(cat $file)" >> /nonexistent-dir/cmprovision.csv; true');
+
+        $this->start('1000000000000e03');
+
+        $this->assertSame(1, Cmlog::where('cm', '1000000000000e03')
+            ->where('msg', 'like', 'Label command output:%/nonexistent-dir/cmprovision.csv%')->count());
+    }
+
+    public function test_a_failing_print_command_shows_its_stderr()
+    {
+        $this->projectPrintingWith('echo "printer offline" >&2; exit 3');
+
+        $this->start('1000000000000e04');
+
+        $this->assertSame(1, Cmlog::where('cm', '1000000000000e04')
+            ->where('msg', 'like', '%returned exit code 3. Program output:%printer offline%')->count());
+    }
+
     public function test_a_silent_print_command_adds_nothing()
     {
         $this->projectPrintingWith('true');
@@ -77,5 +98,16 @@ class LabelPrintingTest extends TestCase
             ->set('file_extension', 'txt')
             ->call('printTestLabel')
             ->assertSee('Printed test label. Command output: hello from the printer');
+    }
+
+    public function test_the_test_label_shows_what_the_command_said_on_stderr()
+    {
+        Livewire::test(Labels::class)
+            ->set('printer_type', 'command')
+            ->set('print_command', 'echo "cannot write the CSV" >&2')
+            ->set('template', '$serial')
+            ->set('file_extension', 'txt')
+            ->call('printTestLabel')
+            ->assertSee('Printed test label. Command output: cannot write the CSV');
     }
 }
