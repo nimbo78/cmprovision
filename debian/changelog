@@ -1,3 +1,13 @@
+cmprovision4 (2.1.0~dev1) unstable; urgency=medium
+
+  * Ports page: the stand by the switch's ports. Each port shows the module
+    plugged into it with its state (running, done, failed, silent), the
+    link and PoE; the summary counts what is on the stand and says when the
+    batch can be replaced, and its chips filter the ports. Read only: the
+    switch is asked over SNMP while the page is open, at most every 5 s.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 11 Oct 2026 23:44:23 +0300
+
 cmprovision4 (2.0.0) unstable; urgency=medium
 
   * Laravel 13 on PHP 8.3 or newer: Debian 13 / Raspberry Pi OS Trixie only.
