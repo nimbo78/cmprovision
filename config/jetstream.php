@@ -30,6 +30,10 @@ return [
 
     'middleware' => ['web'],
 
+    'auth_session' => Laravel\Jetstream\Http\Middleware\AuthenticateSession::class,
+
+    'guard' => 'sanctum',
+
     /*
     |--------------------------------------------------------------------------
     | Features

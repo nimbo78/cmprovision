@@ -22,6 +22,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Session Serialization
+    |--------------------------------------------------------------------------
+    |
+    | Laravel 13's skeleton stores sessions as JSON. Sessions written before
+    | cmprovision 2.0 are PHP-serialized: keep that format, or the upgrade
+    | logs everybody out.
+    |
+    */
+
+    'serialization' => 'php',
+
+    /*
+    |--------------------------------------------------------------------------
     | Session Lifetime
     |--------------------------------------------------------------------------
     |

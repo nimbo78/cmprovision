@@ -67,7 +67,7 @@ class NetworkStatusTest extends TestCase
         }
     }
 
-    private function status(?array $addresses = null)
+    private function readStatus(?array $addresses = null)
     {
         $run = function ($command) {
             $this->calls[] = $command;
@@ -101,7 +101,7 @@ class NetworkStatusTest extends TestCase
 
     public function test_the_uplink_is_the_default_route_with_the_lowest_metric()
     {
-        $status = $this->status();
+        $status = $this->readStatus();
 
         $uplink = $status['uplink'];
         $this->assertSame('wlan1', $uplink['name']);
@@ -118,7 +118,7 @@ class NetworkStatusTest extends TestCase
 
     public function test_other_default_routes_are_backups()
     {
-        $backups = $this->status()['backups'];
+        $backups = $this->readStatus()['backups'];
 
         $this->assertCount(1, $backups);
         $this->assertSame('wlan0', $backups[0]['name']);
@@ -129,7 +129,7 @@ class NetworkStatusTest extends TestCase
 
     public function test_the_modules_network_is_the_interface_holding_the_server_address()
     {
-        $modules = $this->status()['modules'];
+        $modules = $this->readStatus()['modules'];
 
         $this->assertSame('eth0', $modules['name']);
         $this->assertSame('ethernet', $modules['kind']);
@@ -146,7 +146,7 @@ class NetworkStatusTest extends TestCase
         file_put_contents($this->root.'/net/eth0/operstate', "down\n");
         unlink($this->root.'/net/eth0/speed');
 
-        $modules = $this->status()['modules'];
+        $modules = $this->readStatus()['modules'];
 
         $this->assertFalse($modules['up']);
         $this->assertNull($modules['speed']);
@@ -161,7 +161,7 @@ class NetworkStatusTest extends TestCase
         $this->nmcli['ab18b939'] = "uplink-m2\nyes\n100\nno\n";
         $this->nmcli['0c1d2e3f'] = "spare\nno\n50\nno\n";   // not started on its own: not a preference
 
-        $status = $this->status();
+        $status = $this->readStatus();
 
         $this->assertSame('wlan0', $status['uplink']['name']);
         $this->assertSame('uplink-m2', $status['preferred_down']);
@@ -175,14 +175,14 @@ class NetworkStatusTest extends TestCase
         $this->nmcli['22222222'] = "lab\nyes\n-1\nyes\n";    // never carries a default route
         $this->nmcli['33333333'] = "dock\nyes\n-1\nno\n";    // NetworkManager's default for Ethernet is 100, not below 100
 
-        $this->assertNull($this->status()['preferred_down']);
+        $this->assertNull($this->readStatus()['preferred_down']);
     }
 
     public function test_without_networkmanager_nothing_is_reported_as_down()
     {
         unset($this->nmcli['list']);
 
-        $status = $this->status();
+        $status = $this->readStatus();
 
         $this->assertSame('wlan1', $status['uplink']['name']);
         $this->assertNull($status['preferred_down']);
@@ -193,7 +193,7 @@ class NetworkStatusTest extends TestCase
         file_put_contents($this->root.'/route', "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
             ."eth0\t000014AC\t00000000\t0001\t0\t0\t100\t0000FFFF\t0\t0\t0\n");
 
-        $status = $this->status();
+        $status = $this->readStatus();
 
         $this->assertNull($status['uplink']);
         $this->assertSame([], $status['backups']);
@@ -202,7 +202,7 @@ class NetworkStatusTest extends TestCase
 
     public function test_iw_is_asked_only_about_wireless_interfaces()
     {
-        $this->status();
+        $this->readStatus();
 
         $iw = array_values(array_filter($this->calls, function ($c) { return strpos($c, 'iw dev') !== false; }));
         $this->assertCount(4, $iw);
@@ -213,6 +213,6 @@ class NetworkStatusTest extends TestCase
     {
         unlink($this->root.'/route');
 
-        $this->assertNull($this->status());
+        $this->assertNull($this->readStatus());
     }
 }

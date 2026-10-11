@@ -228,5 +228,6 @@ class NotificationsTest extends TestCase
         Http::assertSent(function (Request $r) {
             return $r['event'] === 'started' && $r['serial'] === '1000000000000c11';
         });
+        Http::assertSentCount(1);   // one listener: Laravel 11+ discovers events too, it must not run twice
     }
 }
