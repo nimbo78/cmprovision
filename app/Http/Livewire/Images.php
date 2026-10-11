@@ -8,7 +8,6 @@ use \Illuminate\Http\UploadedFile;
 
 class Images extends Component
 {
-    use \Livewire\WithFileUploads;
 
     public $images, $maxfilesize, $freediskspace, $hashPending = false;
     public $isOpen = false;

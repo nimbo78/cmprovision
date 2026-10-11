@@ -28,18 +28,18 @@ Route::get('/', function () {
     return redirect()->route('login');
 });
 
-Route::middleware(['auth:sanctum', 'verified'])->get('/dashboard', function () {
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/dashboard', function () {
     return view('dashboard');   // progress panel and log are Livewire components that refresh themselves
 })->name('dashboard');
 
-Route::middleware(['auth:sanctum', 'verified'])->any('/cms', Cms::class)->name('cms');
-Route::middleware(['auth:sanctum', 'verified'])->get('/cms/{serial}', CmCard::class)->name('cm');
-Route::middleware(['auth:sanctum', 'verified'])->any('/images', Images::class)->name('images');
-Route::middleware(['auth:sanctum', 'verified'])->post('/addImage', [AddImageController::class, 'store']);
-Route::middleware(['auth:sanctum', 'verified'])->any('/projects', Projects::class)->name('projects');
-Route::middleware(['auth:sanctum', 'verified'])->any('/scripts', Scripts::class)->name('scripts');
-Route::middleware(['auth:sanctum', 'verified'])->any('/labels', Labels::class)->name('labels');
-Route::middleware(['auth:sanctum', 'verified'])->any('/firmware', Firmwares::class)->name('firmware');
-Route::middleware(['auth:sanctum', 'verified'])->any('/settings', Settings::class)->name('settings');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/cms', Cms::class)->name('cms');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/cms/{serial}', CmCard::class)->name('cm');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/images', Images::class)->name('images');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->post('/addImage', [AddImageController::class, 'store']);
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/projects', Projects::class)->name('projects');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/scripts', Scripts::class)->name('scripts');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/labels', Labels::class)->name('labels');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/firmware', Firmwares::class)->name('firmware');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/settings', Settings::class)->name('settings');
 
 Route::any('/scriptexecute', ScriptExecuteController::class);

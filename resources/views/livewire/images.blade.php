@@ -66,7 +66,6 @@
             </table>
         </div>
     </div>
-<style>[x-cloak] { display: none !important; }</style>
 <script src="{{ asset('js/upload-progress.js') }}?v={{ filemtime(public_path('js/upload-progress.js')) }}"></script>
 <script>
 /* Alpine component for the upload dialog (resources/views/livewire/addimage.blade.php). */

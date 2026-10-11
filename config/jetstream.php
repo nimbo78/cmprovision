@@ -30,6 +30,10 @@ return [
 
     'middleware' => ['web'],
 
+    'auth_session' => Laravel\Jetstream\Http\Middleware\AuthenticateSession::class,
+
+    'guard' => 'sanctum',
+
     /*
     |--------------------------------------------------------------------------
     | Features
@@ -46,7 +50,7 @@ return [
         // Features::profilePhotos(),
         Features::api(),
         // Features::teams(['invitations' => true]),
-        Features::accountDeletion(),
+        // account deletion is off: it could remove the last administrator
     ],
 
     /*

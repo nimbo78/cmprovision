@@ -24,18 +24,11 @@ This process requires a Raspberry Pi 4 which will be used solely to mass program
 
 1. Configure eth0 to have a static IP of 172.20.0.1 inside a /16 subnet (netmask 255.255.0.0). Do not set a default gateway.
 
-    On Raspberry Pi OS **Bookworm or later** the network is managed by NetworkManager:
+    On Raspberry Pi OS **Trixie** the network is managed by NetworkManager:
 
     ```
     sudo nmcli connection add type ethernet ifname eth0 con-name cmprovision         ipv4.method manual ipv4.addresses 172.20.0.1/16 ipv4.never-default yes         ipv6.method link-local ipv6.addr-gen-mode eui64 connection.autoconnect yes
     sudo nmcli connection up cmprovision
-    ```
-
-    On **Bullseye** (dhcpcd) add to the bottom of `/etc/dhcpcd.conf` and reboot:
-
-    ```
-    interface eth0
-    static ip_address=172.20.0.1/16  
     ```
 
 1. Run `sudo apt update` to make sure the package information on your Pi is up to date, and it is able to install dependencies.
@@ -103,9 +96,13 @@ You can create a SD card that enables that with [Imager](https://www.raspberrypi
 ## Upgrading ##
 
 Install the new package over the old one with `sudo apt install ./cmprovision4_*.deb`; never `apt remove` it first, the package's removal step deletes the database and storage.
-Before upgrading, take a snapshot that can be restored in minutes (the commands come with the package; in a checkout they are `tools/backup.sh` and `tools/restore.sh`):
+
+Upgrading from 1.x to 2.0 takes a snapshot by itself first: `/var/backups/cmprovision/<timestamp>-<old version>/`, with the old package inside, and `sudo cmprovision-restore <that directory>` goes back to 1.x with its data. If no snapshot can be taken (three tries), the upgrade stops and 1.x stays installed: try again while no module is on the stand, or upgrade without a way back with `sudo CMPROVISION_NO_SNAPSHOT=1 apt install ./cmprovision4_*.deb`. Reload browser tabs that were open during the upgrade.
+
+For other upgrades take the snapshot yourself (the commands come with the package; in a checkout they are `tools/backup.sh` and `tools/restore.sh`). Only with `dpkg-repack` installed does it hold the installed package; without one, `cmprovision-restore` refuses it while another version is installed:
 
 ```
+sudo apt install dpkg-repack       # once
 sudo cmprovision-backup            # /var/backups/cmprovision/<timestamp>-<version>/
 sudo cmprovision-restore /var/backups/cmprovision/<snapshot>
 ```
@@ -124,15 +121,14 @@ Create a token on the profile page (permissions: create, read, update, delete) a
 ## Development ##
 
 This PHP web application uses the Laravel framework.
-Make sure you familarize yourself with the fine documentation: https://laravel.com/docs/8.x/.
+Make sure you familarize yourself with the fine documentation: https://laravel.com/docs/13.x/.
 
 In particular note:
 * run `composer install` to install the dependencies living in the `vendor` directory.
-* you probably also want to `npm install` to be able to rebuild resources.
-* if you want to use Tailwind css styles not already used in the application run: `npm run prod` after adding the html to have the .css file rebuild with the used styles included. (alternatively can run `npm run dev` to include all styles. But will result in a large .css file, so only use that during development).
-* if you modify .blade files make sure you regenerate the cache with: `./artisan view:cache`.
-* tests: `DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test` and `npm run test:js`. The code must keep working on PHP 7.4 (Debian 11).
-* `docker/` holds a test bench (Debian 11 with PHP 7.4 and Debian 13 with PHP 8.4) laid out like the installed package, see `docker/README.md`.
+* the styles are built with the standalone Tailwind CLI 3.4 (no Node needed): `tailwindcss -c tailwind.config.js -i resources/css/app.css -o public/css/app.css --minify` after `php artisan view:cache`, then commit `public/css/app.css`.
+* tests: `php artisan test` (phpunit.xml runs them on an in-memory SQLite database) and `npm run test:js` (Node 20 or newer).
+* requirements: Debian 13 / Raspberry Pi OS Trixie or newer, PHP 8.3 or newer. Version 1.6.11 is the last one for Debian 11 and 12.
+* `docker/` holds a test bench (Debian 13 with PHP 8.4) laid out like the installed package, see `docker/README.md`.
 * build the package with `dpkg-buildpackage -b -us -uc` from a clean checkout without a `vendor/` directory (the build installs production dependencies itself).
 
 ## Licence ##

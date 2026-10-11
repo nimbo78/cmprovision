@@ -1,14 +1,14 @@
 {{-- How the provisioner reaches the network: the icon follows the default route, the tooltip has the details.
-     Hovering or tapping the icon reads fresh data (NetworkStatus::FRESH_MAX_AGE), otherwise it refreshes every $poll s. --}}
-@if ($v === null)
-<div></div>
-@else
+     Hovering or tapping the icon reads fresh data (NetworkStatus::FRESH_MAX_AGE), otherwise it refreshes every $poll s.
+     The outer div is always there: Livewire 3 wraps @if in morph-marker comments and needs a root tag before them. --}}
+<div>
+@if ($v !== null)
 @php
     $ink = ['normal' => 'text-gray-700', 'warn' => 'text-yellow-600', 'bad' => 'text-gray-300'][$v['tone']];
     $arcs = [3 => 'M3 9.5a12.7 12.7 0 0 1 18 0', 2 => 'M5.8 12.3a8.8 8.8 0 0 1 12.4 0', 1 => 'M8.6 15.1a4.8 4.8 0 0 1 6.8 0'];
 @endphp
 <div wire:poll.{{ $poll }}s="refreshPassive" class="relative flex items-center"
-     x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false" @click.away="open = false" @keydown.escape.window="open = false">
+     x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false" @click.outside="open = false" @keydown.escape.window="open = false">
     <button type="button" wire:mouseenter="refreshNow" wire:click="refreshNow" @click="open = true" @focus="open = true" @blur="open = false"
             class="p-1.5 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition duration-150 ease-in-out"
             aria-label="{{ $v['label'] }}" :aria-expanded="open ? 'true' : 'false'">
@@ -82,3 +82,4 @@
     </div>
 </div>
 @endif
+</div>

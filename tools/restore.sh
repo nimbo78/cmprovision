@@ -3,6 +3,8 @@
 #   sudo cmprovision-restore /var/backups/cmprovision/<snapshot>      (installed by the package; tools/restore.sh in a checkout)
 # Reinstalls the packaged version from the snapshot (if it holds a .deb), then puts back the
 # application directory, the database and the system config, and restarts the services.
+# A snapshot without a package (taken without dpkg-repack) is refused while another version is
+# installed: its files would land on top of that version. --force restores it anyway.
 #
 # Moving to a new system (another Debian release, PHP version or distribution):
 #   sudo cmprovision-restore --data-only <snapshot>
@@ -11,11 +13,28 @@
 # snapshot was made --with-uploads) and the dnsmasq config. Install cmprovision4 first.
 set -e
 DATA_ONLY=0
-[ "$1" = "--data-only" ] && { DATA_ONLY=1; shift; }
-SRC=${1:?usage: restore.sh [--data-only] <snapshot directory>}
+FORCE=0
+while :; do
+    case "${1:-}" in
+        --data-only) DATA_ONLY=1; shift ;;
+        --force) FORCE=1; shift ;;
+        *) break ;;
+    esac
+done
+SRC=${1:?usage: restore.sh [--data-only] [--force] <snapshot directory>}
 APP=/var/lib/cmprovision
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
 [ -f "$SRC/app.tar.gz" ] || { echo "$SRC: not a backup directory" >&2; exit 1; }
+# the version is the end of the directory name cmprovision-backup gives: <date>-<time>-<version>
+SNAPVER=$(basename "$SRC" | sed -n 's/^[0-9]\{8\}-[0-9]\{6\}-//p')
+INSTALLED=$(dpkg-query -W -f='${Version}' cmprovision4 2>/dev/null || true)
+if [ "$DATA_ONLY" = 0 ] && [ "$FORCE" = 0 ] && [ -n "$SNAPVER" ] && [ "$SNAPVER" != "$INSTALLED" ] \
+        && ! ls "$SRC"/cmprovision4_*.deb > /dev/null 2>&1; then
+    echo "$SRC holds no package of $SNAPVER, and ${INSTALLED:-no cmprovision4} is installed: its files would land on top of it." >&2
+    echo "Install cmprovision4 $SNAPVER first (apt install --allow-downgrades ./cmprovision4_${SNAPVER}_all.deb), then run this again." >&2
+    echo "--data-only puts back only the data; --force restores the snapshot anyway." >&2
+    exit 1
+fi
 if [ "$DATA_ONLY" = 1 ] && ! dpkg-query -W -f='${Status}' cmprovision4 2>/dev/null | grep -q "ok installed"; then
     echo "--data-only: install cmprovision4 first" >&2; exit 1
 fi
@@ -43,6 +62,8 @@ else
     tar xzf "$SRC/app.tar.gz" -C /
 fi
 if [ -f "$SRC/database.sqlite" ]; then
+    # a journal left from the replaced database would be rolled into the restored one
+    rm -f "$APP/database/database.sqlite-journal" "$APP/database/database.sqlite-wal" "$APP/database/database.sqlite-shm"
     install -o www-data -g www-data -m 600 "$SRC/database.sqlite" "$APP/database/database.sqlite"
 fi
 if [ "$DATA_ONLY" = 1 ]; then

@@ -10,6 +10,6 @@ Rules-Requires-Root: binary-targets
 
 Package: cmprovision4
 Architecture: all
-Depends: ${misc:Depends}, rpiboot (>=20220504~214218), dnsmasq-base, nginx, sqlite3, php-cli (>=7.3), php-fpm (>=7.3), php-sqlite3 (>=7.3), php-bcmath (>=7.3), php-mbstring (>=7.3), php-xml (>=7.3), php-zip (>=7.3), php-snmp (>=7.3), sudo, adduser
+Depends: ${misc:Depends}, rpiboot (>=20220504~214218), dnsmasq-base, nginx, sqlite3, php-cli (>= 2:8.3), php-fpm (>= 2:8.3), php-sqlite3 (>= 2:8.3), php-bcmath (>= 2:8.3), php-mbstring (>= 2:8.3), php-xml (>= 2:8.3), php-zip (>= 2:8.3), php-snmp (>= 2:8.3), sudo, adduser
 Conflicts: usbbootgui
 Description: Webapplication to provision CM4 modules

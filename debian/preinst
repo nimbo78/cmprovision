@@ -1,0 +1,77 @@
+#!/bin/sh
+# Before an upgrade from 1.x to 2.0 (Laravel 13, new database columns) keep a snapshot of the data:
+# cmprovision-restore <snapshot> puts 1.x back. Uploaded images are not in it: the upgrade leaves them alone.
+set -e
+
+# The snapshot's reinstallable .deb comes from dpkg-repack, which refuses a package that is not fully
+# installed, and while this script runs the old version is half-installed: pack it the way dpkg-repack
+# would, from the files dpkg lists for it and its control information.
+pack_old_version() {
+    # everything temporary stays inside the private directory mktemp makes: /var/tmp is world-writable
+    work=$(mktemp -d /var/tmp/cmprovision-old.XXXXXX) || return 1
+    tree=$work/tree
+    mkdir -m 755 "$tree" "$tree/DEBIAN"
+    dpkg-query -W -f='Package: ${Package}\nVersion: ${Version}\nArchitecture: ${Architecture}\nMaintainer: ${Maintainer}\nInstalled-Size: ${Installed-Size}\nDepends: ${Depends}\nConflicts: ${Conflicts}\nSection: ${Section}\nPriority: ${Priority}\nDescription: ${Description}\n' cmprovision4 \
+        | grep -v ': $' > "$tree/DEBIAN/control"
+    for f in preinst postinst prerm postrm conffiles; do
+        if [ -f "/var/lib/dpkg/info/cmprovision4.$f" ]; then cp -p "/var/lib/dpkg/info/cmprovision4.$f" "$tree/DEBIAN/$f"; fi
+    done
+    dpkg-query -L cmprovision4 | grep '^/.' > "$work/list"
+    # directories as directories, also where this system has a symlink (merged /usr: /lib -> usr/lib)
+    while IFS= read -r p; do
+        if [ -d "$p" ]; then
+            stat -L -c '%a %u %g' "$p" | { read -r m u g; install -d -m "$m" -o "$u" -g "$g" "$tree$p"; }
+        fi
+    done < "$work/list"
+    while IFS= read -r p; do if [ ! -d "$p" ]; then printf '%s\n' "$p"; fi; done < "$work/list" \
+        | tar -C / --no-recursion --verbatim-files-from --ignore-failed-read -cf - -T - 2>/dev/null | tar -C "$tree" -xpf -
+    dpkg-deb -Zgzip --build "$tree" "$1/" > /dev/null; ret=$?
+    rm -rf "$work"
+    return $ret
+}
+
+# The old version's cmprovision-backup takes the snapshot. On a server in use it can fail (tar sees the
+# database or a log change while it reads), so it gets three tries; without a snapshot the upgrade stops
+# and the old version stays installed, unless CMPROVISION_NO_SNAPSHOT is set.
+take_snapshot() {
+    for attempt in 1 2 3; do
+        # each try in a directory of its own, so a failed one leaves nothing behind
+        dest=/var/backups/cmprovision/.before-2.0
+        rm -rf "$dest"
+        if /usr/sbin/cmprovision-backup "$dest"; then
+            snap=$(ls -d "$dest"/*-"$1" 2>/dev/null | head -1)
+            if [ -n "$snap" ] && mv "$snap" /var/backups/cmprovision/; then
+                rm -rf "$dest"
+                snap=/var/backups/cmprovision/$(basename "$snap")
+                return 0
+            fi
+        fi
+        rm -rf "$dest"
+        echo "cmprovision: snapshot attempt $attempt of 3 failed" >&2
+        [ $attempt = 3 ] || sleep 5
+    done
+    return 1
+}
+
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.0.0~"; then
+    if [ -n "${CMPROVISION_NO_SNAPSHOT:-}" ]; then
+        echo "cmprovision: CMPROVISION_NO_SNAPSHOT is set: upgrading from $2 without a snapshot" >&2
+    elif [ ! -x /usr/sbin/cmprovision-backup ]; then
+        echo "cmprovision: $2 has no cmprovision-backup: upgrading without a snapshot" >&2
+    elif take_snapshot "$2"; then
+        if ! ls "$snap"/cmprovision4_*.deb > /dev/null 2>&1; then
+            pack_old_version "$snap" \
+                || echo "cmprovision: could not pack $2 into $snap; install its .deb again before cmprovision-restore" >&2
+        fi
+        echo "cmprovision: snapshot of $2 in $snap: cmprovision-restore $snap goes back"
+    else
+        echo "cmprovision: no snapshot of $2 could be taken (see above). The upgrade stops and $2 stays installed." >&2
+        echo "cmprovision: try again when no module is on the stand, or upgrade without a way back:" >&2
+        echo "cmprovision:   sudo CMPROVISION_NO_SNAPSHOT=1 apt install <the 2.0 package>" >&2
+        exit 1
+    fi
+fi
+
+#DEBHELPER#
+
+exit 0

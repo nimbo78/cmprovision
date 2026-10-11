@@ -115,6 +115,7 @@ class Labels extends Component
             $l = Label::findOrFail($this->labelid);
             $ftp_password = $l->ftp_password;
         }
+        $said = '';
 
         try
         {
@@ -137,13 +138,15 @@ class Labels extends Component
             {
                 $cmd = str_replace('$file', escapeshellarg($tmpfile), $this->print_command);
                 $output = $retcode = null;
-                if (@exec($cmd, $output, $retcode) === false)
+                // stderr too, as ScriptExecuteController::printLabel() does
+                if (@exec('{ '.$cmd."\n} 2>&1", $output, $retcode) === false)
                     throw new \Exception("Error executing '$cmd'");
                 if ($retcode)
                     throw new \Exception("Executing '$cmd' returned exit code $retcode. Program output:\n".implode("\n", $output));
+                $said = trim(implode("\n", $output));
             }
 
-            session()->flash('message', 'Printed test label');
+            session()->flash('message', 'Printed test label'.($said !== '' ? '. Command output: '.$said : ''));
         }
         catch (\Exception $e)
         {

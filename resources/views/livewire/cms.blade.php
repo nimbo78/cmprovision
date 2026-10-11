@@ -9,7 +9,7 @@
         <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg px-4 py-4">
 
         Filter by project:
-        <select wire:model="projectId">
+        <select wire:model.live="projectId">
             <option value="0">--all projects--</option>
             @foreach ($projects as $project)
             <option value="{{ $project->id }}">{{ $project->name }} ({{ $project->cms_count }})</option>

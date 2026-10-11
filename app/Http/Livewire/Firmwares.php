@@ -10,15 +10,15 @@ use App\Services\FirmwareUpdater;
 
 class Firmwares extends Component
 {
-    public $firmware, $lastUpdate;
+    public $lastUpdate;
 
     public function render()
     {
-        $this->firmware = Firmware::all();
         $setting = Setting::find('firmware_last_update');
         $this->lastUpdate = $setting ? Carbon::parse($setting->value, 'UTC')->local()->toDateTimeString() : null;
 
-        return view('livewire.firmware');
+        // view data, not a property: Livewire 3 does not serialize Firmware objects
+        return view('livewire.firmware', ['firmware' => Firmware::all()]);
     }
 
     public function update()

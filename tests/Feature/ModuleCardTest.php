@@ -18,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -256,7 +257,7 @@ class ModuleCardTest extends TestCase
         $this->activeProject();
         $this->get(self::START);
 
-        $html = Livewire::test('cm-card', ['serial' => self::SERIAL])->payload['effects']['html'];
+        $html = Livewire::test('cm-card', ['serial' => self::SERIAL])->html();
         $this->assertStringContainsString('wire:poll', $html);
     }
 
@@ -324,7 +325,7 @@ class ModuleCardTest extends TestCase
         ];
     }
 
-    /** @dataProvider failures */
+    #[DataProvider('failures')]
     public function test_every_kind_of_failure_gets_its_step_and_advice($attributes, $timeline, $step, $advice)
     {
         $result = FailureAdvice::for($this->failedModule($attributes, $timeline));

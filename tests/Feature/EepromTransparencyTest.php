@@ -13,6 +13,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -196,7 +197,7 @@ class EepromTransparencyTest extends TestCase
         ];
     }
 
-    /** @dataProvider flashOutcomes */
+    #[DataProvider('flashOutcomes')]
     public function test_the_flash_result_reaches_the_server($flashrom, $expected)
     {
         if (!is_executable('/bin/sh'))
