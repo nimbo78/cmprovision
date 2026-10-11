@@ -74,7 +74,14 @@
 .ports-uplink { background: #e5e7eb; color: #374151; border-color: #9ca3af; }
 .ports-free { background: #3a3f48; color: #9aa1ac; border-color: #4a505a; }
 .ports-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; border: 1px solid transparent; }
-.ports-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.ports-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+/* Nunito's line metrics (Windows uses its larger winDescent) set the text a pixel or two above the middle:
+   a label box trimmed to cap height and baseline centres the digits in the pill and on the dot's axis.
+   Browsers without text-box keep the plain padding. */
+@supports (text-box: trim-both cap alphabetic) {
+    .ports-chip { padding-top: 9px; padding-bottom: 9px; }
+    .ports-chip .label { text-box: trim-both cap alphabetic; }
+}
 .ports-chip.pressed { box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor; }
 .ports-chip.faded { opacity: .45; }
 .ports-chip.ports-free { border-color: #e5e7eb; background: #f9fafb; color: #6b7280; }

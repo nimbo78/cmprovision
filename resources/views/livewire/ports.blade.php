@@ -62,7 +62,7 @@
                             @if (!$s['counts'][$key]) x-show="filter.includes('{{ $key }}')" style="display: none" @endif
                             x-bind:aria-pressed="filter.includes('{{ $key }}') ? 'true' : 'false'"
                             x-bind:class="{ 'pressed': filter.includes('{{ $key }}'), 'faded': filter.length > 0 && !filter.includes('{{ $key }}') }">
-                        <span class="dot"></span>{{ $s['counts'][$key] }} {{ $word }}
+                        <span class="dot"></span><span class="label">{{ $s['counts'][$key] }} {{ $word }}</span>
                     </button>
                 @endforeach
                 <button type="button" x-show="filter.length > 0" x-cloak x-on:click="filter = []" class="text-sm font-semibold text-indigo-600 px-2">Show all</button>
