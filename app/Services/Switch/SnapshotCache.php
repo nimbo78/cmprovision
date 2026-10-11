@@ -1,0 +1,96 @@
+<?php
+
+namespace App\Services\Switch;
+
+use App\Services\Snmp\SnmpError;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * The switch snapshot shared by every open Ports page: taken at most once per FRESH_SECONDS (twice
+ * the poll's duration for a slow switch), one poll at a time; when the switch stops answering, the
+ * last good snapshot stays together with the error and the time it began.
+ */
+class SnapshotCache
+{
+    const FRESH_SECONDS = 5;
+    const SLOW_POLL = 2.5;
+    const LOCK_WAIT = 1;
+    const LOCK_SECONDS = 60;
+    const KEEP_SECONDS = 86400;
+
+    protected $id, $take;
+
+    /** @param callable $take takes a new snapshot (SwitchSnapshot::take()), throws SnmpError */
+    public function __construct(string $id, callable $take)
+    {
+        $this->id = $id;
+        $this->take = $take;
+    }
+
+    /** ['snapshot' => the last good one or null, 'error' => null or ['message', 'since'], 'checked_at' => unix time or null] */
+    public function current(): array
+    {
+        $state = $this->stored();
+        if ($this->fresh($state))
+            return $state;
+
+        $lock = Cache::lock('switch-snapshot-lock:'.$this->id, self::LOCK_SECONDS);
+        try
+        {
+            $lock->block(self::LOCK_WAIT);
+        }
+        catch (LockTimeoutException $e)
+        {
+            return $state;   // another page is asking the switch right now
+        }
+        try
+        {
+            $state = $this->stored();
+            return $this->fresh($state) ? $state : $this->poll($state);
+        }
+        finally
+        {
+            $lock->release();
+        }
+    }
+
+    protected function poll(array $state): array
+    {
+        $now = Carbon::now()->getTimestamp();
+        try
+        {
+            $snapshot = ($this->take)();
+            if ($state['error'])
+                Log::info('Switch '.$this->id.' answers again');
+            $state = ['snapshot' => $snapshot, 'error' => null, 'checked_at' => $now];
+        }
+        catch (SnmpError $e)
+        {
+            if (!$state['error'])
+                Log::warning('Switch '.$this->id.' does not answer: '.$e->getMessage());
+            $state['error'] = ['message' => $e->getMessage(), 'since' => $state['error']['since'] ?? $now];
+            $state['checked_at'] = $now;
+        }
+        Cache::put('switch-snapshot:'.$this->id, $state, self::KEEP_SECONDS);
+        return $state;
+    }
+
+    protected function stored(): array
+    {
+        $state = Cache::get('switch-snapshot:'.$this->id);
+        return is_array($state) ? $state : ['snapshot' => null, 'error' => null, 'checked_at' => null];
+    }
+
+    /* Checked less than FRESH_SECONDS ago, or twice the last poll's duration for a slow switch */
+    protected function fresh(array $state): bool
+    {
+        if (!$state['checked_at'])
+            return false;
+        $duration = (float) ($state['snapshot']['duration'] ?? 0);
+        $life = $duration > self::SLOW_POLL ? 2 * $duration : self::FRESH_SECONDS;
+        return Carbon::now()->getTimestamp() - $state['checked_at'] < $life;
+    }
+}
