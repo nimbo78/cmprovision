@@ -257,7 +257,7 @@ class ModuleCardTest extends TestCase
         $this->activeProject();
         $this->get(self::START);
 
-        $html = Livewire::test('cm-card', ['serial' => self::SERIAL])->payload['effects']['html'];
+        $html = Livewire::test('cm-card', ['serial' => self::SERIAL])->html();
         $this->assertStringContainsString('wire:poll', $html);
     }
 

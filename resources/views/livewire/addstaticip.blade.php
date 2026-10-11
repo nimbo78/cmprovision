@@ -13,13 +13,13 @@
         <div class="">
               <div class="mb-4">
                   <label for="ip" class="block text-gray-700 text-sm font-bold mb-2">IP:</label>
-                  <input type="text" id="ip" name="ip" wire:model.defer="ip" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="ip" name="ip" wire:model="ip" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('ip') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
 
               <div class="mb-4">
                   <label for="mac" class="block text-gray-700 text-sm font-bold mb-2">MAC:</label>
-                  <input type="text" id="mac" name="mac" wire:model.defer="mac" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="mac" name="mac" wire:model="mac" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('mac') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
 

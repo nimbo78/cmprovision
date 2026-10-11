@@ -60,7 +60,7 @@ class NotificationSettings extends Component
     public function save()
     {
         $existing = $this->editingId ? NotificationChannel::findOrFail($this->editingId) : null;
-        $this->validate($this->rules($existing), [
+        $this->validate($this->channelRules($existing), [
             'token.required' => 'Enter the bot token: a stored token is only used for the server it was saved with.',
             'botToken.required' => 'Enter the bot token.',
         ]);
@@ -99,7 +99,7 @@ class NotificationSettings extends Component
         $this->flash('Saved.');
     }
 
-    protected function rules($existing)
+    protected function channelRules($existing)
     {
         $rules = [
             'name' => 'required|string|max:100',

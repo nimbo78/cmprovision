@@ -23,12 +23,12 @@
         <div class="">
               <div class="mb-4">
                   <label for="name" class="block text-gray-700 text-sm font-bold mb-2">Label name:</label>
-                  <input type="text" id="name" name="name" wire:model.defer="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="name" name="name" wire:model="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('name') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="printer_type" class="block text-gray-700 text-sm font-bold mb-2">Method to send print job to printer:</label>
-                  <select id="printer_type" name="printer_type" wire:model="printer_type" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <select id="printer_type" name="printer_type" wire:model.live="printer_type" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                     <option value="ftp">FTP</option>
                     <option value="command">Custom command</option>
                   </select>
@@ -37,34 +37,34 @@
               @if ($printer_type == "command")
               <div class="mb-4">
                   <label for="print_command" class="block text-gray-700 text-sm font-bold mb-2">Command to queue print job:</label>
-                  <input type="text" id="print_command" name="print_command" wire:model.defer="print_command" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="print_command" name="print_command" wire:model="print_command" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('print_command') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               @elseif ($printer_type == "ftp")
               <div class="mb-4">
                   <label for="ftp_hostname" class="block text-gray-700 text-sm font-bold mb-2">FTP hostname:</label>
-                  <input type="text" id="ftp_hostname" name="ftp_hostname" wire:model.defer="ftp_hostname" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="ftp_hostname" name="ftp_hostname" wire:model="ftp_hostname" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('ftp_hostname') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="ftp_username" class="block text-gray-700 text-sm font-bold mb-2">FTP user:</label>
-                  <input type="text" id="ftp_username" name="ftp_username" wire:model.defer="ftp_username" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="ftp_username" name="ftp_username" wire:model="ftp_username" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('ftp_username') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="ftp_password" class="block text-gray-700 text-sm font-bold mb-2">FTP password:</label>
-                  <input type="password" id="ftp_password" name="ftp_password" wire:model.defer="ftp_password" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="password" id="ftp_password" name="ftp_password" wire:model="ftp_password" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('ftp_password') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               @endif
               <div class="mb-4">
                   <label for="file_extension" class="block text-gray-700 text-sm font-bold mb-2">File extension for print job:</label>
-                  <input type="text" id="file_extension" name="file_extension" wire:model.defer="file_extension" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="file_extension" name="file_extension" wire:model="file_extension" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('file_extension') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="template" class="block text-gray-700 text-sm font-bold mb-2">Label template:</label>
-                  <textarea wrap="off" type="text" id="template" name="template" wire:model.defer="template" class="h-48 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring"></textarea>
+                  <textarea wrap="off" type="text" id="template" name="template" wire:model="template" class="h-48 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring"></textarea>
                   <small>Available variables:<br>$serial $mac $provisionboard</small><br>
                   @error('template') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>

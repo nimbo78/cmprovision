@@ -67,13 +67,13 @@
 
             <div class="mb-4">
                 <label class="{{ $label }}">Name</label>
-                <input type="text" wire:model.defer="name" class="{{ $input }}" placeholder="Line chat">
+                <input type="text" wire:model="name" class="{{ $input }}" placeholder="Line chat">
                 @error('name') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
             </div>
 
             <div class="mb-4">
                 <label class="{{ $label }}">Type</label>
-                <select wire:model="type" class="{{ $input }}">
+                <select wire:model.live="type" class="{{ $input }}">
                     @foreach (\App\Models\NotificationChannel::TYPES as $key => $title)
                         <option value="{{ $key }}">{{ $title }}</option>
                     @endforeach
@@ -83,7 +83,7 @@
             @if ($type === 'mattermost_webhook' || $type === 'webhook')
                 <div class="mb-4">
                     <label class="{{ $label }}">Webhook URL</label>
-                    <input type="text" wire:model.defer="url" class="{{ $input }}" placeholder="https://mattermost.example.com/hooks/...">
+                    <input type="text" wire:model="url" class="{{ $input }}" placeholder="https://mattermost.example.com/hooks/...">
                     @error('url') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
                     <p class="text-xs text-gray-500 mt-1">
                         @if ($type === 'webhook')
@@ -96,30 +96,30 @@
             @elseif ($type === 'mattermost_bot')
                 <div class="mb-4">
                     <label class="{{ $label }}">Mattermost server</label>
-                    <input type="text" wire:model.defer="serverUrl" class="{{ $input }}" placeholder="https://mattermost.example.com">
+                    <input type="text" wire:model="serverUrl" class="{{ $input }}" placeholder="https://mattermost.example.com">
                     @error('serverUrl') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
                 </div>
                 <div class="mb-4">
                     <label class="{{ $label }}">Bot access token</label>
-                    <input type="password" wire:model.defer="token" class="{{ $input }}" placeholder="{{ $editingId ? 'leave empty to keep the stored token' : '' }}" autocomplete="new-password">
+                    <input type="password" wire:model="token" class="{{ $input }}" placeholder="{{ $editingId ? 'leave empty to keep the stored token' : '' }}" autocomplete="new-password">
                     @error('token') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
                 </div>
                 <div class="mb-4">
                     <label class="{{ $label }}">Channel</label>
-                    <input type="text" wire:model.defer="channel" class="{{ $input }}" placeholder="https://mattermost.example.com/team/channels/provisioning">
+                    <input type="text" wire:model="channel" class="{{ $input }}" placeholder="https://mattermost.example.com/team/channels/provisioning">
                     @error('channel') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
                     <p class="text-xs text-gray-500 mt-1">Channel link, team/channel or channel id. Add the bot to the team and, for a private channel, to the channel.</p>
                 </div>
             @elseif ($type === 'telegram')
                 <div class="mb-4">
                     <label class="{{ $label }}">Bot token</label>
-                    <input type="password" wire:model.defer="botToken" class="{{ $input }}" placeholder="{{ $editingId ? 'leave empty to keep the stored token' : '123456:ABC...' }}" autocomplete="new-password">
+                    <input type="password" wire:model="botToken" class="{{ $input }}" placeholder="{{ $editingId ? 'leave empty to keep the stored token' : '123456:ABC...' }}" autocomplete="new-password">
                     @error('botToken') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
                 </div>
                 <div class="mb-4">
                     <label class="{{ $label }}">Chat id</label>
                     <div class="flex items-center">
-                        <input type="text" wire:model.defer="chatId" class="{{ $input }}" placeholder="-1001234567890">
+                        <input type="text" wire:model="chatId" class="{{ $input }}" placeholder="-1001234567890">
                         <button wire:click="findTelegramChats()" class="bg-gray-500 hover:bg-gray-700 {{ $small }} ml-2" style="white-space: nowrap">Find chats</button>
                     </div>
                     @error('chatId') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
@@ -134,7 +134,7 @@
                 </div>
                 <div class="mb-4">
                     <label class="{{ $label }}">Topic id (forum groups, optional)</label>
-                    <input type="text" wire:model.defer="topicId" class="{{ $input }}">
+                    <input type="text" wire:model="topicId" class="{{ $input }}">
                     @error('topicId') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
                 </div>
             @endif
@@ -146,13 +146,13 @@
             <div class="mb-4">
                 <label class="{{ $label }}">Events</label>
                 @foreach (\App\Models\NotificationChannel::EVENTS as $key => $title)
-                    <label class="mr-4 text-sm" style="margin-right: 1rem"><input type="checkbox" wire:model.defer="events" value="{{ $key }}"> {{ $title }}</label>
+                    <label class="mr-4 text-sm" style="margin-right: 1rem"><input type="checkbox" wire:model="events" value="{{ $key }}"> {{ $title }}</label>
                 @endforeach
                 @error('events') <div class="text-red-500 text-sm">{{ $message }}</div> @enderror
             </div>
 
             <div class="mb-4">
-                <label class="text-sm"><input type="checkbox" wire:model.defer="enabled"> Enabled</label>
+                <label class="text-sm"><input type="checkbox" wire:model="enabled"> Enabled</label>
             </div>
 
             <button wire:click="save()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save</button>

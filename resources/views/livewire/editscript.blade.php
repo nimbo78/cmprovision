@@ -12,12 +12,12 @@
         <div class="">
               <div class="mb-4">
                   <label for="name" class="block text-gray-700 text-sm font-bold mb-2">Script name:</label>
-                  <input type="text" id="name" name="name" wire:model.defer="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="name" name="name" wire:model="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   @error('name') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="script_type" class="block text-gray-700 text-sm font-bold mb-2">Script type:</label>
-                  <select id="script_type" name="script_type" wire:model.defer="script_type" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <select id="script_type" name="script_type" wire:model="script_type" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                     <option value="preinstall">preinstall</option>
                     <option value="postinstall">postinstall</option>
                   </select>
@@ -25,20 +25,20 @@
               </div>
               <div class="mb-4">
                   <label for="priority" class="block text-gray-700 text-sm font-bold mb-2">Priority:</label>
-                  <input type="text" id="priority" name="priority" wire:model.defer="priority" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="priority" name="priority" wire:model="priority" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring">
                   <small>Script with lowest number is started first</small><br>
                   @error('priority') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label class="inline-flex items-center">
-                    <input type="checkbox" id="bg" name="bg" wire:model.defer="bg" class="form-checkbox h-6 w-6 text-gray-700">
+                    <input type="checkbox" id="bg" name="bg" wire:model="bg" class="form-checkbox h-6 w-6 text-gray-700">
                     <span class="ml-3 text-sm">Run in background</span>
                   </label>
                   @error('bg') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="script" class="block text-gray-700 text-sm font-bold mb-2">Script:</label>
-                  <textarea wrap="off" type="text" id="script" name="script" wire:model.defer="script" class="h-48 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring"></textarea>
+                  <textarea wrap="off" type="text" id="script" name="script" wire:model="script" class="h-48 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring"></textarea>
                   <small>Available environment variables:<br>$SERVER $STORAGE $PART1 $PART2</small><br>
                   @error('script') <span class="text-red-500">{{ $message }}</span>@enderror
               </div>

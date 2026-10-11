@@ -51,7 +51,7 @@ class ProvisioningLogTest extends TestCase
 
     public function test_the_log_refreshes_itself()
     {
-        $this->assertStringContainsString('wire:poll', Livewire::test(ProvisioningLog::class)->payload['effects']['html']);
+        $this->assertStringContainsString('wire:poll', Livewire::test(ProvisioningLog::class)->html());
     }
 
     public function test_errors_stand_out_and_the_newest_comes_first()
@@ -59,7 +59,8 @@ class ProvisioningLogTest extends TestCase
         $this->entry('Older entry', '2026-10-09 09:00:00');
         $this->entry('Error during dd. Return code 1.', '2026-10-09 10:00:00', 'error');
 
-        $html = Livewire::test(ProvisioningLog::class)->payload['effects']['html'];
+        // Livewire 3 wraps @if and @foreach output in morph-marker comments; they are not part of the layout
+        $html = preg_replace('/<!--\[if (BLOCK|ENDBLOCK)\]><!\[endif\]-->/', '', Livewire::test(ProvisioningLog::class)->html());
         $this->assertMatchesRegularExpression('/<tr[^>]*bg-red-100[^>]*>\s*<td[^>]*>GE0\/0\/4<\/td>\s*<td[^>]*><a [^>]*>1000000000000d01<\/a><\/td>\s*<td[^>]*>13:00:00 Error during dd/s', $html);
         $this->assertLessThan(strpos($html, 'Older entry'), strpos($html, 'Error during dd'));
     }
