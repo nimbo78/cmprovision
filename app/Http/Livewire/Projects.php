@@ -10,6 +10,7 @@ use App\Models\Script;
 use App\Models\Setting;
 use App\Models\Firmware;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use App\Jobs\ComputeSHA256;
 use App\Services\EepromImage;
 use App\Services\ProjectActivator;
@@ -21,20 +22,24 @@ class Projects extends Component
     public $projects, $activeProject;
     public $projectid, $name, $device, $storage, $image_id, $label_id, $label_moment, $selectedScripts, $offerSettingsReset;
     public $firmware, $eeprom_settings, $verify;
-    public $images, $labels, $scripts, $firmwareChannels;
+    public $images, $labels, $scripts;
 
-    protected $rules = [
-        'name' => 'required|max:255',
-        'device' => 'required|in:cm4',
-        'storage' => 'required|max:255',
-        'image_id' => 'nullable|numeric',
-        'label_id' => 'nullable|numeric',
-        'firmware' => 'nullable|max:255',
-        'eeprom_settings' => 'nullable|max:2024',
-        'label_moment' => 'required|in:never,preinstall,postinstall',
-        'selectedScripts' => 'array',
-        'verify' => 'required|boolean'
-    ];
+    protected function rules()
+    {
+        return [
+            'name' => 'required|max:255',
+            'device' => 'required|in:cm4',
+            'storage' => 'required|max:255',
+            'image_id' => 'nullable|numeric',
+            'label_id' => 'nullable|numeric',
+            // a file of the firmware store only: the name comes from the browser
+            'firmware' => ['nullable', 'max:255', Rule::in($this->firmwarePaths())],
+            'eeprom_settings' => 'nullable|max:2024',
+            'label_moment' => 'required|in:never,preinstall,postinstall',
+            'selectedScripts' => 'array',
+            'verify' => 'required|boolean',
+        ];
+    }
 
     public function render()
     {
@@ -43,16 +48,17 @@ class Projects extends Component
         $this->images = Image::orderBy('filename')->orderBy('id')->get();
         $this->labels = Label::orderBy('name')->get();
         $this->scripts = Script::orderBy('name')->get();
-        $this->firmwareChannels = [];
+        $firmwareChannels = [];
         foreach (Firmware::channels() as $channel)
         {
-            $this->firmwareChannels[$channel] = Firmware::allOfChannel($channel);
+            $firmwareChannels[$channel] = Firmware::allOfChannel($channel);
         }
 
         if ($this->isOpen && $this->label_moment != 'never' && !$this->label_id && count($this->labels))
             $this->label_id = $this->labels[0]->id;
 
-        return view('livewire.projects');
+        // view data, not a property: Livewire 3 does not serialize Firmware objects
+        return view('livewire.projects', ['firmwareChannels' => $firmwareChannels]);
     }
 
     /* Called when EEPROM firmware selection changes */
@@ -195,14 +201,18 @@ class Projects extends Component
         }
     }
 
-    function getEepromSettingsFromFirmwareFile($fn)
+    /** the settings embedded in an image of the firmware store; '' for anything else */
+    protected function getEepromSettingsFromFirmwareFile($path)
     {
-        $data = @file_get_contents(Firmware::basedir().'/'.$fn);
-        return $this->getEepromSettings($data);
+        if (!in_array($path, $this->firmwarePaths(), true))
+            return '';
+        $data = @file_get_contents(Firmware::basedir().'/'.$path);
+        return $data === false ? '' : (string) EepromImage::getConfig($data);
     }
 
-    function getEepromSettings(&$data)
+    /** "<channel>/pieeprom-....bin" of every image in the store */
+    protected function firmwarePaths()
     {
-        return EepromImage::getConfig($data);
+        return array_map(function (Firmware $f) { return $f->path; }, Firmware::all());
     }
 }
