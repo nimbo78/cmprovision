@@ -63,8 +63,8 @@ class SwitchSnapshotTest extends TestCase
         $this->assertSame('huawei', $s['mac_method']);
         $this->assertSame('192.0.2.10', $s['id']);
         $this->assertFalse($s['poe']);
-        $this->assertSame(['ifIndex' => 8, 'name' => 'GE0/0/3', 'alias' => 'stand 3', 'up' => true, 'speed' => 1000,
-                           'macs' => [self::MODULE], 'poe' => null], $s['ports'][8]);
+        $this->assertSame(['ifIndex' => 8, 'name' => 'GE0/0/3', 'alias' => 'stand 3', 'up' => true, 'speed' => 1000, 'changed' => null,
+                           'macs' => [self::MODULE], 'mac_count' => 1, 'poe' => null], $s['ports'][8]);
         $this->assertFalse($s['ports'][7]['up']);
         $this->assertSame(1000, $s['ports'][7]['speed'], 'what the switch says without a link');
         $this->assertSame(['00:11:22:33:44:55'], $s['ports'][30]['macs']);
@@ -146,6 +146,39 @@ class SwitchSnapshotTest extends TestCase
             SwitchSnapshot::OID_IFNAME.'.1' => 'Vlanif1', SwitchSnapshot::OID_IFTYPE.'.1' => 136,
             SwitchSnapshot::OID_IFNAME.'.2' => 'NULL0', SwitchSnapshot::OID_IFTYPE.'.2' => 1,
         ]);
+    }
+
+    public function test_how_long_a_port_has_been_in_its_state_comes_from_if_last_change()
+    {
+        $s = $this->take($this->interfaces([1 => ['GE0/0/1', 6, 1, 1, 1000], 2 => ['GE0/0/2', 6, 1, 1, 1000]]) + [
+            SwitchSnapshot::OID_SYSUPTIME.'.0' => 100000000,
+            SwitchSnapshot::OID_IFLASTCHANGE.'.1' => 99990000,
+            SwitchSnapshot::OID_IFLASTCHANGE.'.2' => 0,   // since before the agent last started
+        ]);
+
+        $this->assertSame(100, $s['ports'][1]['changed']);
+        $this->assertSame(1000000, $s['ports'][2]['changed']);
+    }
+
+    public function test_if_descr_and_if_speed_are_asked_only_when_needed()
+    {
+        $snmp = new FakeSnmp(['' => $this->interfaces([1 => ['GE0/0/1', 6, 1, 1, 1000]])]);
+        (new SwitchSnapshot($snmp, new MacTable($snmp)))->take();
+
+        $walked = array_column($snmp->walks, 0);
+        $this->assertNotContains(SwitchSnapshot::OID_IFDESCR, $walked, 'every port has an ifName');
+        $this->assertNotContains(SwitchSnapshot::OID_IFSPEED, $walked, 'every port has an ifHighSpeed');
+    }
+
+    public function test_a_port_keeps_a_few_macs_and_counts_them_all()
+    {
+        $t = $this->interfaces([30 => ['XGE0/0/1', 6, 1, 1, 10000]]);
+        for ($i = 1; $i <= 100; $i++)
+            $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.17.34.51.0.'.$i.'.1.0'] = 30;
+        $s = $this->take($t);
+
+        $this->assertSame(100, $s['ports'][30]['mac_count']);
+        $this->assertCount(SwitchSnapshot::MAC_KEEP, $s['ports'][30]['macs']);
     }
 
     public function test_poe_lands_on_its_port()

@@ -180,6 +180,50 @@ class PortsPageTest extends TestCase
         $page->call('$refresh')->assertSee('before the switch went silent: All done: the batch can be replaced');
     }
 
+    public function test_while_another_page_asks_the_switch_it_says_so_and_names_the_switch_once()
+    {
+        Setting::create(['key' => 'ethernetswitch_ip', 'value' => '192.0.2.10']);
+        // real time here: the page waits for the lock by the clock
+        $lock = \Illuminate\Support\Facades\Cache::lock('switch-snapshot-lock:192.0.2.10', 60);
+        $this->assertTrue($lock->get());
+        try {
+            Livewire::test(Ports::class)
+                ->assertSee('Asking the switch')
+                ->assertDontSee('192.0.2.10 · 192.0.2.10');
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function test_the_selected_port_is_set_by_the_page_only()
+    {
+        $this->expectException(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
+        Livewire::test(Ports::class)->set('selected', 'p8');
+    }
+
+    public function test_a_switch_without_a_mac_table_says_modules_cannot_be_matched_to_ports()
+    {
+        $this->switchWithModule();
+        foreach (array_keys($this->fake->tables['']) as $oid)
+            if (strpos($oid, MacTable::OID_HUAWEI_FDB_PORT) === 0)
+                unset($this->fake->tables[''][$oid]);
+
+        Livewire::test(Ports::class)->assertSee('The switch gave no MAC address table');
+    }
+
+    public function test_a_quiet_port_says_how_long_its_link_has_been_up()
+    {
+        $this->switchWithModule();
+        $this->fake->tables[''][SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;      // GE0/0/1: a link, no MAC
+        $this->fake->tables[''][SwitchSnapshot::OID_SYSUPTIME.'.0'] = 100000000;
+        $this->fake->tables[''][SwitchSnapshot::OID_IFLASTCHANGE.'.6'] = 1000;    // up for 11 days
+
+        Livewire::test(Ports::class)
+            ->assertSeeHtml('<span class="short">LNK</span>')
+            ->call('select', 'p6')
+            ->assertSee('Link up for 1 week');
+    }
+
     public function test_booting_and_silent_ports_count_as_in_progress_not_as_running()
     {
         $cm = $this->switchWithModule();

@@ -10,6 +10,7 @@ use App\Services\SwitchPortFinder;
 use App\Support\StandMap;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
@@ -22,7 +23,8 @@ class Ports extends Component
        modules, not the office network behind an uplink */
     const LOOKUP_MACS = 48;
 
-    /** key of the port whose details are open, e.g. "p10003" */
+    /** key of the port whose details are open, e.g. "p10003"; only select() sets it */
+    #[Locked]
     public $selected = null;
 
     public function select($key)
@@ -74,7 +76,7 @@ class Ports extends Component
     {
         $macs = [];
         foreach ($snapshot['ports'] as $port)
-            if ($port['up'] && count($port['macs']) <= self::LOOKUP_MACS)
+            if ($port['up'] && ($port['mac_count'] ?? count($port['macs'])) <= self::LOOKUP_MACS)
                 foreach ($port['macs'] as $mac)
                     $macs[strtolower($mac)] = true;
         $modules = [];

@@ -11,9 +11,9 @@ use App\Services\Snmp\SnmpError;
  *  - Huawei: HUAWEI-POE-MIB hwPoePortTable, indexed by interface, power in mW
  *  - Cisco IOS: CISCO-POWER-ETHERNET-EXT-MIB gives the port's physical entity, ENTITY-MIB its
  *    interface (entAliasMappingIdentifier); power in mW
- *  - the rest: the PoE port number is the interface index when such a port exists, otherwise the
- *    last number in a port's name when that number is unique on the switch (the members of a stack
- *    share numbers and stay out); no power
+ *  - the rest: the PoE port number is the interface index when such a port exists (on a stack only
+ *    for the first member, or for a number no other member has), otherwise the last number in a
+ *    port's name when that number is unique on the switch; no power
  * Checked against the user's switches when they arrive (ROADMAP item 1).
  */
 class Poe
@@ -113,20 +113,26 @@ class Poe
         return $map;
     }
 
-    /* The rest: the port number is the interface index, or the last number in a port's name when unique */
+    /* The rest: the port number is the interface index, or the last number in a port's name when unique.
+       On a stack every member (group) numbers its ports from 1: only group 1, or a number no other group
+       has, may be taken as an interface index. */
     protected function byNumber(array $keys, array $ports): array
     {
         $named = [];
         foreach ($ports as $ifIndex => $name)
             if (preg_match('/(\d+)\D*$/', $name, $m))
                 $named[(int) $m[1]][] = $ifIndex;
+        $groups = [];
+        foreach ($keys as $key)
+            $groups[(int) substr(strrchr('.'.$key, '.'), 1)][(int) $key] = true;
         $map = [];
         foreach ($keys as $key)
         {
             $port = (int) substr(strrchr('.'.$key, '.'), 1);
-            if (isset($ports[$port]))
+            $alone = count($groups[$port]) === 1;
+            if (isset($ports[$port]) && ((int) $key === 1 || $alone))
                 $map[$key] = $port;
-            elseif (isset($named[$port]) && count($named[$port]) === 1)
+            elseif ($alone && isset($named[$port]) && count($named[$port]) === 1)
                 $map[$key] = $named[$port][0];
         }
         return $map;

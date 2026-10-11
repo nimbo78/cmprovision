@@ -2,7 +2,7 @@
     <h2 class="font-semibold text-xl text-gray-800 leading-tight">Ports</h2>
 </x-slot>
 <div class="py-8" wire:poll.5s
-     x-data="{ filter: [], toggle(s) { this.filter = this.filter.includes(s) ? this.filter.filter(x => x !== s) : this.filter.concat([s]) }, dim(s, never) { return this.filter.length > 0 && (never || !this.filter.includes(s)) } }">
+     x-data="{ filter: [], toggle(s) { this.filter = this.filter.includes(s) ? this.filter.filter(x => x !== s) : this.filter.concat([s]) }, dim(states, never) { return this.filter.length > 0 && (never || !states.some(s => this.filter.includes(s))) } }">
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)
 @php($words = ['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'silent', 'unknown' => 'unknown', 'boot' => 'booting', 'foreign' => 'foreign', 'free' => 'free'])
 <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 px-4 space-y-4">
@@ -15,7 +15,7 @@
     </div>
 @else
     <div class="text-sm text-gray-600">
-        <span class="font-bold text-gray-900">{{ $snapshot['model'] ?? $host }}</span> · {{ $host }}
+        @if ($snapshot)<span class="font-bold text-gray-900">{{ $snapshot['model'] }}</span> · @endif {{ $host }}
         @if ($snapshot) · polled {{ max(0, $now - $snapshot['taken_at']) }} s ago @endif
         @if ($snapshot && $snapshot['poe'])
             · PoE {{ number_format(array_sum(array_map(function ($p) { return $p['poe']['watts'] ?? 0; }, $snapshot['ports'])), 1) }} W
@@ -34,6 +34,16 @@
             @else
                 Cannot read the switch: {{ $error['message'] }}
             @endif
+        </div>
+    @endif
+    @if (!$snapshot && !$error)
+        {{-- another page holds the poll: its snapshot comes with the next refresh --}}
+        <div class="bg-white shadow-xl sm:rounded-lg px-6 py-6 text-gray-700">Asking the switch…</div>
+    @endif
+    @if ($snapshot && $snapshot['mac_method'] === null && in_array(true, array_column($snapshot['ports'], 'up'), true))
+        <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-900 px-4 py-3 rounded" role="status">
+            The switch gave no MAC address table, so modules cannot be matched to ports. Check the MAC table method under
+            <a href="{{ route('settings') }}" class="underline">Other settings → Ethernet switch</a>.
         </div>
     @endif
 
@@ -146,8 +156,10 @@
                         <p class="mb-2">Not a module: <span class="ports-serial">{{ implode(', ', $tile['macs']) }}</span></p>
                     @elseif ($tile['state'] === 'boot')
                         <p class="mb-2">Link up, nothing has talked to the server from this port yet.</p>
+                    @elseif ($tile['state'] === 'quiet')
+                        <p class="mb-2">Link up for {{ \Carbon\CarbonInterval::seconds($tile['changed'])->cascade()->forHumans(['parts' => 1]) }}, and nothing has talked from this port: a quiet device, a member of a link aggregation, or the provisioner's own port after a long idle time.</p>
                     @elseif ($tile['state'] === 'uplink')
-                        <p class="mb-2">Uplink: {{ count($tile['macs']) }} MAC {{ count($tile['macs']) === 1 ? 'address' : 'addresses' }} behind it.</p>
+                        <p class="mb-2">Uplink: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @endif
                     <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                         <dt class="text-gray-500">Link</dt>

@@ -12,6 +12,8 @@ class StandMap
 {
     /* More MAC addresses than this that are not modules make a port an uplink */
     const UPLINK_MACS = 3;
+    /* A module asks for DHCP seconds after its link comes up: a link without any MAC for longer is a quiet device */
+    const BOOT_SECONDS = 180;
     /* Main ports per block: six pairs, odd ones on top as on the case */
     const BLOCK = 12;
     /* Cages for a switch without PoE tables: 10G and faster names, and MikroTik's sfp ports */
@@ -66,7 +68,8 @@ class StandMap
         foreach (array_merge($main, $uplinks) as $tile)
             $tiles[$tile['key']] = $tile;
 
-        return ['blocks' => $blocks, 'tiles' => $tiles, 'summary' => $this->summary($main, $tiles, count($uplinks), $withPoe)];
+        return ['switch' => $this->snapshot['id'] ?? null, 'blocks' => $blocks, 'tiles' => $tiles,
+                'summary' => $this->summary($main, $tiles, count($uplinks), $withPoe)];
     }
 
     /* What the dashboard says about a module, in one word */
@@ -94,7 +97,7 @@ class StandMap
         foreach ($macs as $mac)
             if (isset($this->modules[$mac]))
                 $modules[] = $this->modules[$mac];
-        $others = count($macs) - count($modules);
+        $others = ($port['mac_count'] ?? count($macs)) - count($modules);
         $modules = $this->present($modules);
         usort($modules, function ($a, $b) {
             return array_search(self::moduleState($a), self::SEVERITY, true) - array_search(self::moduleState($b), self::SEVERITY, true);
@@ -108,9 +111,12 @@ class StandMap
             $state = 'module';
         elseif ($macs)
             $state = 'foreign';
+        elseif (($port['changed'] ?? null) !== null && $port['changed'] > self::BOOT_SECONDS)
+            $state = 'quiet';   // a LAG member, a silent device, the provisioner's port after a long idle time
         else
             $state = 'boot';
 
+        $filter = $state === 'module' ? self::moduleState($modules[0]) : ($state === 'quiet' ? 'foreign' : $state);
         return [
             'key' => 'p'.$port['ifIndex'],
             'name' => $port['name'],
@@ -118,13 +124,17 @@ class StandMap
             'number' => preg_match('/(\d+)\D*$/', $port['name'], $m) ? (int) $m[1] : null,
             'up' => $port['up'],
             'speed' => $port['speed'],
+            'changed' => $port['changed'] ?? null,
             'poe' => $port['poe'],
             'macs' => $macs,
+            'mac_count' => $port['mac_count'] ?? count($macs),
             'state' => $state,
-            'filter' => $state === 'module' ? self::moduleState($modules[0]) : $state,
+            'filter' => $filter,
+            // a port with several modules answers to the chip of each of their states
+            'filters' => $state === 'module' ? array_values(array_unique(array_map([self::class, 'moduleState'], $modules))) : [$filter],
             'modules' => $state === 'module' ? $modules : [],
             'short' => $state === 'module' ? strtoupper(substr($modules[0]->serial, -4))
-                : (['uplink' => 'UP', 'foreign' => 'MAC', 'boot' => '···'][$state] ?? ''),
+                : (['uplink' => 'UP', 'foreign' => 'MAC', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? ''),
         ];
     }
 
@@ -180,8 +190,8 @@ class StandMap
                 $modules++;
             }
         foreach ($main as $tile)
-            if (in_array($tile['state'], ['boot', 'foreign', 'free'], true))
-                $counts[$tile['state']]++;
+            if (in_array($tile['state'], ['boot', 'foreign', 'quiet', 'free'], true))
+                $counts[$tile['filter']]++;
 
         $busy = $counts['run'] + $counts['stale'] + $counts['boot'];
         if ($busy)

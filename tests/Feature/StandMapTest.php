@@ -139,6 +139,41 @@ class StandMapTest extends TestCase
         $this->assertSame(0, $map['summary']['counts']['fail']);
     }
 
+    public function test_a_link_without_any_mac_for_minutes_is_a_quiet_device_not_a_boot()
+    {
+        $map = $this->build([
+            array_merge($this->port(1, 'GE0/0/1', true), ['changed' => 30]),
+            array_merge($this->port(2, 'GE0/0/2', true), ['changed' => 600]),   // a LAG member, an idle provisioner port...
+        ]);
+
+        $this->assertSame(['boot', 'boot', '···'], [$map['tiles']['p1']['state'], $map['tiles']['p1']['filter'], $map['tiles']['p1']['short']]);
+        $this->assertSame(['quiet', 'foreign', 'LNK'], [$map['tiles']['p2']['state'], $map['tiles']['p2']['filter'], $map['tiles']['p2']['short']]);
+        $this->assertSame([1, 1], [$map['summary']['counts']['boot'], $map['summary']['counts']['foreign']]);
+        $this->assertSame(1, $map['summary']['busy'], 'only the booting port keeps the batch in progress');
+    }
+
+    public function test_a_port_with_several_modules_answers_to_each_of_their_states()
+    {
+        $map = $this->build([$this->port(1, 'GE0/0/1', true, ['aa:00:00:00:00:01', 'aa:00:00:00:00:02'])], [
+            $this->module('10000000000000a1', 'aa:00:00:00:00:01'),
+            $this->module('10000000000000a2', 'aa:00:00:00:00:02', ['phase' => 'failed']),
+        ]);
+
+        $this->assertSame(['fail', 'ok'], $map['tiles']['p1']['filters']);
+        $this->assertSame(['free'], $this->build([$this->port(2, 'GE0/0/2', false)])['tiles']['p2']['filters']);
+    }
+
+    public function test_an_uplink_counts_all_its_macs_not_just_those_kept()
+    {
+        $port = array_merge($this->port(30, 'XGE0/0/1', true, ['00:00:00:00:00:01']), ['mac_count' => 500]);
+        $this->assertSame('uplink', $this->build([$port])['tiles']['p30']['state']);
+    }
+
+    public function test_the_map_names_its_switch()
+    {
+        $this->assertSame('192.0.2.10', $this->build([$this->port(1, 'GE0/0/1', false)])['switch']);
+    }
+
     public function test_a_module_moved_to_another_port_shows_on_the_new_one_only()
     {
         $map = $this->build([

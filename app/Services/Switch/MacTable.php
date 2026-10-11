@@ -56,7 +56,9 @@ class MacTable
 
     /**
      * The rows of the first method with entries; later methods add only MACs it lacks, as
-     * SwitchPortFinder::scan() does for the settings page. A switch that does not answer throws SnmpError.
+     * SwitchPortFinder::scan() does for the settings page. The method that found modules on this
+     * switch before (the preferred one) is enough when it has rows: the MAC table is walked once.
+     * A switch that does not answer throws SnmpError.
      */
     public function entries()
     {
@@ -74,6 +76,8 @@ class MacTable
                     $seenBy[$row['mac']] = $method;
                     $result['rows'][] = $row;
                 }
+            if ($method === $this->preferred)
+                break;
         }
         return $result;
     }

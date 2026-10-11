@@ -35,6 +35,19 @@ class MacTableTest extends TestCase
         ], $entries['rows']);
     }
 
+    public function test_the_method_that_found_modules_before_is_enough_when_it_has_rows()
+    {
+        $snmp = new FakeSnmp(['' => [
+            MacTable::OID_QBRIDGE_FDB_PORT.'.10.'.self::MODULE_OID => 5,
+            MacTable::OID_BRIDGE_FDB_PORT.'.0.17.34.51.68.85' => 7,
+        ]]);
+
+        $entries = (new MacTable($snmp, 'auto', 'qbridge'))->entries();
+
+        $this->assertSame([self::MODULE], array_column($entries['rows'], 'mac'));
+        $this->assertNotContains(MacTable::OID_BRIDGE_FDB_PORT, array_column($snmp->walks, 0), 'no second walk of the MAC table');
+    }
+
     public function test_entries_of_a_switch_without_a_mac_table_are_empty()
     {
         $entries = (new MacTable(new FakeSnmp(['' => []])))->entries();

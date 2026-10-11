@@ -108,6 +108,8 @@ class SnmpAgentTest extends TestCase
         $this->assertSame('searching', $s['ports'][4]['poe']['state']);
         $this->assertNull($s['ports'][25]['poe']);
         $this->assertCount(5, $s['ports'][25]['macs'], 'the office LAN behind the uplink');
+        $this->assertSame(100, $s['ports'][1]['changed'], 'TimeTicks come through php-snmp as hundredths');
+        $this->assertSame(999990, $s['ports'][2]['changed']);
     }
 
     public function test_snapshot_of_a_cisco_ios_switch_with_poe_through_entity_mib()

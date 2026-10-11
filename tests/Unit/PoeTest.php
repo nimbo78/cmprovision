@@ -71,6 +71,17 @@ class PoeTest extends TestCase
             'port 7 is ambiguous (GE0/0/7 and GE1/0/7) and stays out');
     }
 
+    public function test_a_stack_member_does_not_take_the_interface_of_the_first_one()
+    {
+        // group 2 port 5 is the second switch of a stack, not ifIndex 5 of the first
+        $poe = $this->read([
+            Poe::OID_PETH_DETECTION.'.1.5' => 3,
+            Poe::OID_PETH_DETECTION.'.2.5' => 2,
+        ], [5 => 'gi1/0/5', 6 => 'gi1/0/6']);
+
+        $this->assertSame([5 => ['state' => 'delivering', 'class' => null, 'watts' => null]], $poe);
+    }
+
     public function test_a_switch_without_poe_tables_has_no_poe()
     {
         $this->assertSame([], $this->read([], [1 => 'ether1']));

@@ -83,9 +83,13 @@ def ports(spec):
                  (f'{IFTYPE}.{i}', 2, typ), (f'{IFCONN}.{i}', 2, conn), (f'{IFOPER}.{i}', 2, oper), (f'{IFHIGH}.{i}', 66, high)]
     return recs
 
+SYSUPTIME = '1.3.6.1.2.1.1.3.0'
+IFLAST = '1.3.6.1.2.1.2.2.1.9'
+
 # Huawei S5731-S24P4X: 24 GE PoE + 4 XGE, HUAWEI-L2MAM and HUAWEI-POE-MIB by interface; the office LAN
-# (00:11:22:33:44:55..59) behind XGE0/0/1
-S5731 = {i: (f'GE0/0/{i}', 6, 1, 1 if i in (1, 3) else 2, 1000) for i in range(1, 25)}
+# (00:11:22:33:44:55..59) behind XGE0/0/1; GE0/0/1 came up 100 s ago (a module booting), GE0/0/2 days ago
+# and nothing talks there (a quiet device)
+S5731 = {i: (f'GE0/0/{i}', 6, 1, 1 if i in (1, 2, 3) else 2, 1000) for i in range(1, 25)}
 S5731.update({24 + i: (f'XGE0/0/{i}', 6, 1, 1 if i == 1 else 2, 10000) for i in range(1, 5)})
 S5731[50] = ('Vlanif1', 136, 2, 1, 1000)
 FILES['s5731'] = [
@@ -93,7 +97,8 @@ FILES['s5731'] = [
     (f'{HWFDB}.{MODULE}.10.0', 2, 3),
     (f'{HW_POE_STATUS}.3', 4, 'Powered'), (f'{HW_POE_POWER}.3', 2, 6900),
 ] + [(f'{HWFDB}.0.17.34.51.68.{85 + n}.1.0', 2, 25) for n in range(5)] \
-  + [(f'{HW_POE_STATUS}.{i}', 4, 'Detecting') for i in range(1, 25) if i != 3] + ports(S5731)
+  + [(f'{HW_POE_STATUS}.{i}', 4, 'Detecting') for i in range(1, 25) if i != 3] + ports(S5731) \
+  + [(SYSUPTIME, 67, 100000000)] + [(f'{IFLAST}.{i}', 67, {1: 99990000, 2: 1000}.get(i, 0)) for i in S5731]
 
 # Cisco IOS (Catalyst 9200L-like): 8 Gi PoE + 2 Te, BRIDGE-MIB per VLAN, PoE through ENTITY-MIB
 C9200 = {10100 + i: (f'Gi1/0/{i}', 6, 1, 1 if i == 5 else 2, 1000) for i in range(1, 9)}
