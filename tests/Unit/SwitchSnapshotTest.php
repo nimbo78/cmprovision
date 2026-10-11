@@ -127,4 +127,15 @@ class SwitchSnapshotTest extends TestCase
         $this->expectExceptionMessage('The switch lists no interfaces');
         $this->take([]);
     }
+
+    public function test_poe_lands_on_its_port()
+    {
+        $snmp = new FakeSnmp(['' => $this->interfaces([8 => ['GE0/0/3', 6, 1, 1, 1000]]) + [
+            \App\Services\Switch\Poe::OID_HW_CONSUMING.'.8' => 6900,
+        ]]);
+        $s = (new SwitchSnapshot($snmp, new MacTable($snmp), new \App\Services\Switch\Poe($snmp)))->take();
+
+        $this->assertTrue($s['poe']);
+        $this->assertSame(6.9, $s['ports'][8]['poe']['watts']);
+    }
 }

@@ -39,7 +39,7 @@ class SwitchSnapshot
     public static function forConfig(array $config): self
     {
         $snmp = app(SnmpClient::class, ['config' => $config]);
-        return new self($snmp, new MacTable($snmp, $config['method'] ?? 'auto', $config['detected'] ?? null), null, (string) $config['host']);
+        return new self($snmp, new MacTable($snmp, $config['method'] ?? 'auto', $config['detected'] ?? null), new Poe($snmp), (string) $config['host']);
     }
 
     /**
