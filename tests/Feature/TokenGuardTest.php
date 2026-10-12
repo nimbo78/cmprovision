@@ -13,11 +13,11 @@ class TokenGuardTest extends TestCase
 {
     /* Views still on raw colours: each conversion task takes its files off this list (compact web plan, Task 1) */
     const NOT_YET = [
-        'livewire/addimage.blade.php', 'livewire/addstaticip.blade.php', 'livewire/cm-card.blade.php',
+        'livewire/addimage.blade.php', 'livewire/addstaticip.blade.php',
         'livewire/editlabel.blade.php', 'livewire/editproject.blade.php', 'livewire/editscript.blade.php',
         'livewire/firmware.blade.php', 'livewire/images.blade.php', 'livewire/labels.blade.php',
-        'livewire/notification-settings.blade.php', 'livewire/ports.blade.php', 'livewire/projects.blade.php', 'livewire/scripts.blade.php',
-        'livewire/settings.blade.php', 'livewire/switch-settings.blade.php', 'livewire/switch-snmp-hints.blade.php', 'livewire/viewlog.blade.php',
+        'livewire/notification-settings.blade.php', 'livewire/projects.blade.php', 'livewire/scripts.blade.php',
+        'livewire/settings.blade.php', 'livewire/switch-settings.blade.php', 'livewire/switch-snmp-hints.blade.php',
     ];
 
     const PALETTE = '(?:white|black|slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)';
