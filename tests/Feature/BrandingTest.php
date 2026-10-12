@@ -14,10 +14,10 @@ class BrandingTest extends TestCase
 {
     use RefreshDatabase;
 
-    // the tile's gradient and the line's ink
-    const TILE_TOP = 'stop-color="#ffd37a"';
-    const TILE_BOTTOM = 'stop-color="#e2681c"';
-    const INK = 'stroke="#2a1a0c"';
+    // the tile's gradient and the line's ink, as theme tokens (a lighter tile in a dark theme)
+    const TILE_TOP = 'stop-color: var(--mark-a)';
+    const TILE_BOTTOM = 'stop-color: var(--mark-b)';
+    const INK = 'stroke: var(--mark-ink)';
     // the red of the Raspberry Pi logo the fork showed before 2.1.1
     const RASPBERRY = 'fill:rgb(73.72549%,6.666667%,25.882353%)';
 
@@ -43,7 +43,7 @@ class BrandingTest extends TestCase
     public function test_the_browser_tab_and_home_screen_icons_are_the_mark()
     {
         $svg = file_get_contents(public_path('favicon.svg'));
-        $this->assertStringContainsString(self::TILE_TOP, $svg);
+        $this->assertStringContainsString('stop-color="#ffd37a"', $svg);   // the tab does not follow the page's theme
         $this->assertStringNotContainsString(self::RASPBERRY, $svg);
         // the .ico holds 16, 32 and 48 px; phones take a 180 px PNG for the home screen
         $this->assertSame([0, 1, 3], array_values(unpack('v3', file_get_contents(public_path('favicon.ico')))));

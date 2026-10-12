@@ -2,12 +2,14 @@
 
 namespace App\Http\Livewire;
 
+use Livewire\Attributes\Title;
 use Livewire\Component;
 use Illuminate\Support\Carbon;
 use App\Models\Firmware;
 use App\Models\Setting;
 use App\Services\FirmwareUpdater;
 
+#[Title('Firmware')]
 class Firmwares extends Component
 {
     public $lastUpdate;

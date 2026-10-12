@@ -2,11 +2,13 @@
 
 namespace App\Http\Livewire;
 
+use Livewire\Attributes\Title;
 use Livewire\Component;
 use App\Models\Host;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Validator;
 
+#[Title('Settings')]
 class Settings extends Component
 {
     public $dnsmasqRunning, $rpibootRunning, $logOutput, $logTitle;

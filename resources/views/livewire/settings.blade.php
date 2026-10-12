@@ -1,11 +1,6 @@
-<x-slot name="header">
-    <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-        Other settings
-    </h2>
-</x-slot>
 
 
-<div class="max-w-7xl mx-auto py-10 sm:px-6 lg:px-8">
+<div class="cmp-page">
     <div class="md:grid md:grid-cols-3 md:gap-6">
 
         @if($logModalOpen)
@@ -16,16 +11,16 @@
 
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
-                <h3 class="text-lg font-medium text-gray-900">DHCP server settings</h3>
-                <p class="mt-1 text-sm text-gray-600">
+                <h3 class="text-lg font-medium text-fg">DHCP server settings</h3>
+                <p class="mt-1 text-sm text-fg-muted">
                     Change the DHCP server configuration
                 </p>
             </div>
         </div>
         <div class="mt-5 md:mt-0 md:col-span-2">
-            <div class="px-4 py-5 bg-white sm:p-6 shadow sm:rounded-tl-md sm:rounded-tr-md">
+            <div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-tl-md sm:rounded-tr-md">
                 @if (session()->has('message'))
-                <div class="bg-teal-100 border-t-4 border-teal-500 rounded-b text-teal-900 px-4 py-3 shadow-md my-3" role="alert">
+                <div class="cmp-flash my-3" role="alert">
                     <div class="flex">
                         <div>
                             <p class="text-sm">{{ session('message') }}</p>
@@ -34,37 +29,37 @@
                 </div>
                 @endif
                 <div class="mb-4">
-                    <div class="block text-gray-700 text-sm font-bold mb-2">Static IP assignments:</div>
+                    <div class="block text-fg text-sm font-bold mb-2">Static IP assignments:</div>
                 </div>
 
-                <table class="table-fixed min-w-full">
+                <table class="cmp-table min-w-full">
                     <thead>
-                        <tr class="bg-gray-100">
-                            <th class="px-4 py-2">IP</th>
-                            <th class="px-4 py-2">MAC</th>
-                            <th class="px-4 py-2">Action</th>
+                        <tr>
+                            <th>IP</th>
+                            <th>MAC</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse($hosts as $h)
                         <tr>
-                            <td class="border px-4 py-2">{{ $h->ip }}</td>
-                            <td class="border px-4 py-2">{{ $h->mac }}</td>
-                            <td class="border px-4 py-2"><button wire:click="deleteStaticIP({{ $h->id }})" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</button></td>
+                            <td >{{ $h->ip }}</td>
+                            <td >{{ $h->mac }}</td>
+                            <td ><button wire:click="deleteStaticIP({{ $h->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button></td>
                         </tr>
                         @empty
-                        <tr><td class="border px-4 py-2" colspan="3">No entries</td></tr>
+                        <tr><td  colspan="3">No entries</td></tr>
                         @endforelse
                     </tbody>
                 </table>
-                <button wire:click="addStaticIP()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded my-3">Add new assignment</button>
+                <button wire:click="addStaticIP()" class="cmp-btn my-3">Add new assignment</button>
             </div>
         </div>
 
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
-                <h3 class="text-lg font-medium text-gray-900">Ethernet switch</h3>
-                <p class="mt-1 text-sm text-gray-600">
+                <h3 class="text-lg font-medium text-fg">Ethernet switch</h3>
+                <p class="mt-1 text-sm text-fg-muted">
                     With a managed switch, each module gets the switch port it is plugged into as its board:
                     the server reads the switch's MAC address table over SNMP when the module starts.
                     Without one, the board comes from the jumpers.
@@ -77,8 +72,8 @@
 
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
-                <h3 class="text-lg font-medium text-gray-900">Notifications</h3>
-                <p class="mt-1 text-sm text-gray-600">
+                <h3 class="text-lg font-medium text-fg">Notifications</h3>
+                <p class="mt-1 text-sm text-fg-muted">
                     Tell Mattermost, Telegram or any webhook when a module is done or failed.
                     Bots keep a thread per batch of modules with an up-to-date summary.
                 </p>
@@ -90,56 +85,56 @@
 
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
-                <h3 class="text-lg font-medium text-gray-900">Service status</h3>
-                <p class="mt-1 text-sm text-gray-600">
+                <h3 class="text-lg font-medium text-fg">Service status</h3>
+                <p class="mt-1 text-sm text-fg-muted">
                     View the logs of server processes
                 </p>
             </div>
         </div>
         <div class="mt-5 md:mt-0 md:col-span-2">
-            <div class="px-4 py-5 bg-white sm:p-6 shadow sm:rounded-md">
-                <table class="table-auto">
+            <div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md">
+                <table class="cmp-table">
                 <tr>
                     <td class="px-4 py-2">
                         <ul class="list-outside list-disc ml-6">
-                            <li @if ($dnsmasqRunning) class="text-green-500" @else class="text-red-500" @endif>
-                                <span class="text-black"> dnsmasq (DHCP server)</span>
+                            <li @if ($dnsmasqRunning) class="text-pos" @else class="text-neg" @endif>
+                                <span class="text-fg"> dnsmasq (DHCP server)</span>
                             </li>
                         </ul>
                     </td>
                     <td class="px-4 py-2">
-                        <button wire:click="viewLogDnsmasq()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">View log</button>
+                        <button wire:click="viewLogDnsmasq()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
                     </td>
                 </tr>
                 <tr>
                     <td class="px-4 py-2">
                         <ul class="list-outside list-disc ml-6">
-                        <li @if ($rpibootRunning) class="text-green-500" @else class="text-red-500" @endif>
-                                <span class="text-black"> rpiboot (USB file server)</span>
+                        <li @if ($rpibootRunning) class="text-pos" @else class="text-neg" @endif>
+                                <span class="text-fg"> rpiboot (USB file server)</span>
                             </li>
                         </ul>
                     </td>
                     <td class="px-4 py-2">
-                        <button wire:click="viewLogRpiboot()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">View log</button>                                
+                        <button wire:click="viewLogRpiboot()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>                                
                     </td>
                 </tr>
                 <tr>
                     <td class="px-4 py-2">
                         <ul class="list-outside list-disc ml-6">
-                            <li class="text-green-500">
-                                <span class="text-black"> web interface</span>
+                            <li class="text-pos">
+                                <span class="text-fg"> web interface</span>
                             </li>
                         </ul>
                     </td>
                     <td class="px-4 py-2">
-                        <button wire:click="viewLogLaravel()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">View log</button>                                
+                        <button wire:click="viewLogLaravel()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>                                
                     </td>
                 </tr>
                 </table>
             </div>
 
             @if (isset($actions))
-                <div class="flex items-center justify-end px-4 py-3 bg-gray-50 text-right sm:px-6 shadow sm:rounded-bl-md sm:rounded-br-md">
+                <div class="flex items-center justify-end px-4 py-3 bg-head text-right sm:px-6 shadow sm:rounded-bl-md sm:rounded-br-md">
                     {{ $actions }}
                 </div>
             @endif

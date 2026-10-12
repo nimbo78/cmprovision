@@ -1,3 +1,29 @@
+cmprovision4 (2.2.0) unstable; urgency=medium
+
+  * Compact layout: a 48 px top bar instead of the page header, pages as
+    wide as the window, dense tables with sticky headers. The open batch
+    (the one the bots report) is in the top bar on every page.
+  * Appearance, in the top bar: style Warm or Neutral, density Compact or
+    Roomy, theme Light, Dark or Auto (light from sunrise to sunset in the
+    city of the server's time zone, the system setting without one). Kept
+    in the browser and applied before the page paints.
+  * The browser tab tells the batch's state, also in the background: the
+    title starts with "1 failed · 3 running" or "✓ 16 done", and the icon
+    gets a red, blue or green dot.
+  * Dashboard: tiles for running, done and failed modules of the batch,
+    its average time and when the running ones finish; the table lists the
+    batch; New batch closes it; the log folds to its latest entry.
+  * CMs: newest first, search by serial or MAC, project, board and result
+    columns; deleting asks first. "Other settings" is now "Settings".
+  * Edit dialogs open above the top bar and their fields follow the theme;
+    the script, label template and EEPROM settings editors are monospaced.
+  * Ports page: a port with nothing but an unknown Raspberry Pi on it counts
+    as a module booting for the first 3 minutes of its link, not as a
+    foreign device: a module asks for DHCP before it asks the server. The
+    port's details show the Pi's MAC address.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 14:03:46 +0300
+
 cmprovision4 (2.1.1) unstable; urgency=medium
 
   * Own logo: the cm mark, one line on a warm tile, replaces the Raspberry Pi

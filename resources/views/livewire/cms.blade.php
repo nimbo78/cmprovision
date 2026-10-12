@@ -1,62 +1,53 @@
-<x-slot name="header">
-    <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-        List of CMs
-    </h2>
-</x-slot>
-<div class="py-12">
-    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-
-        <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg px-4 py-4">
-
-        Filter by project:
-        <select wire:model.live="projectId">
-            <option value="0">--all projects--</option>
+<div class="cmp-page">
+    <div class="cmp-title">
+        <h1>CMs</h1>
+        <span class="text-fg-muted">{{ number_format($total) }} {{ $total === 1 ? 'module' : 'modules' }}</span>
+        <select wire:model.live="projectId" class="cmp-field pr-8" aria-label="Project">
+            <option value="0">All projects</option>
             @foreach ($projects as $project)
-            <option value="{{ $project->id }}">{{ $project->name }} ({{ $project->cms_count }})</option>
+                <option value="{{ $project->id }}">{{ $project->name }} ({{ $project->cms_count }})</option>
             @endforeach
         </select>
-        </div><br>
+        <input type="search" wire:model.live.debounce.300ms="search" class="cmp-field w-60" placeholder="Serial or MAC" aria-label="Search by serial or MAC">
+        <button type="button" wire:click="exportCSV()" class="cmp-btn cmp-btn-secondary ml-auto">Export CSV</button>
+    </div>
 
-        <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg px-4 py-4">
-            @if (session()->has('message'))
-                <div class="bg-teal-100 border-t-4 border-teal-500 rounded-b text-teal-900 px-4 py-3 shadow-md my-3" role="alert">
-                  <div class="flex">
-                    <div>
-                      <p class="text-sm">{{ session('message') }}</p>
-                    </div>
-                  </div>
-                </div>
-            @endif
-            <table class="table-fixed w-full">
-                <thead>
-                    <tr class="bg-gray-100">
-                        <th class="px-4 py-2">CM serial</th>
-                        <th class="px-4 py-2">MAC</th>
-                        <th class="px-4 py-2">Module type</th>
-                        <th class="px-4 py-2">Provisioning complete</th>
-                        <th class="px-4 py-2">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse($CMs as $c)
-                    <tr>
-                        <td class="border px-4 py-2"><a href="{{ route('cm', $c->serial) }}" class="font-mono text-blue-700 hover:underline">{{ $c->serial }}</a></td>
-                        <td class="border px-4 py-2">{{ $c->mac }}</td>
-                        <td class="border px-4 py-2">{{ $c->model }}</td>
-                        <td class="border px-4 py-2">@if ($c->provisioning_complete_at) {{ $c->provisioning_complete_at->local() }} @else No @endif</td>
-                        <td class="border px-4 py-2">
-                            <a href="{{ route('cm', $c->serial) }}" class="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">View</a>
-                            <button wire:click="delete({{ $c->id }})" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</button>
+    @if (session()->has('message'))
+        <div class="cmp-flash" role="status">{{ session('message') }}</div>
+    @endif
+
+    <div class="cmp-card cmp-card-scroll">
+        <table class="cmp-table">
+            <thead>
+                <tr><th>Serial</th><th>MAC</th><th>Model</th><th>Project</th><th>Board</th><th>Result</th><th>Finished</th><th></th></tr>
+            </thead>
+            <tbody>
+                @forelse ($CMs as $c)
+                    <tr wire:key="cm-{{ $c->id }}">
+                        <td class="mono"><a href="{{ route('cm', $c->serial) }}" class="text-link hover:underline">{{ $c->serial }}</a></td>
+                        <td class="mono text-fg-muted">{{ $c->mac }}</td>
+                        <td>{{ $c->model }}</td>
+                        <td>{{ $c->project?->name }}</td>
+                        <td class="text-fg-muted whitespace-nowrap">{{ $c->provisioning_board }}</td>
+                        <td>
+                            @if ($c->phase === 'done')<span class="cmp-chip cmp-chip-ok">done</span>
+                            @elseif ($c->phase === 'failed')<span class="cmp-chip cmp-chip-fail">failed</span>
+                            @elseif ($c->isRunning())<span class="cmp-chip cmp-chip-run">running</span>
+                            @else <span class="text-fg-faint">—</span>
+                            @endif
+                        </td>
+                        <td class="tabular-nums text-fg-muted whitespace-nowrap">{{ $c->provisioning_complete_at ? $c->provisioning_complete_at->local()->format('Y-m-d H:i:s') : '—' }}</td>
+                        <td class="text-right whitespace-nowrap">
+                            <a href="{{ route('cm', $c->serial) }}" class="text-link font-semibold mr-3">View</a>
+                            <button type="button" wire:click="delete({{ $c->id }})" wire:confirm="Delete CM {{ $c->serial }}?" class="text-fg-faint hover:text-neg" title="Delete" aria-label="Delete CM {{ $c->serial }}">
+                                <svg class="inline w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M8 2h4a1 1 0 011 1v1h4v2H3V4h4V3a1 1 0 011-1zm-3 6h10l-.8 9.2A2 2 0 0112.2 19H7.8a2 2 0 01-2-1.8L5 8z"/></svg>
+                            </button>
                         </td>
                     </tr>
-                    @empty
-                    <tr><td colspan=5 class="border px-4 py-2">No entries</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
-
-            <br>
-            <button wire:click="exportCSV()" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Export as CSV</button>
-        </div>
+                @empty
+                    <tr><td colspan="8" class="text-fg-muted">No entries</td></tr>
+                @endforelse
+            </tbody>
+        </table>
     </div>
 </div>

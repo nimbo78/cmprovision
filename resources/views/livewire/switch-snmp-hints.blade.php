@@ -1,6 +1,6 @@
-<details class="mt-4 text-sm text-gray-700">
+<details class="mt-4 text-sm text-fg">
     <summary style="cursor: pointer" class="font-semibold">How to enable SNMP on the switch</summary>
-    @php($code = 'font-mono text-xs bg-gray-100 rounded px-2 py-1 mt-1 block')
+    @php($code = 'font-mono text-xs bg-head rounded px-2 py-1 mt-1 block')
     <div class="mt-2">
         <p>Read-only access is enough; allow the provisioning server's address. The table is read when a module starts,
            so its MAC is already known to the switch (DHCP went through it). Set a port description to show it instead of the port name, e.g. the slot on the line.</p>
@@ -24,7 +24,7 @@
         <span class="{{ $code }}">/snmp set enabled=yes<br>/snmp community set [find default=yes] addresses=SERVER-ADDRESS/32</span>
         <p class="mt-1">Use RouterOS 7.17 or newer: older releases can return an incomplete bridge host table over SNMP. Interface comments show up as port descriptions.</p>
 
-        <p class="mt-3 text-xs text-gray-500">SNMPv3 on this server (PHP {{ PHP_MAJOR_VERSION }}.{{ PHP_MINOR_VERSION }}):
+        <p class="mt-3 text-xs text-fg-muted">SNMPv3 on this server (PHP {{ PHP_MAJOR_VERSION }}.{{ PHP_MINOR_VERSION }}):
             authentication {{ implode(', ', \App\Services\Snmp\PhpSnmpClient::authProtocols()) }}, privacy DES or AES-128.</p>
     </div>
 </details>

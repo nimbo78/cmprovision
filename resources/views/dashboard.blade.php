@@ -1,21 +1,13 @@
-<x-app-layout>
-    <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-            {{ __('Dashboard') }}
-        </h2>
-    </x-slot>
-
-    <div class="py-6">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            @if (!\App\Models\Project::getActiveId())
-            <div class="bg-white shadow sm:rounded-lg p-4 mb-6 text-gray-600">
+<x-app-layout title="Dashboard">
+    <div class="cmp-page">
+        @if (!\App\Models\Project::getActiveId())
+            <div class="cmp-card px-4 py-3 text-fg-muted">
                 To get started add an Image and a Project, then make the project active.
             </div>
-            @endif
+        @endif
 
-            <livewire:provisioning-status />
+        <livewire:provisioning-status />
 
-            <livewire:provisioning-log />
-        </div>
+        <livewire:provisioning-log />
     </div>
 </x-app-layout>

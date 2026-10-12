@@ -20,6 +20,8 @@ class Cm extends Model
        verification report every few seconds, scripts only when they start */
     const STALE_AFTER_STREAMING = 60;
     const STALE_AFTER_SCRIPTS = 600;
+    /* A module still "in progress" this long after it started was unplugged */
+    const ACTIVE_HOURS = 12;
     /* A run has a dozen steps; the cap only guards against a script that keeps renaming itself */
     const MAX_TIMELINE = 200;
     /* A finished module asks every 5 s whether to blink (led_poll_once in scriptexecute/leds.blade.php)
@@ -151,6 +153,13 @@ class Cm extends Model
     public function isActive()
     {
         return in_array($this->phase, self::ACTIVE_PHASES, true);
+    }
+
+    /* In a working phase and started within ACTIVE_HOURS: the phase alone stays "write" for a module pulled mid-run */
+    public function isRunning()
+    {
+        return $this->isActive() && $this->provisioning_started_at
+            && $this->provisioning_started_at->getTimestamp() >= now()->subHours(self::ACTIVE_HOURS)->getTimestamp();
     }
 
     public function isStreaming()
