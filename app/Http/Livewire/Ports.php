@@ -3,13 +3,8 @@
 namespace App\Http\Livewire;
 
 use App\Models\Cm;
-use App\Services\NetworkStatus;
-use App\Services\Switch\SnapshotCache;
-use App\Services\Switch\SwitchSnapshot;
-use App\Services\SwitchPortFinder;
-use App\Support\StandMap;
+use App\Services\Switch\Stand;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -21,10 +16,6 @@ use Livewire\Component;
 #[Title('Ports')]
 class Ports extends Component
 {
-    /* Modules are looked for on ports with at most this many MAC addresses: a desktop switch full of
-       modules, not the office network behind an uplink */
-    const LOOKUP_MACS = 48;
-
     /** key of the port whose details are open, e.g. "p10003"; only select() sets it */
     #[Locked]
     public $selected = null;
@@ -50,41 +41,18 @@ class Ports extends Component
 
     public function render()
     {
-        $config = SwitchPortFinder::config();
-        if (!$config['host'])
+        $stand = Stand::current();
+        if (!$stand)
             return view('livewire.ports', ['configured' => false]);
-
-        $state = (new SnapshotCache($config['host'], function () use ($config) {
-            return SwitchSnapshot::forConfig($config)->take();
-        }))->current();
-
-        $map = null;
-        if ($state['snapshot'])
-            $map = (new StandMap($state['snapshot'], $this->modulesOn($state['snapshot']), app(NetworkStatus::class)->serverMac()))->build();
 
         return view('livewire.ports', [
             'configured' => true,
-            'host' => $config['host'],
-            'snapshot' => $state['snapshot'],
-            'error' => $state['error'],
-            'map' => $map,
-            'tile' => $map['tiles'][$this->selected] ?? null,
+            'host' => $stand['config']['host'],
+            'snapshot' => $stand['snapshot'],
+            'error' => $stand['error'],
+            'map' => $stand['map'],
+            'tile' => $stand['map']['tiles'][$this->selected] ?? null,
             'now' => Carbon::now()->getTimestamp(),
         ]);
-    }
-
-    /* Modules behind ports with a link and few enough addresses to be devices, not uplinks */
-    protected function modulesOn(array $snapshot)
-    {
-        $macs = [];
-        foreach ($snapshot['ports'] as $port)
-            if ($port['up'] && ($port['mac_count'] ?? count($port['macs'])) <= self::LOOKUP_MACS)
-                foreach ($port['macs'] as $mac)
-                    $macs[strtolower($mac)] = true;
-        $modules = [];
-        foreach (array_chunk(array_keys($macs), 500) as $chunk)
-            foreach (Cm::whereIn(DB::raw('lower(mac)'), $chunk)->get() as $cm)
-                $modules[] = $cm;
-        return $modules;
     }
 }

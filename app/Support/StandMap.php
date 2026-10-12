@@ -92,6 +92,42 @@ class StandMap
         return $mbps >= 1000 ? ($mbps / 1000).'G' : $mbps.'M';
     }
 
+    /** Why this port's PoE may not be switched off and on (a PoE restart), null when it may: nothing on the port but
+        our modules, or a Raspberry Pi that has not asked the server yet */
+    public static function restartBlocker(array $tile): ?string
+    {
+        if ($tile['state'] === 'free')
+            return $tile['name'].' has no link';
+        if (!$tile['poe'])
+            return 'no PoE on '.$tile['name'];
+        if ($tile['state'] === 'uplink')
+            return $tile['name'].' is the uplink';
+        if (($tile['state'] === 'module' && $tile['others'] === 0) || ($tile['state'] === 'boot' && $tile['macs']))
+            return null;
+        return 'other devices on '.$tile['name'];
+    }
+
+    /** A port's PoE in words, as the module card shows it */
+    public static function poeText(?array $poe): string
+    {
+        if (!$poe)
+            return 'none';
+        switch ($poe['state'])
+        {
+            case 'delivering':
+                return 'delivering'.($poe['watts'] !== null ? ' '.number_format($poe['watts'], 1).' W' : '')
+                    .($poe['class'] !== null ? ', class '.$poe['class'] : '');
+            case 'searching':
+                return 'looking for a device';
+            case 'fault':
+                return 'fault';
+            case 'disabled':
+                return 'off';
+            default:
+                return $poe['state'];
+        }
+    }
+
     protected function tile(array $port): array
     {
         $macs = array_map('strtolower', $port['macs']);
@@ -121,6 +157,7 @@ class StandMap
         $filter = $state === 'module' ? self::moduleState($modules[0]) : ($state === 'quiet' ? 'foreign' : $state);
         return [
             'key' => 'p'.$port['ifIndex'],
+            'ifIndex' => $port['ifIndex'],
             'name' => $port['name'],
             'alias' => $port['alias'],
             'number' => preg_match('/(\d+)\D*$/', $port['name'], $m) ? (int) $m[1] : null,
@@ -130,6 +167,7 @@ class StandMap
             'poe' => $port['poe'],
             'macs' => $macs,
             'mac_count' => $port['mac_count'] ?? count($macs),
+            'others' => $others,   // addresses that are not modules (a PoE restart needs none)
             'state' => $state,
             'filter' => $filter,
             // a port with several modules answers to the chip of each of their states

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Cm;
+use App\Services\Switch\Stand;
 use App\Support\StandMap;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -269,5 +270,50 @@ class StandMapTest extends TestCase
         $this->assertSame('failed', $this->build([$port], [$this->module('10000000000000a1', 'aa:00:00:00:00:01', ['phase' => null, 'provisioning_complete_at' => null])])['summary']['verdict'],
             'a module without data is not ready either');
         $this->assertSame('empty', $this->build([$this->port(1, 'GE0/0/1', false)])['summary']['verdict']);
+    }
+
+    public function test_only_ports_with_nothing_but_our_modules_or_a_booting_pi_may_be_restarted()
+    {
+        $poe = ['state' => 'delivering', 'class' => null, 'watts' => 6.9];
+        $map = $this->build([
+            $this->port(1, 'GE0/0/1', true, ['e4:5f:01:00:00:01'], $poe),                         // our module alone
+            $this->port(2, 'GE0/0/2', true, ['e4:5f:01:00:00:02', '00:11:22:33:44:55'], $poe),    // a module and a camera
+            $this->port(3, 'GE0/0/3', true, ['e4:5f:01:00:00:03']),                               // no PoE
+            $this->port(4, 'GE0/0/4', true, ['00:11:22:33:44:66'], $poe),                         // someone else's device
+            $this->port(5, 'GE0/0/5', false, ['e4:5f:01:00:00:05'], $poe),                        // no link
+            $this->port(6, 'GE0/0/6', true, [self::SERVER], $poe),                                // the provisioner
+            $this->port(7, 'GE0/0/7', true, ['d8:3a:dd:00:00:07'], $poe) + ['changed' => 20],     // a Pi that has not asked yet
+        ], [$this->module('1000000000000001', 'e4:5f:01:00:00:01'), $this->module('1000000000000002', 'e4:5f:01:00:00:02'),
+            $this->module('1000000000000003', 'e4:5f:01:00:00:03'), $this->module('1000000000000005', 'e4:5f:01:00:00:05')]);
+        $why = function ($ifIndex) use ($map) { return StandMap::restartBlocker($map['tiles']['p'.$ifIndex]); };
+
+        $this->assertNull($why(1));
+        $this->assertSame('other devices on GE0/0/2', $why(2));
+        $this->assertSame('no PoE on GE0/0/3', $why(3));
+        $this->assertSame('other devices on GE0/0/4', $why(4));
+        $this->assertSame('GE0/0/5 has no link', $why(5));
+        $this->assertSame('GE0/0/6 is the uplink', $why(6));
+        $this->assertNull($why(7));
+        $this->assertSame([1, 2], [$map['tiles']['p2']['others'], $map['tiles']['p2']['ifIndex']]);
+    }
+
+    public function test_a_module_is_found_on_its_own_port_not_on_the_uplink()
+    {
+        $module = $this->module('1000000000000001', 'E4:5F:01:00:00:01');
+        $map = $this->build([
+            $this->port(1, 'GE0/0/1', true, ['e4:5f:01:00:00:01'], ['state' => 'delivering', 'class' => null, 'watts' => 6.9]),
+            $this->port(30, 'XGE0/0/1', true, [self::SERVER, 'e4:5f:01:00:00:01']),
+        ], [$module]);
+        $this->assertSame('GE0/0/1', Stand::tileOf($map, $module)['name']);
+        $this->assertNull(Stand::tileOf($map, $this->module('1000000000000009', 'e4:5f:01:00:00:09')));
+        $this->assertNull(Stand::tileOf(null, $module));
+    }
+
+    public function test_poe_in_words()
+    {
+        $this->assertSame('delivering 6.9 W, class 4', StandMap::poeText(['state' => 'delivering', 'class' => 4, 'watts' => 6.9]));
+        $this->assertSame('looking for a device', StandMap::poeText(['state' => 'searching', 'class' => null, 'watts' => null]));
+        $this->assertSame('off', StandMap::poeText(['state' => 'disabled', 'class' => null, 'watts' => null]));
+        $this->assertSame('none', StandMap::poeText(null));
     }
 }
