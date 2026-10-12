@@ -1,8 +1,12 @@
-<div class="py-12">
-    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg px-4 py-4">
+<div class="cmp-page">
+    <div class="contents">
+        <div class="cmp-title">
+            <h1>Scripts</h1>
+            <button wire:click="create()" class="cmp-btn ml-auto">Add script</button>
+        </div>
+        <div class="cmp-card px-4 py-3">
             @if (session()->has('message'))
-                <div class="bg-teal-100 border-t-4 border-teal-500 rounded-b text-teal-900 px-4 py-3 shadow-md my-3" role="alert">
+                <div class="cmp-flash my-3" role="alert">
                   <div class="flex">
                     <div>
                       <p class="text-sm">{{ session('message') }}</p>
@@ -10,32 +14,31 @@
                   </div>
                 </div>
             @endif
-            <button wire:click="create()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded my-3">Add script</button>
             @if($isOpen)
                 @include('livewire.editscript')
             @endif
-            <table class="table-fixed min-w-full">
+            <table class="cmp-table min-w-full">
                 <thead>
-                    <tr class="bg-gray-100">
-                        <th class="w-1/2 px-4 py-2">Name</th>
-                        <th class="w-1/8 px-4 py-2">Type</th>
-                        <th class="w-1/8 px-4 py-2">Priority</th>
-                        <th class="w-1/4 px-4 py-2">Action</th>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Priority</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($scripts as $s)
                     <tr>
-                        <td class="border px-4 py-2">{{ $s->name }}</td>
-                        <td class="border px-4 py-2">{{ $s->script_type }}</td>
-                        <td class="border px-4 py-2">{{ $s->priority }}</td>
-                        <td class="border px-4 py-2">
-                            <button wire:click="edit({{ $s->id }})" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Edit</button>
-                            <button wire:click="delete({{ $s->id }})" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</button>
+                        <td>{{ $s->name }}</td>
+                        <td>{{ $s->script_type }}</td>
+                        <td>{{ $s->priority }}</td>
+                        <td>
+                            <button wire:click="edit({{ $s->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
+                            <button wire:click="delete({{ $s->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
                         </td>
                     </tr>
                     @empty
-                    <tr><td class="border px-4 py-2" colspan="4">No entries</td></tr>
+                    <tr><td colspan="4">No entries</td></tr>
                     @endforelse
                 </tbody>
             </table>

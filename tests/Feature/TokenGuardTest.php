@@ -12,11 +12,8 @@ use Tests\TestCase;
 class TokenGuardTest extends TestCase
 {
     /* Views still on raw colours: each conversion task takes its files off this list (compact web plan, Task 1) */
-    const NOT_YET = [
-        'livewire/addimage.blade.php', 'livewire/addstaticip.blade.php',
-        'livewire/editlabel.blade.php', 'livewire/editproject.blade.php', 'livewire/editscript.blade.php',
-        'livewire/firmware.blade.php', 'livewire/images.blade.php', 'livewire/labels.blade.php',
-        'livewire/notification-settings.blade.php', 'livewire/projects.blade.php', 'livewire/scripts.blade.php',
+    const NOT_YET = [ 'livewire/addstaticip.blade.php',
+        'livewire/notification-settings.blade.php',
         'livewire/settings.blade.php', 'livewire/switch-settings.blade.php', 'livewire/switch-snmp-hints.blade.php',
     ];
 

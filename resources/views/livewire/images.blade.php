@@ -1,8 +1,12 @@
-<div class="py-12" @if ($hashPending && !$isOpen) wire:poll.5s @endif>
-    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg px-4 py-4">
+<div class="cmp-page" @if ($hashPending && !$isOpen) wire:poll.5s @endif>
+    <div class="contents">
+        <div class="cmp-title">
+            <h1>Images</h1>
+            <button wire:click="create()" class="cmp-btn ml-auto">Add image</button>
+        </div>
+        <div class="cmp-card px-4 py-3">
             @if (session()->has('message'))
-                <div class="bg-teal-100 border-t-4 border-teal-500 rounded-b text-teal-900 px-4 py-3 shadow-md my-3" role="alert">
+                <div class="cmp-flash my-3" role="alert">
                   <div class="flex">
                     <div>
                       <p class="text-sm">{{ session('message') }}</p>
@@ -11,7 +15,7 @@
                 </div>
             @endif
             @if ($errors->any())
-            <div class="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4" role="alert">
+            <div class="bg-warn-bg border-l-4 border-warn-bar text-warn p-4" role="alert">
                 <p>
                 <ul>
                 @foreach ($errors->all() as $error)
@@ -21,41 +25,40 @@
                 </p>
             </div>
             @endif            
-            <button wire:click="create()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded my-3">Add image</button>
             @if($isOpen)
                 @include('livewire.addimage')
             @endif
-            <table class="table-fixed min-w-full">
+            <table class="cmp-table min-w-full">
                 <thead>
-                    <tr class="bg-gray-100">
-                        <th class="w-1/4 px-4 py-2">Filename</th>
-                        <th class="w-1/8 px-4 py-2">Size</th>
-                        <th class="w-1/4 px-4 py-2">SHA256</th>
-                        <th class="w-1/8 px-4 py-2">Action</th>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Size</th>
+                        <th>SHA256</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($images as $i)
                     <tr>
-                        <td class="border px-4 py-2"><span style="word-break: break-all;">{{ $i->filename }}</span> (added {{ $i->created_at->local()->format("d-M-Y") }})</td>
-                        <td class="border px-4 py-2">
+                        <td><span style="word-break: break-all;">{{ $i->filename }}</span> (added {{ $i->created_at->local()->format("d-M-Y") }})</td>
+                        <td>
                             @if ($i->filesize() === null)
-                            <nobr class="text-red-500 font-bold">file missing on disk</nobr><br>
+                            <nobr class="text-neg font-bold">file missing on disk</nobr><br>
                             @else
                             <nobr>Comp.: {{ number_format($i->filesize()/1000000000,1) }} GB</nobr><br>
                             @endif
                             <nobr>Uncomp.: {{ $i->uncompressed_size ? number_format($i->uncompressed_size/1000000000,1) : 'unknown' }} GB</nobr>
                         </td>
-                        <td class="border px-4 py-2">
+                        <td>
                             {{ $i->sha256 ? $i->sha256 : "...still computing hash..." }}<br>
                             {{ $i->uncompressed_sha256 ? $i->uncompressed_sha256 : "" }}
                         </td>
-                        <td class="border px-4 py-2">
-                            <button wire:click="delete({{ $i->id }})" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</button>
+                        <td>
+                            <button wire:click="delete({{ $i->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
                         </td>
                     </tr>
                     @empty
-                    <tr><td class="border px-4 py-2" colspan="4">No entries</td></tr>
+                    <tr><td colspan="4">No entries</td></tr>
                     @endforelse
                 </tbody>
             </table>
