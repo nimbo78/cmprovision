@@ -224,6 +224,20 @@ class PortsPageTest extends TestCase
             ->assertSee('Link up for 1 week');
     }
 
+    public function test_a_raspberry_pi_the_server_has_not_heard_from_yet_is_booting()
+    {
+        $this->switchWithModule();
+        $this->fake->tables[''][SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;          // GE0/0/1 came up 20 s ago
+        $this->fake->tables[''][SwitchSnapshot::OID_SYSUPTIME.'.0'] = 100000000;
+        $this->fake->tables[''][SwitchSnapshot::OID_IFLASTCHANGE.'.6'] = 99998000;
+        $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.98.159.212.10.0'] = 6;   // e4:5f:01:62:9f:d4
+
+        Livewire::test(Ports::class)
+            ->assertSee('1 booting')
+            ->call('select', 'p6')
+            ->assertSeeHtml('A Raspberry Pi is on this port and has not asked the server yet: <span class="ports-serial">e4:5f:01:62:9f:d4</span>');
+    }
+
     public function test_booting_and_silent_ports_count_as_in_progress_not_as_running()
     {
         $cm = $this->switchWithModule();

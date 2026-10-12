@@ -154,6 +154,8 @@
                     @endforeach
                     @if ($tile['state'] === 'foreign')
                         <p class="mb-2">Not a module: <span class="ports-serial">{{ implode(', ', $tile['macs']) }}</span></p>
+                    @elseif ($tile['state'] === 'boot' && $tile['macs'])
+                        <p class="mb-2">A Raspberry Pi is on this port and has not asked the server yet: <span class="ports-serial">{{ implode(', ', $tile['macs']) }}</span></p>
                     @elseif ($tile['state'] === 'boot')
                         <p class="mb-2">Link up, nothing has talked to the server from this port yet.</p>
                     @elseif ($tile['state'] === 'quiet')

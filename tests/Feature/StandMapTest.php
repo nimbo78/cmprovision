@@ -152,6 +152,26 @@ class StandMapTest extends TestCase
         $this->assertSame(1, $map['summary']['busy'], 'only the booting port keeps the batch in progress');
     }
 
+    public function test_an_unknown_raspberry_pi_boots_for_the_first_minutes_of_its_link()
+    {
+        // a module asks for DHCP before it asks the server: for a few seconds the switch knows its MAC, the server does not
+        $map = $this->build([
+            array_merge($this->port(1, 'GE0/0/1', true, ['E4:5F:01:62:9F:D4']), ['changed' => 20]),
+            array_merge($this->port(2, 'GE0/0/2', true, ['d8:3a:dd:00:00:02']), ['changed' => 600]),   // a Pi that never asks
+            array_merge($this->port(3, 'GE0/0/3', true, ['3c:22:fb:91:0a:5e']), ['changed' => 20]),    // a laptop
+            array_merge($this->port(4, 'GE0/0/4', true, ['e4:5f:01:00:00:04', '3c:22:fb:91:0a:5e']), ['changed' => 20]),
+            $this->port(5, 'GE0/0/5', true, ['dc:a6:32:00:00:05']),                                    // no link time from the switch
+            array_merge($this->port(6, 'GE0/0/6', true, ['f0:40:af:90:00:06']), ['changed' => 180]),   // a 28-bit block, at the limit
+            array_merge($this->port(7, 'GE0/0/7', true, ['f0:40:af:a0:00:07']), ['changed' => 20]),    // next to it, not Raspberry Pi's
+        ]);
+
+        $states = array_map(function ($t) { return $t['state']; }, $map['tiles']);
+        $this->assertEquals(['p1' => 'boot', 'p2' => 'foreign', 'p3' => 'foreign', 'p4' => 'foreign', 'p5' => 'foreign',
+            'p6' => 'boot', 'p7' => 'foreign'], $states);
+        $this->assertSame(['boot', '···'], [$map['tiles']['p1']['filter'], $map['tiles']['p1']['short']]);
+        $this->assertSame(2, $map['summary']['counts']['boot']);
+    }
+
     public function test_a_port_with_several_modules_answers_to_each_of_their_states()
     {
         $map = $this->build([$this->port(1, 'GE0/0/1', true, ['aa:00:00:00:00:01', 'aa:00:00:00:00:02'])], [

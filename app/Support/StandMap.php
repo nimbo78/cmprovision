@@ -14,6 +14,8 @@ class StandMap
     const UPLINK_MACS = 3;
     /* A module asks for DHCP seconds after its link comes up: a link without any MAC for longer is a quiet device */
     const BOOT_SECONDS = 180;
+    /* Raspberry Pi's IEEE blocks (MA-L, MA-M and MA-S; standards-oui.ieee.org, October 2026) as leading hex digits */
+    const RASPBERRY_PI_PREFIXES = ['28cdc1', '2ccf67', '88a29e', '98fe54', 'b827eb', 'd83add', 'dca632', 'e45f01', 'f040af9', '8c1f6434a'];
     /* Main ports per block: six pairs, odd ones on top as on the case */
     const BLOCK = 12;
     /* Cages for a switch without PoE tables: 10G and faster names, and MikroTik's sfp ports */
@@ -110,7 +112,7 @@ class StandMap
         elseif ($modules)
             $state = 'module';
         elseif ($macs)
-            $state = 'foreign';
+            $state = $this->booting($port, $macs) ? 'boot' : 'foreign';
         elseif (($port['changed'] ?? null) !== null && $port['changed'] > self::BOOT_SECONDS)
             $state = 'quiet';   // a LAG member, a silent device, the provisioner's port after a long idle time
         else
@@ -136,6 +138,24 @@ class StandMap
             'short' => $state === 'module' ? strtoupper(substr($modules[0]->serial, -4))
                 : (['uplink' => 'UP', 'foreign' => 'MAC', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? ''),
         ];
+    }
+
+    /* A module asks for DHCP before it asks the server: for its first seconds the switch knows its MAC and the server
+       does not. Nothing but Raspberry Pi addresses on a link up for BOOT_SECONDS or less is a module booting. A link of
+       unknown age is not: a Pi that never asks the server would keep the batch in progress for good. */
+    protected function booting(array $port, array $macs): bool
+    {
+        if (($port['changed'] ?? null) === null || $port['changed'] > self::BOOT_SECONDS)
+            return false;
+        foreach ($macs as $mac) {
+            $hex = preg_replace('/[^0-9a-f]/', '', strtolower($mac));
+            $pi = false;
+            foreach (self::RASPBERRY_PI_PREFIXES as $prefix)
+                $pi = $pi || strncmp($hex, $prefix, strlen($prefix)) === 0;
+            if (!$pi)
+                return false;
+        }
+        return true;
     }
 
     /* Several modules on one port: a switch that keeps a MAC after the link drops lists the module taken

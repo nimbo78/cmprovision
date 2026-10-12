@@ -1,3 +1,12 @@
+cmprovision4 (2.2.0~dev1) unstable; urgency=medium
+
+  * Ports page: a port with nothing but an unknown Raspberry Pi on it counts
+    as a module booting for the first 3 minutes of its link, not as a
+    foreign device: a module asks for DHCP before it asks the server. The
+    port's details show the Pi's MAC address.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 03:32:43 +0300
+
 cmprovision4 (2.1.1) unstable; urgency=medium
 
   * Own logo: the cm mark, one line on a warm tile, replaces the Raspberry Pi
