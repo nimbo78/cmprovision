@@ -2,6 +2,10 @@
 <div @if ($cm->isActive()) wire:poll.5s @else wire:poll.15s @endif class="cmp-page">
     <div class="contents">
 
+        @if ($restartMessage)
+            <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $restartError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $restartMessage }}</div>
+        @endif
+
         @if ($advice)
             @if ($cm->phase === 'failed')
             <div class="bg-neg-bg border-t-4 border-neg-bar rounded-b text-neg px-4 py-3 shadow-md mb-6" role="alert">
@@ -52,6 +56,22 @@
                             @endif
                         @else
                             <span class="text-fg-muted">not known: the module does not ask the server (switched off, started its own OS, or provisioned by a version before 1.6.9)</span>
+                        @endif
+                    </td>
+                </tr>
+                @endif
+                @if ($power)
+                <tr>
+                    <td class="text-fg-muted">Power (PoE)</td>
+                    <td>
+                        @if ($power['port']){{ $power['port'] }} · {{ \App\Support\StandMap::poeText($power['poe']) }}@endif
+                        @if ($power['blocker'] === null)
+                            <button wire:click="restart" wire:confirm="{{ $power['confirm'] }}" wire:loading.attr="disabled" class="ml-2 cmp-btn cmp-btn-secondary cmp-btn-small">
+                                <span wire:loading.remove wire:target="restart">Restart</span>
+                                <span wire:loading wire:target="restart">Restarting…</span>
+                            </button>
+                        @else
+                            <span class="ml-2 text-fg-muted">no restart: {{ $power['blocker'] }}</span>
                         @endif
                     </td>
                 </tr>
