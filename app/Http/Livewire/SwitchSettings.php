@@ -5,6 +5,10 @@ namespace App\Http\Livewire;
 use App\Models\Cm;
 use App\Models\Setting;
 use App\Services\Snmp\PhpSnmpClient;
+use App\Services\Snmp\SnmpClient;
+use App\Services\Switch\Poe;
+use App\Services\Switch\PoeControl;
+use App\Services\Switch\SwitchSnapshot;
 use App\Services\SwitchPortFinder;
 use Livewire\Component;
 
@@ -13,6 +17,8 @@ class SwitchSettings extends Component
 {
     public $host = '', $version = '2c', $community = '', $user = '';
     public $authProtocol = '', $authPassword = '', $privProtocol = '', $privPassword = '', $method = 'auto';
+    // PoE restart: write credentials of their own; secrets never go to the browser either
+    public $writeCommunity = '', $writeUser = '', $writeAuthProtocol = '', $writeAuthPassword = '', $writePrivProtocol = '', $writePrivPassword = '';
     public $stored = [];          // which secrets are stored (they are never sent to the browser)
     public $result = null;
     public $notice = null, $noticeIsError = false;
@@ -28,6 +34,12 @@ class SwitchSettings extends Component
         $this->method = $c['method'] ?: 'auto';
         $this->stored = ['community' => $c['community'] !== '', 'auth_password' => $c['auth_password'] !== '',
                          'priv_password' => $c['priv_password'] !== '', 'detected' => $c['detected']];
+        $w = $c['write'];
+        $this->writeUser = $w['user'];
+        $this->writeAuthProtocol = $w['auth_protocol'];
+        $this->writePrivProtocol = $w['priv_protocol'];
+        $this->stored += ['write_community' => $w['community'] !== '', 'write_auth_password' => $w['auth_password'] !== '',
+                          'write_priv_password' => $w['priv_password'] !== ''];
     }
 
     public function render()
@@ -109,6 +121,9 @@ class SwitchSettings extends Component
             'ip' => $config['host'], 'snmp_version' => $config['version'], 'snmp_community' => $config['community'],
             'snmp_user' => $config['user'], 'snmp_auth_protocol' => $config['auth_protocol'], 'snmp_auth_password' => $config['auth_password'],
             'snmp_priv_protocol' => $config['priv_protocol'], 'snmp_priv_password' => $config['priv_password'], 'method' => $this->method,
+            'snmp_write_community' => $config['write']['community'], 'snmp_write_user' => $config['write']['user'],
+            'snmp_write_auth_protocol' => $config['write']['auth_protocol'], 'snmp_write_auth_password' => $config['write']['auth_password'],
+            'snmp_write_priv_protocol' => $config['write']['priv_protocol'], 'snmp_write_priv_password' => $config['write']['priv_password'],
         ];
         foreach ($values as $key => $value)
             Setting::updateOrCreate(['key' => 'ethernetswitch_'.$key], ['value' => (string) $value]);
@@ -117,7 +132,45 @@ class SwitchSettings extends Component
 
         $this->mount();
         $this->community = $this->authPassword = $this->privPassword = '';
+        $this->writeCommunity = $this->writeAuthPassword = $this->writePrivPassword = '';
         $this->flash('Saved. Modules get their switch port as board from now on.');
+    }
+
+    /* Write access without a change: the first PoE port's value is written back as it is (PoeControl::check()) */
+    public function checkWrite()
+    {
+        $this->result = null;
+        $this->notice = null;
+        $config = $this->formConfig();
+        if (!PoeControl::writable($config))
+        {
+            $this->flash('Enter the write community (v2c) or the write user (v3) first.', true);
+            return;
+        }
+        try
+        {
+            $ports = array_map(function ($port) { return $port['name']; }, SwitchSnapshot::forConfig($config)->take()['ports']);
+            $admin = (new Poe(app(SnmpClient::class, ['config' => $config])))->admin($ports);
+            $ifIndex = PoeControl::forConfig($config)->check($admin);
+        }
+        catch (\Throwable $e)
+        {
+            $this->flash('Write access does not work: '.$e->getMessage(), true);
+            return;
+        }
+        if ($ifIndex === null)
+            $this->flash('The switch reports no PoE ports.', true);
+        else
+            $this->flash('Write access works ('.$ports[$ifIndex].').');
+    }
+
+    /* No more PoE restarts: the write credentials go, the read ones stay */
+    public function forgetWrite()
+    {
+        Setting::where('key', 'like', 'ethernetswitch_snmp_write_%')->delete();
+        $this->mount();
+        $this->writeCommunity = $this->writeAuthPassword = $this->writePrivPassword = '';
+        $this->flash('Write access removed: no PoE restarts.');
     }
 
     protected function rules()
@@ -145,6 +198,22 @@ class SwitchSettings extends Component
             $rules['privProtocol'] = 'nullable|in:'.implode(',', PhpSnmpClient::PRIV_PROTOCOLS);
             $rules['privPassword'] = ($this->privProtocol && !$kept('priv_password') ? 'required' : 'nullable').'|string|min:8|max:100';
         }
+        $keptWrite = function ($key) use ($stored, $same) {
+            return $same && $stored['write'][$key] !== '';
+        };
+        if ($this->version === '2c')
+        {
+            $rules['writeCommunity'] = 'nullable|string|max:100';
+        }
+        else
+        {
+            $writer = trim($this->writeUser) !== '';
+            $rules['writeUser'] = 'nullable|string|max:100';
+            $rules['writeAuthProtocol'] = 'nullable|in:'.implode(',', PhpSnmpClient::authProtocols());
+            $rules['writeAuthPassword'] = ($writer && $this->writeAuthProtocol && !$keptWrite('auth_password') ? 'required' : 'nullable').'|string|min:8|max:100';
+            $rules['writePrivProtocol'] = 'nullable|in:'.implode(',', PhpSnmpClient::PRIV_PROTOCOLS);
+            $rules['writePrivPassword'] = ($writer && $this->writePrivProtocol && !$keptWrite('priv_password') ? 'required' : 'nullable').'|string|min:8|max:100';
+        }
         return $rules;
     }
 
@@ -165,6 +234,14 @@ class SwitchSettings extends Component
             'priv_password' => $this->privPassword !== '' ? $this->privPassword : ($same ? $stored['priv_password'] : ''),
             'method' => $this->method,
             'detected' => null,
+            'write' => [
+                'community' => $this->writeCommunity !== '' ? $this->writeCommunity : ($same ? $stored['write']['community'] : ''),
+                'user' => trim($this->writeUser),
+                'auth_protocol' => $this->writeAuthProtocol,
+                'auth_password' => $this->writeAuthPassword !== '' ? $this->writeAuthPassword : ($same ? $stored['write']['auth_password'] : ''),
+                'priv_protocol' => $this->writePrivProtocol,
+                'priv_password' => $this->writePrivPassword !== '' ? $this->writePrivPassword : ($same ? $stored['write']['priv_password'] : ''),
+            ],
         ];
     }
 
