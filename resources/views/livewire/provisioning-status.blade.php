@@ -1,86 +1,98 @@
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)
-<div @if ($activeCount) wire:poll.2s @else wire:poll.10s @endif class="bg-white overflow-hidden shadow-xl sm:rounded-lg sm:px-20 px-4 pb-4 mb-6">
-    <div class="mt-6 text-2xl">Provisioning now</div>
-    <div class="text-sm text-gray-600 mb-2">
-        {{ $activeCount }} in progress &middot; {{ $doneCount }} done &middot; {{ $failedCount }} failed in the last {{ $fmt::RECENT_HOURS }} hours
-    </div>
-
-    @if ($modules->isEmpty())
-        <div class="text-gray-500 py-4">No modules are being provisioned.</div>
-    @else
-    <table class="table-auto min-w-full text-sm">
-        <thead>
-            <tr class="bg-gray-100">
-                <th class="px-2 py-1 text-left">Board</th>
-                <th class="px-2 py-1 text-left">CM serial</th>
-                <th class="px-2 py-1 text-left">Step</th>
-                <th class="px-2 py-1 text-left" style="width: 38%">Progress</th>
-                <th class="px-2 py-1 text-left">Time</th>
-            </tr>
-        </thead>
-        <tbody>
-        @foreach ($modules as $m)
-            @php($percent = $m->progressPercent())
-            @php($silent = $m->silentFor())
-            @php($speed = $m->bytesPerSecond())
-            @php($left = $m->secondsLeft())
-            @php($bar = $m->phase === 'failed' ? 'bg-red-500' : ($m->phase === 'done' ? 'bg-green-500' : 'bg-blue-500'))
-            <tr @if ($m->phase === 'failed') class="bg-red-100" @endif wire:key="cm-{{ $m->id }}">
-                <td class="border px-2 py-1" style="white-space: nowrap">{{ $m->provisioning_board }}</td>
-                <td class="border px-2 py-1"><a href="{{ route('cm', $m->serial) }}" class="font-mono text-blue-700 hover:underline">{{ $m->serial }}</a><div class="text-xs text-gray-500 font-mono">{{ $m->mac }}</div></td>
-                <td class="border px-2 py-1">
-                    {{ $m->phaseLabel() }}
-                    @if ($m->phase === 'failed' && $m->phase_detail)
-                        <div class="text-xs text-red-600">{{ $m->phase_detail }}</div>
-                    @endif
-                    @if ($silent)
-                        <div class="text-xs font-semibold" style="color: #b45309">No report for {{ intdiv($silent, 60) }} min</div>
-                    @endif
-                    @if ($m->canIdentify())
-                        <div class="mt-1">
-                            @if ($m->isIdentifying())
-                                <button wire:click="stopIdentify({{ $m->id }})" class="bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Stop</button>
-                                <span class="ml-2 text-xs font-semibold">blinking</span>
-                            @else
-                                <button wire:click="identify({{ $m->id }})" class="bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded">Identify</button>
-                            @endif
-                        </div>
-                    @endif
-                </td>
-                <td class="border px-2 py-1">
-                    @if ($percent !== null)
-                        <div class="w-full bg-gray-200 rounded-full overflow-hidden" style="height: 0.6rem">
-                            <div class="{{ $bar }}" style="height: 100%; width: {{ $percent }}%; @if ($silent) background-color: #f59e0b; @endif"></div>
-                        </div>
-                        <div class="text-xs text-gray-600">
-                            {{ $percent }}%
-                            @if ($m->progress_total) &middot; {{ $fmt::bytes($m->progress_bytes ?? 0) }} of {{ $fmt::bytes($m->progress_total) }} @endif
-                            @if ($speed && $m->isStreaming() && !$silent) &middot; {{ $fmt::speed($speed) }} @endif
-                            @if ($left !== null && $m->isStreaming() && !$silent) &middot; {{ $fmt::duration($left) }} left @endif
-                        </div>
-                    @elseif ($m->isStreaming() && $m->progress_bytes)
-                        <div class="text-xs text-gray-600">
-                            {{ $fmt::bytes($m->progress_bytes) }} @if ($speed) &middot; {{ $fmt::speed($speed) }} @endif
-                        </div>
-                    @endif
-                </td>
-                <td class="border px-2 py-1 text-xs text-gray-600">
-                    @if ($m->provisioning_started_at)
-                        @if ($m->phase === 'done' && $m->provisioning_complete_at)
-                            took {{ $fmt::duration($m->provisioning_complete_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }}
-                            <div>{{ $m->provisioning_complete_at->local()->format('H:i') }}</div>
-                        @elseif ($m->phase === 'failed' && $m->phase_started_at)
-                            failed after {{ $fmt::duration($m->phase_started_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }}
-                            <div>{{ $m->phase_started_at->local()->format('H:i') }}</div>
+<div @if ($activeCount) wire:poll.2s @else wire:poll.10s @endif class="flex flex-col gap-[var(--gap)]">
+    @if ($summary)
+        <div class="grid gap-[var(--gap)] grid-cols-3 lg:grid-cols-[repeat(3,minmax(0,160px))_minmax(0,1fr)]">
+            <div class="cmp-tile"><div class="num text-info">{{ $summary->counts['active'] }}</div><div class="label">running</div></div>
+            <div class="cmp-tile"><div class="num text-pos">{{ $summary->counts['done'] }}</div><div class="label">done</div></div>
+            <div class="cmp-tile {{ $summary->counts['failed'] ? 'bg-neg-bg' : '' }}"><div class="num text-neg">{{ $summary->counts['failed'] }}</div><div class="label">failed</div></div>
+            <div class="cmp-tile col-span-3 lg:col-span-1 flex items-center gap-4">
+                <div class="min-w-0">
+                    <div class="font-bold">
+                        @if ($summary->open)
+                            Project {{ $summary->project?->name }} · batch since {{ $summary->batch->started_at->local()->format('H:i') }}
                         @else
-                            {{ $fmt::duration(now()->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }}
-                            <div>since {{ $m->provisioning_started_at->local()->format('H:i') }}</div>
+                            Last batch, closed at {{ ($summary->batch->closed_at ?? $summary->batch->last_event_at)->local()->format('H:i') }} · project {{ $summary->project?->name }}
                         @endif
-                    @endif
-                </td>
-            </tr>
-        @endforeach
-        </tbody>
-    </table>
+                    </div>
+                    @php($facts = array_filter([$summary->modules->count().($summary->modules->count() === 1 ? ' module' : ' modules'), $summary->averageSeconds ? $fmt::duration($summary->averageSeconds).' per module' : null, $summary->open && $summary->leftSeconds !== null ? 'the running ones finish in '.($summary->leftSeconds < 60 ? 'under a minute' : 'about '.ceil($summary->leftSeconds / 60).' min') : null]))
+                    <div class="text-fg-muted">{{ implode(' · ', $facts) }}</div>
+                </div>
+                @if ($summary->open)
+                    <button type="button" wire:click="newBatch" wire:confirm="Close this batch? The next module starts a new one, here and in the bots." class="cmp-btn cmp-btn-secondary ml-auto">New batch</button>
+                @endif
+            </div>
+        </div>
     @endif
+
+    <div class="cmp-card overflow-clip">
+        @if ($modules->isEmpty())
+            <div class="px-4 py-3 text-fg-muted">No modules are being provisioned.</div>
+        @else
+            <table class="cmp-table">
+                <thead>
+                    <tr><th>Board</th><th>Serial</th><th>MAC</th><th>Step</th><th>Progress</th><th>Time</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach ($modules as $m)
+                    @php($percent = $m->progressPercent())
+                    @php($silent = $m->silentFor())
+                    @php($speed = $m->bytesPerSecond())
+                    @php($left = $m->secondsLeft())
+                    <tr wire:key="cm-{{ $m->id }}" class="{{ $m->phase === 'failed' ? 'bg-neg-bg' : '' }}">
+                        <td class="text-fg-muted whitespace-nowrap">{{ $m->provisioning_board }}</td>
+                        <td class="mono"><a href="{{ route('cm', $m->serial) }}" class="text-link hover:underline">{{ $m->serial }}</a></td>
+                        <td class="mono text-fg-muted">{{ $m->mac }}</td>
+                        <td class="whitespace-nowrap">
+                            @if ($m->phase === 'done')
+                                <span class="text-pos font-semibold">Done</span>
+                            @elseif ($m->phase === 'failed')
+                                <span class="text-neg font-semibold">Failed</span>@if ($m->phase_detail)<span class="text-neg">: {{ $m->phase_detail }}</span>@endif
+                            @else
+                                {{ $m->phaseLabel() }}
+                            @endif
+                            @if ($silent)
+                                <span class="cmp-chip cmp-chip-stale ml-1">No report for {{ intdiv($silent, 60) }} min</span>
+                            @endif
+                        </td>
+                        <td>
+                            @if ($percent !== null)
+                                <div class="flex items-center gap-2">
+                                    <div class="cmp-bar"><span class="{{ $m->phase === 'failed' ? 'bg-neg-bar' : ($m->phase === 'done' ? 'bg-pos-bar' : ($silent ? 'bg-warn-bar' : 'bg-info-bar')) }}" style="width: {{ $percent }}%"></span></div>
+                                    <span class="tabular-nums whitespace-nowrap">{{ $percent }}%
+                                        @if ($m->progress_total) <span class="text-fg-muted">· {{ $fmt::bytes($m->progress_bytes ?? 0) }} of {{ $fmt::bytes($m->progress_total) }}</span> @endif
+                                        @if ($speed && $m->isStreaming() && !$silent) <span class="text-fg-muted">· {{ $fmt::speed($speed) }}</span> @endif
+                                        @if ($left !== null && $m->isStreaming() && !$silent) <span class="text-fg-muted">· {{ $fmt::duration($left) }} left</span> @endif
+                                    </span>
+                                </div>
+                            @elseif ($m->isStreaming() && $m->progress_bytes)
+                                <span class="text-fg-muted">{{ $fmt::bytes($m->progress_bytes) }} @if ($speed) · {{ $fmt::speed($speed) }} @endif</span>
+                            @endif
+                        </td>
+                        <td class="whitespace-nowrap tabular-nums">
+                            @if ($m->provisioning_started_at)
+                                @if ($m->phase === 'done' && $m->provisioning_complete_at)
+                                    took {{ $fmt::duration($m->provisioning_complete_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $m->provisioning_complete_at->local()->format('H:i') }}</span>
+                                @elseif ($m->phase === 'failed' && $m->phase_started_at)
+                                    failed after {{ $fmt::duration($m->phase_started_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $m->phase_started_at->local()->format('H:i') }}</span>
+                                @else
+                                    {{ $fmt::duration(now()->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">since {{ $m->provisioning_started_at->local()->format('H:i') }}</span>
+                                @endif
+                            @endif
+                        </td>
+                        <td class="text-right whitespace-nowrap">
+                            @if ($m->canIdentify())
+                                @if ($m->isIdentifying())
+                                    <span class="text-xs font-semibold text-info mr-1">blinking</span>
+                                    <button type="button" wire:click="stopIdentify({{ $m->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Stop</button>
+                                @else
+                                    <button type="button" wire:click="identify({{ $m->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Identify</button>
+                                @endif
+                            @endif
+                        </td>
+                    </tr>
+                @endforeach
+                </tbody>
+            </table>
+        @endif
+    </div>
 </div>

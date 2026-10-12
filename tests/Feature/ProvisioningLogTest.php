@@ -40,8 +40,8 @@ class ProvisioningLogTest extends TestCase
         $this->entry('Provisioning completed.', '2026-10-07 20:00:00');
 
         Livewire::test(ProvisioningLog::class)
-            ->assertSee('13:30:00 Provisioning started.')
-            ->assertSee('07.10 23:00:00 Provisioning completed.');
+            ->assertSeeInOrder(['13:30:00', 'Provisioning started.'])
+            ->assertSeeInOrder(['07.10 23:00:00', 'Provisioning completed.']);
     }
 
     public function test_the_time_zone_is_named()
@@ -61,7 +61,7 @@ class ProvisioningLogTest extends TestCase
 
         // Livewire 3 wraps @if and @foreach output in morph-marker comments; they are not part of the layout
         $html = preg_replace('/<!--\[if (BLOCK|ENDBLOCK)\]><!\[endif\]-->/', '', Livewire::test(ProvisioningLog::class)->html());
-        $this->assertMatchesRegularExpression('/<tr[^>]*bg-red-100[^>]*>\s*<td[^>]*>GE0\/0\/4<\/td>\s*<td[^>]*><a [^>]*>1000000000000d01<\/a><\/td>\s*<td[^>]*>13:00:00 Error during dd/s', $html);
+        $this->assertMatchesRegularExpression('/<tr[^>]*text-log-err[^>]*>\s*<td[^>]*>13:00:00<\/td>\s*<td[^>]*>GE0\/0\/4<\/td>\s*<td[^>]*><a [^>]*>1000000000000d01<\/a><\/td>\s*<td[^>]*>Error during dd/s', $html);
         $this->assertLessThan(strpos($html, 'Older entry'), strpos($html, 'Error during dd'));
     }
 
@@ -70,6 +70,17 @@ class ProvisioningLogTest extends TestCase
         $this->entry('Provisioning started.', '2026-10-09 10:30:00');
 
         $this->actingAs(User::factory()->create())->get('/dashboard')
-            ->assertOk()->assertSeeLivewire('provisioning-log')->assertSee('13:30:00 Provisioning started.');
+            ->assertOk()->assertSeeLivewire('provisioning-log')->assertSeeInOrder(['13:30:00', 'Provisioning started.']);
+    }
+
+    public function test_the_log_is_folded_to_its_latest_entry_and_opens_on_request()
+    {
+        $this->entry('Provisioning started. Starting preinstall scripts.', '2026-10-09 06:00:00');
+        $this->entry('Provisioning completed. Verification successful.', '2026-10-09 06:05:00');
+
+        Livewire::test(ProvisioningLog::class)
+            ->assertSeeHtml('aria-controls="cmp-log-entries"')
+            ->assertSeeHtml('x-show="open"')
+            ->assertSeeInOrder(['Provisioning completed. Verification successful.', 'Provisioning started.']);
     }
 }

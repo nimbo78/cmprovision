@@ -1861,8 +1861,9 @@ cd "$REPO" && git add -A app resources public/css/app.css tests && git commit -q
 
     public function test_a_module_running_in_another_batch_is_listed_too()
     {
-        $this->openBatch();
-        $other = NotificationBatch::create(['project_id' => 999, 'started_at' => now(), 'last_event_at' => now(), 'closed_at' => now()]);
+        $batch = $this->openBatch();
+        // closed by New batch while this module still ran
+        $other = NotificationBatch::create(['project_id' => $batch->project_id, 'started_at' => now()->subHour(), 'last_event_at' => now(), 'closed_at' => now()]);
         $this->module('1000000000000c05', ['phase' => 'verify', 'notification_batch_id' => $other->id, 'phase_started_at' => now(), 'progress_updated_at' => now()]);
 
         Livewire::test(ProvisioningStatus::class)->assertSee('1000000000000c05');

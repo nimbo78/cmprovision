@@ -3,12 +3,15 @@
 namespace App\Http\Livewire;
 
 use App\Models\Cm;
+use App\Models\NotificationBatch;
+use App\Support\BatchSummary;
 use Livewire\Component;
 
-/* Dashboard panel: modules being provisioned now, and those that finished or failed recently */
+/* Dashboard panel: the batch on the stand (its totals and modules), modules running outside it, and modules
+   from before batches existed that finished recently */
 class ProvisioningStatus extends Component
 {
-    const RECENT_HOURS = 2;      // finished and failed modules stay visible this long
+    const RECENT_HOURS = 2;      // modules outside any batch stay visible this long after they finish
     const ACTIVE_HOURS = 12;     // a module still "in progress" after this long was unplugged
     const MAX_ROWS = 50;
 
@@ -27,17 +30,27 @@ class ProvisioningStatus extends Component
             $cm->stopIdentify();
     }
 
+    /* Close the batch: the next module starts a new one, here and in the bots' threads */
+    public function newBatch()
+    {
+        NotificationBatch::startNew();
+    }
+
     public function render()
     {
+        $summary = BatchSummary::forDashboard();
+        $ids = $summary ? $summary->modules->pluck('id')->all() : [];
         $recent = now()->subHours(self::RECENT_HOURS);
         $modules = Cm::whereNotNull('phase')
-            ->where(function ($q) use ($recent) {
-                $q->where(function ($q) {
-                    $q->whereIn('phase', Cm::ACTIVE_PHASES)
-                      ->where('provisioning_started_at', '>=', now()->subHours(self::ACTIVE_HOURS));
-                })->orWhere(function ($q) use ($recent) {
-                    $q->whereIn('phase', ['done', 'failed'])->where('phase_started_at', '>=', $recent);
-                });
+            ->where(function ($q) use ($ids, $recent) {
+                $q->whereIn('id', $ids)
+                  ->orWhere(function ($q) {
+                      $q->whereIn('phase', Cm::ACTIVE_PHASES)
+                        ->where('provisioning_started_at', '>=', now()->subHours(self::ACTIVE_HOURS));
+                  })
+                  ->orWhere(function ($q) use ($recent) {
+                      $q->whereNull('notification_batch_id')->whereIn('phase', ['done', 'failed'])->where('phase_started_at', '>=', $recent);
+                  });
             })
             ->orderByDesc('provisioning_started_at')
             ->limit(self::MAX_ROWS)
@@ -50,10 +63,9 @@ class ProvisioningStatus extends Component
             ->values();
 
         return view('livewire.provisioning-status', [
+            'summary' => $summary,
             'modules' => $modules,
             'activeCount' => $modules->filter->isActive()->count(),
-            'doneCount' => $modules->where('phase', 'done')->count(),
-            'failedCount' => $modules->where('phase', 'failed')->count(),
         ]);
     }
 

@@ -4,6 +4,10 @@ namespace Tests\Feature;
 
 use App\Http\Livewire\ProvisioningStatus;
 use App\Models\Cm;
+use App\Models\Image;
+use App\Models\NotificationBatch;
+use App\Models\Project;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -127,6 +131,66 @@ class ProvisioningStatusTest extends TestCase
                                            'phase_started_at' => now()]);
 
         Livewire::test(ProvisioningStatus::class)->assertSeeInOrder(['GE0/0/2', 'GE0/0/3', 'GE0/0/10']);
+    }
+
+    protected function openBatch()
+    {
+        $image = new Image;
+        $image->filename = 'wlanpi-os.img.gz';
+        $image->filename_extension = 'gz';
+        $image->filename_on_server = 'img.gz';
+        $image->sha256 = str_repeat('a', 64);
+        $image->uncompressed_size = 8 * 1024 * 1024;
+        $image->save();
+        $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'label_moment' => 'never', 'verify' => false]);
+        Setting::updateOrCreate(['key' => 'active_project'], ['value' => $project->id]);
+        return NotificationBatch::create(['project_id' => $project->id, 'started_at' => now()->subHours(4), 'last_event_at' => now()->subMinute()]);
+    }
+
+    public function test_the_summary_counts_the_open_batch()
+    {
+        $batch = $this->openBatch();
+        $this->module('1000000000000c01', ['phase' => 'done', 'notification_batch_id' => $batch->id, 'phase_started_at' => now()->subHours(3),
+                                           'provisioning_started_at' => now()->subHours(3)->subMinutes(5), 'provisioning_complete_at' => now()->subHours(3)]);
+        $this->module('1000000000000c02', ['phase' => 'failed', 'notification_batch_id' => $batch->id, 'phase_started_at' => now()]);
+        $this->module('1000000000000c03', ['phase' => 'write', 'notification_batch_id' => $batch->id, 'phase_started_at' => now(), 'progress_updated_at' => now()]);
+
+        Livewire::test(ProvisioningStatus::class)
+            ->assertSeeHtml('<div class="num text-info">1</div>')
+            ->assertSeeHtml('<div class="num text-pos">1</div>')
+            ->assertSeeHtml('<div class="num text-neg">1</div>')
+            ->assertSee('Project 78 · batch since')
+            ->assertSee('3 modules · 5:00 per module')
+            ->assertSee('1000000000000c01');   // a module of the batch stays, however long ago it finished
+    }
+
+    public function test_new_batch_closes_the_open_one()
+    {
+        $batch = $this->openBatch();
+        Livewire::test(ProvisioningStatus::class)->assertSeeHtml('wire:confirm=')->call('newBatch');
+        $this->assertNotNull($batch->fresh()->closed_at);
+    }
+
+    public function test_after_the_batch_the_last_one_is_shown_as_such()
+    {
+        $batch = $this->openBatch();
+        $this->module('1000000000000c04', ['phase' => 'done', 'notification_batch_id' => $batch->id, 'phase_started_at' => now()->subHours(5),
+                                           'provisioning_complete_at' => now()->subHours(5)]);
+        NotificationBatch::startNew();
+
+        Livewire::test(ProvisioningStatus::class)
+            ->assertSee('Last batch, closed at')
+            ->assertSee('1000000000000c04');
+    }
+
+    public function test_a_module_running_in_another_batch_is_listed_too()
+    {
+        $batch = $this->openBatch();
+        // closed by New batch while this module still ran
+        $other = NotificationBatch::create(['project_id' => $batch->project_id, 'started_at' => now()->subHour(), 'last_event_at' => now(), 'closed_at' => now()]);
+        $this->module('1000000000000c05', ['phase' => 'verify', 'notification_batch_id' => $other->id, 'phase_started_at' => now(), 'progress_updated_at' => now()]);
+
+        Livewire::test(ProvisioningStatus::class)->assertSee('1000000000000c05');
     }
 
     public function test_nothing_to_show_says_so()
