@@ -102,7 +102,7 @@ You can create a SD card that enables that with [Imager](https://www.raspberrypi
 
 Settings → Ethernet switch takes the switch's address and SNMP read access (a community for v2c, a user for v3). With it a module gets its switch port as its board, and the Ports page shows the stand port by port.
 
-Write access is optional and only used to restart modules over PoE: a write community for v2c, or a user of its own for v3. **Check write access** writes one PoE port's current value back, so it changes nothing. With write access, the module card, the Ports page and the dashboard get a **Restart** button: the switch turns the port's PoE off for 5 seconds and on again. It is offered only on ports where nothing but the provisioner's modules is. A port that does not come back on is listed on the dashboard and the Ports page with **Power on** until it does.
+Write access is optional and only used to restart modules over PoE: a write community for v2c, or a user of its own for v3. **Check write access** writes one PoE port's current value back, so it changes nothing. With write access, the module card, the Ports page and the dashboard get a **Restart** button: the switch turns the port's PoE off for 5 seconds and on again. It is offered only on ports with one of the provisioner's modules (or a Raspberry Pi still booting) and nothing else, and not while the module writes its bootloader EEPROM. A port that does not come back on is listed on the dashboard, the Ports page and the module card with **Power on** until it does.
 
 ## Upgrading ##
 

@@ -309,6 +309,28 @@ class StandMapTest extends TestCase
         $this->assertNull(Stand::tileOf(null, $module));
     }
 
+    public function test_a_port_with_several_modules_or_a_module_writing_its_eeprom_is_not_restarted()
+    {
+        Carbon::setTestNow('2026-10-12 12:00:00');
+        $poe = ['state' => 'delivering', 'class' => null, 'watts' => 6.9];
+        $running = ['phase' => 'write', 'provisioning_complete_at' => null, 'provisioning_started_at' => Carbon::now()->subMinutes(2),
+                    'progress_updated_at' => Carbon::now()];
+        $eeprom = ['phase' => 'preinstall', 'phase_detail' => 'Flash EEPROM firmware (pieeprom-2026-09-23.bin)',
+                   'provisioning_complete_at' => null, 'provisioning_started_at' => Carbon::now()->subHours(2), 'progress_updated_at' => Carbon::now()];
+        $map = $this->build([
+            $this->port(1, 'GE0/0/1', true, ['e4:5f:01:00:00:01', 'e4:5f:01:00:00:02'], $poe),   // two running modules behind one port
+            $this->port(2, 'GE0/0/2', true, ['e4:5f:01:00:00:03'], $poe),                         // flashing its bootloader
+            $this->port(3, 'GE0/0/3', true, ['e4:5f:01:00:00:04'], $poe),                         // silent on that step for an hour
+        ], [$this->module('1000000000000001', 'e4:5f:01:00:00:01', $running), $this->module('1000000000000002', 'e4:5f:01:00:00:02', $running),
+            $this->module('1000000000000003', 'e4:5f:01:00:00:03', $eeprom),
+            $this->module('1000000000000004', 'e4:5f:01:00:00:04', ['progress_updated_at' => Carbon::now()->subHour()] + $eeprom)]);
+        $why = function ($ifIndex) use ($map) { return StandMap::restartBlocker($map['tiles']['p'.$ifIndex]); };
+
+        $this->assertSame('2 modules on GE0/0/1', $why(1));
+        $this->assertSame('the module on GE0/0/2 is writing its bootloader EEPROM', $why(2));
+        $this->assertNull($why(3), 'a module silent on that step for long may be restarted');
+    }
+
     public function test_poe_in_words()
     {
         $this->assertSame('delivering 6.9 W, class 4', StandMap::poeText(['state' => 'delivering', 'class' => 4, 'watts' => 6.9]));

@@ -86,6 +86,8 @@ class PoeRestart
         }
         elseif ($r['restarted'])
             $parts[] = 'Restarted '.count($r['restarted']).' ports: '.implode(', ', array_keys($r['restarted'])).'.';
+        foreach ($r['unconfirmed'] ?? [] as $port => $why)
+            $parts[] = 'The switch did not confirm switching off '.$port.' ('.$why.'); PoE is on now.';
         foreach ($r['stayed_off'] as $port => $why)
             $parts[] = 'PoE on '.$port.' stays OFF: '.$why.'. Use Power on.';
         foreach ($r['failed'] as $port => $why)
@@ -119,7 +121,7 @@ class PoeRestart
 
     protected static function start(?string $user, callable $choose): array
     {
-        $result = ['restarted' => [], 'skipped' => [], 'failed' => [], 'stayed_off' => [], 'busy' => false, 'error' => null];
+        $result = ['restarted' => [], 'unconfirmed' => [], 'skipped' => [], 'failed' => [], 'stayed_off' => [], 'busy' => false, 'error' => null];
         $config = SwitchPortFinder::config();
         $control = PoeControl::forConfig($config);
         if (!$control)
@@ -167,6 +169,13 @@ class PoeRestart
             }
             catch (SnmpError $e)
             {
+                if ($e->timeout)
+                {
+                    // no answer is not a refusal: the switch may have switched the port off and the answer got lost,
+                    // so it is switched on with the others after the pause
+                    $off[] = [$outage, $tile + ['unconfirmed' => $e->getMessage()]];
+                    continue;
+                }
                 $outage->delete();
                 $result['failed'][$tile['name']] = $e->getMessage();
                 $this->log($tile, 'error', 'PoE restart of '.$tile['name'].' by '.$this->who().' failed: the switch did not switch it off: '.$e->getMessage());
@@ -184,8 +193,17 @@ class PoeRestart
             if ($error === null)
             {
                 $outage->update(['on_at' => now()]);
-                $result['restarted'][$tile['name']] = $tile['serial'];
-                $this->log($tile, 'info', 'PoE restart of '.$tile['name'].' by '.$this->who().': off for '.self::OFF_SECONDS.' s');
+                if (isset($tile['unconfirmed']))
+                {
+                    $result['unconfirmed'][$tile['name']] = $tile['unconfirmed'];
+                    $this->log($tile, 'warning', 'PoE restart of '.$tile['name'].' by '.$this->who().': the switch did not confirm switching it off ('
+                        .$tile['unconfirmed'].'); PoE is on');
+                }
+                else
+                {
+                    $result['restarted'][$tile['name']] = $tile['serial'];
+                    $this->log($tile, 'info', 'PoE restart of '.$tile['name'].' by '.$this->who().': off for '.self::OFF_SECONDS.' s');
+                }
             }
             else
             {
@@ -197,9 +215,10 @@ class PoeRestart
         return $result;
     }
 
+    /* A line of the module log; a booting Raspberry Pi has no serial yet */
     protected function log(array $tile, string $level, string $message): void
     {
-        Cmlog::create(['cm' => $tile['serial'], 'board' => $tile['name'], 'loglevel' => $level, 'msg' => $message]);
+        Cmlog::create(['cm' => $tile['serial'] ?? '', 'board' => $tile['name'], 'loglevel' => $level, 'msg' => $message]);
     }
 
     protected function who(): string

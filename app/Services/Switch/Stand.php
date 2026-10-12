@@ -34,18 +34,21 @@ class Stand
         return ['config' => $config, 'snapshot' => $state['snapshot'], 'error' => $state['error'], 'map' => $map];
     }
 
-    /** The port a module is on now, by its MAC: never an uplink, and the port with the fewest addresses when the
-        switch shows the MAC on several; null when the switch does not show it */
+    /** The port a module is on now: a port the map shows it on, the one with the fewest addresses when there are
+        several. Never an uplink, a port without link or a port where the switch still lists its MAC next to the
+        module now plugged in there (StandMap::present()); null when the switch does not show it */
     public static function tileOf(?array $map, Cm $cm): ?array
     {
         if (!$map || !$cm->mac)
             return null;
-        $mac = strtolower($cm->mac);
         $found = null;
         foreach ($map['tiles'] as $tile)
-            if ($tile['state'] !== 'uplink' && in_array($mac, $tile['macs'], true)
+        {
+            $serials = array_map(function ($module) { return $module->serial; }, $tile['modules']);
+            if ($tile['state'] === 'module' && in_array($cm->serial, $serials, true)
                 && (!$found || $tile['mac_count'] < $found['mac_count']))
                 $found = $tile;
+        }
         return $found;
     }
 

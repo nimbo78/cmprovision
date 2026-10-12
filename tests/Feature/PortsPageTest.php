@@ -279,7 +279,8 @@ class PortsPageTest extends TestCase
         Livewire::test(Ports::class)->call('select', 'p8')
             ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on GE0/0/3? PoE goes off for 5 s; the module boots the system it was flashed with."')
             ->call('restart', 'p8')
-            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
+            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.')
+            ->assertDispatched('poe-outages-changed');
         $this->assertSame([[Poe::OID_HW_ENABLE.'.8', 'i', 2], [Poe::OID_HW_ENABLE.'.8', 'i', 1]], $this->fake->sets);
     }
 

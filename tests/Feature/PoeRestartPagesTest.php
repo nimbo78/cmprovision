@@ -3,12 +3,15 @@
 namespace Tests\Feature;
 
 use App\Http\Livewire\CmCard;
+use App\Http\Livewire\PoeOutages;
 use App\Http\Livewire\ProvisioningStatus;
 use App\Models\Cm;
 use App\Models\Image;
 use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Setting;
+use App\Models\User;
+use App\Services\Switch\Poe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Sleep;
 use Livewire\Livewire;
@@ -74,7 +77,23 @@ class PoeRestartPagesTest extends TestCase
             ->assertSee('Restart failed (1)')
             ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on GE0/0/3? PoE goes off for 5 s; the module boots from the network and is provisioned again."')
             ->call('restartFailed')
-            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
+            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.')
+            ->assertDispatched('poe-outages-changed');
+    }
+
+    public function test_the_card_shows_a_port_left_off_with_power_on_right_after_the_restart()
+    {
+        Sleep::fake();
+        $cm = $this->stand();
+        $this->fake->refuse[Poe::OID_HW_ENABLE.'.8=1'] = 'noAccess';
+        Livewire::test(CmCard::class, ['serial' => $cm->serial])
+            ->call('restart')
+            ->assertSee('PoE on GE0/0/3 stays OFF: noAccess. Use Power on.')
+            ->assertDispatched('poe-outages-changed');
+        $html = $this->actingAs(User::factory()->create())->get(route('cm', $cm->serial))->assertOk()
+            ->assertSeeLivewire(PoeOutages::class)->getContent();
+        $this->assertStringContainsString('PoE on GE0/0/3 stayed off after a restart', $html);
+        $this->assertStringContainsString('poe-outages-changed', $html, 'the banner listens for restarts on the page');
     }
 
     public function test_without_write_access_the_dashboard_has_no_restart()

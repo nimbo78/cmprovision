@@ -4,6 +4,7 @@ namespace App\Http\Livewire;
 
 use App\Models\Cm;
 use App\Models\PoeOutage;
+use App\Services\Snmp\SnmpClient;
 use App\Services\Switch\PoeControl;
 use App\Services\Switch\PoeRestart;
 use App\Services\Switch\Stand;
@@ -64,8 +65,9 @@ class Ports extends Component
         $stand = Stand::current();
         if (!$stand)
             return view('livewire.ports', ['configured' => false]);
-        // a port left off that the switch shows with PoE on again was switched on at the switch
-        PoeOutage::closeSeenOn($stand['snapshot'], $stand['config']['host']);
+        // a port left off that the switch shows switched on again was switched on at the switch
+        if ($stand['snapshot'] && !$stand['error'])
+            PoeOutage::closeSeenOn(app(SnmpClient::class, ['config' => $stand['config']]), $stand['config']['host']);
 
         $tile = $stand['map']['tiles'][$this->selected] ?? null;
         $writable = PoeControl::writable($stand['config']);
@@ -99,5 +101,6 @@ class Ports extends Component
     protected function report(array $result): void
     {
         ['text' => $this->restartMessage, 'error' => $this->restartError] = PoeRestart::message($result);
+        $this->dispatch('poe-outages-changed');   // a port left off shows in the banner at once
     }
 }

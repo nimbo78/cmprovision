@@ -1,6 +1,7 @@
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)
 <div @if ($cm->isActive()) wire:poll.5s @else wire:poll.15s @endif class="cmp-page">
     <div class="contents">
+        <livewire:poe-outages />
 
         @if ($restartMessage)
             <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $restartError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $restartMessage }}</div>

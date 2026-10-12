@@ -60,6 +60,7 @@ class ProvisioningStatus extends Component
     protected function report(array $result): void
     {
         ['text' => $this->restartMessage, 'error' => $this->restartError] = PoeRestart::message($result);
+        $this->dispatch('poe-outages-changed');   // a port left off shows in the banner at once
     }
 
     public function render()

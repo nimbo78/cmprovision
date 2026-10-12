@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Snmp\SnmpClient;
 use Illuminate\Database\Eloquent\Model;
 
 /* A port whose PoE cmprovision switched off for a restart (App\Services\Switch\PoeRestart). on_at: on again, or
@@ -23,21 +24,32 @@ class PoeOutage extends Model
         })->orderBy('off_at');
     }
 
-    /* A port left off that the switch shows with PoE on again (switched on at the switch): its row closes. Only a
-       snapshot taken after the port went off counts, and only for the switch it belongs to. */
-    public static function closeSeenOn(?array $snapshot, string $host): void
+    /* A port left off that the switch shows switched on again (at the switch, or a write it applied late): its row
+       closes. The port's own object is read, not its PoE status: the status words differ by vendor (Huawei's are not
+       verified) and a snapshot may have been read before the port went off. Only rows of this switch. */
+    public static function closeSeenOn(SnmpClient $snmp, string $host): void
     {
-        if (!$snapshot)
-            return;
         foreach (self::stayedOff()->where('switch_host', $host)->get() as $outage)
         {
-            $poe = $snapshot['ports'][$outage->if_index]['poe'] ?? null;
-            if ($poe && $poe['state'] !== 'disabled' && $snapshot['taken_at'] > $outage->off_at->getTimestamp())
+            try
+            {
+                $on = (int) $snmp->get($outage->oid) === $outage->on_value;
+            }
+            catch (\Throwable $e)
+            {
+                continue;   // not readable now (a php-snmp warning too): the row stays
+            }
+            if ($on)
             {
                 $outage->update(['on_at' => now(), 'error' => null]);
-                Cmlog::create(['cm' => $outage->cm_serial, 'board' => $outage->port, 'loglevel' => 'info',
-                    'msg' => 'PoE on '.$outage->port.' is on again (seen on the switch)']);
+                $outage->log('info', 'PoE on '.$outage->port.' is on again (seen on the switch)');
             }
         }
+    }
+
+    /* A line of the module log about this port; a booting Raspberry Pi has no serial yet */
+    public function log(string $level, string $message): void
+    {
+        Cmlog::create(['cm' => $this->cm_serial ?? '', 'board' => $this->port, 'loglevel' => $level, 'msg' => $message]);
     }
 }

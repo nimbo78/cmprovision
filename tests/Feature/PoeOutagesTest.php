@@ -99,4 +99,27 @@ class PoeOutagesTest extends TestCase
         Livewire::test(Ports::class);
         $this->assertNotNull($outage->fresh()->on_at);
     }
+
+    public function test_the_ports_page_keeps_a_port_whose_poe_is_still_switched_off()
+    {
+        $this->stand();
+        // the port's own object still says off, whatever words the PoE status uses (Huawei's are not verified)
+        $this->fake->tables[''][Poe::OID_HW_ENABLE.'.8'] = 2;
+        $outage = $this->outage(['error' => 'noAccess', 'off_at' => now()->subMinute()]);
+        Livewire::test(Ports::class);
+        $this->assertNull($outage->fresh()->on_at);
+    }
+
+    public function test_the_port_of_a_booting_pi_is_powered_on_and_forgotten_without_a_serial()
+    {
+        Sleep::fake();
+        $this->stand();
+        $first = $this->outage(['error' => 'noAccess', 'cm_serial' => null]);
+        $second = $this->outage(['error' => 'noAccess', 'cm_serial' => null, 'if_index' => 7, 'port' => 'GE0/0/2', 'oid' => Poe::OID_HW_ENABLE.'.7']);
+        Livewire::test(PoeOutages::class)
+            ->call('powerOn', $first->id)->assertSee('PoE on GE0/0/3 is on again.')
+            ->call('forget', $second->id);
+        $this->assertDatabaseHas('cmlogs', ['cm' => '', 'board' => 'GE0/0/3', 'loglevel' => 'info']);
+        $this->assertDatabaseHas('cmlogs', ['cm' => '', 'board' => 'GE0/0/2', 'loglevel' => 'warning']);
+    }
 }

@@ -93,7 +93,7 @@ class StandMap
     }
 
     /** Why this port's PoE may not be switched off and on (a PoE restart), null when it may: nothing on the port but
-        our modules, or a Raspberry Pi that has not asked the server yet */
+        one of our modules, or a Raspberry Pi that has not asked the server yet */
     public static function restartBlocker(array $tile): ?string
     {
         if ($tile['state'] === 'free')
@@ -102,6 +102,13 @@ class StandMap
             return 'no PoE on '.$tile['name'];
         if ($tile['state'] === 'uplink')
             return $tile['name'].' is the uplink';
+        // one of them may be gone with its MAC still listed: nothing tells which one the power would cut
+        if (count($tile['modules']) > 1)
+            return count($tile['modules']).' modules on '.$tile['name'];
+        // power cut mid-write can leave a bootloader that no longer boots from the network; a module silent on that step may go
+        foreach ($tile['modules'] as $cm)
+            if (self::writingEeprom($cm) && $cm->isActive() && $cm->silentFor() === null)
+                return 'the module on '.$tile['name'].' is writing its bootloader EEPROM';
         if (($tile['state'] === 'module' && $tile['others'] === 0) || ($tile['state'] === 'boot' && $tile['macs']))
             return null;
         return 'other devices on '.$tile['name'];
@@ -196,6 +203,12 @@ class StandMap
         return true;
     }
 
+    /* The step that flashes the project's bootloader EEPROM (ScriptExecuteController names it "Flash EEPROM firmware") */
+    protected static function writingEeprom(Cm $cm): bool
+    {
+        return $cm->phase === 'preinstall' && stripos((string) $cm->phase_detail, 'eeprom') !== false;
+    }
+
     /* Several modules on one port: a switch that keeps a MAC after the link drops lists the module taken
        away next to the one put in its place. Those that neither run nor poll give way to one that does. */
     protected function present(array $modules): array
@@ -232,7 +245,7 @@ class StandMap
         $percent = $cm->progressPercent();
         if ($percent !== null)
             return $percent.'%';
-        if ($cm->phase === 'preinstall' && stripos((string) $cm->phase_detail, 'eeprom') !== false)
+        if (self::writingEeprom($cm))
             return 'EEPROM';
         return self::STEP_MARKS[$cm->phase] ?? '';
     }

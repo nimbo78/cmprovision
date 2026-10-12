@@ -3,11 +3,12 @@ cmprovision4 (2.3.0~dev1) unstable; urgency=medium
   * PoE restart: with write access to the switch (a write community, or a
     v3 user of its own, under Settings → Ethernet switch), the module card,
     the Ports page and the dashboard restart a module: its port's PoE goes
-    off for 5 s and on again. Only ports with nothing but our modules on
-    them; one restart at a time; "Restart failed (N)" for the failed and
-    silent modules of the batch.
-  * A port that does not come back on is listed on the dashboard and the
-    Ports page with Power on until it is on again.
+    off for 5 s and on again. Only ports with one of our modules (or a
+    booting Raspberry Pi) and nothing else, never while the module writes
+    its bootloader EEPROM; one restart at a time; "Restart failed (N)" for
+    the failed and silent modules of the batch.
+  * A port that does not come back on is listed on the dashboard, the Ports
+    page and the module card with Power on until it is on again.
   * Check write access in the switch settings writes a port's value back
     unchanged.
 

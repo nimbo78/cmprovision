@@ -8,6 +8,7 @@ use App\Services\Switch\MacTable;
 use App\Services\Switch\Poe;
 use App\Services\Switch\PoeControl;
 use App\Services\Switch\PoeRestart;
+use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
@@ -173,5 +174,56 @@ class PoeRestartTest extends TestCase
         $this->assertSame('Restart the Raspberry Pi on GE0/0/7? PoE goes off for 5 s.', PoeRestart::confirm(null, 'GE0/0/7'));
         $this->assertSame('Restart 3 modules (failed or without a report)? PoE goes off for 5 s on each port.', PoeRestart::confirmFailed(3));
         $this->assertSame('Restart 1 module (failed or without a report)? PoE goes off for 5 s on each port.', PoeRestart::confirmFailed(1));
+    }
+
+    public function test_a_booting_raspberry_pi_is_restarted_by_its_port()
+    {
+        $this->stand();
+        // d8:3a:dd:00:00:07 on GE0/0/2, its link up for 20 s: a Pi that has not asked the server yet, so no serial
+        $this->fake->tables[''] += [MacTable::OID_HUAWEI_FDB_PORT.'.216.58.221.0.0.7.10.0' => 7,
+            SwitchSnapshot::OID_SYSUPTIME.'.0' => 100000, SwitchSnapshot::OID_IFLASTCHANGE.'.7' => 98000];
+        $result = PoeRestart::ports(['p7'], 'igor');
+
+        $this->assertSame(['GE0/0/2' => null], $result['restarted']);
+        $this->assertSame([[self::OID7, 'i', PoeControl::OFF], [self::OID7, 'i', PoeControl::ON]], $this->fake->sets);
+        $this->assertDatabaseHas('cmlogs', ['cm' => '', 'board' => 'GE0/0/2', 'msg' => 'PoE restart of GE0/0/2 by igor: off for 5 s']);
+        $this->assertSame('Restarted GE0/0/2: PoE was off for 5 s.', PoeRestart::message($result)['text']);
+    }
+
+    public function test_a_switch_off_without_an_answer_is_switched_on_again_after_the_pause()
+    {
+        $cm = $this->stand();
+        $this->fake->refuse[self::OID8.'=2'] = 'timeout';   // no answer is not a refusal: the switch may have done it
+        $result = PoeRestart::modules([$cm], 'igor');
+
+        $this->assertSame([], $result['failed']);
+        $this->assertSame([[self::OID8, 'i', 2], [self::OID8, 'i', 1]], $this->fake->sets);
+        Sleep::assertSequence([Sleep::for(5)->seconds()]);
+        $this->assertNotNull(PoeOutage::sole()->on_at);
+        $this->assertDatabaseHas('cmlogs', ['loglevel' => 'warning',
+            'msg' => 'PoE restart of GE0/0/3 by igor: the switch did not confirm switching it off (No response from 192.0.2.1); PoE is on']);
+        $this->assertSame(['text' => 'The switch did not confirm switching off GE0/0/3 (No response from 192.0.2.1); PoE is on now.', 'error' => true],
+            PoeRestart::message($result));
+    }
+
+    public function test_a_pulled_module_whose_mac_lingers_next_to_a_running_one_is_not_restarted()
+    {
+        $pulled = $this->stand();   // failed, no longer asks the server; the switch still lists its MAC on GE0/0/3
+        $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.98.159.212.10.0'] = 8;   // e4:5f:01:62:9f:d4, put in its place
+        Cm::create(['serial' => '10000000e611110d', 'mac' => 'e4:5f:01:62:9f:d4', 'phase' => 'write', 'provisioning_board' => 'GE0/0/3',
+            'provisioning_started_at' => now()->subMinute(), 'phase_started_at' => now()->subMinute(), 'progress_updated_at' => now()]);
+        $result = PoeRestart::modules([$pulled], 'igor');
+
+        $this->assertSame(['10000000e611110c' => 'not seen on the switch'], $result['skipped']);
+        $this->assertSame([], $this->fake->sets, 'the running module keeps its power');
+    }
+
+    public function test_a_moved_module_is_found_where_its_link_is_not_where_its_mac_lingers()
+    {
+        $cm = $this->stand();
+        // moved from GE0/0/1, whose link is down now, to GE0/0/3: the switch lists it on both
+        $this->fake->tables[''][SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 2;
+        $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.98.159.211.20.0'] = 6;
+        $this->assertSame(['GE0/0/3' => '10000000e611110c'], PoeRestart::modules([$cm], 'igor')['restarted']);
     }
 }
