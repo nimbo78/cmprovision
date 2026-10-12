@@ -12,9 +12,7 @@ use Tests\TestCase;
 class TokenGuardTest extends TestCase
 {
     /* Views still on raw colours: each conversion task takes its files off this list (compact web plan, Task 1) */
-    const NOT_YET = [ 'livewire/addstaticip.blade.php',
-        'livewire/notification-settings.blade.php',
-        'livewire/settings.blade.php', 'livewire/switch-settings.blade.php', 'livewire/switch-snmp-hints.blade.php',
+    const NOT_YET = [
     ];
 
     const PALETTE = '(?:white|black|slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)';
