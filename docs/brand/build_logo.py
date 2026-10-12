@@ -137,6 +137,20 @@ fav_glyph = stroked(fav_line, FAV_STROKE)
 fav_tile = rrect(0, 0, 48, 48, 12)
 write('cmprovision-favicon.svg', GRAD + P(fav_tile, 'url(#cmp-tile)') + P(fav_glyph, INK))
 
+# the browser tab's state (public/js/tab-status.js): the favicon cut with a dot, white-ringed, at the top right
+def dot(cx, cy, r):
+    p = skia.Path()
+    p.addCircle(cx, cy, r)
+    return p
+
+
+CHECK = 'M34.6 9.4L37.6 12.4L43.1 6.4'
+for state, colour in (('run', '#2563eb'), ('fail', '#dc2626'), ('done', '#16a34a')):
+    badge = P(dot(39, 9, 10.5), '#fff') + P(dot(39, 9, 8.5), colour)
+    if state == 'done':
+        badge += P(stroked(parse(CHECK), 2.6), '#fff')
+    write(f'cmprovision-favicon-{state}.svg', GRAD + P(fav_tile, 'url(#cmp-tile)') + P(fav_glyph, INK) + badge)
+
 # phones' home screens: a full square (the phone rounds the corners itself) with the standard line
 square = skia.Path()
 square.addRect(skia.Rect.MakeWH(48, 48))
