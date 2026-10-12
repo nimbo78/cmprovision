@@ -97,7 +97,7 @@ class PortsPageTest extends TestCase
             ->assertSee('110C')
             ->assertSee('1 module on the stand')
             ->assertSee('2 of 3 ports free')
-            ->assertSee('1 done')
+            ->assertSeeHtml('<span class="label">1 done</span>')   // the chip text has a box of its own to trim (app.css)
             ->assertSee('All done: the batch can be replaced')
             ->assertSeeHtml('<span class="short">UP</span>');
     }
