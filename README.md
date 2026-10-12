@@ -98,6 +98,12 @@ However that requires that network boot is enabled first in the EEPROM settings 
 
 You can create a SD card that enables that with [Imager](https://www.raspberrypi.com/software/), by going to: "Choose OS" -> "Misc utility images" -> "Bootloader" -> "Network boot"
 
+## Switch: port lookup, the Ports page and PoE restart ##
+
+Settings → Ethernet switch takes the switch's address and SNMP read access (a community for v2c, a user for v3). With it a module gets its switch port as its board, and the Ports page shows the stand port by port.
+
+Write access is optional and only used to restart modules over PoE: a write community for v2c, or a user of its own for v3. **Check write access** writes one PoE port's current value back, so it changes nothing. With write access, the module card, the Ports page and the dashboard get a **Restart** button: the switch turns the port's PoE off for 5 seconds and on again. It is offered only on ports where nothing but the provisioner's modules is. A port that does not come back on is listed on the dashboard and the Ports page with **Power on** until it does.
+
 ## Upgrading ##
 
 Install the new package over the old one with `sudo apt install ./cmprovision4_*.deb`; never `apt remove` it first, the package's removal step deletes the database and storage.

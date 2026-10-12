@@ -1,3 +1,18 @@
+cmprovision4 (2.3.0~dev1) unstable; urgency=medium
+
+  * PoE restart: with write access to the switch (a write community, or a
+    v3 user of its own, under Settings → Ethernet switch), the module card,
+    the Ports page and the dashboard restart a module: its port's PoE goes
+    off for 5 s and on again. Only ports with nothing but our modules on
+    them; one restart at a time; "Restart failed (N)" for the failed and
+    silent modules of the batch.
+  * A port that does not come back on is listed on the dashboard and the
+    Ports page with Power on until it is on again.
+  * Check write access in the switch settings writes a port's value back
+    unchanged.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 19:45:36 +0300
+
 cmprovision4 (2.2.1) unstable; urgency=medium
 
   * A module that stops reporting mid-run counts apart: the tab says

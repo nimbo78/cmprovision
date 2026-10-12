@@ -186,6 +186,7 @@
 - Кнопка Test на каждом из ваших коммутаторов: Cisco на 8 портов PoE, Huawei S5731 и S5735-S-V2.
 - Канал Mattermost с настоящим токеном. Telegram проверен в 1.6.10.
 - Страница Ports на тех же коммутаторах: раскладка корпуса, PoE и ватты (какими словами Huawei пишет `hwPoePortPowerStatus`), время опроса и стирает ли коммутатор MAC порта, когда падает линк.
+- Перезапуск по PoE на тех же коммутаторах: «Check write access», перезапуск одного порта, что коммутатор пишет в свой журнал. Держит ли Cisco IOS запись `pethPsePortAdminEnable`; если нет, запасной путь — `cpeExtPsePortEnable` из CISCO-POWER-ETHERNET-EXT-MIB.
 
 Если Cisco окажется линейкой Business (CBS, Catalyst 1200/1300), сработает Q-BRIDGE-MIB. Если это IOS (Catalyst 1000/2960), поиск пойдёт по каждому VLAN.
 
