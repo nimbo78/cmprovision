@@ -34,13 +34,19 @@ class TokenGuardTest extends TestCase
         return $views;
     }
 
-    /** Raw colours in a template: palette utilities (with any variant prefix), dark: variants, hex colours in style */
+    const NAMED = '(?:white|black|red|green|blue|yellow|orange|purple|pink|gray|grey|silver|navy|teal|maroon|olive|lime|aqua|fuchsia)';
+
+    /** Raw colours in a template: palette utilities (with any variant prefix), arbitrary colour values (bg-[#fff]; a
+        var() is a token), dark: variants, and hex, rgb()/hsl() or named colours in a style with either quote */
     public static function problems(string $blade): array
     {
         preg_match_all('/(?<![\w-])(?:[a-z-]+:)*'.self::UTILITIES.'-'.self::PALETTE.'(?:-\d{2,3})?(?:\/\d+)?(?![\w-])/', $blade, $classes);
+        preg_match_all('/(?<![\w-])(?:[a-z-]+:)*'.self::UTILITIES.'-\[(?:color:)?(?:#|rgba?\(|hsla?\()[^\]]*\]/', $blade, $arbitrary);
         preg_match_all('/(?<![\w-])dark:[\w\/\[\]\.-]+/', $blade, $dark);
-        preg_match_all('/style="[^"]*#[0-9a-fA-F]{3,8}/', $blade, $hex);
-        return array_values(array_unique(array_merge($classes[0], $dark[0], $hex[0])));
+        preg_match_all('/style=["\'][^"\']*#[0-9a-fA-F]{3,8}/', $blade, $hex);
+        preg_match_all('/style=["\'][^"\']*(?:rgb|hsl)a?\(/', $blade, $functions);
+        preg_match_all('/style=["\'][^"\']*(?:color|background|border|fill|stroke|outline)[\w-]*\s*:\s*'.self::NAMED.'\b/', $blade, $named);
+        return array_values(array_unique(array_merge($classes[0], $arbitrary[0], $dark[0], $hex[0], $functions[0], $named[0])));
     }
 
     #[DataProvider('views')]
@@ -54,5 +60,12 @@ class TokenGuardTest extends TestCase
         $this->assertSame(['bg-white', 'hover:text-gray-700', 'dark:bg-gray-800', 'style="color: #b45309'],
             self::problems('<div class="bg-white hover:text-gray-700 dark:bg-gray-800 text-fg bg-panel border-transparent text-sm" style="color: #b45309">'));
         $this->assertSame([], self::problems('<td class="text-fg-muted bg-neg-bg ring-pline shadow-pop">'));
+    }
+
+    public function test_the_guard_sees_arbitrary_values_and_colours_in_any_style()
+    {
+        $this->assertSame(['bg-[#fff]', 'text-[rgb(10,20,30)]', "style='color: #b45309", 'style="border-color: rgb(', 'style="background: white'],
+            self::problems('<div class="bg-[#fff] text-[rgb(10,20,30)]" style=\'color: #b45309\'><p style="border-color: rgb(1,2,3)"></p><i style="background: white"></i></div>'));
+        $this->assertSame([], self::problems('<div class="text-[color:var(--on-btn)] gap-[var(--gap)] w-[18px]" style="background: var(--scrim); width: 64%">'));
     }
 }

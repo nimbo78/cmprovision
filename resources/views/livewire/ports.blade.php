@@ -1,4 +1,4 @@
-<div class="py-8" wire:poll.5s
+<div wire:poll.5s
      x-data="{ filter: [], toggle(s) { this.filter = this.filter.includes(s) ? this.filter.filter(x => x !== s) : this.filter.concat([s]) }, dim(states, never) { return this.filter.length > 0 && (never || !states.some(s => this.filter.includes(s))) } }">
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)
 @php($words = ['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'silent', 'unknown' => 'unknown', 'boot' => 'booting', 'foreign' => 'foreign', 'free' => 'free'])
@@ -7,7 +7,7 @@
 @if (!$configured)
     <div class="cmp-card px-4 py-3 text-fg">
         No switch is set up. Enter its address under
-        <a href="{{ route('settings') }}" class="text-link hover:underline">Other settings → Ethernet switch</a>
+        <a href="{{ route('settings') }}" class="text-link hover:underline">Settings → Ethernet switch</a>
         to see the stand by its ports.
     </div>
 @else
@@ -40,13 +40,13 @@
     @if ($snapshot && $snapshot['mac_method'] === null && in_array(true, array_column($snapshot['ports'], 'up'), true))
         <div class="bg-warn-bg border-l-4 border-warn-bar text-warn px-4 py-3 rounded" role="status">
             The switch gave no MAC address table, so modules cannot be matched to ports. Check the MAC table method under
-            <a href="{{ route('settings') }}" class="underline">Other settings → Ethernet switch</a>.
+            <a href="{{ route('settings') }}" class="underline">Settings → Ethernet switch</a>.
         </div>
     @endif
 
     @if ($map)
         @php($s = $map['summary'])
-        @php($verdictColor = ['running' => 'bg-info-bg text-link', 'failed' => 'bg-neg-bg text-neg', 'done' => 'bg-pos-bg text-pos', 'empty' => 'bg-head text-fg'][$s['verdict']])
+        @php($verdictColor = ['running' => 'bg-info-bg text-info', 'failed' => 'bg-neg-bg text-neg', 'done' => 'bg-pos-bg text-pos', 'empty' => 'bg-head text-fg'][$s['verdict']])
         <section class="cmp-card px-4 py-3 grid gap-3 md:grid-cols-[1fr_auto] items-center" aria-label="The stand now">
             <div class="font-bold md:col-span-2">
                 {{ $s['modules'] }} {{ $s['modules'] === 1 ? 'module' : 'modules' }} on the stand

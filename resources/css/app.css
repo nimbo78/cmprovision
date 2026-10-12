@@ -147,23 +147,24 @@ body { background: var(--page); color: var(--text); }
     .cmp-title h1 { font-size: 18px; font-weight: 700; }
     .cmp-card { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 8px; }
     .cmp-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs); }
-    .cmp-table th { position: sticky; top: var(--bar-h); z-index: 1; background: var(--head); color: var(--muted); font-size: var(--fs-th);
+    /* Cell rules weigh one class (:where), like a utility, and come before the utilities: a utility on a cell wins */
+    .cmp-table :where(th) { position: sticky; top: var(--bar-h); z-index: 1; background: var(--head); color: var(--muted); font-size: var(--fs-th);
         font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-align: left; padding: 6px var(--cell-x);
         border-bottom: 1px solid var(--panel-line); white-space: nowrap; }
-    .cmp-table.in-scroll th { top: 0; }
+    .cmp-table.in-scroll :where(th) { top: 0; }
     /* A table card narrower than xl scrolls sideways and is then its header's scroll container (the header sticks to
        the card's top); from xl the card clips its corners and the header sticks under the top bar */
     .cmp-card-scroll { overflow-x: auto; }
-    .cmp-card-scroll .cmp-table th { top: 0; }
+    .cmp-card-scroll :where(.cmp-table th) { top: 0; }
     @media (min-width: 1280px) {
         .cmp-card-scroll { overflow: clip; }
-        .cmp-card-scroll .cmp-table th { top: var(--bar-h); }
+        .cmp-card-scroll :where(.cmp-table th) { top: var(--bar-h); }
     }
-    .cmp-table td { height: var(--row-h); padding: 0 var(--cell-x); border-top: 1px solid var(--line); vertical-align: middle; }
-    .cmp-table tbody tr:first-child td { border-top: 0; }
-    .cmp-table tr > :first-child { padding-left: var(--edge); }
-    .cmp-table tr > :last-child { padding-right: var(--edge); }
-    .cmp-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-mono); white-space: nowrap; }
+    .cmp-table :where(td) { height: var(--row-h); padding: 0 var(--cell-x); border-top: 1px solid var(--line); vertical-align: middle; }
+    .cmp-table :where(tbody tr:first-child td) { border-top: 0; }
+    .cmp-table :where(tr > :first-child) { padding-left: var(--edge); }
+    .cmp-table :where(tr > :last-child) { padding-right: var(--edge); }
+    .cmp-table :where(.mono) { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-mono); white-space: nowrap; }
     .cmp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 6px; padding: 4px 12px;
         font-size: var(--fs); font-weight: 700; line-height: 20px; white-space: nowrap; cursor: pointer;
         background: var(--btn); color: var(--on-btn); border: 1px solid transparent; }

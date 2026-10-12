@@ -11,7 +11,8 @@
                         @if ($summary->open)
                             Project {{ $summary->project?->name }} · batch since {{ $summary->batch->started_at->local()->format('H:i') }}
                         @else
-                            Last batch, closed at {{ ($summary->batch->closed_at ?? $summary->batch->last_event_at)->local()->format('H:i') }} · project {{ $summary->project?->name }}
+                            @php($closed = ($summary->batch->closed_at ?? $summary->batch->last_event_at)->local())
+                            Last batch, closed {{ $closed->isToday() ? 'at '.$closed->format('H:i') : 'on '.$closed->format('d.m').' at '.$closed->format('H:i') }} · project {{ $summary->project?->name }}
                         @endif
                     </div>
                     {{-- one string (escaped parts, the silent ones in the warning colour): Livewire's markers would split a sentence of inline ifs --}}

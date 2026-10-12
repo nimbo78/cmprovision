@@ -20,8 +20,8 @@
         <div class="cmp-card px-4 py-3">
             <table class="cmp-table text-sm">
                 <tr>
-                    <td class="pr-4 py-1 text-fg-muted">Status</td>
-                    <td class="py-1">
+                    <td class="text-fg-muted">Status</td>
+                    <td>
                         {{-- modules provisioned before 1.6.6 have no phase, only their start and completion --}}
                         @if ($cm->phase === 'done' || ($cm->phase === null && $cm->provisioning_complete_at))
                             <span class="font-semibold text-pos">Done</span>
@@ -39,8 +39,8 @@
                 </tr>
                 @if (in_array($cm->phase, ['done', 'failed'], true))
                 <tr>
-                    <td class="pr-4 py-1 text-fg-muted">On the bench</td>
-                    <td class="py-1">
+                    <td class="text-fg-muted">On the bench</td>
+                    <td>
                         @if ($cm->canIdentify())
                             yes
                             @if ($cm->isIdentifying())
@@ -56,18 +56,18 @@
                     </td>
                 </tr>
                 @endif
-                <tr><td class="pr-4 py-1 text-fg-muted">MAC</td><td class="py-1 font-mono">{{ $cm->mac }}</td></tr>
-                <tr><td class="pr-4 py-1 text-fg-muted">Model</td><td class="py-1">{{ $cm->model }}</td></tr>
-                <tr><td class="pr-4 py-1 text-fg-muted">Board</td><td class="py-1">{{ $cm->provisioning_board }}</td></tr>
-                <tr><td class="pr-4 py-1 text-fg-muted">Project</td><td class="py-1">{{ $cm->project ? $cm->project->name : '' }}</td></tr>
-                <tr><td class="pr-4 py-1 text-fg-muted">Image</td><td class="py-1">{{ $cm->image_filename }} <span class="text-xs text-fg-muted font-mono">{{ $cm->image_sha256 }}</span></td></tr>
+                <tr><td class="text-fg-muted">MAC</td><td class="font-mono">{{ $cm->mac }}</td></tr>
+                <tr><td class="text-fg-muted">Model</td><td>{{ $cm->model }}</td></tr>
+                <tr><td class="text-fg-muted">Board</td><td>{{ $cm->provisioning_board }}</td></tr>
+                <tr><td class="text-fg-muted">Project</td><td>{{ $cm->project ? $cm->project->name : '' }}</td></tr>
+                <tr><td class="text-fg-muted">Image</td><td>{{ $cm->image_filename }} <span class="text-xs text-fg-muted font-mono">{{ $cm->image_sha256 }}</span></td></tr>
                 <tr>
-                    <td class="pr-4 py-1 text-fg-muted">Started</td>
-                    <td class="py-1">{{ $cm->provisioning_started_at ? $cm->provisioning_started_at->local()->format('d.m.Y H:i:s') : '' }}</td>
+                    <td class="text-fg-muted">Started</td>
+                    <td>{{ $cm->provisioning_started_at ? $cm->provisioning_started_at->local()->format('d.m.Y H:i:s') : '' }}</td>
                 </tr>
                 <tr>
-                    <td class="pr-4 py-1 text-fg-muted">Completed</td>
-                    <td class="py-1">
+                    <td class="text-fg-muted">Completed</td>
+                    <td>
                         @if ($cm->provisioning_complete_at)
                             {{ $cm->provisioning_complete_at->local()->format('d.m.Y H:i:s') }}
                             &middot; took {{ $fmt::duration($cm->provisioning_complete_at->getTimestamp() - $cm->provisioning_started_at->getTimestamp()) }}
@@ -77,12 +77,12 @@
                     </td>
                 </tr>
                 <tr>
-                    <td class="pr-4 py-1 text-fg-muted">Memory, storage</td>
-                    <td class="py-1">{{ $cm->memory_in_gb }} GiB &middot; {{ $cm->storage ? round($cm->storage / 1000 / 1000 / 1000).' GB' : 'no storage' }}</td>
+                    <td class="text-fg-muted">Memory, storage</td>
+                    <td>{{ $cm->memory_in_gb }} GiB &middot; {{ $cm->storage ? round($cm->storage / 1000 / 1000 / 1000).' GB' : 'no storage' }}</td>
                 </tr>
-                <tr><td class="pr-4 py-1 text-fg-muted">Temperature</td><td class="py-1">{{ $cm->temp1 }} at the start @if ($cm->temp2) &middot; {{ $cm->temp2 }} at the end @endif</td></tr>
-                <tr><td class="pr-4 py-1 text-fg-muted">eMMC CID, CSD</td><td class="py-1 text-xs font-mono">{{ $cm->cid }} {{ $cm->csd }}</td></tr>
-                <tr><td class="pr-4 py-1 text-fg-muted">First seen</td><td class="py-1">{{ $cm->created_at ? $cm->created_at->local()->format('d.m.Y H:i:s') : '' }}</td></tr>
+                <tr><td class="text-fg-muted">Temperature</td><td>{{ $cm->temp1 }} at the start @if ($cm->temp2) &middot; {{ $cm->temp2 }} at the end @endif</td></tr>
+                <tr><td class="text-fg-muted">eMMC CID, CSD</td><td class="text-xs font-mono">{{ $cm->cid }} {{ $cm->csd }}</td></tr>
+                <tr><td class="text-fg-muted">First seen</td><td>{{ $cm->created_at ? $cm->created_at->local()->format('d.m.Y H:i:s') : '' }}</td></tr>
             </table>
         </div>
 
@@ -120,11 +120,11 @@
         <div class="cmp-card px-4 py-3">
             <div class="font-bold mb-2">Bootloader (EEPROM)</div>
             <table class="cmp-table mb-2">
-                <tr><td class="pr-4 py-1 text-fg-muted">Before</td><td class="py-1 font-mono">{{ $cm->eepromVersionBefore() ?? 'not reported' }}</td></tr>
-                <tr><td class="pr-4 py-1 text-fg-muted">After</td><td class="py-1 font-mono">{{ $cm->eepromVersionAfter() ?? 'unknown' }}</td></tr>
+                <tr><td class="text-fg-muted">Before</td><td class="font-mono">{{ $cm->eepromVersionBefore() ?? 'not reported' }}</td></tr>
+                <tr><td class="text-fg-muted">After</td><td class="font-mono">{{ $cm->eepromVersionAfter() ?? 'unknown' }}</td></tr>
                 <tr>
-                    <td class="pr-4 py-1 text-fg-muted">Result</td>
-                    <td class="py-1">
+                    <td class="text-fg-muted">Result</td>
+                    <td>
                         @if ($cm->eeprom_result === 'written')
                             written and verified by flashrom
                         @elseif ($cm->eeprom_result === 'identical')

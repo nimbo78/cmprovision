@@ -86,6 +86,19 @@ class CmsPageTest extends TestCase
         Livewire::test(Cms::class)->set('projectId', 0)->assertSeeHtml('<div class="cmp-card cmp-card-scroll">');
     }
 
+    public function test_the_header_counts_the_listed_modules_of_all()
+    {
+        [$p78] = $this->cms();
+        Livewire::test(Cms::class)->set('projectId', $p78->id)->assertSee('2 of 3 modules');
+        Livewire::test(Cms::class)->set('projectId', 0)->assertSee('3 modules')->assertDontSee('of 3 modules');
+    }
+
+    public function test_the_delete_icon_is_readable()
+    {
+        $this->cms();
+        Livewire::test(Cms::class)->set('projectId', 0)->assertSeeHtml('class="text-fg-muted hover:text-neg" title="Delete"');
+    }
+
     public function test_delete_asks_first()
     {
         $this->cms();
