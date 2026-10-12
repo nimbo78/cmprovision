@@ -1,5 +1,8 @@
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)
 <div @if ($activeCount) wire:poll.2s @else wire:poll.10s @endif class="flex flex-col gap-[var(--gap)]">
+    @if ($restartMessage)
+        <div class="rounded px-4 py-2 text-sm font-semibold {{ $restartError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $restartMessage }}</div>
+    @endif
     @if ($summary)
         <div class="grid gap-[var(--gap)] grid-cols-3 lg:grid-cols-[repeat(3,minmax(0,160px))_minmax(0,1fr)]">
             <div class="cmp-tile"><div class="num text-info">{{ $summary->running }}</div><div class="label">running</div></div>
@@ -20,7 +23,15 @@
                     <div class="text-fg-muted">{!! implode(' · ', $facts) !!}</div>
                 </div>
                 @if ($summary->open)
-                    <button type="button" wire:click="newBatch" wire:confirm="Close this batch? The next module starts a new one, here and in the bots." class="cmp-btn cmp-btn-secondary ml-auto">New batch</button>
+                    <div class="ml-auto flex flex-wrap gap-2">
+                        @if ($failedToRestart)
+                            <button type="button" wire:click="restartFailed" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirmFailed($failedToRestart) }}" wire:loading.attr="disabled" class="cmp-btn cmp-btn-danger">
+                                <span wire:loading.remove wire:target="restartFailed">Restart failed ({{ $failedToRestart }})</span>
+                                <span wire:loading wire:target="restartFailed">Restarting…</span>
+                            </button>
+                        @endif
+                        <button type="button" wire:click="newBatch" wire:confirm="Close this batch? The next module starts a new one, here and in the bots." class="cmp-btn cmp-btn-secondary">New batch</button>
+                    </div>
                 @endif
             </div>
         </div>
@@ -87,6 +98,9 @@
                             @endif
                         </td>
                         <td class="text-right whitespace-nowrap">
+                            @if ($writable && ($m->phase === 'failed' || $silent))
+                                <button type="button" wire:click="restart({{ $m->id }})" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirm($m, $m->provisioning_board) }}" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary cmp-btn-small mr-1">Restart</button>
+                            @endif
                             @if ($m->canIdentify())
                                 @if ($m->isIdentifying())
                                     <span class="text-xs font-semibold text-info mr-1">blinking</span>

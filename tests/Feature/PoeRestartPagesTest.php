@@ -3,7 +3,11 @@
 namespace Tests\Feature;
 
 use App\Http\Livewire\CmCard;
+use App\Http\Livewire\ProvisioningStatus;
 use App\Models\Cm;
+use App\Models\Image;
+use App\Models\NotificationBatch;
+use App\Models\Project;
 use App\Models\Setting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Sleep;
@@ -41,5 +45,56 @@ class PoeRestartPagesTest extends TestCase
     {
         $cm = Cm::create(['serial' => '10000000e611110c', 'mac' => 'e4:5f:01:62:9f:d3', 'phase' => 'done']);
         Livewire::test(CmCard::class, ['serial' => $cm->serial])->assertDontSee('Power (PoE)');
+    }
+
+    /* An active project and its open batch with the module */
+    protected function batchWith(Cm $cm)
+    {
+        $image = new Image;
+        $image->filename = 'wlanpi-os.img.gz';
+        $image->filename_extension = 'gz';
+        $image->filename_on_server = 'img.gz';
+        $image->sha256 = str_repeat('a', 64);
+        $image->uncompressed_size = 8 * 1024 * 1024;
+        $image->save();
+        $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id,
+                                    'label_moment' => 'never', 'verify' => false]);
+        Setting::updateOrCreate(['key' => 'active_project'], ['value' => $project->id]);
+        $batch = NotificationBatch::create(['project_id' => $project->id, 'started_at' => now()->subMinutes(30), 'last_event_at' => now()]);
+        $cm->update(['notification_batch_id' => $batch->id, 'project_id' => $project->id]);
+        return $batch;
+    }
+
+    public function test_the_dashboard_restarts_the_failed_modules_of_the_batch()
+    {
+        Sleep::fake();
+        $cm = $this->stand();
+        $this->batchWith($cm);
+        Livewire::test(ProvisioningStatus::class)
+            ->assertSee('Restart failed (1)')
+            ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on GE0/0/3? PoE goes off for 5 s; the module boots from the network and is provisioned again."')
+            ->call('restartFailed')
+            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
+    }
+
+    public function test_without_write_access_the_dashboard_has_no_restart()
+    {
+        $cm = $this->stand([]);
+        $this->batchWith($cm);
+        Livewire::test(ProvisioningStatus::class)
+            ->assertDontSee('Restart failed')
+            ->assertDontSeeHtml('wire:click="restart(');
+    }
+
+    public function test_a_row_restart_finds_the_module_where_it_is_now()
+    {
+        Sleep::fake();
+        $cm = $this->stand();
+        $cm->update(['provisioning_board' => 'GE0/0/1']);
+        $this->batchWith($cm);
+        Livewire::test(ProvisioningStatus::class)
+            ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on GE0/0/1? PoE goes off for 5 s;')
+            ->call('restart', $cm->id)
+            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
     }
 }
