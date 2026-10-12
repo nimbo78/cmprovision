@@ -11,10 +11,6 @@ use Tests\TestCase;
  */
 class TokenGuardTest extends TestCase
 {
-    /* Views still on raw colours: each conversion task takes its files off this list (compact web plan, Task 1) */
-    const NOT_YET = [
-    ];
-
     const PALETTE = '(?:white|black|slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)';
     const UTILITIES = '(?:bg|text|border|border-[trblxy]|ring|ring-offset|divide|outline|placeholder|from|via|to|fill|stroke|decoration|accent|caret|shadow)';
 
@@ -50,18 +46,7 @@ class TokenGuardTest extends TestCase
     #[DataProvider('views')]
     public function test_views_use_theme_tokens_only(string $view)
     {
-        $problems = self::problems(file_get_contents(resource_path('views/'.$view)));
-        if (in_array($view, self::NOT_YET, true)) {
-            $this->assertNotEmpty($problems, "$view has no raw colours left: take it off TokenGuardTest::NOT_YET");
-            return;
-        }
-        $this->assertSame([], $problems, "$view uses raw colours");
-    }
-
-    public function test_the_list_names_only_views_that_exist()
-    {
-        $missing = array_filter(self::NOT_YET, function ($view) { return !is_file(self::root().$view); });
-        $this->assertSame([], array_values($missing));
+        $this->assertSame([], self::problems(file_get_contents(resource_path('views/'.$view))), "$view uses raw colours");
     }
 
     public function test_the_guard_sees_what_it_should()
