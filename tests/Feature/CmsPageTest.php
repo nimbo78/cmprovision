@@ -35,7 +35,8 @@ class CmsPageTest extends TestCase
                     'provisioning_board' => 'GE0/0/1', 'phase' => 'done', 'provisioning_complete_at' => now()]);
         Cm::create(['serial' => '10000000aaaa0002', 'mac' => 'e4:5f:01:aa:00:02', 'model' => 'CM4', 'project_id' => $p78->id,
                     'provisioning_board' => 'GE0/0/2', 'phase' => 'failed']);
-        Cm::create(['serial' => '10000000bbbb0003', 'mac' => 'E4:5F:01:BB:00:03', 'model' => 'CM4', 'project_id' => $test->id, 'phase' => 'write']);
+        Cm::create(['serial' => '10000000bbbb0003', 'mac' => 'E4:5F:01:BB:00:03', 'model' => 'CM4', 'project_id' => $test->id, 'phase' => 'write',
+                    'provisioning_started_at' => now()->subMinutes(3)]);
         return [$p78, $test];
     }
 
@@ -66,6 +67,23 @@ class CmsPageTest extends TestCase
         [$p78] = $this->cms();
         Livewire::test(Cms::class)->set('projectId', $p78->id)
             ->assertSee('10000000aaaa0001')->assertDontSee('10000000bbbb0003');
+    }
+
+    public function test_a_module_stuck_in_a_phase_since_yesterday_is_not_running()
+    {
+        // unplugged while it wrote: the dashboard stopped counting it after ACTIVE_HOURS, the list does too
+        $this->cms();
+        Cm::create(['serial' => '10000000cccc0004', 'mac' => 'e4:5f:01:cc:00:04', 'model' => 'CM4', 'phase' => 'write',
+                    'provisioning_started_at' => now()->subDay()]);
+        Livewire::test(Cms::class)->set('projectId', 0)->set('search', 'cccc0004')
+            ->assertSee('10000000cccc0004')
+            ->assertDontSeeHtml('cmp-chip-run');
+    }
+
+    public function test_a_narrow_screen_scrolls_the_table_instead_of_cutting_it()
+    {
+        $this->cms();
+        Livewire::test(Cms::class)->set('projectId', 0)->assertSeeHtml('<div class="cmp-card cmp-card-scroll">');
     }
 
     public function test_delete_asks_first()

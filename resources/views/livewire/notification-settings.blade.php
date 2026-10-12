@@ -1,5 +1,5 @@
 <div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md">
-    @php($input = 'shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none')
+    @php($input = 'cmp-field w-full')
     @php($label = 'block text-fg text-sm font-bold mb-2')
     @php($small = 'cmp-btn-small')
 

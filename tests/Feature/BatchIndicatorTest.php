@@ -70,6 +70,22 @@ class BatchIndicatorTest extends TestCase
         $this->assertStringNotContainsString('Other settings', $html);
     }
 
+    public function test_a_narrow_bar_shows_the_batch_without_the_project_name()
+    {
+        // the spec's narrow bar: digits only; the page links need the room up to xl
+        $this->openBatch();
+        Livewire::test(BatchIndicator::class)->assertSeeHtml('<span class="text-fg-muted hidden xl:inline">78</span>');
+    }
+
+    public function test_the_page_links_scroll_to_the_current_page_instead_of_running_under_the_batch()
+    {
+        $html = $this->actingAs(User::factory()->create())->get('/firmware')->assertOk()->getContent();
+        $link = fn ($route) => preg_match('#<a [^>]*href="'.preg_quote(route($route), '#').'"[^>]*>#', $html, $m) ? $m[0] : '';
+        $this->assertStringContainsString('aria-current="page"', $link('firmware'));
+        $this->assertStringNotContainsString('aria-current', $link('cms'));
+        $this->assertStringContainsString('x-init="$el.querySelector(\'[aria-current=page]\')?.scrollIntoView({ block: \'nearest\', inline: \'nearest\' })"', $html);
+    }
+
     public function test_the_sign_in_page_has_no_appearance_button()
     {
         $this->get('/login')->assertOk()->assertDontSee('aria-label="Appearance"', false);

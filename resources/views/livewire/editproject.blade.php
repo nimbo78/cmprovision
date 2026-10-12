@@ -1,4 +1,4 @@
-<div class="fixed z-10 inset-0 overflow-y-auto ease-out duration-300">
+<div class="fixed z-50 inset-0 overflow-y-auto ease-out duration-300">
   <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
 
     <div class="fixed inset-0 transition-opacity">
@@ -12,12 +12,12 @@
         <div >
               <div class="mb-4">
                   <label for="name" class="block text-fg text-sm font-bold mb-2">Project name:</label>
-                  <input type="text" id="name" name="name" wire:model="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="name" name="name" wire:model="name" class="cmp-field w-full">
                   @error('name') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="image_id" class="block text-fg text-sm font-bold mb-2">Image to write:</label>
-                  <select id="image_id" name="image_id" wire:model="image_id" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <select id="image_id" name="image_id" wire:model="image_id" class="cmp-field w-full">
                     <option value="">-none-</option>
                     @foreach ($images as $image)
                     <option value="{{ $image->id }}">{{ $image->filename }} (added {{ date_format($image->created_at, "d-M-Y") }})</option>
@@ -34,12 +34,12 @@
               </div>
               <div class="mb-4">
                   <label for="storage" class="block text-fg text-sm font-bold mb-2">Destination storage device:</label>
-                  <input type="text" id="storage" name="storage" wire:model="storage" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="storage" name="storage" wire:model="storage" class="cmp-field w-full">
                   @error('storage') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="firmware" class="block text-fg text-sm font-bold mb-2">EEPROM firmware update to apply:</label>
-                  <select id="firmware" name="firmware" wire:model.live="firmware" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <select id="firmware" name="firmware" wire:model.live="firmware" class="cmp-field w-full">
                     <option value="">-none-</option>
                       @foreach ($firmwareChannels as $channel => $images)
                       <optgroup label="{{ $channel }}{{ $channel == 'default' ? ' (recommended by Raspberry Pi)' : (in_array($channel, ['stable', 'beta', 'critical']) ? ' (old channel name, images downloaded years ago)' : '') }}">
@@ -69,13 +69,13 @@
               @endif
               <div class="mb-4">
                   <label for="eeprom_settings" class="block text-fg text-sm font-bold mb-2">EEPROM settings:</label>
-                  <textarea type="text" id="eeprom_settings" name="eeprom_settings" wire:model="eeprom_settings" class="h-28 shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring"></textarea>
+                  <textarea type="text" id="eeprom_settings" name="eeprom_settings" wire:model="eeprom_settings" class="h-28 cmp-field w-full font-mono"></textarea>
                   @error('eeprom_settings') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
               @endif
               <div class="mb-4">
                   <label for="label_moment" class="block text-fg text-sm font-bold mb-2">When to print label:</label>
-                  <select id="label_moment" name="label_moment" wire:model.live="label_moment" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <select id="label_moment" name="label_moment" wire:model.live="label_moment" class="cmp-field w-full">
                     <option value="never">Never</option>
                     <option value="preinstall">Before provisioning</option>
                     <option value="postinstall">After provisioning completed successfully</option>
@@ -85,7 +85,7 @@
               @if ($label_moment != "never")
               <div class="mb-4">
                   <label for="label_id" class="block text-fg text-sm font-bold mb-2">Label to print:</label>
-                  <select id="label_id" name="label_id" wire:model="label_id" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <select id="label_id" name="label_id" wire:model="label_id" class="cmp-field w-full">
                     @foreach ($labels as $label)
                     <option value="{{ $label->id }}">{{ $label->name }}</option>
                     @endforeach

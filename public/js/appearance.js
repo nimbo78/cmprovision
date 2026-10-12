@@ -118,12 +118,26 @@
         function notify() {
             listeners.forEach(function (fn) { fn(api.get()); });
         }
+        function refresh() {
+            choice = load();
+            apply();
+            notify();
+        }
 
         apply();
         if (media && media.addEventListener) media.addEventListener('change', apply);
         win.addEventListener('storage', function (e) {
-            if (e.key === KEY) { choice = load(); apply(); notify(); }
+            if (e.key === KEY) refresh();
         });
+        // A timer set before the laptop slept fires that much later, and a page back from the back/forward cache
+        // missed the other tabs' storage events: look again when the page is shown, and once a minute
+        win.addEventListener('pageshow', refresh);
+        win.document.addEventListener('visibilitychange', function () {
+            if (!win.document.hidden) refresh();
+        });
+        win.setInterval(function () {
+            if (resolve(choice, new Date(), place(), !!(media && media.matches)).mode !== html.getAttribute('data-mode')) apply();
+        }, 60000);
 
         api.get = function () { return { style: choice.style, density: choice.density, mode: choice.mode }; };
         api.set = function (patch) {

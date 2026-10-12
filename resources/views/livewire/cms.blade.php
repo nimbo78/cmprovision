@@ -16,7 +16,7 @@
         <div class="cmp-flash" role="status">{{ session('message') }}</div>
     @endif
 
-    <div class="cmp-card overflow-clip">
+    <div class="cmp-card cmp-card-scroll">
         <table class="cmp-table">
             <thead>
                 <tr><th>Serial</th><th>MAC</th><th>Model</th><th>Project</th><th>Board</th><th>Result</th><th>Finished</th><th></th></tr>
@@ -32,7 +32,7 @@
                         <td>
                             @if ($c->phase === 'done')<span class="cmp-chip cmp-chip-ok">done</span>
                             @elseif ($c->phase === 'failed')<span class="cmp-chip cmp-chip-fail">failed</span>
-                            @elseif ($c->isActive())<span class="cmp-chip cmp-chip-run">running</span>
+                            @elseif ($c->isRunning())<span class="cmp-chip cmp-chip-run">running</span>
                             @else <span class="text-fg-faint">—</span>
                             @endif
                         </td>

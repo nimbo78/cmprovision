@@ -15,6 +15,8 @@ cmprovision4 (2.2.0~dev2) unstable; urgency=medium
     batch; New batch closes it; the log folds to its latest entry.
   * CMs: newest first, search by serial or MAC, project, board and result
     columns; deleting asks first. "Other settings" is now "Settings".
+  * Edit dialogs open above the top bar and their fields follow the theme;
+    the script, label template and EEPROM settings editors are monospaced.
   * Ports page: a port with nothing but an unknown Raspberry Pi on it counts
     as a module booting for the first 3 minutes of its link, not as a
     foreign device: a module asks for DHCP before it asks the server. The

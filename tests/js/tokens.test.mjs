@@ -38,7 +38,7 @@ function contrast(fgValue, bgValue) {
 const PAIRS = [
     ['text', 'page'], ['text', 'panel'], ['text', 'head'], ['text', 'pop'], ['text', 'field'],
     ['muted', 'page'], ['muted', 'panel'], ['muted', 'head'], ['link', 'panel'], ['link', 'page'],
-    ['pos-text', 'pos-bg'], ['neg-text', 'neg-bg'], ['info-text', 'info-bg'], ['warn-text', 'warn-bg'],
+    ['pos-text', 'pos-bg'], ['neg-text', 'neg-bg'], ['info-text', 'info-bg'], ['warn-text', 'warn-bg'], ['muted', 'neg-bg'],
     ['on-btn', 'btn'], ['on-danger', 'danger'], ['seg-text', 'seg'], ['seg-on-text', 'seg-on'], ['accent-text', 'accent-soft'],
     ['log-text', 'log'], ['log-muted', 'log'], ['log-err', 'log'], ['mark-name', 'page'],
 ];

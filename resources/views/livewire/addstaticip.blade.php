@@ -1,4 +1,4 @@
-<div class="fixed z-10 inset-0 overflow-y-auto ease-out duration-300">
+<div class="fixed z-50 inset-0 overflow-y-auto ease-out duration-300">
   <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
 
     <div class="fixed inset-0 transition-opacity">
@@ -13,13 +13,13 @@
         <div >
               <div class="mb-4">
                   <label for="ip" class="block text-fg text-sm font-bold mb-2">IP:</label>
-                  <input type="text" id="ip" name="ip" wire:model="ip" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="ip" name="ip" wire:model="ip" class="cmp-field w-full">
                   @error('ip') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
 
               <div class="mb-4">
                   <label for="mac" class="block text-fg text-sm font-bold mb-2">MAC:</label>
-                  <input type="text" id="mac" name="mac" wire:model="mac" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="mac" name="mac" wire:model="mac" class="cmp-field w-full">
                   @error('mac') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
 

@@ -1,6 +1,6 @@
 {{-- Upload dialog. Without JavaScript the form posts normally; with it, imageUploader() (defined in
      images.blade.php) sends the file with XMLHttpRequest and shows progress, speed and remaining time. --}}
-<div class="fixed z-10 inset-0 overflow-y-auto ease-out duration-300">
+<div class="fixed z-50 inset-0 overflow-y-auto ease-out duration-300">
   <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
 
     <div class="fixed inset-0 transition-opacity">
@@ -17,7 +17,7 @@
         <div >
               <div class="mb-4">
                   <label for="image" class="block text-fg text-sm font-bold mb-2">Image file (.gz/.bz2/.xz):</label>
-                  <input type="file" id="image" name="image" x-ref="file" x-bind:disabled="state != 'idle'" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <input type="file" id="image" name="image" x-ref="file" x-bind:disabled="state != 'idle'" class="cmp-field w-full">
               </div>
 
               <div class="mb-4" x-show="state == 'uploading' || state == 'processing'" x-cloak>

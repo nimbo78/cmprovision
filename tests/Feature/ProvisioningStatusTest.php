@@ -193,6 +193,27 @@ class ProvisioningStatusTest extends TestCase
         Livewire::test(ProvisioningStatus::class)->assertSee('1000000000000c05');
     }
 
+    public function test_a_long_failure_reason_wraps_and_a_narrow_table_scrolls()
+    {
+        // one line of the reason no longer widens the table past Progress, Time and Identify
+        $reason = 'Error during dd. Return code 1. Diagnosis: the connection to the provisioning server was closed before the whole image arrived. Check the cable, the switch port and the server log.';
+        $this->module('1000000000000a09', ['phase' => 'failed', 'phase_detail' => $reason, 'phase_started_at' => now()]);
+
+        Livewire::test(ProvisioningStatus::class)
+            ->assertSeeHtml('<div class="line-clamp-2" title="Failed: '.e($reason).'">')
+            ->assertSeeHtml('<div class="cmp-card cmp-card-scroll">');
+    }
+
+    public function test_the_failed_tile_is_highlighted_only_when_a_module_failed()
+    {
+        $batch = $this->openBatch();
+        $this->module('1000000000000c06', ['phase' => 'write', 'notification_batch_id' => $batch->id, 'phase_started_at' => now(), 'progress_updated_at' => now()]);
+        Livewire::test(ProvisioningStatus::class)->assertDontSeeHtml('cmp-tile-fail');
+
+        $this->module('1000000000000c07', ['phase' => 'failed', 'notification_batch_id' => $batch->id, 'phase_started_at' => now()]);
+        Livewire::test(ProvisioningStatus::class)->assertSeeHtml('<div class="cmp-tile cmp-tile-fail"><div class="num text-neg">1</div>');
+    }
+
     public function test_nothing_to_show_says_so()
     {
         Livewire::test(ProvisioningStatus::class)->assertSee('No modules are being provisioned');

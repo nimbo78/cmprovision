@@ -1,4 +1,4 @@
-<div class="fixed z-10 inset-0 overflow-y-auto ease-out duration-300">
+<div class="fixed z-50 inset-0 overflow-y-auto ease-out duration-300">
   <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
       
     <div class="fixed inset-0 transition-opacity">
@@ -12,12 +12,12 @@
         <div >
               <div class="mb-4">
                   <label for="name" class="block text-fg text-sm font-bold mb-2">Script name:</label>
-                  <input type="text" id="name" name="name" wire:model="name" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="name" name="name" wire:model="name" class="cmp-field w-full">
                   @error('name') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
                   <label for="script_type" class="block text-fg text-sm font-bold mb-2">Script type:</label>
-                  <select id="script_type" name="script_type" wire:model="script_type" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <select id="script_type" name="script_type" wire:model="script_type" class="cmp-field w-full">
                     <option value="preinstall">preinstall</option>
                     <option value="postinstall">postinstall</option>
                   </select>
@@ -25,7 +25,7 @@
               </div>
               <div class="mb-4">
                   <label for="priority" class="block text-fg text-sm font-bold mb-2">Priority:</label>
-                  <input type="text" id="priority" name="priority" wire:model="priority" class="shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring">
+                  <input type="text" id="priority" name="priority" wire:model="priority" class="cmp-field w-full">
                   <small>Script with lowest number is started first</small><br>
                   @error('priority') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
@@ -38,7 +38,7 @@
               </div>
               <div class="mb-4">
                   <label for="script" class="block text-fg text-sm font-bold mb-2">Script:</label>
-                  <textarea wrap="off" type="text" id="script" name="script" wire:model="script" class="h-48 shadow appearance-none border rounded w-full py-2 px-3 text-fg leading-tight focus:outline-none focus:ring"></textarea>
+                  <textarea wrap="off" type="text" id="script" name="script" wire:model="script" class="h-48 cmp-field w-full font-mono"></textarea>
                   <small>Available environment variables:<br>$SERVER $STORAGE $PART1 $PART2</small><br>
                   @error('script') <span class="text-neg">{{ $message }}</span>@enderror
               </div>

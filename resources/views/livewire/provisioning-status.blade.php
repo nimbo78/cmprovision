@@ -4,7 +4,7 @@
         <div class="grid gap-[var(--gap)] grid-cols-3 lg:grid-cols-[repeat(3,minmax(0,160px))_minmax(0,1fr)]">
             <div class="cmp-tile"><div class="num text-info">{{ $summary->counts['active'] }}</div><div class="label">running</div></div>
             <div class="cmp-tile"><div class="num text-pos">{{ $summary->counts['done'] }}</div><div class="label">done</div></div>
-            <div class="cmp-tile {{ $summary->counts['failed'] ? 'bg-neg-bg' : '' }}"><div class="num text-neg">{{ $summary->counts['failed'] }}</div><div class="label">failed</div></div>
+            <div @class(['cmp-tile', 'cmp-tile-fail' => $summary->counts['failed']])><div class="num text-neg">{{ $summary->counts['failed'] }}</div><div class="label">failed</div></div>
             <div class="cmp-tile col-span-3 lg:col-span-1 flex items-center gap-4">
                 <div class="min-w-0">
                     <div class="font-bold">
@@ -24,7 +24,8 @@
         </div>
     @endif
 
-    <div class="cmp-card overflow-clip">
+    {{-- cmp-card-scroll: narrower than xl the table scrolls sideways inside the card (app.css) --}}
+    <div class="cmp-card cmp-card-scroll">
         @if ($modules->isEmpty())
             <div class="px-4 py-3 text-fg-muted">No modules are being provisioned.</div>
         @else
@@ -38,21 +39,25 @@
                     @php($silent = $m->silentFor())
                     @php($speed = $m->bytesPerSecond())
                     @php($left = $m->secondsLeft())
+                    @php($step = $m->phase === 'failed' && $m->phase_detail ? 'Failed: '.$m->phase_detail : $m->phaseLabel())
                     <tr wire:key="cm-{{ $m->id }}" class="{{ $m->phase === 'failed' ? 'bg-neg-bg' : '' }}">
                         <td class="text-fg-muted whitespace-nowrap">{{ $m->provisioning_board }}</td>
                         <td class="mono"><a href="{{ route('cm', $m->serial) }}" class="text-link hover:underline">{{ $m->serial }}</a></td>
                         <td class="mono text-fg-muted">{{ $m->mac }}</td>
-                        <td class="whitespace-nowrap">
-                            @if ($m->phase === 'done')
-                                <span class="text-pos font-semibold">Done</span>
-                            @elseif ($m->phase === 'failed')
-                                <span class="text-neg font-semibold">Failed</span>@if ($m->phase_detail)<span class="text-neg">: {{ $m->phase_detail }}</span>@endif
-                            @else
-                                {{ $m->phaseLabel() }}
-                            @endif
-                            @if ($silent)
-                                <span class="cmp-chip cmp-chip-stale ml-1">No report for {{ intdiv($silent, 60) }} min</span>
-                            @endif
+                        {{-- The step takes the width the other columns leave: a long reason wraps to two lines, all of it in the tooltip and on the module card --}}
+                        <td>
+                            <div class="line-clamp-2" title="{{ $step }}">
+                                @if ($m->phase === 'done')
+                                    <span class="text-pos font-semibold">Done</span>
+                                @elseif ($m->phase === 'failed')
+                                    <span class="text-neg font-semibold">Failed</span>@if ($m->phase_detail)<span class="text-neg">: {{ $m->phase_detail }}</span>@endif
+                                @else
+                                    {{ $m->phaseLabel() }}
+                                @endif
+                                @if ($silent)
+                                    <span class="cmp-chip cmp-chip-stale ml-1">No report for {{ intdiv($silent, 60) }} min</span>
+                                @endif
+                            </div>
                         </td>
                         <td>
                             @if ($percent !== null)

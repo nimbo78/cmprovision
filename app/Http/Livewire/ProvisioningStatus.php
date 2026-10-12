@@ -12,7 +12,7 @@ use Livewire\Component;
 class ProvisioningStatus extends Component
 {
     const RECENT_HOURS = 2;      // modules outside any batch stay visible this long after they finish
-    const ACTIVE_HOURS = 12;     // a module still "in progress" after this long was unplugged
+    const ACTIVE_HOURS = Cm::ACTIVE_HOURS;     // a module still "in progress" after this long was unplugged
     const MAX_ROWS = 50;
 
     /* The module blinks for the operator the next time it asks the server */

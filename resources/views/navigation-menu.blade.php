@@ -6,7 +6,8 @@
             <x-application-mark class="cmp-mark" />
         </a>
 
-        <div class="cmp-nav hidden sm:flex">
+        {{-- Narrower than all the links, they scroll (app.css): bring the current page into view --}}
+        <div class="cmp-nav hidden sm:flex" x-init="$el.querySelector('[aria-current=page]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })">
             @foreach ($pages as [$route, $label])
                 <x-nav-link href="{{ route($route) }}" :active="request()->routeIs($route)">{{ $label }}</x-nav-link>
             @endforeach
