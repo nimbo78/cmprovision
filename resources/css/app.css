@@ -35,10 +35,135 @@
          url('../fonts/nunito-v16-latin-700.woff') format('woff'); /* Chrome 6+, Firefox 3.6+, IE 9+, Safari 5.1+ */
   }
 
+/* Theme tokens: two styles (warm: t-premium-ui's warm palette; neutral: the 2.1 greys and indigo) x two modes,
+   chosen on <html> by public/js/appearance.js. Templates use only these (TokenGuardTest); the bare :root is warm
+   light, what a page shows before the script runs. Contrast: tests/js/tokens.test.mjs. */
+:root,
+:root[data-style="warm"][data-mode="light"] {
+    --page: #ffffff; --panel: #ffffff; --panel-line: rgba(0, 16, 36, 0.12); --line: rgba(0, 16, 36, 0.07); --head: #fbf7f2;
+    --card: linear-gradient(90deg, #fef7ef 50%, #fcecd9 100%); --pop: #ffffff; --pop-shadow: 0 12px 32px rgba(0, 0, 0, 0.14); --scrim: rgba(20, 14, 8, 0.45);
+    --text: rgba(0, 0, 0, 0.8); --muted: rgba(0, 0, 0, 0.58); --faint: rgba(0, 0, 0, 0.38); --link: #a4470b;
+    --accent: #e2681c; --accent-soft: #ffe4cc; --accent-text: #8a3c0c; --focus: #e2681c;
+    --field: #ffffff; --field-line: rgba(0, 16, 36, 0.18); --btn: #bf5410; --on-btn: #ffffff; --sec: #ffffff; --sec-line: rgba(0, 16, 36, 0.16);
+    --danger: #c8261b; --on-danger: #ffffff;
+    --seg: #f3f0ec; --seg-text: rgba(0, 0, 0, 0.7); --seg-on: #bf5410; --seg-on-text: #ffffff;
+    --pos-bg: #e3f5e8; --pos-text: #177c32; --pos-bar: #2f9e55;
+    --neg-bg: #fde8e6; --neg-text: #b3261e; --neg-bar: #d52b1e;
+    --info-bg: #e8effc; --info-text: #1f4fa8; --info-bar: #3b74e0;
+    --warn-bg: #fff1d6; --warn-text: #8a5a00; --warn-bar: #e0a21a;
+    --track: #ece5dd;
+    --log: #1f1b17; --log-text: #e9e1d8; --log-muted: #a89d91; --log-line: #2c2620; --log-err: #ff7b70;
+    --mark-a: #ffd37a; --mark-b: #e2681c; --mark-ink: #2a1a0c; --mark-name: #2a1a0c;
+}
+:root[data-style="warm"][data-mode="dark"] {
+    --page: #000000; --panel: #121214; --panel-line: #222226; --line: #1b1b1e; --head: #18181c;
+    --card: #18181c; --pop: #18181c; --pop-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); --scrim: rgba(0, 0, 0, 0.6);
+    --text: rgba(255, 255, 255, 0.9); --muted: rgba(255, 255, 255, 0.54); --faint: rgba(255, 255, 255, 0.36); --link: #ffb27a;
+    --accent: #ff8a3d; --accent-soft: #2b1f15; --accent-text: #ffc99a; --focus: #ff8a3d;
+    --field: #222226; --field-line: #2c2c30; --btn: #bf5410; --on-btn: #ffffff; --sec: #222226; --sec-line: #2e2e33;
+    --danger: #d52b1e; --on-danger: #ffffff;
+    --seg: #18181c; --seg-text: rgba(255, 255, 255, 0.7); --seg-on: #bf5410; --seg-on-text: #ffffff;
+    --pos-bg: #12301c; --pos-text: #7ee2a0; --pos-bar: #3fbf6b;
+    --neg-bg: #3a1512; --neg-text: #ff9d93; --neg-bar: #ff6b5e;
+    --info-bg: #14213a; --info-text: #9fbcf5; --info-bar: #5b8df0;
+    --warn-bg: #35270f; --warn-text: #ffcf7a; --warn-bar: #e0a21a;
+    --track: #2a2a2e;
+    --log: #0d0c0b; --log-text: #d8d2ca; --log-muted: #8a8178; --log-line: #1c1a18; --log-err: #ff7b70;
+    --mark-a: #ffe3b8; --mark-b: #e9a661; --mark-ink: #2a1a0c; --mark-name: rgba(255, 255, 255, 0.9);
+}
+:root[data-style="neutral"][data-mode="light"] {
+    --page: #f3f4f6; --panel: #ffffff; --panel-line: #e5e7eb; --line: #f0f1f3; --head: #f9fafb;
+    --card: #ffffff; --pop: #ffffff; --pop-shadow: 0 12px 32px rgba(0, 0, 0, 0.14); --scrim: rgba(17, 24, 39, 0.45);
+    --text: #111827; --muted: #5f6672; --faint: #9ca3af; --link: #1d4ed8;
+    --accent: #6366f1; --accent-soft: #eef2ff; --accent-text: #4338ca; --focus: #6366f1;
+    --field: #ffffff; --field-line: #d1d5db; --btn: #4f46e5; --on-btn: #ffffff; --sec: #ffffff; --sec-line: #d1d5db;
+    --danger: #dc2626; --on-danger: #ffffff;
+    --seg: #f3f4f6; --seg-text: #374151; --seg-on: #4f46e5; --seg-on-text: #ffffff;
+    --pos-bg: #ecfdf5; --pos-text: #047857; --pos-bar: #22c55e;
+    --neg-bg: #fef2f2; --neg-text: #b91c1c; --neg-bar: #ef4444;
+    --info-bg: #eff6ff; --info-text: #1d4ed8; --info-bar: #3b82f6;
+    --warn-bg: #fffbeb; --warn-text: #b45309; --warn-bar: #f59e0b;
+    --track: #e5e7eb;
+    --log: #ffffff; --log-text: #111827; --log-muted: #5f6672; --log-line: #f0f1f3; --log-err: #b91c1c;
+    --mark-a: #ffd37a; --mark-b: #e2681c; --mark-ink: #2a1a0c; --mark-name: #2a1a0c;
+}
+:root[data-style="neutral"][data-mode="dark"] {
+    --page: #0b1120; --panel: #111827; --panel-line: #1f2937; --line: #182132; --head: #0f172a;
+    --card: #111827; --pop: #1f2937; --pop-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); --scrim: rgba(0, 0, 0, 0.6);
+    --text: #e5e7eb; --muted: #9ca3af; --faint: #6b7280; --link: #93c5fd;
+    --accent: #818cf8; --accent-soft: #1e1b4b; --accent-text: #c7d2fe; --focus: #818cf8;
+    --field: #1f2937; --field-line: #374151; --btn: #4f46e5; --on-btn: #ffffff; --sec: #1f2937; --sec-line: #374151;
+    --danger: #dc2626; --on-danger: #ffffff;
+    --seg: #1f2937; --seg-text: #d1d5db; --seg-on: #4f46e5; --seg-on-text: #ffffff;
+    --pos-bg: #052e1c; --pos-text: #6ee7b7; --pos-bar: #34d399;
+    --neg-bg: #3b0d0d; --neg-text: #fca5a5; --neg-bar: #f87171;
+    --info-bg: #0c1f3d; --info-text: #93c5fd; --info-bar: #60a5fa;
+    --warn-bg: #3a2606; --warn-text: #fcd34d; --warn-bar: #f59e0b;
+    --track: #1f2937;
+    --log: #0b1120; --log-text: #d1d5db; --log-muted: #9ca3af; --log-line: #182132; --log-err: #fca5a5;
+    --mark-a: #ffe3b8; --mark-b: #e9a661; --mark-ink: #2a1a0c; --mark-name: #e5e7eb;
+}
+:root[data-mode="dark"] { color-scheme: dark; }
+
+/* Density: the same layout, two scales (compact is the default) */
+:root,
+:root[data-density="compact"] {
+    --bar-h: 48px; --row-h: 30px; --fs: 13px; --fs-mono: 12px; --fs-th: 11px; --cell-x: 8px; --edge: 16px;
+    --gap: 12px; --page-x: 24px; --page-y: 16px; --tile-num: 24px; --log-h: 300px; --mark: 28px; --nav-gap: 20px;
+}
+:root[data-density="roomy"] {
+    --bar-h: 64px; --row-h: 44px; --fs: 15px; --fs-mono: 14px; --fs-th: 12px; --cell-x: 12px; --edge: 24px;
+    --gap: 20px; --page-x: 32px; --page-y: 24px; --tile-num: 30px; --log-h: 400px; --mark: 36px; --nav-gap: 32px;
+}
+
+html { background: var(--page); }
+body { background: var(--page); color: var(--text); }
+
+@layer components {
+    .cmp-page { max-width: 1920px; margin: 0 auto; padding: var(--page-y) var(--page-x); display: flex; flex-direction: column; gap: var(--gap); font-size: var(--fs); }
+    .cmp-title { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    .cmp-title h1 { font-size: 18px; font-weight: 700; }
+    .cmp-card { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 8px; }
+    .cmp-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs); }
+    .cmp-table th { position: sticky; top: var(--bar-h); z-index: 1; background: var(--head); color: var(--muted); font-size: var(--fs-th);
+        font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-align: left; padding: 6px var(--cell-x);
+        border-bottom: 1px solid var(--panel-line); white-space: nowrap; }
+    .cmp-table.in-scroll th { top: 0; }
+    .cmp-table td { height: var(--row-h); padding: 0 var(--cell-x); border-top: 1px solid var(--line); vertical-align: middle; }
+    .cmp-table tbody tr:first-child td { border-top: 0; }
+    .cmp-table tr > :first-child { padding-left: var(--edge); }
+    .cmp-table tr > :last-child { padding-right: var(--edge); }
+    .cmp-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-mono); white-space: nowrap; }
+    .cmp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 6px; padding: 4px 12px;
+        font-size: var(--fs); font-weight: 700; line-height: 20px; white-space: nowrap; cursor: pointer;
+        background: var(--btn); color: var(--on-btn); border: 1px solid transparent; }
+    .cmp-btn:hover { filter: brightness(1.08); }
+    .cmp-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    .cmp-btn:disabled { opacity: 0.5; cursor: default; filter: none; }
+    .cmp-btn-secondary { background: var(--sec); color: var(--text); border-color: var(--sec-line); }
+    .cmp-btn-danger { background: var(--danger); color: var(--on-danger); }
+    .cmp-btn-small { padding: 0 8px; font-size: 12px; line-height: 22px; }
+    .cmp-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 0 8px; font-size: 12px; font-weight: 700; line-height: 20px; white-space: nowrap; }
+    .cmp-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .cmp-chip-run { background: var(--info-bg); color: var(--info-text); }
+    .cmp-chip-ok { background: var(--pos-bg); color: var(--pos-text); }
+    .cmp-chip-fail { background: var(--neg-bg); color: var(--neg-text); }
+    .cmp-chip-stale { background: var(--warn-bg); color: var(--warn-text); }
+    .cmp-chip-idle { background: var(--seg); color: var(--seg-text); }
+    .cmp-field { background: var(--field); color: var(--text); border: 1px solid var(--field-line); border-radius: 6px; padding: 4px 8px; font-size: var(--fs); }
+    .cmp-field:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; box-shadow: none; }
+    .cmp-tile { background: var(--card); border: 1px solid var(--panel-line); border-radius: 8px; padding: 8px 16px; }
+    .cmp-tile .num { font-size: var(--tile-num); font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .cmp-tile .label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+    .cmp-bar { width: 112px; height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; flex-shrink: 0; }
+    .cmp-bar > span { display: block; height: 100%; }
+    .cmp-flash { background: var(--pos-bg); color: var(--pos-text); border-radius: 8px; padding: 8px 16px; font-weight: 600; }
+}
+
 /* The cmprovision lockup on the sign-in pages (docs/brand): the 48 px mark, a gap of 11/28 of it and the name at
    17/28 of it. The name is trimmed to its x-height and baseline, so its lowercase band sits on the tile's middle
    line (text-box: Chrome, Edge and Safari; Firefox centres the whole line, a couple of pixels lower). */
-.cmp-lockup { display: inline-flex; align-items: center; gap: 19px; color: #2a1a0c; }
+.cmp-lockup { display: inline-flex; align-items: center; gap: 19px; color: var(--mark-name); }
 .cmp-lockup svg { width: 48px; height: 48px; flex-shrink: 0; }
 .cmp-lockup .name { font-size: 29px; font-weight: 700; line-height: 1; text-box: trim-both ex alphabetic; }
 
