@@ -1,4 +1,4 @@
-cmprovision4 (2.1.1~dev2) unstable; urgency=medium
+cmprovision4 (2.1.1) unstable; urgency=medium
 
   * Own logo: the cm mark, one line on a warm tile, replaces the Raspberry Pi
     raspberry in the top bar and the browser tab; the sign-in pages show it
@@ -9,7 +9,7 @@ cmprovision4 (2.1.1~dev2) unstable; urgency=medium
     trimmed to the cap height (CSS text-box, Chrome, Edge and Safari; Firefox
     keeps the old look).
 
- -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 02:33:20 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 03:07:27 +0300
 
 cmprovision4 (2.1.0) unstable; urgency=medium
 
