@@ -25,6 +25,8 @@ class Poe
     const OID_CPE_POWER = '.1.3.6.1.4.1.9.9.402.1.2.1.9';             // cpeExtPsePortPwrConsumption.<group>.<port>, mW
     const OID_CPE_ENTPHY = '.1.3.6.1.4.1.9.9.402.1.2.1.11';           // cpeExtPsePortEntPhyIndex.<group>.<port>
     const OID_ENT_ALIAS = '.1.3.6.1.2.1.47.1.3.2.1.2';                // entAliasMappingIdentifier.<entPhy>.<logical>
+    const OID_HW_ENABLE = '.1.3.6.1.4.1.2011.5.25.195.3.1.3';         // hwPoePortEnable.<ifIndex>: enabled(1), disabled(2), read-write
+    const OID_PETH_ADMIN = '.1.3.6.1.2.1.105.1.1.1.3';                 // pethPsePortAdminEnable.<group>.<port>: true(1), false(2), read-write
     const DETECTION = [1 => 'disabled', 2 => 'searching', 3 => 'delivering', 4 => 'fault', 5 => 'test', 6 => 'fault'];
     const CLASSES = [1 => 0, 2 => 1, 3 => 2, 4 => 3, 5 => 4];
 
@@ -65,6 +67,31 @@ class Poe
         }
         ksort($result);
         return $result;
+    }
+
+    /**
+     * The object that switches each PoE port on (1) or off (2), found the way read() finds the ports: Huawei's
+     * hwPoePortEnable by interface, otherwise the POWER-ETHERNET-MIB's pethPsePortAdminEnable by group.port.
+     * Asked only for a restart or a write check (PoeControl), not for the Ports page's snapshot.
+     * @param array $ports [ifIndex => name] of the physical ports
+     * @return array [ifIndex => oid]; [] for a switch without PoE tables
+     */
+    public function admin(array $ports): array
+    {
+        $admin = [];
+        foreach (array_keys($this->huawei($ports)) as $ifIndex)
+            $admin[$ifIndex] = self::OID_HW_ENABLE.'.'.$ifIndex;
+        if ($admin)
+            return $admin;
+
+        $detection = $this->table(self::OID_PETH_DETECTION);
+        if (!$detection)
+            return [];
+        foreach ($this->cisco($detection) ?: $this->byNumber(array_keys($detection), $ports) as $key => $ifIndex)
+            if (isset($ports[$ifIndex]))
+                $admin[$ifIndex] = self::OID_PETH_ADMIN.'.'.$key;
+        ksort($admin);
+        return $admin;
     }
 
     protected function huawei(array $ports): array

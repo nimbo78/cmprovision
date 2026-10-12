@@ -82,6 +82,27 @@ class PoeTest extends TestCase
         $this->assertSame([5 => ['state' => 'delivering', 'class' => null, 'watts' => null]], $poe);
     }
 
+    public function test_the_object_that_switches_poe_follows_the_same_mapping()
+    {
+        // Huawei: hwPoePortEnable by interface
+        $huawei = (new Poe(new FakeSnmp(['' => [Poe::OID_HW_POWER_STATUS.'.8' => 'Powered', Poe::OID_HW_CONSUMING.'.9' => 0]])))
+            ->admin([8 => 'GE0/0/3', 9 => 'GE0/0/4', 30 => 'XGE0/0/1']);
+        $this->assertSame([8 => Poe::OID_HW_ENABLE.'.8', 9 => Poe::OID_HW_ENABLE.'.9'], $huawei);
+
+        // Cisco IOS: the POWER-ETHERNET-MIB group.port of the interface, through ENTITY-MIB
+        $cisco = (new Poe(new FakeSnmp(['' => [
+            Poe::OID_PETH_DETECTION.'.1.3' => 3,
+            Poe::OID_CPE_ENTPHY.'.1.3' => 1003,
+            Poe::OID_ENT_ALIAS.'.1003.0' => '.1.3.6.1.2.1.2.2.1.1.10103',
+        ]])))->admin([10103 => 'Gi1/0/3']);
+        $this->assertSame([10103 => Poe::OID_PETH_ADMIN.'.1.3'], $cisco);
+
+        // the rest: by port number
+        $this->assertSame([5 => Poe::OID_PETH_ADMIN.'.1.5'],
+            (new Poe(new FakeSnmp(['' => [Poe::OID_PETH_DETECTION.'.1.5' => 2]])))->admin([5 => 'gi5']));
+        $this->assertSame([], (new Poe(new FakeSnmp(['' => []])))->admin([1 => 'ether1']));
+    }
+
     public function test_a_switch_without_poe_tables_has_no_poe()
     {
         $this->assertSame([], $this->read([], [1 => 'ether1']));
