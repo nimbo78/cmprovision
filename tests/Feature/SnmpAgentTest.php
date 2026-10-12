@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Services\Snmp\PhpSnmpClient;
 use App\Services\Snmp\SnmpError;
+use App\Services\Switch\Poe;
+use App\Services\Switch\PoeControl;
 use App\Services\SwitchPortFinder;
 use Tests\TestCase;
 
@@ -134,5 +136,22 @@ class SnmpAgentTest extends TestCase
         $this->assertSame(['ether1', 'ether2', 'ether3', 'ether4', 'ether5', 'ether6', 'ether7', 'ether8', 'sfp-sfpplus1'], array_column($s['ports'], 'name'));
         $this->assertFalse($s['poe']);
         $this->assertSame([self::MODULE], $s['ports'][4]['macs']);
+    }
+
+    public function test_poe_goes_off_and_on_through_php_snmp_on_each_vendor()
+    {
+        foreach (['s5731', 'c9200', 'cbs350'] as $community)
+        {
+            $snapshot = $this->snapshot($community);
+            $client = new PhpSnmpClient(['host' => getenv('SNMPSIM_ENDPOINT'), 'community' => $community]);
+            $admin = (new Poe($client))->admin(array_map(function ($port) { return $port['name']; }, $snapshot['ports']));
+            $this->assertNotEmpty($admin, $community.': the PoE ports have their objects');
+            $oid = reset($admin);
+            $control = new PoeControl($client);
+            $control->switchOff($oid);
+            $this->assertSame(PoeControl::OFF, $control->value($oid), $community);
+            $this->assertNull($control->switchOnChecked($oid), $community);
+            $this->assertSame(PoeControl::ON, $control->value($oid), $community);
+        }
     }
 }
