@@ -2318,7 +2318,7 @@ class Cms extends Component
                             @else <span class="text-fg-faint">—</span>
                             @endif
                         </td>
-                        <td class="tabular-nums text-fg-muted whitespace-nowrap">{{ $c->provisioning_complete_at ? $c->provisioning_complete_at->local()->format('Y-m-d H:i') : '—' }}</td>
+                        <td class="tabular-nums text-fg-muted whitespace-nowrap">{{ $c->provisioning_complete_at ? $c->provisioning_complete_at->local()->format('Y-m-d H:i:s') : '—' }}</td>
                         <td class="text-right whitespace-nowrap">
                             <a href="{{ route('cm', $c->serial) }}" class="text-link font-semibold mr-3">View</a>
                             <button type="button" wire:click="delete({{ $c->id }})" wire:confirm="Delete CM {{ $c->serial }}?" class="text-fg-faint hover:text-neg" title="Delete" aria-label="Delete CM {{ $c->serial }}">

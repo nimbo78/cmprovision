@@ -21,7 +21,7 @@ class TokenGuardTest extends TestCase
         'components/input-error.blade.php', 'components/input.blade.php', 'components/label.blade.php',
         'components/modal.blade.php',
         'components/secondary-button.blade.php', 'components/section-border.blade.php', 'components/section-title.blade.php', 'components/validation-errors.blade.php',
-        'livewire/addimage.blade.php', 'livewire/addstaticip.blade.php', 'livewire/cm-card.blade.php', 'livewire/cms.blade.php',
+        'livewire/addimage.blade.php', 'livewire/addstaticip.blade.php', 'livewire/cm-card.blade.php',
         'livewire/editlabel.blade.php', 'livewire/editproject.blade.php', 'livewire/editscript.blade.php',
         'livewire/firmware.blade.php', 'livewire/images.blade.php', 'livewire/labels.blade.php',
         'livewire/notification-settings.blade.php', 'livewire/ports.blade.php', 'livewire/projects.blade.php', 'livewire/scripts.blade.php',

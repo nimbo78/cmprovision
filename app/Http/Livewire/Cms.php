@@ -2,37 +2,41 @@
 
 namespace App\Http\Livewire;
 
-use Livewire\Attributes\Title;
-use Livewire\Component;
 use App\Models\Cm;
 use App\Models\Project;
-use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\Title;
+use Livewire\Component;
 
+/* The list of CMs: newest first, by project, searchable by a part of the serial or the MAC */
 #[Title('CMs')]
 class Cms extends Component
 {
-    public $CMs;
     public $projectId = -1;
-    public $projects;
+    public $search = '';
+
+    protected function cms()
+    {
+        $query = Cm::with('project')->orderByDesc('id');
+        if ($this->projectId)
+            $query->where('project_id', $this->projectId);
+        $term = strtolower(trim((string) $this->search));
+        if ($term !== '')
+            $query->where(function ($q) use ($term) {
+                $q->whereRaw('lower(serial) like ?', ['%'.$term.'%'])->orWhereRaw('lower(mac) like ?', ['%'.$term.'%']);
+            });
+        return $query->get();
+    }
 
     public function render()
     {
         if ($this->projectId == -1)
-        {
             $this->projectId = Project::getActiveId();
-        }
 
-        if ($this->projectId)
-        {
-            $this->CMs = Cm::where('project_id', $this->projectId)->orderBy('id')->get();
-        }
-        else
-        {
-            $this->CMs = Cm::orderBy('id')->get();
-        }
-        $this->projects = Project::withCount('cms')->orderBy('name')->get();
-
-        return view('livewire.cms');
+        return view('livewire.cms', [
+            'CMs' => $this->cms(),
+            'total' => Cm::count(),
+            'projects' => Project::withCount('cms')->orderBy('name')->get(),
+        ]);
     }
 
     public function delete($id)
@@ -43,20 +47,15 @@ class Cms extends Component
 
     public function exportCSV()
     {
-        return response()->streamDownload(function () {
-            $fd = fopen('php://output', 'w'); 
-
-            if ( count($this->CMs) )
-            {
-                fputcsv($fd, array_keys($this->CMs[0]->getAttributes() ));
-
-                foreach ($this->CMs as $cm)
-                {
+        $cms = $this->cms();
+        return response()->streamDownload(function () use ($cms) {
+            $fd = fopen('php://output', 'w');
+            if (count($cms)) {
+                fputcsv($fd, array_keys($cms[0]->getAttributes()));
+                foreach ($cms as $cm)
                     fputcsv($fd, $cm->getAttributes());
-                }
             }
             fclose($fd);
-
-        }, 'export-cm-'.date('Ymd').'.csv');        
+        }, 'export-cm-'.date('Ymd').'.csv');
     }
 }
