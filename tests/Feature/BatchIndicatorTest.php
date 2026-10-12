@@ -49,6 +49,19 @@ class BatchIndicatorTest extends TestCase
             ->assertSee(route('dashboard'), false);
     }
 
+    public function test_a_module_without_a_report_gets_a_yellow_chip_and_the_tab_a_yellow_dot()
+    {
+        $this->openBatch();
+        Cm::where('phase', 'failed')->update(['phase' => 'done']);
+        Cm::where('phase', 'write')->update(['phase_started_at' => now()->subMinutes(4), 'progress_updated_at' => now()->subMinutes(3)]);
+
+        Livewire::test(BatchIndicator::class)
+            ->assertSeeHtml('<span class="cmp-chip cmp-chip-stale"><span class="dot"></span>1<span class="hidden md:inline">&nbsp;no report</span></span>')
+            ->assertDontSeeHtml('cmp-chip-run')
+            ->assertSeeHtml('data-tab-title="1 no report · 3 done"')
+            ->assertSeeHtml('data-tab-icon="stale"');
+    }
+
     public function test_without_an_open_batch_it_is_silent()
     {
         Livewire::test(BatchIndicator::class)

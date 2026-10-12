@@ -66,8 +66,9 @@ set: for print, convert the flat colour with the printer's profile.
   by the whole page.
 - The browser tab and home screens take `public/favicon.svg` (the favicon cut), `public/favicon.ico` (16, 32 and
   48 px) and `public/apple-touch-icon.png` (180 px).
-- While a batch runs, `public/js/tab-status.js` swaps the tab icon for `favicon-run`, `favicon-fail` or `favicon-done`
-  (the favicon cut with a blue, red or green dot; `build_logo.py` makes them, PNGs at 32 px).
+- While a batch runs, `public/js/tab-status.js` swaps the tab icon for `favicon-run`, `favicon-fail`, `favicon-stale`
+  or `favicon-done` (the favicon cut with a blue, red, yellow or green dot; yellow: a module stopped reporting;
+  `build_logo.py` makes them, PNGs at 32 px rendered with rsvg-convert).
 - `tests/Feature/BrandingTest.php` checks the colours in the pages and the icon files.
 
 ## Rebuilding

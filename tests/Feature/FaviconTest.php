@@ -21,7 +21,7 @@ class FaviconTest extends TestCase
 
     public function test_the_tab_has_an_icon_for_each_state_of_the_batch()
     {
-        foreach (['run' => '#2563eb', 'fail' => '#dc2626', 'done' => '#16a34a'] as $state => $dot) {
+        foreach (['run' => '#2563eb', 'fail' => '#dc2626', 'done' => '#16a34a', 'stale' => '#eab308'] as $state => $dot) {
             $svg = file_get_contents(public_path("favicon-$state.svg"));
             $this->assertStringContainsString('stop-color="#ffd37a"', $svg, "$state: the mark's tile");
             $this->assertStringContainsString($dot, $svg, "$state: the dot");

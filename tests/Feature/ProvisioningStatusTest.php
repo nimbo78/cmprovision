@@ -214,6 +214,38 @@ class ProvisioningStatusTest extends TestCase
         Livewire::test(ProvisioningStatus::class)->assertSeeHtml('<div class="cmp-tile cmp-tile-fail"><div class="num text-neg">1</div>');
     }
 
+    public function test_a_module_without_a_report_is_named_in_the_batch_card_and_not_counted_as_running()
+    {
+        $batch = $this->openBatch();
+        $this->module('1000000000000c08', ['phase' => 'write', 'notification_batch_id' => $batch->id,
+                                           'phase_started_at' => now()->subMinutes(4), 'progress_updated_at' => now()->subMinutes(3)]);
+
+        Livewire::test(ProvisioningStatus::class)
+            ->assertSeeHtml('<div class="num text-info">0</div>')
+            ->assertSeeHtml('<span class="text-warn">1 no report</span>');
+    }
+
+    public function test_a_last_batch_closed_on_another_day_says_the_day()
+    {
+        config(['app.display_timezone' => 'UTC']);
+        $batch = $this->openBatch();
+        $batch->forceFill(['closed_at' => now()->subDay()->setTime(13, 22)])->save();
+        Livewire::test(ProvisioningStatus::class)->assertSee('Last batch, closed on 08.10 at 13:22');
+    }
+
+    public function test_finished_modules_of_an_older_batch_are_not_listed()
+    {
+        $batch = $this->openBatch();
+        $old = NotificationBatch::create(['project_id' => $batch->project_id, 'started_at' => now()->subHours(3), 'last_event_at' => now()->subHours(2),
+                                          'closed_at' => now()->subHours(2)]);
+        $this->module('1000000000000c09', ['phase' => 'done', 'notification_batch_id' => $old->id, 'phase_started_at' => now()->subMinutes(30),
+                                           'provisioning_complete_at' => now()->subMinutes(30)]);
+        $this->module('1000000000000c10', ['phase' => 'done', 'notification_batch_id' => $batch->id, 'phase_started_at' => now()->subMinutes(20),
+                                           'provisioning_complete_at' => now()->subMinutes(20)]);
+
+        Livewire::test(ProvisioningStatus::class)->assertSee('1000000000000c10')->assertDontSee('1000000000000c09');
+    }
+
     public function test_nothing_to_show_says_so()
     {
         Livewire::test(ProvisioningStatus::class)->assertSee('No modules are being provisioned');

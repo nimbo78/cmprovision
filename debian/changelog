@@ -1,3 +1,22 @@
+cmprovision4 (2.2.1) unstable; urgency=medium
+
+  * A module that stops reporting mid-run counts apart: the tab says
+    "1 no report" with a yellow dot, the top bar shows a yellow chip, and the
+    "finish in" estimate leaves it out. The bots count as before.
+  * With a batch, the tab title keeps the page's name after the batch's
+    state ("1 failed · 3 running · CMs"), so several tabs stay apart.
+  * A module refused because no project is active no longer keeps the batch
+    of its last run: it shows on the dashboard, and the bots post the
+    refusal on its own instead of into the old batch's thread.
+  * After the 2.2.0 review: the module card's history puts the time at the
+    top of a row and the log rows keep their own lines; the Ports page says
+    "Settings → Ethernet switch"; the CMs list counts the listed modules
+    ("19 of 96 modules") and its delete icon is easier to see; "Last batch,
+    closed on 11.10 at 13:22" names the day; the profile and API token pages
+    are as wide as the others.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 14:37:24 +0300
+
 cmprovision4 (2.2.0) unstable; urgency=medium
 
   * Compact layout: a 48 px top bar instead of the page header, pages as

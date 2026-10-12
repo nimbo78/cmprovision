@@ -7,11 +7,13 @@ use App\Models\NotificationBatch;
 
 /**
  * A batch as the top bar, the browser tab and the dashboard show it: its modules by state, the average time of a
- * finished module, how long the running ones still need, and the tab's state (a failure outweighs running modules).
+ * finished module, how long the running ones still need, and the tab's state (a failure outweighs a module that
+ * stopped reporting, which outweighs running modules). counts are the bots' (NotificationBatch::counts()); silent
+ * modules are among their active ones, and running is the active ones that still report.
  */
 class BatchSummary
 {
-    public $batch, $project, $modules, $open, $counts, $averageSeconds, $leftSeconds, $state;
+    public $batch, $project, $modules, $open, $counts, $silent, $running, $averageSeconds, $leftSeconds, $state;
 
     /* The open batch, or null */
     public static function current()
@@ -38,26 +40,29 @@ class BatchSummary
         $active = $this->modules->filter(function ($cm) { return in_array($cm->phase, Cm::ACTIVE_PHASES, true); });
         $done = $this->modules->where('phase', 'done');
         $this->counts = ['active' => $active->count(), 'done' => $done->count(), 'failed' => $this->modules->where('phase', 'failed')->count()];
+        $reporting = $active->filter(function ($cm) { return $cm->silentFor() === null; });
+        $this->running = $reporting->count();
+        $this->silent = $this->counts['active'] - $this->running;
 
         $durations = $done->filter(function ($cm) { return $cm->provisioning_started_at && $cm->provisioning_complete_at; })
             ->map(function ($cm) { return $cm->provisioning_complete_at->getTimestamp() - $cm->provisioning_started_at->getTimestamp(); });
         $this->averageSeconds = $durations->isEmpty() ? null : (int) round($durations->avg());
-        $left = $active->map(function ($cm) { return $cm->secondsLeft(); })->filter(function ($s) { return $s !== null; });
+        // a silent module's estimate is frozen at its last report: only the reporting ones count
+        $left = $reporting->map(function ($cm) { return $cm->secondsLeft(); })->filter(function ($s) { return $s !== null; });
         $this->leftSeconds = $left->isEmpty() ? null : (int) $left->max();
 
-        $this->state = $this->counts['failed'] ? 'fail' : ($this->counts['active'] ? 'run' : ($this->counts['done'] ? 'done' : 'idle'));
+        $this->state = $this->counts['failed'] ? 'fail' : ($this->silent ? 'stale' : ($this->running ? 'run' : ($this->counts['done'] ? 'done' : 'idle')));
     }
 
-    /* The start of the browser tab's title; empty when there is nothing to tell */
+    /* The start of the browser tab's title: what needs a look first, then the running or the done ones; empty when
+       there is nothing to tell */
     public function title()
     {
         $c = $this->counts;
-        if ($c['failed'] && $c['active'])
-            return "{$c['failed']} failed · {$c['active']} running";
-        if ($c['failed'])
-            return "{$c['failed']} failed · {$c['done']} done";
-        if ($c['active'])
-            return "{$c['active']} running";
-        return $c['done'] ? "✓ {$c['done']} done" : '';
+        $problems = array_filter([$c['failed'] ? "{$c['failed']} failed" : null, $this->silent ? "{$this->silent} no report" : null]);
+        if (!$problems && !$this->running)
+            return $c['done'] ? "✓ {$c['done']} done" : '';
+        $rest = $this->running ? "{$this->running} running" : ($c['done'] ? "{$c['done']} done" : null);
+        return implode(' · ', array_filter(array_merge($problems, [$rest])));
     }
 }

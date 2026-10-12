@@ -50,10 +50,17 @@ test('the failed tile replaces the warm gradient of a tile', () => {
 test('a table card scrolls sideways below xl, its header sticking to the card there and under the top bar from xl', () => {
     // the card is then the header's scroll container: top: var(--bar-h) would push the header 48 px into the rows
     assert.equal(last('.cmp-card-scroll', 'overflow-x'), 'auto');
-    assert.ok(css.includes('.cmp-card-scroll .cmp-table th{top:0}'), 'the header sticks to the scrolling card');
+    assert.ok(css.includes('.cmp-card-scroll :where(.cmp-table th){top:0}'), 'the header sticks to the scrolling card');
     const xl = css.match(/@media \(min-width:1280px\)\{((?:[^{}]*\{[^{}]*\})*)\}/g) || [];
-    assert.ok(xl.some((block) => block.includes('.cmp-card-scroll{overflow:clip}') && block.includes('.cmp-card-scroll .cmp-table th{top:var(--bar-h)}')),
+    assert.ok(xl.some((block) => block.includes('.cmp-card-scroll{overflow:clip}') && block.includes('.cmp-card-scroll :where(.cmp-table th){top:var(--bar-h)}')),
         'from xl the card clips and the header sticks under the top bar');
+});
+
+test('a single utility on a table cell wins over the table rules (align-top, a border colour)', () => {
+    // the table's cell rules weigh one class (:where), like a utility, and come before the utilities
+    for (const rule of ['.cmp-table :where(td){', '.cmp-table :where(th){', '.cmp-table :where(tr>:first-child){', '.cmp-table :where(tr>:last-child){'])
+        assert.ok(css.includes(rule), rule);
+    assert.ok(!/\.cmp-table (td|th)\{/.test(css), 'no two-part cell selector is left');
 });
 
 test('the page links scroll when the top bar is too narrow for them', () => {

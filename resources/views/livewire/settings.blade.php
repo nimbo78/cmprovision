@@ -95,38 +95,38 @@
             <div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md">
                 <table class="cmp-table">
                 <tr>
-                    <td class="px-4 py-2">
+                    <td>
                         <ul class="list-outside list-disc ml-6">
                             <li @if ($dnsmasqRunning) class="text-pos" @else class="text-neg" @endif>
                                 <span class="text-fg"> dnsmasq (DHCP server)</span>
                             </li>
                         </ul>
                     </td>
-                    <td class="px-4 py-2">
+                    <td>
                         <button wire:click="viewLogDnsmasq()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
                     </td>
                 </tr>
                 <tr>
-                    <td class="px-4 py-2">
+                    <td>
                         <ul class="list-outside list-disc ml-6">
                         <li @if ($rpibootRunning) class="text-pos" @else class="text-neg" @endif>
                                 <span class="text-fg"> rpiboot (USB file server)</span>
                             </li>
                         </ul>
                     </td>
-                    <td class="px-4 py-2">
+                    <td>
                         <button wire:click="viewLogRpiboot()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>                                
                     </td>
                 </tr>
                 <tr>
-                    <td class="px-4 py-2">
+                    <td>
                         <ul class="list-outside list-disc ml-6">
                             <li class="text-pos">
                                 <span class="text-fg"> web interface</span>
                             </li>
                         </ul>
                     </td>
-                    <td class="px-4 py-2">
+                    <td>
                         <button wire:click="viewLogLaravel()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>                                
                     </td>
                 </tr>

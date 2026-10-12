@@ -1,6 +1,7 @@
 /*
- * The browser tab tells the batch's state: the title starts with "1 failed · 3 running" or "✓ 16 done" and the
- * icon gets a blue, red or green dot. BatchIndicator (top bar, polled every 10 s even in a background tab) carries
+ * The browser tab tells the batch's state: the title starts with "1 failed · 3 running" or "✓ 16 done", then the
+ * page's own title, and the icon gets a blue, red, yellow (a module stopped reporting) or green dot.
+ * BatchIndicator (top bar, polled every 10 s even in a background tab) carries
  * data-tab-title and data-tab-icon; this script copies them to the title and the icon links whenever they change.
  * Plain script (no build step): the browser gets window.TabStatus, node tests require() it.
  */
@@ -15,11 +16,12 @@
 }(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
 
-    var ICONS = { idle: '/favicon', run: '/favicon-run', fail: '/favicon-fail', done: '/favicon-done' };
+    var ICONS = { idle: '/favicon', run: '/favicon-run', fail: '/favicon-fail', stale: '/favicon-stale', done: '/favicon-done' };
     var base = null;   // the page's own title ("Dashboard · cmprovision"), read once
 
+    // the batch first, then the page: tabs of several pages stay apart
     function titleFor(prefix, pageTitle) {
-        return prefix ? prefix + ' · cmprovision' : pageTitle;
+        return prefix ? prefix + ' · ' + pageTitle : pageTitle;
     }
 
     function iconsFor(state, version) {

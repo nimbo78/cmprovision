@@ -85,7 +85,10 @@ class PortsPageTest extends TestCase
     {
         Livewire::test(Ports::class)
             ->assertSee('No switch is set up')
-            ->assertSee(route('settings'), false);
+            ->assertSee(route('settings'), false)
+            ->assertSee('Settings → Ethernet switch')
+            ->assertDontSee('Other settings')          // the menu item is "Settings" since 2.2.0
+            ->assertDontSeeHtml('class="py-8"');       // cmp-page gives the page its margins
     }
 
     public function test_the_module_tile_and_the_summary()
@@ -208,7 +211,8 @@ class PortsPageTest extends TestCase
             if (strpos($oid, MacTable::OID_HUAWEI_FDB_PORT) === 0)
                 unset($this->fake->tables[''][$oid]);
 
-        Livewire::test(Ports::class)->assertSee('The switch gave no MAC address table');
+        Livewire::test(Ports::class)->assertSee('The switch gave no MAC address table')->assertSee('Settings → Ethernet switch')
+            ->assertDontSee('Other settings');
     }
 
     public function test_a_quiet_port_says_how_long_its_link_has_been_up()
@@ -246,7 +250,9 @@ class PortsPageTest extends TestCase
         Livewire::test(Ports::class)
             ->assertSee('1 running')
             ->assertSee('1 booting')
-            ->assertSee('2 still in progress, 0 failed: keep the batch on the stand');
+            ->assertSee('2 still in progress, 0 failed: keep the batch on the stand')
+            ->assertSeeHtml('bg-info-bg text-info')      // the verdict's text in the info colour, as its box
+            ->assertDontSeeHtml('bg-info-bg text-link');
     }
 
     public function test_a_chip_whose_count_drops_to_zero_stays_while_it_is_selected()

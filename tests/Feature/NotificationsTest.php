@@ -87,6 +87,30 @@ class NotificationsTest extends TestCase
         ]);
     }
 
+    public function test_a_module_refused_for_no_active_project_leaves_the_batch_of_its_last_run()
+    {
+        // flashed yesterday in a batch with a bot thread, back on the stand while no project is active
+        $project = $this->activeProject();
+        $channel = $this->channel('mattermost_bot', ['server_url' => 'https://mm.example.com', 'token' => 'tok', 'channel_id' => 'chan1'], ['failed']);
+        $old = NotificationBatch::create(['project_id' => $project->id, 'started_at' => now()->subDay(), 'last_event_at' => now()->subDay(),
+                                          'closed_at' => now()->subDay()]);
+        \App\Models\NotificationThread::create(['batch_id' => $old->id, 'channel_id' => $channel->id, 'external_id' => 'oldsummary']);
+        Cm::create(['serial' => '1000000000000e01', 'mac' => 'e4:5f:01:00:00:01', 'phase' => 'done', 'notification_batch_id' => $old->id]);
+        Setting::where('key', 'active_project')->delete();
+        $this->mattermostFake();
+
+        $this->start('1000000000000e01');
+
+        $cm = Cm::where('serial', '1000000000000e01')->first();
+        $this->assertSame('failed', $cm->phase);
+        $this->assertNull($cm->notification_batch_id, 'the refusal belongs to no batch');
+        $this->assertTrue($old->fresh()->last_event_at->eq(now()->subDay()), 'the old batch is not touched');
+        Http::assertNotSent(function (Request $r) { return ($r['root_id'] ?? null) === 'oldsummary'; });
+        Http::assertSent(function (Request $r) {
+            return $r->url() == 'https://mm.example.com/api/v4/posts' && empty($r['root_id']) && Str::contains($r['message'], '1000000000000e01');
+        });
+    }
+
     public function test_mattermost_bot_keeps_a_batch_thread_with_an_updated_summary()
     {
         $this->activeProject();

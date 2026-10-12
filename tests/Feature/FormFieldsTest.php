@@ -27,6 +27,12 @@ class FormFieldsTest extends TestCase
         $this->assertSame([], $old);
     }
 
+    public function test_the_checkbox_component_takes_its_colours_from_the_theme_rules()
+    {
+        // bg-field names no colour of tailwind.config.js: the base layer of app.css paints checkboxes
+        $this->assertStringNotContainsString('bg-field', $this->source('components/checkbox.blade.php'));
+    }
+
     public function test_code_editors_are_monospaced_fields()
     {
         foreach (['livewire/editscript.blade.php' => 'script', 'livewire/editlabel.blade.php' => 'template', 'livewire/editproject.blade.php' => 'eeprom_settings'] as $view => $id) {

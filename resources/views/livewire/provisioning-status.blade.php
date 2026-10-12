@@ -2,7 +2,7 @@
 <div @if ($activeCount) wire:poll.2s @else wire:poll.10s @endif class="flex flex-col gap-[var(--gap)]">
     @if ($summary)
         <div class="grid gap-[var(--gap)] grid-cols-3 lg:grid-cols-[repeat(3,minmax(0,160px))_minmax(0,1fr)]">
-            <div class="cmp-tile"><div class="num text-info">{{ $summary->counts['active'] }}</div><div class="label">running</div></div>
+            <div class="cmp-tile"><div class="num text-info">{{ $summary->running }}</div><div class="label">running</div></div>
             <div class="cmp-tile"><div class="num text-pos">{{ $summary->counts['done'] }}</div><div class="label">done</div></div>
             <div @class(['cmp-tile', 'cmp-tile-fail' => $summary->counts['failed']])><div class="num text-neg">{{ $summary->counts['failed'] }}</div><div class="label">failed</div></div>
             <div class="cmp-tile col-span-3 lg:col-span-1 flex items-center gap-4">
@@ -11,11 +11,13 @@
                         @if ($summary->open)
                             Project {{ $summary->project?->name }} · batch since {{ $summary->batch->started_at->local()->format('H:i') }}
                         @else
-                            Last batch, closed at {{ ($summary->batch->closed_at ?? $summary->batch->last_event_at)->local()->format('H:i') }} · project {{ $summary->project?->name }}
+                            @php($closed = ($summary->batch->closed_at ?? $summary->batch->last_event_at)->local())
+                            Last batch, closed {{ $closed->isToday() ? 'at '.$closed->format('H:i') : 'on '.$closed->format('d.m').' at '.$closed->format('H:i') }} · project {{ $summary->project?->name }}
                         @endif
                     </div>
-                    @php($facts = array_filter([$summary->modules->count().($summary->modules->count() === 1 ? ' module' : ' modules'), $summary->averageSeconds ? $fmt::duration($summary->averageSeconds).' per module' : null, $summary->open && $summary->leftSeconds !== null ? 'the running ones finish in '.($summary->leftSeconds < 60 ? 'under a minute' : 'about '.ceil($summary->leftSeconds / 60).' min') : null]))
-                    <div class="text-fg-muted">{{ implode(' · ', $facts) }}</div>
+                    {{-- one string (escaped parts, the silent ones in the warning colour): Livewire's markers would split a sentence of inline ifs --}}
+                    @php($facts = array_filter([e($summary->modules->count().($summary->modules->count() === 1 ? ' module' : ' modules')), $summary->averageSeconds ? e($fmt::duration($summary->averageSeconds).' per module') : null, $summary->silent ? '<span class="text-warn">'.$summary->silent.' no report</span>' : null, $summary->open && $summary->leftSeconds !== null ? e('the running ones finish in '.($summary->leftSeconds < 60 ? 'under a minute' : 'about '.ceil($summary->leftSeconds / 60).' min')) : null]))
+                    <div class="text-fg-muted">{!! implode(' · ', $facts) !!}</div>
                 </div>
                 @if ($summary->open)
                     <button type="button" wire:click="newBatch" wire:confirm="Close this batch? The next module starts a new one, here and in the bots." class="cmp-btn cmp-btn-secondary ml-auto">New batch</button>

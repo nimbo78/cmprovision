@@ -214,6 +214,8 @@ exit 1
             'timeline' => [],
             'polled_at' => null,
             'identify_until' => null,
+            /* set below once the project is known: a refusal before that belongs to no batch, not to the last run's */
+            'notification_batch_id' => null,
             /* the module reports its bootloader once the script runs; the settings are flashed as stored in the image */
             'eeprom_before' => null,
             'eeprom_config_before' => null,

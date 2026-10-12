@@ -65,6 +65,15 @@ test('without any event, the minute check catches up after sleep', () => {
     assert.equal(p.attrs['data-mode'], 'light');
 });
 
+test('without browser storage the page gets the defaults and a choice holds until the next load', () => {
+    const p = page('2026-10-13T07:00:00Z');
+    Object.defineProperty(p.win, 'localStorage', { get() { throw new Error('SecurityError: storage is disabled'); } });
+    p.start();
+    assert.deepEqual([p.attrs['data-style'], p.attrs['data-density'], p.attrs['data-mode']], ['warm', 'compact', 'light']);
+    A.set({ style: 'neutral', mode: 'dark' });
+    assert.deepEqual([p.attrs['data-style'], p.attrs['data-mode']], ['neutral', 'dark']);
+});
+
 test('a page back from the back/forward cache takes the choice made meanwhile in another tab', () => {
     const p = page('2026-10-13T07:00:00Z', { style: 'warm', density: 'compact', mode: 'auto' });
     p.start();

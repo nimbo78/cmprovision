@@ -39,12 +39,12 @@ class ProvisioningStatus extends Component
     public function render()
     {
         $summary = BatchSummary::forDashboard();
-        $ids = $summary ? $summary->modules->pluck('id')->all() : [];
         $recent = now()->subHours(self::RECENT_HOURS);
         $modules = Cm::whereNotNull('phase')
-            ->where(function ($q) use ($ids, $recent) {
-                $q->whereIn('id', $ids)
-                  ->orWhere(function ($q) {
+            ->where(function ($q) use ($summary, $recent) {
+                if ($summary)
+                    $q->where('notification_batch_id', $summary->batch->id);
+                $q->orWhere(function ($q) {
                       $q->whereIn('phase', Cm::ACTIVE_PHASES)
                         ->where('provisioning_started_at', '>=', now()->subHours(self::ACTIVE_HOURS));
                   })
