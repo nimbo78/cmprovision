@@ -46,6 +46,24 @@ class NotificationBatch extends Model
         self::whereNull('closed_at')->update(['closed_at' => now()]);
     }
 
+    /* The batch the stand works on now: not closed, not idle and of the active project. Null when the next
+       module starts a new one; nothing is created or closed here (current() does that for a module). */
+    public static function open()
+    {
+        $active = Project::getActiveId();
+        $batch = self::whereNull('closed_at')->latest('id')->first();
+        if (!$batch || !$active || $batch->project_id != $active || $batch->last_event_at->lt(now()->subHours(self::IDLE_HOURS)))
+            return null;
+        return $batch;
+    }
+
+    /* The latest batch that is over: closed by hand or by a project change, or idle */
+    public static function lastClosed()
+    {
+        $open = self::open();
+        return self::when($open, function ($q) use ($open) { $q->where('id', '!=', $open->id); })->latest('id')->first();
+    }
+
     public function touchEvent()
     {
         $this->last_event_at = now();

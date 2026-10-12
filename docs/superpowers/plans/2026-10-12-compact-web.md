@@ -986,7 +986,7 @@ class BatchSummaryTest extends TestCase
         $image->sha256 = str_repeat('a', 64);
         $image->uncompressed_size = 8 * 1024 * 1024;
         $image->save();
-        $project = Project::create(['name' => $name, 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'verify' => false]);
+        $project = Project::create(['name' => $name, 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'label_moment' => 'never', 'verify' => false]);
         if ($active)
             Setting::updateOrCreate(['key' => 'active_project'], ['value' => $project->id]);
         return $project;
@@ -1439,7 +1439,7 @@ class BatchIndicatorTest extends TestCase
         $image->sha256 = str_repeat('a', 64);
         $image->uncompressed_size = 8 * 1024 * 1024;
         $image->save();
-        $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'verify' => false]);
+        $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'label_moment' => 'never', 'verify' => false]);
         Setting::updateOrCreate(['key' => 'active_project'], ['value' => $project->id]);
         $batch = NotificationBatch::create(['project_id' => $project->id, 'started_at' => now()->subMinutes(38), 'last_event_at' => now()]);
         foreach (['done', 'done', 'failed', 'write'] as $n => $phase)
@@ -1818,7 +1818,7 @@ cd "$REPO" && git add -A app resources public/css/app.css tests && git commit -q
         $image->sha256 = str_repeat('a', 64);
         $image->uncompressed_size = 8 * 1024 * 1024;
         $image->save();
-        $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'verify' => false]);
+        $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'label_moment' => 'never', 'verify' => false]);
         Setting::updateOrCreate(['key' => 'active_project'], ['value' => $project->id]);
         return NotificationBatch::create(['project_id' => $project->id, 'started_at' => now()->subHours(4), 'last_event_at' => now()->subMinute()]);
     }
@@ -2147,7 +2147,7 @@ class CmsPageTest extends TestCase
         $image->sha256 = str_repeat('a', 64);
         $image->uncompressed_size = 8 * 1024 * 1024;
         $image->save();
-        return Project::create(['name' => $name, 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'verify' => false]);
+        return Project::create(['name' => $name, 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'label_moment' => 'never', 'verify' => false]);
     }
 
     protected function cms()
