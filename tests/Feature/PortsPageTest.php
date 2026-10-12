@@ -13,6 +13,7 @@ use App\Services\Switch\Poe;
 use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Sleep;
 use Livewire\Livewire;
 use Mockery\MockInterface;
 use Tests\Support\FakeSnmp;
@@ -262,5 +263,51 @@ class PortsPageTest extends TestCase
         Livewire::test(Ports::class)
             ->assertSeeHtml('x-show="filter.includes(\'run\')" style="display: none"')
             ->assertSee('1 done');
+    }
+
+    protected function writeAccess()
+    {
+        Setting::create(['key' => 'ethernetswitch_snmp_write_community', 'value' => 'private']);
+        $this->fake->tables[''][Poe::OID_HW_ENABLE.'.8'] = 1;
+    }
+
+    public function test_a_port_with_our_module_can_be_restarted_from_its_details()
+    {
+        Sleep::fake();
+        $this->switchWithModule();
+        $this->writeAccess();
+        Livewire::test(Ports::class)->call('select', 'p8')
+            ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on GE0/0/3? PoE goes off for 5 s; the module boots the system it was flashed with."')
+            ->call('restart', 'p8')
+            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
+        $this->assertSame([[Poe::OID_HW_ENABLE.'.8', 'i', 2], [Poe::OID_HW_ENABLE.'.8', 'i', 1]], $this->fake->sets);
+    }
+
+    public function test_without_write_access_there_is_no_restart()
+    {
+        $this->switchWithModule();
+        Livewire::test(Ports::class)->call('select', 'p8')
+            ->assertDontSeeHtml('wire:click="restart(')
+            ->assertDontSee('No PoE restart');
+    }
+
+    public function test_a_port_that_may_not_be_restarted_says_why()
+    {
+        $this->switchWithModule();
+        $this->writeAccess();
+        Livewire::test(Ports::class)->call('select', 'p30')->assertSee('No PoE restart: no PoE on XGE0/0/1');
+    }
+
+    public function test_failed_modules_on_the_stand_have_one_button()
+    {
+        Sleep::fake();
+        $cm = $this->switchWithModule();
+        $cm->update(['phase' => 'failed', 'phase_detail' => 'Missing eMMC/SD card.', 'provisioning_complete_at' => null]);
+        $this->writeAccess();
+        Livewire::test(Ports::class)
+            ->assertSee('Restart failed (1)')
+            ->assertSeeHtml('wire:confirm="Restart 1 module (failed or without a report)? PoE goes off for 5 s on each port."')
+            ->call('restartFailed')
+            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
     }
 }

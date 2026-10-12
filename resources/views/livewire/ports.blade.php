@@ -4,6 +4,9 @@
 @php($words = ['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'silent', 'unknown' => 'unknown', 'boot' => 'booting', 'foreign' => 'foreign', 'free' => 'free'])
 <div class="cmp-page">
     <livewire:poe-outages />
+    @if ($restartMessage)
+        <div class="rounded px-4 py-2 text-sm font-semibold {{ $restartError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $restartMessage }}</div>
+    @endif
 
 @if (!$configured)
     <div class="cmp-card px-4 py-3 text-fg">
@@ -72,6 +75,13 @@
             <div class="text-sm font-bold rounded px-3 py-2 {{ $error ? 'bg-head text-fg' : $verdictColor }}">
                 {{ ($error ? 'As of '.$takenAt.', before the switch went silent: ' : '').$verdict }}
             </div>
+            @if ($writable && $failed)
+                <button type="button" wire:click="restartFailed" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirmFailed($failed) }}" wire:loading.attr="disabled"
+                        class="cmp-btn cmp-btn-danger cmp-btn-small justify-self-start md:col-span-2">
+                    <span wire:loading.remove wire:target="restartFailed">Restart failed ({{ $failed }})</span>
+                    <span wire:loading wire:target="restartFailed">Restarting…</span>
+                </button>
+            @endif
         </section>
 
         <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
@@ -160,6 +170,17 @@
                         <p class="mb-2">Link up for {{ \Carbon\CarbonInterval::seconds($tile['changed'])->cascade()->forHumans(['parts' => 1]) }}, and nothing has talked from this port: a quiet device, a member of a link aggregation, or the provisioner's own port after a long idle time.</p>
                     @elseif ($tile['state'] === 'uplink')
                         <p class="mb-2">Uplink: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
+                    @endif
+                    @if ($writable && $restart['blocker'] === null)
+                        <div class="mb-3">
+                            <button type="button" wire:click="restart('{{ $tile['key'] }}')" wire:confirm="{{ $restart['confirm'] }}" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary cmp-btn-small">
+                                <span wire:loading.remove wire:target="restart">Restart</span>
+                                <span wire:loading wire:target="restart">Restarting…</span>
+                            </button>
+                            <span class="text-xs text-fg-muted ml-2">PoE off for 5 s, then on</span>
+                        </div>
+                    @elseif ($writable)
+                        <p class="mb-3 text-xs text-fg-muted">No PoE restart: {{ $restart['blocker'] }}</p>
                     @endif
                     <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                         <dt class="text-fg-muted">Link</dt>
