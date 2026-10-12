@@ -117,6 +117,16 @@
 }
 
 html { background: var(--page); }
+/* The forms plugin paints fields white with grey borders: on a dark theme they glared and a select's white text
+   vanished. Fields take the theme's colours; utilities on a field still win (base layer). */
+@layer base {
+    [type='text'], [type='email'], [type='url'], [type='password'], [type='number'], [type='date'], [type='datetime-local'],
+    [type='month'], [type='search'], [type='tel'], [type='time'], [type='week'], [multiple], textarea, select {
+        background-color: var(--field); color: var(--text); border-color: var(--field-line);
+    }
+    [type='checkbox'], [type='radio'] { background-color: var(--field); border-color: var(--field-line); }
+    input::placeholder, textarea::placeholder { color: var(--faint); }
+}
 /* Tailwind paints focus-ring offsets white: on a dark theme that is a white frame */
 *, ::before, ::after { --tw-ring-offset-color: var(--panel); }
 body { background: var(--page); color: var(--text); }

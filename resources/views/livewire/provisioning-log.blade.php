@@ -7,7 +7,7 @@
         <span class="font-bold">Log</span>
         <span class="text-log-muted whitespace-nowrap">Last {{ \App\Http\Livewire\ProvisioningLog::ROWS }} entries · Times in {{ $zone }}</span>
         @if ($first = $log->first())
-            <span class="text-log-muted truncate min-w-0">{{ $first->created_at->local()->format('H:i:s') }} · {{ $first->board }} · {{ \Illuminate\Support\Str::limit($first->msg, 120) }}</span>
+            <span class="text-log-muted truncate min-w-0">{{ implode(' · ', array_filter([$first->created_at->local()->format('H:i:s'), $first->board, \Illuminate\Support\Str::limit($first->msg, 120)])) }}</span>
         @endif
         <span class="ml-auto font-semibold whitespace-nowrap" x-text="open ? 'Hide' : 'Show'">Show</span>
     </button>
