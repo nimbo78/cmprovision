@@ -2,10 +2,12 @@
 
 namespace App\Http\Livewire;
 
+use Livewire\Attributes\Title;
 use Livewire\Component;
 use App\Models\Image;
 use \Illuminate\Http\UploadedFile;
 
+#[Title('Images')]
 class Images extends Component
 {
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Livewire;
 
+use Livewire\Attributes\Title;
 use Livewire\Component;
 use App\Models\Image;
 use App\Models\Label;
@@ -15,6 +16,7 @@ use App\Jobs\ComputeSHA256;
 use App\Services\EepromImage;
 use App\Services\ProjectActivator;
 
+#[Title('Projects')]
 class Projects extends Component
 {
     public $isOpen = false;

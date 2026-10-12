@@ -45,7 +45,7 @@ class CmCard extends Component
             'settings' => self::settingsDiff($cm->eeprom_config_before, $cm->eeprom_config_after),
             'history' => Cmlog::where('cm', $this->serial)->orderByDesc('id')->limit(self::HISTORY_ROWS)->get(),
             'zone' => config('app.display_timezone'),
-        ]);
+        ])->title($cm->serial);
     }
 
     /* Both sides of the bootloader settings line by line ('before' or 'after' is null when unknown);

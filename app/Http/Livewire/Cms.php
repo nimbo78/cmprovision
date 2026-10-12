@@ -2,11 +2,13 @@
 
 namespace App\Http\Livewire;
 
+use Livewire\Attributes\Title;
 use Livewire\Component;
 use App\Models\Cm;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
+#[Title('CMs')]
 class Cms extends Component
 {
     public $CMs;

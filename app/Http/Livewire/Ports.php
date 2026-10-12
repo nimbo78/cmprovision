@@ -11,12 +11,14 @@ use App\Support\StandMap;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
  * The stand by the switch's ports (docs/superpowers/specs/2026-10-11-ports-page-design.md): the front
  * panel with the module in each port, the status filter (Alpine, in the browser) and one port's details.
  */
+#[Title('Ports')]
 class Ports extends Component
 {
     /* Modules are looked for on ports with at most this many MAC addresses: a desktop switch full of

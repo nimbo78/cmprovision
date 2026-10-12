@@ -1,9 +1,4 @@
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)
-<x-slot name="header">
-    <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-        Module <span class="font-mono">{{ $cm->serial }}</span>
-    </h2>
-</x-slot>
 <div @if ($cm->isActive()) wire:poll.5s @else wire:poll.15s @endif class="py-12">
     <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
 

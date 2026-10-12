@@ -160,6 +160,38 @@ body { background: var(--page); color: var(--text); }
     .cmp-flash { background: var(--pos-bg); color: var(--pos-text); border-radius: 8px; padding: 8px 16px; font-weight: 600; }
 }
 
+/* The top bar (navigation-menu.blade.php) and the Appearance popover */
+@layer components {
+    .cmp-topbar { position: sticky; top: 0; z-index: 30; background: var(--panel); border-bottom: 1px solid var(--panel-line); }
+    .cmp-topbar-row { height: var(--bar-h); display: flex; align-items: center; gap: 24px; padding: 0 var(--page-x); max-width: 1920px; margin: 0 auto; }
+    .cmp-mark { display: block; width: var(--mark); height: var(--mark); }
+    .cmp-nav { align-self: stretch; align-items: stretch; gap: var(--nav-gap); font-size: var(--fs); min-width: 0; }
+    .cmp-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px;
+        color: var(--muted); border: 1px solid var(--panel-line); background: transparent; }
+    .cmp-icon-btn:hover, .cmp-icon-btn.is-open { color: var(--text); background: var(--seg); }
+    .cmp-icon-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    .cmp-account { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs); font-weight: 600; color: var(--muted); }
+    .cmp-account:hover { color: var(--text); }
+    .cmp-batch { display: flex; align-items: center; gap: 6px; font-size: var(--fs); font-weight: 600; }
+    .cmp-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 40; width: 300px; padding: 12px; border-radius: 8px;
+        background: var(--pop); box-shadow: var(--pop-shadow); border: 1px solid var(--panel-line); }
+    .cmp-pop-title { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 12px 0 6px; }
+    .cmp-pop-title:first-child { margin-top: 0; }
+    .cmp-pop-row { display: flex; gap: 6px; }
+    .cmp-pop-note { margin-top: 10px; font-size: 12px; line-height: 1.4; color: var(--muted); }
+    .cmp-seg { display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: var(--seg); }
+    .cmp-seg button { flex: 1; padding: 4px 8px; border-radius: 4px; font-size: 13px; font-weight: 600; color: var(--seg-text); }
+    .cmp-seg button[aria-pressed="true"] { background: var(--seg-on); color: var(--seg-on-text); }
+    .cmp-swatch { width: 40px; height: 40px; border-radius: 10px; border: 2px solid transparent; }
+    .cmp-swatch[aria-pressed="true"] { border-color: var(--focus); }
+    .cmp-swatch-warm { background: conic-gradient(from 200deg, #ffe3b8, #ffd37a, #e2681c, #ffe3b8); }
+    .cmp-swatch-neutral { background: conic-gradient(from 200deg, #e5e7eb, #9ca3af, #4f46e5, #e5e7eb); }
+    .cmp-mode { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; border-radius: 6px;
+        font-size: 11px; font-weight: 700; background: var(--seg); color: var(--seg-text); }
+    .cmp-mode[aria-pressed="true"] { background: var(--seg-on); color: var(--seg-on-text); }
+    .cmp-swatch:focus-visible, .cmp-mode:focus-visible, .cmp-seg button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+}
+
 /* The cmprovision lockup on the sign-in pages (docs/brand): the 48 px mark, a gap of 11/28 of it and the name at
    17/28 of it. The name is trimmed to its x-height and baseline, so its lowercase band sits on the tile's middle
    line (text-box: Chrome, Edge and Safari; Firefox centres the whole line, a couple of pixels lower). */

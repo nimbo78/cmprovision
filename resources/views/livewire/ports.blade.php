@@ -1,6 +1,3 @@
-<x-slot name="header">
-    <h2 class="font-semibold text-xl text-gray-800 leading-tight">Ports</h2>
-</x-slot>
 <div class="py-8" wire:poll.5s
      x-data="{ filter: [], toggle(s) { this.filter = this.filter.includes(s) ? this.filter.filter(x => x !== s) : this.filter.concat([s]) }, dim(states, never) { return this.filter.length > 0 && (never || !states.some(s => this.filter.includes(s))) } }">
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)

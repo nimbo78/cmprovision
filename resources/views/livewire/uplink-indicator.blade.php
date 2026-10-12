@@ -4,13 +4,13 @@
 <div>
 @if ($v !== null)
 @php
-    $ink = ['normal' => 'text-gray-700', 'warn' => 'text-yellow-600', 'bad' => 'text-gray-300'][$v['tone']];
+    $ink = ['normal' => 'text-fg', 'warn' => 'text-warn', 'bad' => 'text-fg-faint'][$v['tone']];
     $arcs = [3 => 'M3 9.5a12.7 12.7 0 0 1 18 0', 2 => 'M5.8 12.3a8.8 8.8 0 0 1 12.4 0', 1 => 'M8.6 15.1a4.8 4.8 0 0 1 6.8 0'];
 @endphp
 <div wire:poll.{{ $poll }}s="refreshPassive" class="relative flex items-center"
      x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false" @click.outside="open = false" @keydown.escape.window="open = false">
     <button type="button" wire:mouseenter="refreshNow" wire:click="refreshNow" @click="open = true" @focus="open = true" @blur="open = false"
-            class="p-1.5 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition duration-150 ease-in-out"
+            class="p-1.5 rounded-md hover:bg-seg focus:outline-none focus:ring-2 focus:ring-accent transition duration-150 ease-in-out"
             aria-label="{{ $v['label'] }}" :aria-expanded="open ? 'true' : 'false'">
         <span class="relative block w-6 h-6">
             @if ($v['icon'] === 'wired')
@@ -22,16 +22,16 @@
             @else
                 <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true">
                     @foreach ($arcs as $arc => $path)
-                        <path d="{{ $path }}" stroke="currentColor" class="{{ $v['arcs'] >= $arc ? $ink : 'text-gray-300' }}"/>
+                        <path d="{{ $path }}" stroke="currentColor" class="{{ $v['arcs'] >= $arc ? $ink : 'text-fg-faint' }}"/>
                     @endforeach
                     <circle cx="12" cy="18.5" r="1.6" fill="currentColor" stroke="none" class="{{ $ink }}"/>
                     @if ($v['icon'] === 'offline')
-                        <path d="M4.5 4.5l15 15" stroke="currentColor" stroke-width="2.2" class="text-red-600"/>
+                        <path d="M4.5 4.5l15 15" stroke="currentColor" stroke-width="2.2" class="text-neg"/>
                     @endif
                 </svg>
             @endif
             @if ($v['badge'] !== null)
-                <span class="absolute -right-1 -bottom-0.5 px-px rounded-sm bg-white font-extrabold leading-none {{ $ink }}" style="font-size: 9.5px">{{ $v['badge'] }}</span>
+                <span class="absolute -right-1 -bottom-0.5 px-px rounded-sm bg-panel font-extrabold leading-none {{ $ink }}" style="font-size: 9.5px">{{ $v['badge'] }}</span>
             @endif
         </span>
     </button>
@@ -44,26 +44,26 @@
          x-transition:leave-start="transform opacity-100 scale-100"
          x-transition:leave-end="transform opacity-0 scale-95"
          class="absolute right-0 top-full z-50 pt-2 w-72 sm:w-80 origin-top-right">
-        <div class="rounded-md shadow-lg ring-1 ring-black ring-opacity-5 bg-white px-4 py-3 text-xs text-gray-700">
+        <div class="rounded-md shadow-pop ring-1 ring-pline bg-pop px-4 py-3 text-xs text-fg">
             <div class="flex justify-between items-baseline">
-                <span class="text-sm font-bold text-gray-800">{{ $v['heading'] }}</span>
+                <span class="text-sm font-bold text-fg">{{ $v['heading'] }}</span>
                 @if ($v['note'] !== null)
-                    <span class="ml-3 font-semibold text-gray-500 whitespace-nowrap">{{ $v['note'] }}</span>
+                    <span class="ml-3 font-semibold text-fg-muted whitespace-nowrap">{{ $v['note'] }}</span>
                 @endif
             </div>
             @if ($v['warning'] !== null)
-                <p class="mt-1 {{ $v['tone'] === 'bad' ? 'text-red-600' : 'text-yellow-700' }}">{{ $v['warning'] }}</p>
+                <p class="mt-1 {{ $v['tone'] === 'bad' ? 'text-neg' : 'text-warn' }}">{{ $v['warning'] }}</p>
             @endif
             @if ($v['rows'])
                 <dl class="mt-2 grid grid-cols-3 gap-x-3 gap-y-1">
                     @foreach ($v['rows'] as [$label, $value])
-                        <dt class="text-gray-500">{{ $label }}</dt>
-                        <dd class="col-span-2 text-gray-800 tabular-nums">
+                        <dt class="text-fg-muted">{{ $label }}</dt>
+                        <dd class="col-span-2 text-fg tabular-nums">
                             {{ $value }}
                             @if ($label === 'Signal' && $v['bars'] !== null)
                                 <span class="inline-flex items-end ml-1 align-middle" aria-hidden="true">
                                     @foreach (['h-1.5', 'h-2', 'h-2.5', 'h-3'] as $i => $height)
-                                        <span class="block w-1 {{ $height }} mr-px rounded-sm {{ $i < $v['bars'] ? 'bg-gray-700' : 'bg-gray-300' }}"></span>
+                                        <span class="block w-1 {{ $height }} mr-px rounded-sm {{ $i < $v['bars'] ? 'bg-fg' : 'bg-track' }}"></span>
                                     @endforeach
                                 </span>
                             @endif
@@ -72,12 +72,12 @@
                 </dl>
             @endif
             @foreach ($v['sections'] as [$title, $line])
-                <div class="mt-2 pt-2 border-t border-gray-100">
-                    <div class="font-bold text-gray-800">{{ $title }}</div>
-                    <div class="text-gray-500 tabular-nums">{{ $line }}</div>
+                <div class="mt-2 pt-2 border-t border-line">
+                    <div class="font-bold text-fg">{{ $title }}</div>
+                    <div class="text-fg-muted tabular-nums">{{ $line }}</div>
                 </div>
             @endforeach
-            <div class="mt-2 text-gray-400">{{ $v['checked'] }}</div>
+            <div class="mt-2 text-fg-faint">{{ $v['checked'] }}</div>
         </div>
     </div>
 </div>

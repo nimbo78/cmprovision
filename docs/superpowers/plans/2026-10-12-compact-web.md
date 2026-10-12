@@ -1478,7 +1478,7 @@ class BatchIndicatorTest extends TestCase
         $this->assertStringContainsString('<title>CMs · cmprovision</title>', $html);
         $this->assertStringContainsString('id="cmp-icon-svg"', $html);
         $this->assertStringContainsString('<script src="'.asset('js/tab-status.js'), $html);
-        $this->assertStringContainsString('>Settings<', $html);
+        $this->assertMatchesRegularExpression('#>\s*Settings\s*</a>#', $html);
         $this->assertStringNotContainsString('Other settings', $html);
     }
 

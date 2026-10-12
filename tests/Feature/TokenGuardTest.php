@@ -13,25 +13,21 @@ class TokenGuardTest extends TestCase
 {
     /* Views still on raw colours: each conversion task takes its files off this list (compact web plan, Task 1) */
     const NOT_YET = [
-        'api/api-token-manager.blade.php', 'api/index.blade.php',
+        'api/api-token-manager.blade.php',
         'auth/confirm-password.blade.php', 'auth/login.blade.php', 'auth/two-factor-challenge.blade.php',
         'components/action-message.blade.php', 'components/action-section.blade.php', 'components/authentication-card.blade.php',
         'components/banner.blade.php', 'components/button.blade.php', 'components/checkbox.blade.php',
-        'components/confirmation-modal.blade.php', 'components/danger-button.blade.php', 'components/dialog-modal.blade.php',
-        'components/dropdown-link.blade.php', 'components/dropdown.blade.php', 'components/form-section.blade.php',
+        'components/confirmation-modal.blade.php', 'components/danger-button.blade.php', 'components/dialog-modal.blade.php', 'components/form-section.blade.php',
         'components/input-error.blade.php', 'components/input.blade.php', 'components/label.blade.php',
-        'components/modal.blade.php', 'components/nav-link.blade.php', 'components/responsive-nav-link.blade.php',
-        'components/secondary-button.blade.php', 'components/section-border.blade.php', 'components/section-title.blade.php',
-        'components/switchable-team.blade.php', 'components/validation-errors.blade.php',
-        'dashboard.blade.php', 'layouts/app.blade.php', 'layouts/guest.blade.php',
+        'components/modal.blade.php',
+        'components/secondary-button.blade.php', 'components/section-border.blade.php', 'components/section-title.blade.php', 'components/validation-errors.blade.php',
         'livewire/addimage.blade.php', 'livewire/addstaticip.blade.php', 'livewire/cm-card.blade.php', 'livewire/cms.blade.php',
         'livewire/editlabel.blade.php', 'livewire/editproject.blade.php', 'livewire/editscript.blade.php',
         'livewire/firmware.blade.php', 'livewire/images.blade.php', 'livewire/labels.blade.php',
         'livewire/notification-settings.blade.php', 'livewire/ports.blade.php', 'livewire/projects.blade.php',
         'livewire/provisioning-log.blade.php', 'livewire/provisioning-status.blade.php', 'livewire/scripts.blade.php',
-        'livewire/settings.blade.php', 'livewire/switch-settings.blade.php', 'livewire/switch-snmp-hints.blade.php',
-        'livewire/uplink-indicator.blade.php', 'livewire/viewlog.blade.php', 'navigation-menu.blade.php',
-        'profile/logout-other-browser-sessions-form.blade.php', 'profile/show.blade.php',
+        'livewire/settings.blade.php', 'livewire/switch-settings.blade.php', 'livewire/switch-snmp-hints.blade.php', 'livewire/viewlog.blade.php',
+        'profile/logout-other-browser-sessions-form.blade.php',
         'profile/two-factor-authentication-form.blade.php', 'profile/update-profile-information-form.blade.php',
     ];
 

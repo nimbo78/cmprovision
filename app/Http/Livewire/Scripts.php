@@ -2,9 +2,11 @@
 
 namespace App\Http\Livewire;
 
+use Livewire\Attributes\Title;
 use Livewire\Component;
 use App\Models\Script;
 
+#[Title('Scripts')]
 class Scripts extends Component
 {
     public $isOpen = false;
