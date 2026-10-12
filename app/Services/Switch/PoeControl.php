@@ -62,9 +62,9 @@ class PoeControl
                     return null;
                 $error = 'the switch reads '.$value.' after writing '.$on;
             }
-            catch (SnmpError $e)
+            catch (\Throwable $e)
             {
-                $error = $e->getMessage();
+                $error = $e->getMessage();   // an SNMP error, or a php-snmp warning: tried again all the same
             }
         }
         return $error;

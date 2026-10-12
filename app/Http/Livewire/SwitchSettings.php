@@ -8,8 +8,10 @@ use App\Services\Snmp\PhpSnmpClient;
 use App\Services\Snmp\SnmpClient;
 use App\Services\Switch\Poe;
 use App\Services\Switch\PoeControl;
+use App\Services\Switch\PoeRestart;
 use App\Services\Switch\SwitchSnapshot;
 use App\Services\SwitchPortFinder;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Component;
 
 /* Settings page section: the SNMP switch that tells which port a module is plugged into */
@@ -147,6 +149,13 @@ class SwitchSettings extends Component
             $this->flash('Enter the write community (v2c) or the write user (v3) first.', true);
             return;
         }
+        // the value it reads and writes back could be a restart's "off", written after the restart switched the port on
+        $lock = Cache::lock(PoeRestart::LOCK, 60);
+        if (!$lock->get())
+        {
+            $this->flash('A restart is running: check again in a minute.', true);
+            return;
+        }
         try
         {
             $ports = array_map(function ($port) { return $port['name']; }, SwitchSnapshot::forConfig($config)->take()['ports']);
@@ -157,6 +166,10 @@ class SwitchSettings extends Component
         {
             $this->flash('Write access does not work: '.$e->getMessage(), true);
             return;
+        }
+        finally
+        {
+            $lock->release();
         }
         if ($ifIndex === null)
             $this->flash('The switch reports no PoE ports.', true);

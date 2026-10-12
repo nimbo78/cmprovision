@@ -8,6 +8,7 @@ use App\Services\Switch\MacTable;
 use App\Services\Switch\Poe;
 use App\Services\Switch\PoeControl;
 use App\Services\Switch\PoeRestart;
+use App\Services\Switch\Stand;
 use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -225,5 +226,70 @@ class PoeRestartTest extends TestCase
         $this->fake->tables[''][SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 2;
         $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.98.159.211.20.0'] = 6;
         $this->assertSame(['GE0/0/3' => '10000000e611110c'], PoeRestart::modules([$cm], 'igor')['restarted']);
+    }
+
+    public function test_a_port_that_fails_unexpectedly_does_not_strand_the_others()
+    {
+        $cm = $this->stand();
+        $second = $this->secondModule();
+        $this->fake->refuse[self::OID8.'=1'] = 'warning';   // php-snmp warns: an exception, not an SNMP answer
+        $result = PoeRestart::modules([$cm, $second], 'igor');
+
+        $this->assertSame(['GE0/0/2' => '10000000e611110d'], $result['restarted'], 'the port after it comes back on');
+        $this->assertSame(['GE0/0/3' => 'snmp2_set(): Could not open snmp connection'], $result['stayed_off']);
+        $this->assertSame(1, PoeOutage::stayedOff()->count());
+    }
+
+    public function test_a_switch_off_that_fails_unexpectedly_is_switched_on_again()
+    {
+        $cm = $this->stand();
+        $this->fake->refuse[self::OID8.'=2'] = 'warning';
+        $result = PoeRestart::modules([$cm], 'igor');
+        $this->assertSame(['GE0/0/3' => 'snmp2_set(): Could not open snmp connection'], $result['unconfirmed']);
+        $this->assertSame([[self::OID8, 'i', 2], [self::OID8, 'i', 1]], $this->fake->sets);
+    }
+
+    public function test_a_switch_that_stops_answering_after_the_snapshot_restarts_nothing()
+    {
+        $cm = $this->stand();
+        Stand::current();                 // the snapshot all pages share, fresh for a few seconds
+        $this->fake->timeout = true;      // then the switch goes silent
+        $result = PoeRestart::modules([$cm], 'igor');
+        $this->assertSame([], $this->fake->sets);
+        $this->assertSame(['text' => 'The switch does not answer: No response from 192.0.2.1.', 'error' => true], PoeRestart::message($result));
+    }
+
+    public function test_a_switch_that_takes_the_switch_off_without_doing_it_is_told()
+    {
+        $cm = $this->stand();
+        $this->fake->refuse[self::OID8.'=2'] = 'ignored';   // taken, and the port still reads on
+        $result = PoeRestart::modules([$cm], 'igor');
+        $this->assertSame(['GE0/0/3' => 'it took the write but the port still reads on'], $result['failed']);
+        $this->assertSame(0, PoeOutage::count());
+        Sleep::assertNeverSlept();
+    }
+
+    public function test_an_old_view_of_the_switch_is_not_restarted_on()
+    {
+        $cm = $this->stand();
+        Stand::current();                                            // the stand as it was an hour ago
+        $this->travel(1)->hours();
+        Sleep::fake(syncWithCarbon: true);                           // the wait for the snapshot lock passes in test time
+        Cache::lock('switch-snapshot-lock:192.0.2.10', 60)->get();   // another page is asking the switch right now
+        $result = PoeRestart::modules([$cm], 'igor');
+        $this->assertSame([], $this->fake->sets);
+        // an hour, and the wait for the lock, which may carry it into the next second
+        $this->assertMatchesRegularExpression('/^The switch was last read 360[01] s ago: try again\.$/', PoeRestart::message($result)['text']);
+        $this->assertTrue(PoeRestart::message($result)['error']);
+    }
+
+    public function test_the_lock_outlasts_a_restart_of_a_whole_stand_whose_switch_stops_answering()
+    {
+        // 48 ports, every SNMP request times out after 2 s (PhpSnmpClient: 1 s and one retry): each switch-off once,
+        // then each switch-on three times a second apart, the ports half a second apart
+        $timeout = 2;
+        $worst = 48 * $timeout + PoeRestart::OFF_SECONDS
+            + 48 * (PoeControl::TRIES * $timeout + (PoeControl::TRIES - 1) + PoeRestart::STAGGER_MS / 1000);
+        $this->assertGreaterThan($worst, PoeRestart::LOCK_SECONDS);
     }
 }

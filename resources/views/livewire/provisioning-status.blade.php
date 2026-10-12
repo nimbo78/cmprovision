@@ -99,7 +99,10 @@
                         </td>
                         <td class="text-right whitespace-nowrap">
                             @if ($writable && ($m->phase === 'failed' || $silent))
-                                <button type="button" wire:click="restart({{ $m->id }})" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirm($m, $m->provisioning_board) }}" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary cmp-btn-small mr-1">Restart</button>
+                                <button type="button" wire:click="restart({{ $m->id }})" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirm($m, $m->provisioning_board) }}" wire:loading.attr="disabled" wire:target="restart({{ $m->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small mr-1">
+                                    <span wire:loading.remove wire:target="restart({{ $m->id }})">Restart</span>
+                                    <span wire:loading wire:target="restart({{ $m->id }})">Restarting…</span>
+                                </button>
                             @endif
                             @if ($m->canIdentify())
                                 @if ($m->isIdentifying())

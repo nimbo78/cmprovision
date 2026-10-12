@@ -331,6 +331,13 @@ class StandMapTest extends TestCase
         $this->assertNull($why(3), 'a module silent on that step for long may be restarted');
     }
 
+    public function test_a_port_whose_poe_is_off_is_not_restarted()
+    {
+        $map = $this->build([$this->port(1, 'GE0/0/1', true, ['e4:5f:01:00:00:01'], ['state' => 'disabled', 'class' => null, 'watts' => null])],
+            [$this->module('1000000000000001', 'e4:5f:01:00:00:01')]);
+        $this->assertSame('PoE is off on GE0/0/1', StandMap::restartBlocker($map['tiles']['p1']), 'someone switched it off: a restart would switch it on');
+    }
+
     public function test_poe_in_words()
     {
         $this->assertSame('delivering 6.9 W, class 4', StandMap::poeText(['state' => 'delivering', 'class' => 4, 'watts' => 6.9]));

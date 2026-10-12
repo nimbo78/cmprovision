@@ -18,8 +18,8 @@ class Stand
        modules, not the office network behind an uplink */
     const LOOKUP_MACS = 48;
 
-    /** ['config' => SwitchPortFinder::config(), 'snapshot', 'error', 'map'] (snapshot and map are null until the
-        switch has answered once), or null without a switch */
+    /** ['config' => SwitchPortFinder::config(), 'snapshot', 'error', 'map', 'checked_at'] (snapshot and map are null
+        until the switch has answered once; checked_at: when the switch was last asked), or null without a switch */
     public static function current(): ?array
     {
         $config = SwitchPortFinder::config();
@@ -31,7 +31,8 @@ class Stand
         $map = $state['snapshot']
             ? (new StandMap($state['snapshot'], self::modulesOn($state['snapshot']), app(NetworkStatus::class)->serverMac()))->build()
             : null;
-        return ['config' => $config, 'snapshot' => $state['snapshot'], 'error' => $state['error'], 'map' => $map];
+        return ['config' => $config, 'snapshot' => $state['snapshot'], 'error' => $state['error'], 'map' => $map,
+                'checked_at' => $state['checked_at']];
     }
 
     /** The port a module is on now: a port the map shows it on, the one with the fewest addresses when there are

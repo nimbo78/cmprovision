@@ -7,6 +7,7 @@ use App\Models\Cmlog;
 use App\Services\Switch\PoeControl;
 use App\Services\Switch\PoeRestart;
 use App\Services\Switch\Stand;
+use App\Services\SwitchPortFinder;
 use App\Support\FailureAdvice;
 use App\Support\RunTimeline;
 use App\Support\StandMap;
@@ -21,11 +22,18 @@ class CmCard extends Component
 
     public $serial;
     public $restartMessage = null, $restartError = false;
+    public $powerLoaded = false;
 
     public function mount($serial)
     {
         Cm::where('serial', $serial)->firstOrFail();
         $this->serial = $serial;
+    }
+
+    /* The Power row asks the switch, which may be slow or silent: the card shows first, then the row (wire:init) */
+    public function loadPower()
+    {
+        $this->powerLoaded = true;
     }
 
     /* The module blinks for the operator the next time it asks the server */
@@ -59,7 +67,8 @@ class CmCard extends Component
             'settings' => self::settingsDiff($cm->eeprom_config_before, $cm->eeprom_config_after),
             'history' => Cmlog::where('cm', $this->serial)->orderByDesc('id')->limit(self::HISTORY_ROWS)->get(),
             'zone' => config('app.display_timezone'),
-            'power' => $this->power($cm),
+            'power' => $this->powerLoaded ? $this->power($cm) : null,
+            'powerPending' => !$this->powerLoaded && SwitchPortFinder::config()['host'] !== '',
         ])->title($cm->serial);
     }
 

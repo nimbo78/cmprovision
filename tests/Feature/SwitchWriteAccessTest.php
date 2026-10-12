@@ -6,6 +6,7 @@ use App\Http\Livewire\SwitchSettings;
 use App\Services\Switch\Poe;
 use App\Services\SwitchPortFinder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
 use Tests\Support\PoeStand;
 use Tests\TestCase;
@@ -72,6 +73,16 @@ class SwitchWriteAccessTest extends TestCase
         Livewire::test(SwitchSettings::class)->set('host', '192.0.2.10')->set('community', 'public')->set('writeCommunity', 'rw')
             ->call('checkWrite')
             ->assertSee('Write access does not work: noAccess');
+    }
+
+    public function test_check_write_access_waits_for_a_restart()
+    {
+        $this->stand([]);
+        Cache::lock('poe-restart', 60)->get();   // its value written back could undo the restart's switch-on
+        Livewire::test(SwitchSettings::class)->set('host', '192.0.2.10')->set('community', 'public')->set('writeCommunity', 'rw')
+            ->call('checkWrite')
+            ->assertSee('A restart is running: check again in a minute.');
+        $this->assertSame([], $this->fake->sets);
     }
 
     public function test_remove_write_access_keeps_the_read_one()

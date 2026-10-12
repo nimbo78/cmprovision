@@ -100,6 +100,8 @@ class StandMap
             return $tile['name'].' has no link';
         if (!$tile['poe'])
             return 'no PoE on '.$tile['name'];
+        if ($tile['poe']['state'] === 'disabled')
+            return 'PoE is off on '.$tile['name'];   // switched off on purpose, or left off by a restart (Power on)
         if ($tile['state'] === 'uplink')
             return $tile['name'].' is the uplink';
         // one of them may be gone with its MAC still listed: nothing tells which one the power would cut

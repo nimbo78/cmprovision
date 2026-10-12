@@ -76,6 +76,12 @@
                         @endif
                     </td>
                 </tr>
+                @elseif ($powerPending)
+                {{-- the switch may be slow or silent: asked once the card shows --}}
+                <tr wire:init="loadPower">
+                    <td class="text-fg-muted">Power (PoE)</td>
+                    <td class="text-fg-muted">asking the switch…</td>
+                </tr>
                 @endif
                 <tr><td class="text-fg-muted">MAC</td><td class="font-mono">{{ $cm->mac }}</td></tr>
                 <tr><td class="text-fg-muted">Model</td><td>{{ $cm->model }}</td></tr>

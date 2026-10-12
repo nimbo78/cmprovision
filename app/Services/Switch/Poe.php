@@ -87,7 +87,15 @@ class Poe
         $detection = $this->table(self::OID_PETH_DETECTION);
         if (!$detection)
             return [];
-        foreach ($this->cisco($detection) ?: $this->byNumber(array_keys($detection), $ports) as $key => $ifIndex)
+        $map = $this->cisco($detection);
+        if (!$map)
+            // the port number is a guess, which a management port before the others would shift: a write goes
+            // only where the port's name ends in its PoE port number
+            $map = array_filter($this->byNumber(array_keys($detection), $ports), function ($ifIndex, $key) use ($ports) {
+                return preg_match('/(\d+)\D*$/', $ports[$ifIndex] ?? '', $m) === 1
+                    && (int) $m[1] === (int) substr(strrchr('.'.$key, '.'), 1);
+            }, ARRAY_FILTER_USE_BOTH);
+        foreach ($map as $key => $ifIndex)
             if (isset($ports[$ifIndex]))
                 $admin[$ifIndex] = self::OID_PETH_ADMIN.'.'.$key;
         ksort($admin);

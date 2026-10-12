@@ -23,7 +23,10 @@ class PoeRestart
 {
     const OFF_SECONDS = 5;
     const STAGGER_MS = 500;
-    const LOCK_SECONDS = 120;
+    const LOCK = 'poe-restart';
+    // a whole 48-port stand whose switch stops answering: about 8.5 minutes of 2 s timeouts (PoeRestartTest)
+    const LOCK_SECONDS = 600;
+    const SNAPSHOT_SECONDS = 30;   // a restart decides on a snapshot at most this old
 
     protected $control, $host, $user;
 
@@ -127,7 +130,7 @@ class PoeRestart
         if (!$control)
             return ['error' => 'No write access to the switch: set it under Settings → Ethernet switch'] + $result;
 
-        $lock = Cache::lock('poe-restart', self::LOCK_SECONDS);
+        $lock = Cache::lock(self::LOCK, self::LOCK_SECONDS);
         if (!$lock->get())
             return ['busy' => true] + $result;
         try
@@ -136,11 +139,22 @@ class PoeRestart
             $stand = Stand::current();
             if (!$stand['map'] || $stand['error'])
                 return ['error' => 'The switch does not answer'.($stand['error'] ? ': '.$stand['error']['message'] : '')] + $result;
+            // while another page asks the switch, the stand comes as it was last seen, which may be long ago
+            $age = now()->getTimestamp() - (int) $stand['checked_at'];
+            if ($age > self::SNAPSHOT_SECONDS)
+                return ['error' => 'The switch was last read '.$age.' s ago: try again'] + $result;
             [$tiles, $result['skipped']] = $choose($stand['map']);
             if (!$tiles)
                 return $result;
             $names = array_map(function ($port) { return $port['name']; }, $stand['snapshot']['ports']);
-            $admin = (new Poe(app(SnmpClient::class, ['config' => $config])))->admin($names);
+            try
+            {
+                $admin = (new Poe(app(SnmpClient::class, ['config' => $config])))->admin($names);
+            }
+            catch (\Throwable $e)
+            {
+                return ['error' => 'The switch does not answer: '.$e->getMessage()] + $result;
+            }
             return (new self($control, $config['host'], $user))->run($tiles, $admin, $result);
         }
         finally
@@ -162,24 +176,16 @@ class PoeRestart
             }
             $outage = PoeOutage::create(['switch_host' => $this->host, 'if_index' => $tile['ifIndex'], 'port' => $tile['name'],
                 'oid' => $oid, 'on_value' => PoeControl::ON, 'cm_serial' => $tile['serial'], 'user' => $this->user, 'off_at' => now()]);
-            try
+            [$state, $why] = $this->switchOff($oid);
+            if ($state === 'refused')
             {
-                $this->control->switchOff($oid);
-                $off[] = [$outage, $tile];
-            }
-            catch (SnmpError $e)
-            {
-                if ($e->timeout)
-                {
-                    // no answer is not a refusal: the switch may have switched the port off and the answer got lost,
-                    // so it is switched on with the others after the pause
-                    $off[] = [$outage, $tile + ['unconfirmed' => $e->getMessage()]];
-                    continue;
-                }
                 $outage->delete();
-                $result['failed'][$tile['name']] = $e->getMessage();
-                $this->log($tile, 'error', 'PoE restart of '.$tile['name'].' by '.$this->who().' failed: the switch did not switch it off: '.$e->getMessage());
+                $result['failed'][$tile['name']] = $why;
+                $this->log($tile, 'error', 'PoE restart of '.$tile['name'].' by '.$this->who().' failed: the switch did not switch it off: '.$why);
+                continue;
             }
+            // without an answer the port may be off as well: it is switched on with the others after the pause
+            $off[] = [$outage, $state === 'off' ? $tile : $tile + ['unconfirmed' => $why]];
         }
         if (!$off)
             return $result;
@@ -189,30 +195,71 @@ class PoeRestart
         {
             if ($n > 0)
                 Sleep::for(self::STAGGER_MS)->milliseconds();
-            $error = $this->control->switchOnChecked($outage->oid, $outage->on_value);
-            if ($error === null)
+            try
             {
-                $outage->update(['on_at' => now()]);
-                if (isset($tile['unconfirmed']))
-                {
-                    $result['unconfirmed'][$tile['name']] = $tile['unconfirmed'];
-                    $this->log($tile, 'warning', 'PoE restart of '.$tile['name'].' by '.$this->who().': the switch did not confirm switching it off ('
-                        .$tile['unconfirmed'].'); PoE is on');
-                }
-                else
-                {
-                    $result['restarted'][$tile['name']] = $tile['serial'];
-                    $this->log($tile, 'info', 'PoE restart of '.$tile['name'].' by '.$this->who().': off for '.self::OFF_SECONDS.' s');
-                }
+                $this->switchOn($outage, $tile, $result);
             }
-            else
+            catch (\Throwable $e)
             {
-                $outage->update(['error' => $error]);
-                $result['stayed_off'][$tile['name']] = $error;
-                $this->log($tile, 'error', 'PoE on '.$tile['name'].' stays OFF after a restart by '.$this->who().': '.$error);
+                report($e);   // nothing may keep the next ports off
+                $result['stayed_off'][$tile['name']] = $e->getMessage();
             }
         }
         return $result;
+    }
+
+    /* [state, why]: 'off'; 'unknown' when the switch did not answer or php-snmp failed, so the port may be off;
+       'refused' when nothing changed: the switch refused, or took the write and the port still reads on */
+    protected function switchOff(string $oid): array
+    {
+        try
+        {
+            $this->control->switchOff($oid);
+        }
+        catch (SnmpError $e)
+        {
+            return [$e->timeout ? 'unknown' : 'refused', $e->getMessage()];
+        }
+        catch (\Throwable $e)
+        {
+            return ['unknown', $e->getMessage()];   // a php-snmp warning: whether the write went out is not known
+        }
+        try
+        {
+            if ($this->control->value($oid) === PoeControl::ON)
+                return ['refused', 'it took the write but the port still reads on'];
+        }
+        catch (\Throwable $e)
+        {
+            // the switch took the write: off, as far as it said; switched on after the pause in any case
+        }
+        return ['off', null];
+    }
+
+    protected function switchOn(PoeOutage $outage, array $tile, array &$result): void
+    {
+        $error = $this->control->switchOnChecked($outage->oid, $outage->on_value);
+        if ($error === null)
+        {
+            $outage->update(['on_at' => now()]);
+            if (isset($tile['unconfirmed']))
+            {
+                $result['unconfirmed'][$tile['name']] = $tile['unconfirmed'];
+                $this->log($tile, 'warning', 'PoE restart of '.$tile['name'].' by '.$this->who().': the switch did not confirm switching it off ('
+                    .$tile['unconfirmed'].'); PoE is on');
+            }
+            else
+            {
+                $result['restarted'][$tile['name']] = $tile['serial'];
+                $this->log($tile, 'info', 'PoE restart of '.$tile['name'].' by '.$this->who().': off for '.self::OFF_SECONDS.' s');
+            }
+        }
+        else
+        {
+            $outage->update(['error' => $error]);
+            $result['stayed_off'][$tile['name']] = $error;
+            $this->log($tile, 'error', 'PoE on '.$tile['name'].' stays OFF after a restart by '.$this->who().': '.$error);
+        }
     }
 
     /* A line of the module log; a booting Raspberry Pi has no serial yet */

@@ -103,6 +103,14 @@ class PoeTest extends TestCase
         $this->assertSame([], (new Poe(new FakeSnmp(['' => []])))->admin([1 => 'ether1']));
     }
 
+    public function test_a_port_number_is_written_only_when_the_port_name_agrees()
+    {
+        // ifIndex 1 is a management port, so PoE port 1 is ge1 (ifIndex 2): the snapshot may guess, a write must not
+        $admin = (new Poe(new FakeSnmp(['' => [Poe::OID_PETH_DETECTION.'.1.1' => 3, Poe::OID_PETH_DETECTION.'.1.2' => 2]])))
+            ->admin([1 => 'mgmt0', 2 => 'ge1', 3 => 'ge2']);
+        $this->assertSame([], $admin);
+    }
+
     public function test_a_switch_without_poe_tables_has_no_poe()
     {
         $this->assertSame([], $this->read([], [1 => 'ether1']));
