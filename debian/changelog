@@ -1,4 +1,4 @@
-cmprovision4 (2.2.1~dev1) unstable; urgency=medium
+cmprovision4 (2.2.1) unstable; urgency=medium
 
   * A module that stops reporting mid-run counts apart: the tab says
     "1 no report" with a yellow dot, the top bar shows a yellow chip, and the
@@ -15,7 +15,7 @@ cmprovision4 (2.2.1~dev1) unstable; urgency=medium
     closed on 11.10 at 13:22" names the day; the profile and API token pages
     are as wide as the others.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 14:32:53 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 14:37:24 +0300
 
 cmprovision4 (2.2.0) unstable; urgency=medium
 
