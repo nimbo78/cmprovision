@@ -124,7 +124,8 @@ html { background: var(--page); }
     [type='month'], [type='search'], [type='tel'], [type='time'], [type='week'], [multiple], textarea, select {
         background-color: var(--field); color: var(--text); border-color: var(--field-line);
     }
-    [type='checkbox'], [type='radio'] { background-color: var(--field); border-color: var(--field-line); }
+    [type='checkbox'], [type='radio'], input.form-checkbox, input.form-radio { background-color: var(--field); border-color: var(--field-line); }
+    input.form-checkbox:checked, input.form-radio:checked, [type='checkbox']:checked, [type='radio']:checked { background-color: currentColor; border-color: transparent; }
     input::placeholder, textarea::placeholder { color: var(--faint); }
 }
 /* Tailwind paints focus-ring offsets white: on a dark theme that is a white frame */
