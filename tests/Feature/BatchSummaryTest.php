@@ -89,6 +89,33 @@ class BatchSummaryTest extends TestCase
         $this->assertSame(['fail', '1 failed · 1 done'], [BatchSummary::current()->state, BatchSummary::current()->title()]);
     }
 
+    public function test_a_module_without_a_report_is_told_apart_and_left_out_of_the_estimate()
+    {
+        $batch = $this->batch($this->project());
+        $this->module($batch, 1, 'write', ['progress_bytes' => 300, 'progress_total' => 900,
+            'phase_started_at' => now()->subSeconds(100), 'progress_updated_at' => now()]);
+        // pulled out mid-write five minutes ago: its estimate would stay at 800 s for good
+        $this->module($batch, 2, 'write', ['progress_bytes' => 100, 'progress_total' => 900,
+            'phase_started_at' => now()->subSeconds(400), 'progress_updated_at' => now()->subSeconds(300)]);
+
+        $s = BatchSummary::current();
+        $this->assertSame(['active' => 2, 'done' => 0, 'failed' => 0], $s->counts);   // as the bots count
+        $this->assertSame(1, $s->silent);
+        $this->assertSame(200, $s->leftSeconds);
+        $this->assertSame(['stale', '1 no report · 1 running'], [$s->state, $s->title()]);
+    }
+
+    public function test_a_failure_outweighs_a_module_without_a_report()
+    {
+        $batch = $this->batch($this->project());
+        $this->module($batch, 1, 'failed');
+        $this->module($batch, 2, 'postinstall', ['phase_started_at' => now()->subMinutes(30), 'progress_updated_at' => now()->subMinutes(20)]);
+        $this->module($batch, 3, 'done', ['provisioning_complete_at' => now()]);
+
+        $s = BatchSummary::current();
+        $this->assertSame(['fail', '1 failed · 1 no report · 1 done'], [$s->state, $s->title()]);
+    }
+
     public function test_a_batch_without_modules_is_idle()
     {
         $this->batch($this->project());

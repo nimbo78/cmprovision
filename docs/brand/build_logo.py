@@ -145,7 +145,7 @@ def dot(cx, cy, r):
 
 
 CHECK = 'M34.6 9.4L37.6 12.4L43.1 6.4'
-for state, colour in (('run', '#2563eb'), ('fail', '#dc2626'), ('done', '#16a34a')):
+for state, colour in (('run', '#2563eb'), ('fail', '#dc2626'), ('stale', '#eab308'), ('done', '#16a34a')):
     badge = P(dot(39, 9, 10.5), '#fff') + P(dot(39, 9, 8.5), colour)
     if state == 'done':
         badge += P(stroked(parse(CHECK), 2.6), '#fff')

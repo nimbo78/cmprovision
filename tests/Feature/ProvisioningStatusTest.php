@@ -214,6 +214,17 @@ class ProvisioningStatusTest extends TestCase
         Livewire::test(ProvisioningStatus::class)->assertSeeHtml('<div class="cmp-tile cmp-tile-fail"><div class="num text-neg">1</div>');
     }
 
+    public function test_a_module_without_a_report_is_named_in_the_batch_card_and_not_counted_as_running()
+    {
+        $batch = $this->openBatch();
+        $this->module('1000000000000c08', ['phase' => 'write', 'notification_batch_id' => $batch->id,
+                                           'phase_started_at' => now()->subMinutes(4), 'progress_updated_at' => now()->subMinutes(3)]);
+
+        Livewire::test(ProvisioningStatus::class)
+            ->assertSeeHtml('<div class="num text-info">0</div>')
+            ->assertSeeHtml('<span class="text-warn">1 no report</span>');
+    }
+
     public function test_nothing_to_show_says_so()
     {
         Livewire::test(ProvisioningStatus::class)->assertSee('No modules are being provisioned');
