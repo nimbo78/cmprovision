@@ -3,13 +3,13 @@
 namespace App\Http\Livewire;
 
 use App\Models\Cm;
-use App\Services\NetworkStatus;
-use App\Services\Switch\SnapshotCache;
-use App\Services\Switch\SwitchSnapshot;
-use App\Services\SwitchPortFinder;
+use App\Models\PoeOutage;
+use App\Services\Snmp\SnmpClient;
+use App\Services\Switch\PoeControl;
+use App\Services\Switch\PoeRestart;
+use App\Services\Switch\Stand;
 use App\Support\StandMap;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -21,13 +21,11 @@ use Livewire\Component;
 #[Title('Ports')]
 class Ports extends Component
 {
-    /* Modules are looked for on ports with at most this many MAC addresses: a desktop switch full of
-       modules, not the office network behind an uplink */
-    const LOOKUP_MACS = 48;
-
     /** key of the port whose details are open, e.g. "p10003"; only select() sets it */
     #[Locked]
     public $selected = null;
+
+    public $restartMessage = null, $restartError = false;
 
     public function select($key)
     {
@@ -48,43 +46,61 @@ class Ports extends Component
             $cm->stopIdentify();
     }
 
+    /* Switch the port's PoE off and on (PoeRestart); the port is checked again on a fresh snapshot */
+    public function restart($key)
+    {
+        $this->report(PoeRestart::ports([(string) $key], auth()->user()->name ?? null));
+    }
+
+    /* Every failed or silent module on a port that may be restarted */
+    public function restartFailed()
+    {
+        $stand = Stand::current();
+        $cms = $stand && $stand['map'] ? self::failedOnStand($stand['map']) : [];
+        $this->report(PoeRestart::modules($cms, auth()->user()->name ?? null));
+    }
+
     public function render()
     {
-        $config = SwitchPortFinder::config();
-        if (!$config['host'])
+        $stand = Stand::current();
+        if (!$stand)
             return view('livewire.ports', ['configured' => false]);
+        // a port left off that the switch shows switched on again was switched on at the switch
+        if ($stand['snapshot'] && !$stand['error'])
+            PoeOutage::closeSeenOn(app(SnmpClient::class, ['config' => $stand['config']]), $stand['config']['host']);
 
-        $state = (new SnapshotCache($config['host'], function () use ($config) {
-            return SwitchSnapshot::forConfig($config)->take();
-        }))->current();
-
-        $map = null;
-        if ($state['snapshot'])
-            $map = (new StandMap($state['snapshot'], $this->modulesOn($state['snapshot']), app(NetworkStatus::class)->serverMac()))->build();
-
+        $tile = $stand['map']['tiles'][$this->selected] ?? null;
+        $writable = PoeControl::writable($stand['config']);
         return view('livewire.ports', [
             'configured' => true,
-            'host' => $config['host'],
-            'snapshot' => $state['snapshot'],
-            'error' => $state['error'],
-            'map' => $map,
-            'tile' => $map['tiles'][$this->selected] ?? null,
+            'host' => $stand['config']['host'],
+            'snapshot' => $stand['snapshot'],
+            'error' => $stand['error'],
+            'map' => $stand['map'],
+            'tile' => $tile,
             'now' => Carbon::now()->getTimestamp(),
+            'writable' => $writable,
+            'failed' => $writable && $stand['map'] ? count(self::failedOnStand($stand['map'])) : 0,
+            'restart' => $tile ? ['blocker' => StandMap::restartBlocker($tile),
+                                  'confirm' => PoeRestart::confirm($tile['modules'][0] ?? null, $tile['name'])] : null,
         ]);
     }
 
-    /* Modules behind ports with a link and few enough addresses to be devices, not uplinks */
-    protected function modulesOn(array $snapshot)
+    /* Failed and silent modules on ports that may be restarted */
+    protected static function failedOnStand(array $map): array
     {
-        $macs = [];
-        foreach ($snapshot['ports'] as $port)
-            if ($port['up'] && ($port['mac_count'] ?? count($port['macs'])) <= self::LOOKUP_MACS)
-                foreach ($port['macs'] as $mac)
-                    $macs[strtolower($mac)] = true;
-        $modules = [];
-        foreach (array_chunk(array_keys($macs), 500) as $chunk)
-            foreach (Cm::whereIn(DB::raw('lower(mac)'), $chunk)->get() as $cm)
-                $modules[] = $cm;
-        return $modules;
+        $cms = [];
+        foreach ($map['tiles'] as $tile)
+            if (StandMap::restartBlocker($tile) === null)
+                foreach ($tile['modules'] as $cm)
+                    if (in_array(StandMap::moduleState($cm), ['fail', 'stale'], true))
+                        $cms[] = $cm;
+        return $cms;
+    }
+
+    protected function report(array $result): void
+    {
+        ['text' => $this->restartMessage, 'error' => $this->restartError] = PoeRestart::message($result);
+        $this->dispatch('poe-outages-changed');   // a port left off shows in the banner at once
     }
 }

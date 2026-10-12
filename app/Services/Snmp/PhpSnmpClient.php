@@ -59,6 +59,45 @@ class PhpSnmpClient implements SnmpClient
         return $out;
     }
 
+    public function get($oid)
+    {
+        $session = $this->session(null);
+        try
+        {
+            $value = @$session->get($oid);
+            $this->refused($session, $value);
+            return $value;
+        }
+        finally
+        {
+            $session->close();
+        }
+    }
+
+    public function set($oid, $type, $value)
+    {
+        $session = $this->session(null);
+        try
+        {
+            $this->refused($session, @$session->set($oid, $type, (string) $value));
+        }
+        finally
+        {
+            $session->close();
+        }
+    }
+
+    /* A get or a set that did not work as SnmpError: no answer, or the agent's own word (noAccess, notWritable...) */
+    protected function refused(\SNMP $session, $result)
+    {
+        $errno = $session->getErrno();
+        if ($result !== false && $errno == \SNMP::ERRNO_NOERROR)
+            return;
+        if ($errno == \SNMP::ERRNO_TIMEOUT)
+            throw new SnmpError($session->getError() ?: 'No response from '.$this->config['host'], true);
+        throw new SnmpError($session->getError() ?: 'SNMP error '.$errno);
+    }
+
     protected function session($vlan)
     {
         $c = $this->config;

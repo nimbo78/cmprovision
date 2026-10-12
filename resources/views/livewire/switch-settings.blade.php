@@ -74,9 +74,61 @@
         </select>
     </div>
 
+    <div class="mb-4 border-t border-pline pt-4">
+        <div class="font-bold">Write access (PoE restart)</div>
+        <p class="text-sm text-fg-muted mb-3">Lets cmprovision switch a module's PoE port off and on again. Empty: no PoE restarts.</p>
+        @if ($version === '2c')
+            <label class="{{ $label }}">Write community</label>
+            <input type="password" wire:model="writeCommunity" class="{{ $input }}" autocomplete="new-password"
+                   placeholder="{{ ($stored['write_community'] ?? false) ? 'leave empty to keep the stored write community' : 'empty: no PoE restarts' }}">
+            @error('writeCommunity') <span class="text-neg text-sm">{{ $message }}</span> @enderror
+        @else
+            <div class="mb-4">
+                <label class="{{ $label }}">Write user</label>
+                <input type="text" wire:model="writeUser" class="{{ $input }}" placeholder="empty: no PoE restarts">
+                @error('writeUser') <span class="text-neg text-sm">{{ $message }}</span> @enderror
+            </div>
+            <div class="flex mb-4">
+                <div style="min-width: 9rem; margin-right: 1rem">
+                    <label class="{{ $label }}">Authentication</label>
+                    <select wire:model.live="writeAuthProtocol" class="{{ $input }}">
+                        <option value="">none</option>
+                        @foreach (\App\Services\Snmp\PhpSnmpClient::authProtocols() as $p)<option value="{{ $p }}">{{ $p }}</option>@endforeach
+                    </select>
+                </div>
+                <div class="w-full">
+                    <label class="{{ $label }}">Authentication password</label>
+                    <input type="password" wire:model="writeAuthPassword" class="{{ $input }}" autocomplete="new-password"
+                           placeholder="{{ ($stored['write_auth_password'] ?? false) ? 'leave empty to keep the stored password' : 'at least 8 characters' }}">
+                    @error('writeAuthPassword') <span class="text-neg text-sm">{{ $message }}</span> @enderror
+                </div>
+            </div>
+            <div class="flex">
+                <div style="min-width: 9rem; margin-right: 1rem">
+                    <label class="{{ $label }}">Privacy</label>
+                    <select wire:model.live="writePrivProtocol" class="{{ $input }}">
+                        <option value="">none</option>
+                        @foreach (\App\Services\Snmp\PhpSnmpClient::PRIV_PROTOCOLS as $p)<option value="{{ $p }}">{{ $p }}</option>@endforeach
+                    </select>
+                </div>
+                <div class="w-full">
+                    <label class="{{ $label }}">Privacy password</label>
+                    <input type="password" wire:model="writePrivPassword" class="{{ $input }}" autocomplete="new-password"
+                           placeholder="{{ ($stored['write_priv_password'] ?? false) ? 'leave empty to keep the stored password' : 'at least 8 characters' }}">
+                    @error('writePrivPassword') <span class="text-neg text-sm">{{ $message }}</span> @enderror
+                </div>
+            </div>
+        @endif
+        @if (($stored['write_community'] ?? false) || $writeUser !== '')
+            <button type="button" wire:click="forgetWrite" wire:confirm="Remove the write access? PoE restarts stop working."
+                    class="cmp-btn cmp-btn-secondary cmp-btn-small mt-3">Remove write access</button>
+        @endif
+    </div>
+
     <button wire:click="test()" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary">Test</button>
+    <button wire:click="checkWrite()" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary ml-2">Check write access</button>
     <button wire:click="save()" class="cmp-btn ml-2">Save</button>
-    <span wire:loading wire:target="test" class="text-sm text-fg-muted ml-2">asking the switch...</span>
+    <span wire:loading wire:target="test,checkWrite" class="text-sm text-fg-muted ml-2">asking the switch...</span>
 
     @if ($result)
         <div class="mt-4 text-sm">

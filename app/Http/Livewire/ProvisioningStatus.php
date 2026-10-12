@@ -4,6 +4,9 @@ namespace App\Http\Livewire;
 
 use App\Models\Cm;
 use App\Models\NotificationBatch;
+use App\Services\Switch\PoeControl;
+use App\Services\Switch\PoeRestart;
+use App\Services\SwitchPortFinder;
 use App\Support\BatchSummary;
 use Livewire\Component;
 
@@ -14,6 +17,8 @@ class ProvisioningStatus extends Component
     const RECENT_HOURS = 2;      // modules outside any batch stay visible this long after they finish
     const ACTIVE_HOURS = Cm::ACTIVE_HOURS;     // a module still "in progress" after this long was unplugged
     const MAX_ROWS = 50;
+
+    public $restartMessage = null, $restartError = false;
 
     /* The module blinks for the operator the next time it asks the server */
     public function identify($id)
@@ -34,6 +39,28 @@ class ProvisioningStatus extends Component
     public function newBatch()
     {
         NotificationBatch::startNew();
+    }
+
+    /* Switch the PoE of a module's port off and on (PoeRestart); its port is looked up on a fresh snapshot */
+    public function restart($id)
+    {
+        $cm = Cm::find($id);
+        if ($cm)
+            $this->report(PoeRestart::modules([$cm], auth()->user()->name ?? null));
+    }
+
+    /* The failed and silent modules of the open batch */
+    public function restartFailed()
+    {
+        $summary = BatchSummary::current();
+        $cms = $summary ? $summary->modules->filter(function ($cm) { return $cm->phase === 'failed' || $cm->silentFor() !== null; }) : [];
+        $this->report(PoeRestart::modules($cms, auth()->user()->name ?? null));
+    }
+
+    protected function report(array $result): void
+    {
+        ['text' => $this->restartMessage, 'error' => $this->restartError] = PoeRestart::message($result);
+        $this->dispatch('poe-outages-changed');   // a port left off shows in the banner at once
     }
 
     public function render()
@@ -62,10 +89,13 @@ class ProvisioningStatus extends Component
             })
             ->values();
 
+        $writable = PoeControl::writable(SwitchPortFinder::config());
         return view('livewire.provisioning-status', [
             'summary' => $summary,
             'modules' => $modules,
             'activeCount' => $modules->filter->isActive()->count(),
+            'writable' => $writable,
+            'failedToRestart' => $writable && $summary && $summary->open ? $summary->counts['failed'] + $summary->silent : 0,
         ]);
     }
 

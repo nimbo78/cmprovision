@@ -10,4 +10,16 @@ interface SnmpClient
      * $vlan selects a Cisco-style per-VLAN instance: community@vlan for v2c, context "vlan-<id>" for v3.
      */
     public function walk($oid, $vlan = null);
+
+    /**
+     * The value of one object (an instance OID such as ".1.3.6.1.2.1.105.1.1.1.3.1.4"). Throws SnmpError when the
+     * agent does not answer, refuses or has no such object.
+     */
+    public function get($oid);
+
+    /**
+     * Writes one object; $type is php-snmp's one-letter type ("i" for INTEGER). Throws SnmpError when the agent does
+     * not answer or refuses (noAccess, notWritable, wrongValue, an unknown user).
+     */
+    public function set($oid, $type, $value);
 }

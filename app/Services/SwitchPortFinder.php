@@ -67,6 +67,15 @@ class SwitchPortFinder
             'priv_password' => $get('snmp_priv_password'),
             'method' => $get('method', 'auto'),
             'detected' => $get('method_detected', null),
+            // PoE restart (PoeControl): its own community (v2c) or user (v3), kept like the read ones
+            'write' => [
+                'community' => $get('snmp_write_community'),
+                'user' => $get('snmp_write_user'),
+                'auth_protocol' => $get('snmp_write_auth_protocol'),
+                'auth_password' => $get('snmp_write_auth_password'),
+                'priv_protocol' => $get('snmp_write_priv_protocol'),
+                'priv_password' => $get('snmp_write_priv_password'),
+            ],
         ];
     }
 

@@ -92,6 +92,51 @@ class StandMap
         return $mbps >= 1000 ? ($mbps / 1000).'G' : $mbps.'M';
     }
 
+    /** Why this port's PoE may not be switched off and on (a PoE restart), null when it may: nothing on the port but
+        one of our modules, or a Raspberry Pi that has not asked the server yet */
+    public static function restartBlocker(array $tile): ?string
+    {
+        if ($tile['state'] === 'free')
+            return $tile['name'].' has no link';
+        if (!$tile['poe'])
+            return 'no PoE on '.$tile['name'];
+        if ($tile['poe']['state'] === 'disabled')
+            return 'PoE is off on '.$tile['name'];   // switched off on purpose, or left off by a restart (Power on)
+        if ($tile['state'] === 'uplink')
+            return $tile['name'].' is the uplink';
+        // one of them may be gone with its MAC still listed: nothing tells which one the power would cut
+        if (count($tile['modules']) > 1)
+            return count($tile['modules']).' modules on '.$tile['name'];
+        // power cut mid-write can leave a bootloader that no longer boots from the network; a module silent on that step may go
+        foreach ($tile['modules'] as $cm)
+            if (self::writingEeprom($cm) && $cm->isActive() && $cm->silentFor() === null)
+                return 'the module on '.$tile['name'].' is writing its bootloader EEPROM';
+        if (($tile['state'] === 'module' && $tile['others'] === 0) || ($tile['state'] === 'boot' && $tile['macs']))
+            return null;
+        return 'other devices on '.$tile['name'];
+    }
+
+    /** A port's PoE in words, as the module card shows it */
+    public static function poeText(?array $poe): string
+    {
+        if (!$poe)
+            return 'none';
+        switch ($poe['state'])
+        {
+            case 'delivering':
+                return 'delivering'.($poe['watts'] !== null ? ' '.number_format($poe['watts'], 1).' W' : '')
+                    .($poe['class'] !== null ? ', class '.$poe['class'] : '');
+            case 'searching':
+                return 'looking for a device';
+            case 'fault':
+                return 'fault';
+            case 'disabled':
+                return 'off';
+            default:
+                return $poe['state'];
+        }
+    }
+
     protected function tile(array $port): array
     {
         $macs = array_map('strtolower', $port['macs']);
@@ -121,6 +166,7 @@ class StandMap
         $filter = $state === 'module' ? self::moduleState($modules[0]) : ($state === 'quiet' ? 'foreign' : $state);
         return [
             'key' => 'p'.$port['ifIndex'],
+            'ifIndex' => $port['ifIndex'],
             'name' => $port['name'],
             'alias' => $port['alias'],
             'number' => preg_match('/(\d+)\D*$/', $port['name'], $m) ? (int) $m[1] : null,
@@ -130,6 +176,7 @@ class StandMap
             'poe' => $port['poe'],
             'macs' => $macs,
             'mac_count' => $port['mac_count'] ?? count($macs),
+            'others' => $others,   // addresses that are not modules (a PoE restart needs none)
             'state' => $state,
             'filter' => $filter,
             // a port with several modules answers to the chip of each of their states
@@ -156,6 +203,12 @@ class StandMap
                 return false;
         }
         return true;
+    }
+
+    /* The step that flashes the project's bootloader EEPROM (ScriptExecuteController names it "Flash EEPROM firmware") */
+    protected static function writingEeprom(Cm $cm): bool
+    {
+        return $cm->phase === 'preinstall' && stripos((string) $cm->phase_detail, 'eeprom') !== false;
     }
 
     /* Several modules on one port: a switch that keeps a MAC after the link drops lists the module taken
@@ -194,7 +247,7 @@ class StandMap
         $percent = $cm->progressPercent();
         if ($percent !== null)
             return $percent.'%';
-        if ($cm->phase === 'preinstall' && stripos((string) $cm->phase_detail, 'eeprom') !== false)
+        if (self::writingEeprom($cm))
             return 'EEPROM';
         return self::STEP_MARKS[$cm->phase] ?? '';
     }
