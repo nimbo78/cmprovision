@@ -1,6 +1,6 @@
 {
     "private": true,
     "scripts": {
-        "test:js": "node --test tests/js/upload-progress.test.mjs tests/js/tokens.test.mjs"
+        "test:js": "node --test tests/js/upload-progress.test.mjs tests/js/tokens.test.mjs tests/js/appearance.test.mjs"
     }
 }
