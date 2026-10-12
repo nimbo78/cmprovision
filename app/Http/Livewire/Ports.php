@@ -3,6 +3,7 @@
 namespace App\Http\Livewire;
 
 use App\Models\Cm;
+use App\Models\PoeOutage;
 use App\Services\Switch\Stand;
 use Illuminate\Support\Carbon;
 use Livewire\Attributes\Locked;
@@ -44,6 +45,8 @@ class Ports extends Component
         $stand = Stand::current();
         if (!$stand)
             return view('livewire.ports', ['configured' => false]);
+        // a port left off that the switch shows with PoE on again was switched on at the switch
+        PoeOutage::closeSeenOn($stand['snapshot'], $stand['config']['host']);
 
         return view('livewire.ports', [
             'configured' => true,

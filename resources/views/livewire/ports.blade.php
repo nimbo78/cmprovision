@@ -3,6 +3,7 @@
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)
 @php($words = ['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'silent', 'unknown' => 'unknown', 'boot' => 'booting', 'foreign' => 'foreign', 'free' => 'free'])
 <div class="cmp-page">
+    <livewire:poe-outages />
 
 @if (!$configured)
     <div class="cmp-card px-4 py-3 text-fg">
