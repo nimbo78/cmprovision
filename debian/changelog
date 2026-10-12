@@ -1,4 +1,4 @@
-cmprovision4 (2.2.0~dev2) unstable; urgency=medium
+cmprovision4 (2.2.0) unstable; urgency=medium
 
   * Compact layout: a 48 px top bar instead of the page header, pages as
     wide as the window, dense tables with sticky headers. The open batch
@@ -22,7 +22,7 @@ cmprovision4 (2.2.0~dev2) unstable; urgency=medium
     foreign device: a module asks for DHCP before it asks the server. The
     port's details show the Pi's MAC address.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 12:48:09 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Mon, 12 Oct 2026 14:03:46 +0300
 
 cmprovision4 (2.1.1) unstable; urgency=medium
 
