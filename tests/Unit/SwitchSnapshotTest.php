@@ -69,6 +69,48 @@ class SwitchSnapshotTest extends TestCase
         $this->assertSame(1000, $s['ports'][7]['speed'], 'what the switch says without a link');
         $this->assertSame(['00:11:22:33:44:55'], $s['ports'][30]['macs']);
         $this->assertSame(10000, $s['ports'][30]['speed']);
+        $this->assertSame(['revision' => null, 'serial' => null, 'name' => null, 'mac' => null], $s['identity'],
+            'no ENTITY-MIB, no bridge address, no sysName: nothing more to tell');
+    }
+
+    public function test_the_switch_says_what_it_is_through_entity_mib_bridge_mib_and_sys_name()
+    {
+        // Cisco IOS: the chassis is entity 1001; the fixed module 1002 has no serial of its own
+        $s = $this->take($this->interfaces([10101 => ['Gi0/1', 6, 1, 1, 1000]]) + [
+            SwitchSnapshot::OID_SYSDESCR.'.0' => "Cisco IOS Software, C2960CX Software (C2960CX-UNIVERSALK9-M), Version 15.2(7)E14\r\nTechnical Support",
+            SwitchSnapshot::OID_SYSNAME.'.0' => 'Switch',
+            SwitchSnapshot::OID_ENT_CLASS.'.1001' => 3, SwitchSnapshot::OID_ENT_CLASS.'.1002' => 9, SwitchSnapshot::OID_ENT_CLASS.'.1003' => 6,
+            SwitchSnapshot::OID_ENT_MODEL.'.1001' => 'WS-C2960CX-8PC-L', SwitchSnapshot::OID_ENT_MODEL.'.1002' => '',
+            SwitchSnapshot::OID_ENT_HW_REV.'.1001' => 'V02 ',
+            SwitchSnapshot::OID_ENT_SERIAL.'.1001' => 'FOC1947Z338', SwitchSnapshot::OID_ENT_SERIAL.'.1002' => '',
+            SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0' => hex2bin('0057d297a180'),   // php-snmp hands octets over as they are
+        ]);
+
+        $this->assertSame('WS-C2960CX-8PC-L', $s['model'], 'the chassis model, not the first line of sysDescr');
+        $this->assertSame(['revision' => 'V02', 'serial' => 'FOC1947Z338', 'name' => 'Switch', 'mac' => '00:57:d2:97:a1:80'], $s['identity']);
+    }
+
+    public function test_a_serial_kept_on_the_main_board_as_huawei_does()
+    {
+        $s = $this->take($this->interfaces([6 => ['GE0/0/1', 6, 1, 1, 1000]]) + [
+            SwitchSnapshot::OID_SYSDESCR.'.0' => "S5731-S24P4X\r\nHuawei Versatile Routing Platform Software",
+            SwitchSnapshot::OID_ENT_CLASS.'.16777216' => 3, SwitchSnapshot::OID_ENT_CLASS.'.16842753' => 9,
+            SwitchSnapshot::OID_ENT_MODEL.'.16777216' => '', SwitchSnapshot::OID_ENT_SERIAL.'.16777216' => '',
+            SwitchSnapshot::OID_ENT_SERIAL.'.16842753' => '2102351931P0K1000123',
+        ]);
+
+        $this->assertSame('S5731-S24P4X', $s['model'], 'no model name on the chassis: the first line of sysDescr');
+        $this->assertSame('2102351931P0K1000123', $s['identity']['serial']);
+        $this->assertNull($s['identity']['revision']);
+    }
+
+    public function test_a_bridge_address_of_zeros_or_not_six_octets_is_no_mac()
+    {
+        foreach ([hex2bin('000000000000'), 'abc'] as $value)
+        {
+            $s = $this->take($this->interfaces([1 => ['ether1', 6, 1, 1, 1000]]) + [SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0' => $value]);
+            $this->assertNull($s['identity']['mac'], bin2hex($value));
+        }
     }
 
     public function test_an_old_switch_without_if_x_table_gets_names_from_if_descr_and_speed_from_if_speed()

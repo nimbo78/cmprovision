@@ -117,6 +117,9 @@ class SnmpAgentTest extends TestCase
     public function test_snapshot_of_a_cisco_ios_switch_with_poe_through_entity_mib()
     {
         $s = $this->snapshot('c9200');
+        $this->assertSame('C9200L-24P-4G', $s['model'], 'the chassis model from ENTITY-MIB, not the first line of sysDescr');
+        $this->assertSame(['revision' => 'V01', 'serial' => 'JAE24420ABC', 'name' => 'c9200-stand', 'mac' => '00:aa:bb:cc:dd:00'],
+            $s['identity'], 'dot1dBaseBridgeAddress comes through the real php-snmp as six octets');
         $this->assertSame([self::MODULE], $s['ports'][10105]['macs'], 'from the VLAN 20 instance');
         $this->assertSame(['state' => 'delivering', 'class' => 4, 'watts' => 7.1], $s['ports'][10105]['poe']);
         $this->assertSame(['00:11:22:33:44:55'], $s['ports'][10201]['macs']);

@@ -73,7 +73,7 @@ class Ports extends Component
         $writable = PoeControl::writable($stand['config']);
         return view('livewire.ports', [
             'configured' => true,
-            'host' => $stand['config']['host'],
+            'header' => self::header($stand['snapshot'], $stand['config']['host']),
             'snapshot' => $stand['snapshot'],
             'error' => $stand['error'],
             'map' => $stand['map'],
@@ -84,6 +84,24 @@ class Ports extends Component
             'restart' => $tile ? ['blocker' => StandMap::restartBlocker($tile),
                                   'confirm' => PoeRestart::confirm($tile['modules'][0] ?? null, $tile['name'])] : null,
         ]);
+    }
+
+    /* The line above the stand: the model and its revision in bold, then the switch's name (unless the model already
+       is its name), serial, base MAC and address. A snapshot kept by 2.3.0 has no identity yet */
+    protected static function header(?array $snapshot, string $host): array
+    {
+        $who = $snapshot['identity'] ?? [];
+        $model = $snapshot['model'] ?? null;
+        $name = $who['name'] ?? null;
+        return [
+            'title' => $model !== null ? trim($model.' '.($who['revision'] ?? '')) : null,
+            'facts' => implode(' · ', array_filter([
+                $name !== $model ? $name : null,
+                isset($who['serial']) ? 'S/N '.$who['serial'] : null,
+                isset($who['mac']) ? 'MAC '.$who['mac'] : null,
+                $host,
+            ])),
+        ];
     }
 
     /* Failed and silent modules on ports that may be restarted */
