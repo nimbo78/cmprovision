@@ -20,6 +20,15 @@ class StandMap
     const BLOCK = 12;
     /* Cages for a switch without PoE tables: 10G and faster names, and MikroTik's sfp ports */
     const CAGE_NAMES = '/^(xge|xgigabitethernet|25ge|40ge|100ge|te|fo|hu|twe|sfp)/i';
+    /* The speed a port's name stands for (usualSpeed()), checked in this order */
+    const NAME_SPEEDS = [
+        '/^(fa|fastethernet)\d/i' => 100,
+        '/^(xge|xgigabitethernet|te|tengigabitethernet)\d/i' => 10000,
+        '/^(25ge|twe|twentyfivegige)\d/i' => 25000,
+        '/^(40ge|fo|fortygigabitethernet)\d/i' => 40000,
+        '/^(100ge|hu|hundredgige)\d/i' => 100000,
+        '/^(ge|gi|gigabitethernet)\d/i' => 1000,
+    ];
     /* Worst first: a port with several modules shows the first of these that one of them has */
     const SEVERITY = ['fail', 'stale', 'run', 'unknown', 'ok'];
     /* A running module's tile without a percent shows its step */
@@ -50,9 +59,16 @@ class StandMap
         foreach ($ports as $port)
         {
             $tile = $this->tile($port);
-            $tile['sfp'] = $withPoe ? $port['poe'] === null : $this->cage($port);
+            $media = $port['media'] ?? null;
+            // the block of uplinks beside the main ports: no PoE on a PoE switch, otherwise a cage or combo port
+            $tile['aside'] = $withPoe ? $port['poe'] === null : ($this->cage($port) || in_array($media, ['sfp', 'combo'], true));
+            // the connector as the switch tells it (SwitchSnapshot::media()), otherwise a cage beside and copper in the main blocks
+            $tile['media'] = $media ?? ($tile['aside'] ? 'sfp' : 'copper');
+            $tile['sfp'] = $tile['media'] === 'sfp';
+            $tile['combo'] = $tile['media'] === 'combo';
+            $tile['transceiver'] = $port['transceiver'] ?? null;
             $tile['mark'] = $this->mark($tile);
-            if ($tile['sfp'])
+            if ($tile['aside'])
                 $uplinks[] = $tile;
             else
                 $main[] = $tile;
@@ -71,7 +87,7 @@ class StandMap
             $tiles[$tile['key']] = $tile;
 
         return ['switch' => $this->snapshot['id'] ?? null, 'blocks' => $blocks, 'tiles' => $tiles,
-                'summary' => $this->summary($main, $tiles, count($uplinks), $withPoe)];
+                'summary' => $this->summary($main, $tiles, $uplinks, $withPoe)];
     }
 
     /* What the dashboard says about a module, in one word */
@@ -252,7 +268,7 @@ class StandMap
         return self::STEP_MARKS[$cm->phase] ?? '';
     }
 
-    protected function summary(array $main, array $tiles, int $cages, bool $withPoe): array
+    protected function summary(array $main, array $tiles, array $aside, bool $withPoe): array
     {
         $counts = array_fill_keys(['ok', 'run', 'fail', 'stale', 'unknown', 'boot', 'foreign', 'free'], 0);
         $modules = 0;
@@ -277,20 +293,55 @@ class StandMap
             $verdict = 'empty';
 
         return ['modules' => $modules, 'ports' => count($main), 'counts' => $counts, 'verdict' => $verdict, 'busy' => $busy,
-                'composition' => $this->composition($main, $cages, $withPoe)];
+                'composition' => $this->composition($main, $aside, $withPoe)];
     }
 
-    /* "24 × 1G PoE · 4 × SFP": the main ports with their usual speed, and the cages */
-    protected function composition(array $main, int $cages, bool $withPoe): string
+    /* "8 × 1G PoE · 2 × 1G · 2 × SFP": the main ports with their usual speed, then beside them the copper uplinks,
+       the cages and the combo ports */
+    protected function composition(array $main, array $aside, bool $withPoe): string
     {
-        $speeds = array_count_values(array_filter(array_map(function ($t) { return $t['speed']; }, $main)));
-        arsort($speeds);
-        $kind = trim(($speeds ? self::speedLabel((int) array_key_first($speeds)) : '').($withPoe ? ' PoE' : ''));
         $parts = [];
         if ($main)
+        {
+            $speed = self::usualSpeed($main);
+            $kind = trim(($speed ? self::speedLabel($speed) : '').($withPoe ? ' PoE' : ''));
             $parts[] = $kind !== '' ? count($main).' × '.$kind : count($main).' ports';
-        if ($cages)
-            $parts[] = $cages.' × SFP';
+        }
+        $copper = array_filter($aside, function ($t) { return $t['media'] === 'copper'; });
+        if ($copper)
+        {
+            $speed = self::usualSpeed($copper);
+            $parts[] = count($copper).' × '.($speed ? self::speedLabel($speed) : 'RJ45');
+        }
+        foreach (['sfp' => 'SFP', 'combo' => 'combo'] as $media => $word)
+        {
+            $count = count(array_filter($aside, function ($t) use ($media) { return $t['media'] === $media; }));
+            if ($count)
+                $parts[] = $count.' × '.$word;
+        }
         return implode(' · ', $parts);
+    }
+
+    /* The speed most of these ports are made for: what their names say, then the speed of those with a link (a module
+       may link at 100M; Cisco gives a port without a link the speed 10, Huawei 1000), then what most of them report */
+    protected static function usualSpeed(array $tiles): ?int
+    {
+        $common = function (array $speeds) {
+            $speeds = array_count_values(array_filter($speeds));
+            arsort($speeds);
+            return $speeds ? (int) array_key_first($speeds) : null;
+        };
+        return $common(array_map(function ($t) { return self::nameSpeed($t['name']); }, $tiles))
+            ?? $common(array_map(function ($t) { return $t['up'] ? $t['speed'] : null; }, $tiles))
+            ?? $common(array_map(function ($t) { return $t['speed']; }, $tiles));
+    }
+
+    /* Mbit/s a port's name stands for: "Gi0/9" and "GE0/0/1" 1G, "Te1/1/1" and "XGE0/0/1" 10G; null for "ether1" */
+    protected static function nameSpeed(string $name): ?int
+    {
+        foreach (self::NAME_SPEEDS as $pattern => $speed)
+            if (preg_match($pattern, $name) === 1)
+                return $speed;
+        return null;
     }
 }

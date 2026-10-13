@@ -34,6 +34,9 @@ class SwitchSnapshot
     const OID_ENT_HW_REV = '.1.3.6.1.2.1.47.1.1.1.1.8';    // entPhysicalHardwareRev
     const OID_ENT_SERIAL = '.1.3.6.1.2.1.47.1.1.1.1.11';   // entPhysicalSerialNum
     const OID_ENT_MODEL = '.1.3.6.1.2.1.47.1.1.1.1.13';    // entPhysicalModelName
+    /* What each port's connector is (media()) */
+    const OID_ENT_NAME = '.1.3.6.1.2.1.47.1.1.1.1.7';      // entPhysicalName
+    const OID_ENT_CONTAINED_IN = '.1.3.6.1.2.1.47.1.1.1.1.4';   // entPhysicalContainedIn
 
     protected $snmp, $macs, $poe, $id, $lastError;
 
@@ -119,7 +122,12 @@ class SwitchSnapshot
             if (isset($ports[$ifIndex]))
                 $ports[$ifIndex]['poe'] = $entry;
 
-        $identity = $this->identity();
+        $classes = $this->column(self::OID_ENT_CLASS);
+        $media = $this->media($ports, $classes);
+        foreach (array_keys($ports) as $ifIndex)
+            $ports[$ifIndex] += $media[$ifIndex] ?? ['media' => null, 'transceiver' => null];
+
+        $identity = $this->identity($classes);
         return [
             'id' => $this->id,
             'model' => $identity['model'],
@@ -189,9 +197,8 @@ class SwitchSnapshot
     /* What the switch says it is: the chassis in ENTITY-MIB (model, hardware revision, serial; Huawei may keep the
        serial on its main board instead), the base MAC in BRIDGE-MIB and sysName. What it does not say stays null;
        without a chassis model the first line of sysDescr names it (model()) */
-    protected function identity(): array
+    protected function identity(array $classes): array
     {
-        $classes = $this->column(self::OID_ENT_CLASS);
         $chassis = array_search(3, array_map('intval', $classes), true);
         $model = $revision = $serial = null;
         if ($chassis !== false)
@@ -218,6 +225,77 @@ class SwitchSnapshot
             'name' => $this->value(self::OID_SYSNAME.'.0'),
             'mac' => is_string($mac) && strlen($mac) === 6 && trim($mac, "\0") !== '' ? implode(':', str_split(bin2hex($mac), 2)) : null,
         ];
+    }
+
+    /* [ifIndex => ['media' => copper|sfp|combo, 'transceiver' => bool|null]] as Cisco lists its connectors in ENTITY-MIB:
+       an SFP cage is a container named after its port ("GigabitEthernet0/11 Container"), a combo port has its RJ45
+       port entity beside such a container, and whatever sits in a container is a transceiver. Only a switch that names
+       some cage this way tells copper from cages; for any other the connectors stay unknown ([]) */
+    protected function media(array $ports, array $classes): array
+    {
+        if (!in_array(5, array_map('intval', $classes), true))
+            return [];
+        $names = $this->column(self::OID_ENT_NAME);
+        $cages = [];
+        foreach ($classes as $entity => $class)
+            if ((int) $class === 5 && preg_match('/^(.*\S)\s+Container$/i', $this->text($names[$entity] ?? ''), $m))
+            {
+                $of = array_keys(array_filter($ports, function ($port) use ($m) { return self::names($m[1], $port['name']); }));
+                if (count($of) === 1)
+                    $cages[$of[0]] = $entity;
+            }
+        if (!$cages)
+            return [];
+
+        $parents = array_map('intval', $this->column(self::OID_ENT_CONTAINED_IN));
+        $stands = [];   // ifIndex => the entities that stand for it
+        foreach ($this->aliases() as $entity => $ifIndex)
+            $stands[$ifIndex][] = $entity;
+        $media = [];
+        foreach (array_keys($ports) as $ifIndex)
+        {
+            $cage = $cages[$ifIndex] ?? null;
+            $own = $stands[$ifIndex] ?? [];
+            if ($cage === null)
+            {
+                $media[$ifIndex] = ['media' => $own ? 'copper' : null, 'transceiver' => null];
+                continue;
+            }
+            $outside = array_filter($own, function ($entity) use ($parents, $cage) { return ($parents[$entity] ?? 0) !== $cage; });
+            $media[$ifIndex] = ['media' => $outside ? 'combo' : 'sfp', 'transceiver' => in_array($cage, $parents, true)];
+        }
+        return $media;
+    }
+
+    /* [entity => ifIndex] from entAliasMappingIdentifier; a silent switch throws */
+    protected function aliases(): array
+    {
+        try
+        {
+            $rows = $this->snmp->walk(Poe::OID_ENT_ALIAS);
+        }
+        catch (SnmpError $e)
+        {
+            if ($e->timeout)
+                throw $e;
+            return [];
+        }
+        $aliases = [];
+        foreach ($rows as $key => $target)
+            if (preg_match('/\.2\.2\.1\.1\.(\d+)$/', (string) $target, $m))   // ifIndex of IF-MIB
+                $aliases[(int) explode('.', substr($key, strlen(Poe::OID_ENT_ALIAS) + 1))[0]] = (int) $m[1];
+        return $aliases;
+    }
+
+    /* "GigabitEthernet0/11" names the port "Gi0/11": the same name, or one that starts with the port's letters and ends
+       with the same numbers */
+    protected static function names(string $entity, string $port): bool
+    {
+        if (strcasecmp($entity, $port) === 0)
+            return true;
+        if (!preg_match('/^[a-z]+/i', $port, $letters) || stripos($entity, $letters[0]) !== 0)
+            return false;
+        return preg_match('#(\d+(?:/\d+)*)$#', $entity, $a) === 1 && preg_match('#(\d+(?:/\d+)*)$#', $port, $b) === 1 && $a[1] === $b[1];
     }
 
     /* One object's value; null when the switch does not have it or it is empty text. A silent switch throws */

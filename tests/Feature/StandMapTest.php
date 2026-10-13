@@ -231,6 +231,60 @@ class StandMapTest extends TestCase
         $this->assertSame('8 × 1G PoE · 2 × SFP', $map['summary']['composition']);
     }
 
+    public function test_the_switch_tells_copper_uplinks_from_cages()
+    {
+        // the stand's Catalyst 2960-CX: Cisco gives a port without a link the speed 10
+        $poe = ['state' => 'searching', 'class' => null, 'watts' => null];
+        $ports = [];
+        for ($i = 1; $i <= 8; $i++)
+        {
+            $up = in_array($i, [1, 3, 8], true);
+            $ports[] = $this->port(10100 + $i, 'Gi0/'.$i, $up, [], $poe, $up ? 1000 : 10) + ['media' => 'copper', 'transceiver' => null];
+        }
+        foreach ([9 => 'copper', 10 => 'copper', 11 => 'sfp', 12 => 'sfp'] as $i => $media)
+            $ports[] = $this->port(10100 + $i, 'Gi0/'.$i, false, [], null, 10) + ['media' => $media, 'transceiver' => $media === 'sfp' ? false : null];
+        $map = $this->build($ports);
+
+        $this->assertSame('8 × 1G PoE · 2 × 1G · 2 × SFP', $map['summary']['composition']);
+        $this->assertSame(['Gi0/9', 'Gi0/10', 'Gi0/11', 'Gi0/12'], array_column($map['blocks'][1]['tiles'], 'name'));
+        $t = $map['tiles'];
+        $this->assertSame([true, false, false, ''], [$t['p10109']['aside'], $t['p10109']['sfp'], $t['p10109']['combo'], $t['p10109']['mark']], 'a copper uplink');
+        $this->assertSame([true, 'SFP'], [$t['p10111']['sfp'], $t['p10111']['mark']], 'an empty cage');
+    }
+
+    public function test_the_usual_speed_is_what_the_names_say_then_what_the_links_run_at()
+    {
+        // Huawei gives a port without a link 1000, and a module may link at 100M (a two-pair cable)
+        $poe = ['state' => 'searching', 'class' => null, 'watts' => null];
+        $ports = [];
+        for ($i = 1; $i <= 24; $i++)
+            $ports[] = $this->port($i, 'GE0/0/'.$i, $i === 1, [], $poe, $i === 1 ? 100 : 1000);
+        $this->assertSame('24 × 1G PoE', $this->build($ports)['summary']['composition']);
+
+        // names that tell no speed: the ports with a link, not the 10 a Cisco-like agent gives the others
+        $ports = [];
+        for ($i = 1; $i <= 8; $i++)
+            $ports[] = $this->port($i, 'ether'.$i, $i <= 2, [], null, $i <= 2 ? 1000 : 10);
+        $this->assertSame('8 × 1G', $this->build($ports)['summary']['composition']);
+    }
+
+    public function test_combo_ports_go_with_the_uplinks_and_show_their_transceiver()
+    {
+        // a switch without PoE with two dual-purpose uplinks, an SFP in the second one
+        $ports = [];
+        for ($i = 1; $i <= 4; $i++)
+            $ports[] = $this->port($i, 'Gi0/'.$i, false) + ['media' => 'copper', 'transceiver' => null];
+        $ports[] = $this->port(5, 'Gi0/5', false) + ['media' => 'combo', 'transceiver' => false];
+        $ports[] = $this->port(6, 'Gi0/6', false) + ['media' => 'combo', 'transceiver' => true];
+        $map = $this->build($ports);
+
+        $this->assertSame(['Gi0/5', 'Gi0/6'], array_column($map['blocks'][1]['tiles'], 'name'));
+        $t = $map['tiles'];
+        $this->assertSame([true, false, false, ''], [$t['p5']['combo'], $t['p5']['sfp'], $t['p5']['transceiver'], $t['p5']['mark']]);
+        $this->assertTrue($t['p6']['transceiver']);
+        $this->assertSame('4 × 1G · 2 × combo', $map['summary']['composition']);
+    }
+
     public function test_forty_eight_ports_in_blocks_of_twelve_on_two_rows()
     {
         $poe = ['state' => 'searching', 'class' => null, 'watts' => null];

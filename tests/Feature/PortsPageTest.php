@@ -121,6 +121,51 @@ class PortsPageTest extends TestCase
             ->assertSee('stand-sw · S/N 2102351931P0K1000123 · MAC f4:de:e0:12:34:56 · 192.0.2.10');
     }
 
+    public function test_cages_and_combo_ports_are_drawn_as_the_switch_lists_them()
+    {
+        $this->switchWithModule();
+        $this->cagesAndCombo();
+
+        Livewire::test(Ports::class)
+            ->assertSeeHtml('<span class="combo-cage" aria-hidden="true"></span>')
+            ->assertSee('3 × 1G PoE · 1 × SFP')
+            ->assertSee('a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in');
+    }
+
+    public function test_the_details_name_a_cage_or_combo_port_and_whether_a_module_is_in()
+    {
+        $this->switchWithModule();
+        // an SFP in XGE0/0/1's cage
+        $this->cagesAndCombo([1042 => [10, 'XGE0/0/1', 30, 1041]]);
+
+        Livewire::test(Ports::class)
+            ->call('select', 'p7')
+            ->assertSeeHtml('<dt class="text-fg-muted">Connector</dt>')
+            ->assertSee('combo: RJ45 or SFP, no SFP')
+            ->call('select', 'p30')
+            ->assertSee('SFP cage, module in')
+            ->call('select', 'p8')
+            ->assertDontSeeHtml('<dt class="text-fg-muted">Connector</dt>');
+    }
+
+    /* ENTITY-MIB the way Cisco lists it: GE0/0/2's RJ45 beside a cage (a combo port), XGE0/0/1 a cage; more entities
+       [entity => [class, name, ifIndex, parent]] go in beside them */
+    protected function cagesAndCombo(array $more = []): void
+    {
+        $t = [SwitchSnapshot::OID_ENT_CLASS.'.1' => 3];
+        foreach ([1006 => [10, 'GE0/0/1', 6], 1007 => [10, 'GE0/0/2', 7], 1008 => [10, 'GE0/0/3', 8],
+                  1040 => [5, 'GE0/0/2 Container', null], 1041 => [5, 'XGE0/0/1 Container', null]] + $more as $entity => $row)
+        {
+            [$class, $name, $ifIndex] = $row;
+            $t[SwitchSnapshot::OID_ENT_CLASS.'.'.$entity] = $class;
+            $t[SwitchSnapshot::OID_ENT_NAME.'.'.$entity] = $name;
+            $t[SwitchSnapshot::OID_ENT_CONTAINED_IN.'.'.$entity] = $row[3] ?? 1;
+            if ($ifIndex)
+                $t[Poe::OID_ENT_ALIAS.'.'.$entity.'.0'] = '.1.3.6.1.2.1.2.2.1.1.'.$ifIndex;
+        }
+        $this->fake->tables[''] += $t;
+    }
+
     public function test_a_name_that_is_already_the_title_is_not_repeated()
     {
         $this->switchWithModule();
@@ -135,13 +180,17 @@ class PortsPageTest extends TestCase
     {
         $this->switchWithModule();
         Livewire::test(Ports::class);   // takes the snapshot all pages share
-        // as 2.3.0 kept it in the cache: without the identity
+        // as 2.3.0 kept it in the cache: without the identity, and as 2.3.1 did: without the ports' connectors
         $state = Cache::get('switch-snapshot:192.0.2.10');
         unset($state['snapshot']['identity']);
+        foreach (array_keys($state['snapshot']['ports']) as $ifIndex)
+            unset($state['snapshot']['ports'][$ifIndex]['media'], $state['snapshot']['ports'][$ifIndex]['transceiver']);
         Cache::put('switch-snapshot:192.0.2.10', $state, 3600);
         Livewire::test(Ports::class)
             ->assertSeeHtml('<span class="font-bold text-fg">S5731-S24P4X</span>')
-            ->assertSee('1 module on the stand');
+            ->assertSee('1 module on the stand')
+            ->call('select', 'p30')
+            ->assertSeeHtml('<dd>SFP cage</dd>');
     }
 
     public function test_a_port_shows_its_details_with_the_module_card_and_identify()

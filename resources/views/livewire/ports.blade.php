@@ -115,7 +115,7 @@
                         @endforeach
                     </div>
                 </div>
-                <p class="text-xs text-fg-muted mt-3">The last 4 characters of the serial and the result (✓, ✕, write %) per port; ⚡ the port powers its device; dashed: a cage for uplinks.</p>
+                <p class="text-xs text-fg-muted mt-3">The last 4 characters of the serial and the result (✓, ✕, write %) per port; ⚡ the port powers its device; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
             </div>
 
             <aside class="cmp-card px-4 py-3 text-sm" aria-live="polite">
@@ -190,6 +190,12 @@
                             @else up
                             @endif
                         </dd>
+                        @if ($tile['sfp'] || $tile['combo'])
+                            {{-- what the cage holds, when the switch tells it --}}
+                            @php($connector = $tile['combo'] ? ['combo: RJ45 or SFP', ', SFP in', ', no SFP'] : ['SFP cage', ', module in', ', empty'])
+                            <dt class="text-fg-muted">Connector</dt>
+                            <dd>{{ $connector[0] }}{{ $tile['transceiver'] === null ? '' : $connector[$tile['transceiver'] ? 1 : 2] }}</dd>
+                        @endif
                         <dt class="text-fg-muted">PoE</dt>
                         <dd>
                             @if (!$tile['poe']) none
