@@ -9,12 +9,12 @@ ARG UID=1000
 ARG GID=1000
 ENV DEBIAN_FRONTEND=noninteractive PHPV=${PHPV}
 
-# Same PHP extensions as debian/control (no php-curl on purpose: the package does not depend on it).
+# Same PHP extensions as debian/control.
 # Build tools are here so the same container can build the .deb.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         nginx sqlite3 composer git unzip ca-certificates curl rsync xz-utils bzip2 util-linux \
         php${PHPV}-cli php${PHPV}-fpm php${PHPV}-sqlite3 php${PHPV}-bcmath php${PHPV}-mbstring \
-        php${PHPV}-xml php${PHPV}-zip php${PHPV}-snmp \
+        php${PHPV}-xml php${PHPV}-zip php${PHPV}-snmp php${PHPV}-curl \
         dpkg-dev debhelper build-essential fakeroot \
     && rm -rf /var/lib/apt/lists/*
 

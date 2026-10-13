@@ -34,7 +34,7 @@ class Notifier
             }
             catch (\Throwable $e)
             {
-                $channel->update(['last_error' => now()->local()->format('Y-m-d H:i').' '.$e->getMessage()]);
+                $channel->update(['last_error' => now()->local()->format('Y-m-d H:i').' '.self::errorText($e, $channel)]);
             }
         }
     }
@@ -142,7 +142,7 @@ class Notifier
                 return $this->telegram($channel, 'sendMessage', $body)['message_id'] ?? null;
 
             case 'mattermost_webhook':
-                $this->http()->post($channel->setting('url'), ['text' => $text])->throw();
+                $this->http($channel)->post($channel->setting('url'), ['text' => $text])->throw();
                 return null;
         }
         throw new \InvalidArgumentException("Unknown channel type {$channel->type}");
@@ -170,17 +170,30 @@ class Notifier
 
     protected function sendWebhook(NotificationChannel $channel, array $payload)
     {
-        $this->http()->post($channel->setting('url'), $payload)->throw();
+        $this->http($channel)->post($channel->setting('url'), $payload)->throw();
     }
 
-    protected function http()
+    /* What a failed delivery says on the settings page: without the Telegram bot token that Guzzle puts in the URL of
+       its messages, and with advice about the server's certificate */
+    public static function errorText(\Throwable $e, NotificationChannel $channel)
     {
-        return Http::timeout(self::TIMEOUT)->withOptions(['connect_timeout' => 5])->acceptJson();
+        return self::redact(TlsTrust::explain($e, in_array($channel->type, NotificationChannel::TLS_TYPES, true)));
+    }
+
+    public static function redact($text)
+    {
+        return preg_replace('#/bot\d+:[A-Za-z0-9_-]+#', '/bot…', $text);
+    }
+
+    /* A request with the channel's trust in its server's certificate */
+    protected function http(NotificationChannel $channel)
+    {
+        return Http::timeout(self::TIMEOUT)->withOptions(['connect_timeout' => 5] + $channel->tlsOptions())->acceptJson();
     }
 
     protected function mattermost(NotificationChannel $channel)
     {
-        return $this->http()->withToken($channel->setting('token'));
+        return $this->http($channel)->withToken($channel->setting('token'));
     }
 
     protected function mattermostUrl(NotificationChannel $channel, $path)
@@ -194,7 +207,7 @@ class Notifier
         $url = 'https://api.telegram.org/bot'.$channel->setting('bot_token').'/'.$method;
         for ($attempt = 1; ; $attempt++)
         {
-            $response = $this->http()->post($url, $body);
+            $response = $this->http($channel)->post($url, $body);
             $retryAfter = (int) $response->json('parameters.retry_after');
             if ($response->status() == 429 && $attempt == 1 && $retryAfter > 0 && $retryAfter <= 10)
             {

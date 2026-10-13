@@ -14,6 +14,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Tests\Support\TestCertificates;
 use Tests\TestCase;
 
 /**
@@ -226,6 +227,60 @@ class NotificationsTest extends TestCase
         $channel->refresh();
         $this->assertStringContainsString('404', $channel->last_error);
         $this->assertSame('done', Cm::where('serial', '1000000000000c09')->value('phase'));
+    }
+
+    public function test_a_channel_trusts_its_own_certificate_for_its_server_or_none_at_all()
+    {
+        $this->activeProject();
+        $pem = TestCertificates::make('mm.line.local', ['mm.line.local'], null, true)['cert'];
+        $own = ['tls_ca' => $pem, 'tls_ca_for' => 'mm.line.local:443'];
+        $this->channel('mattermost_webhook', ['url' => 'https://mm.line.local/hooks/a'] + $own);
+        $this->channel('mattermost_webhook', ['url' => 'https://chat.line.local/hooks/b'] + $own);
+        $this->channel('webhook', ['url' => 'https://collector.line.local/x', 'tls_insecure' => true]);
+        $this->channel('mattermost_bot', ['server_url' => 'https://mm.line.local', 'token' => 'tok', 'channel_id' => 'chan1'] + $own);
+        $this->channel('telegram', ['bot_token' => '123:abc', 'chat_id' => '-1001', 'tls_insecure' => true]);
+        $seen = [];
+        Http::fake(function (Request $request, array $options) use (&$seen) {
+            $seen[] = [preg_replace('#/bot[^/]+/#', '/bot…/', $request->url()), $options['verify'] ?? null, $options['curl'][CURLOPT_CAINFO_BLOB] ?? null];
+            return Http::response(['id' => 'post1', 'ok' => true, 'result' => ['message_id' => 7]]);
+        });
+
+        $this->start('1000000000000c21');
+        $this->complete('1000000000000c21');
+
+        $this->assertContains(['https://mm.line.local/hooks/a', true, $pem], $seen);
+        $this->assertContains(['https://chat.line.local/hooks/b', true, null], $seen, 'a certificate is only for the server it was saved with');
+        $this->assertContains(['https://collector.line.local/x', false, null], $seen);
+        $this->assertContains(['https://mm.line.local/api/v4/posts', true, $pem], $seen, 'the bot posts its summary and replies');
+        $this->assertContains(['https://mm.line.local/api/v4/posts/post1/patch', true, $pem], $seen);
+        $this->assertContains(['https://api.telegram.org/bot…/sendMessage', true, null], $seen, 'Telegram is checked as always');
+    }
+
+    public function test_a_certificate_error_is_recorded_with_what_to_do()
+    {
+        $this->activeProject();
+        $channel = $this->channel('mattermost_webhook', ['url' => 'https://mm.line.local/hooks/abc']);
+        Http::fake(['*' => Http::failedConnection('cURL error 60: SSL certificate problem: self-signed certificate for https://mm.line.local/hooks/abc')]);
+
+        $this->start('1000000000000c22');
+        $this->complete('1000000000000c22');
+
+        $this->assertStringStartsWith('2026-10-09 11:00 '.\App\Services\TlsTrust::HINT_UNTRUSTED, $channel->fresh()->last_error);
+    }
+
+    public function test_a_telegram_error_shows_neither_the_bot_token_nor_advice_about_certificates()
+    {
+        $this->activeProject();
+        $channel = $this->channel('telegram', ['bot_token' => '123:secret-token', 'chat_id' => '-1001']);
+        Http::fake(['*' => Http::failedConnection('cURL error 60: SSL certificate problem: unable to get local issuer certificate (see https://curl.se/libcurl/c/libcurl-errors.html) for https://api.telegram.org/bot123:secret-token/sendMessage')]);
+
+        $this->start('1000000000000c23');
+        $this->complete('1000000000000c23');
+
+        $error = $channel->fresh()->last_error;
+        $this->assertStringContainsString('api.telegram.org/bot…/sendMessage', $error);
+        $this->assertStringNotContainsString('secret-token', $error);
+        $this->assertStringNotContainsString('Fetch from the server', $error);
     }
 
     public function test_disabled_channels_and_unselected_events_send_nothing()
