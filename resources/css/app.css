@@ -262,6 +262,9 @@ body { background: var(--page); color: var(--text); }
 .ports-tile .short { font: 800 13px/1 'JetBrains Mono', ui-monospace, monospace; letter-spacing: .02em; }
 .ports-tile .mark { font-weight: 800; font-size: 10px; line-height: 1; }
 .ports-tile .bolt { position: absolute; top: 2px; right: 3px; font-size: 10px; line-height: 1; }
+/* a combo port: its RJ45 is the tile, its SFP cage the dashed box in the corner, filled when an SFP is in */
+.ports-tile .combo-cage { position: absolute; top: 3px; left: 3px; width: 11px; height: 8px; border: 1.5px dashed currentColor; border-radius: 1px; }
+.ports-tile .combo-cage.filled { border-style: solid; background: currentColor; }
 .ports-tile.selected { box-shadow: 0 0 0 3px #2b2f36, 0 0 0 5px #fff; }
 .ports-tile.dim { opacity: .22; filter: grayscale(.6); }
 .ports-tile:focus-visible { outline: 3px solid #6366f1; outline-offset: 2px; }

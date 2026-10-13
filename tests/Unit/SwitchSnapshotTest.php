@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Services\Snmp\SnmpError;
 use App\Services\Switch\MacTable;
+use App\Services\Switch\Poe;
 use App\Services\Switch\SwitchSnapshot;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeSnmp;
@@ -64,7 +65,8 @@ class SwitchSnapshotTest extends TestCase
         $this->assertSame('192.0.2.10', $s['id']);
         $this->assertFalse($s['poe']);
         $this->assertSame(['ifIndex' => 8, 'name' => 'GE0/0/3', 'alias' => 'stand 3', 'up' => true, 'speed' => 1000, 'changed' => null,
-                           'macs' => [self::MODULE], 'mac_count' => 1, 'poe' => null], $s['ports'][8]);
+                           'macs' => [self::MODULE], 'mac_count' => 1, 'poe' => null, 'media' => null, 'transceiver' => null], $s['ports'][8],
+                          'no ENTITY-MIB: the connector is not known');
         $this->assertFalse($s['ports'][7]['up']);
         $this->assertSame(1000, $s['ports'][7]['speed'], 'what the switch says without a link');
         $this->assertSame(['00:11:22:33:44:55'], $s['ports'][30]['macs']);
@@ -102,6 +104,100 @@ class SwitchSnapshotTest extends TestCase
         $this->assertSame('S5731-S24P4X', $s['model'], 'no model name on the chassis: the first line of sysDescr');
         $this->assertSame('2102351931P0K1000123', $s['identity']['serial']);
         $this->assertNull($s['identity']['revision']);
+    }
+
+    /** ENTITY-MIB rows as Cisco IOS lists them: [entity => [class, name, contained in, ifIndex it stands for or null]] */
+    protected function entities(array $rows)
+    {
+        $t = [];
+        foreach ($rows as $entity => [$class, $name, $parent, $ifIndex])
+        {
+            $t[SwitchSnapshot::OID_ENT_CLASS.'.'.$entity] = $class;
+            $t[SwitchSnapshot::OID_ENT_NAME.'.'.$entity] = $name;
+            $t[SwitchSnapshot::OID_ENT_CONTAINED_IN.'.'.$entity] = $parent;
+            if ($ifIndex !== null)
+                $t[Poe::OID_ENT_ALIAS.'.'.$entity.'.0'] = '.1.3.6.1.2.1.2.2.1.1.'.$ifIndex;
+        }
+        return $t;
+    }
+
+    public function test_copper_ports_and_sfp_cages_as_cisco_lists_them()
+    {
+        // the stand's Catalyst 2960-CX: ten RJ45 ports, Gi0/11 and Gi0/12 empty SFP cages (containers); Cisco gives a
+        // port without a link the speed 10
+        $ifs = $ents = [];
+        for ($i = 1; $i <= 12; $i++)
+            $ifs[10100 + $i] = ['Gi0/'.$i, 6, 1, 2, 10];
+        $ents = [1001 => [3, '1', 0, null], 1002 => [9, 'WS-C2960CX-8PC-L - Fixed Module 0', 1001, null]];
+        for ($i = 1; $i <= 10; $i++)
+            $ents[1004 + $i] = [10, 'GigabitEthernet0/'.$i, 1002, 10100 + $i];
+        $ents[1015] = [5, 'GigabitEthernet0/11 Container', 1002, null];
+        $ents[1016] = [5, 'GigabitEthernet0/12 Container', 1002, null];
+        $s = $this->take($this->interfaces($ifs) + $this->entities($ents));
+
+        $this->assertSame(array_fill(0, 10, 'copper'), array_values(array_column(array_slice($s['ports'], 0, 10, true), 'media')));
+        $this->assertSame(['sfp', false], [$s['ports'][10111]['media'], $s['ports'][10111]['transceiver']]);
+        $this->assertSame(['sfp', false], [$s['ports'][10112]['media'], $s['ports'][10112]['transceiver']]);
+        $this->assertNull($s['ports'][10101]['transceiver'], 'no cage, no transceiver to tell');
+    }
+
+    public function test_a_transceiver_in_a_cage_keeps_it_a_cage()
+    {
+        $s = $this->take($this->interfaces([10101 => ['Gi0/1', 6, 1, 1, 1000], 10111 => ['Gi0/11', 6, 1, 1, 1000]]) + $this->entities([
+            1001 => [3, '1', 0, null],
+            1005 => [10, 'GigabitEthernet0/1', 1001, 10101],
+            1015 => [5, 'GigabitEthernet0/11 Container', 1001, null],
+            1017 => [10, 'GigabitEthernet0/11', 1015, 10111],   // the SFP, inside the cage, stands for the interface
+        ]));
+
+        $this->assertSame(['sfp', true], [$s['ports'][10111]['media'], $s['ports'][10111]['transceiver']]);
+        $this->assertSame('copper', $s['ports'][10101]['media']);
+    }
+
+    public function test_a_combo_port_has_its_rj45_beside_its_cage()
+    {
+        // dual-purpose uplinks: Gi0/25 and Gi0/26 each have an RJ45 port entity next to an SFP container;
+        // Gi0/26 has an SFP in its container
+        $s = $this->take($this->interfaces([10124 => ['Gi0/24', 6, 1, 1, 1000], 10125 => ['Gi0/25', 6, 1, 2, 10],
+                                            10126 => ['Gi0/26', 6, 1, 1, 1000]]) + $this->entities([
+            1001 => [3, '1', 0, null],
+            1024 => [10, 'GigabitEthernet0/24', 1001, 10124],
+            1025 => [10, 'GigabitEthernet0/25', 1001, 10125], 1030 => [5, 'GigabitEthernet0/25 Container', 1001, null],
+            1026 => [10, 'GigabitEthernet0/26', 1001, 10126], 1031 => [5, 'GigabitEthernet0/26 Container', 1001, null],
+            1032 => [10, 'GigabitEthernet0/26', 1031, 10126],
+        ]));
+
+        $this->assertSame(['combo', false], [$s['ports'][10125]['media'], $s['ports'][10125]['transceiver']]);
+        $this->assertSame(['combo', true], [$s['ports'][10126]['media'], $s['ports'][10126]['transceiver']]);
+        $this->assertSame('copper', $s['ports'][10124]['media']);
+    }
+
+    public function test_a_container_counts_only_for_the_port_it_is_named_after()
+    {
+        // a power supply bay must not make ether1 a cage; without any port's cage the connectors stay unknown
+        $s = $this->take($this->interfaces([1 => ['ether1', 6, 1, 1, 1000], 2 => ['ether2', 6, 1, 1, 1000]]) + $this->entities([
+            1 => [3, 'chassis', 0, null],
+            2 => [5, 'Power Supply 1 Container', 1, null],
+            3 => [10, 'ether1', 1, 1],
+        ]));
+
+        $this->assertSame([null, null], [$s['ports'][1]['media'], $s['ports'][2]['media']]);
+    }
+
+    public function test_entity_names_and_aliases_are_walked_only_as_far_as_the_cages_need()
+    {
+        // no container at all: only entPhysicalClass; a container that is no port's cage: its name, nothing more
+        foreach ([[], [2 => [5, 'Power Supply 1 Container', 1, null]]] as $i => $containers)
+        {
+            $snmp = new FakeSnmp(['' => $this->interfaces([1 => ['ether1', 6, 1, 1, 1000]])
+                + $this->entities([1 => [3, 'chassis', 0, null], 3 => [10, 'ether1', 1, 1]] + $containers)]);
+            (new SwitchSnapshot($snmp, new MacTable($snmp)))->take();
+
+            $walked = array_column($snmp->walks, 0);
+            $this->assertSame($i === 1, in_array(SwitchSnapshot::OID_ENT_NAME, $walked, true));
+            $this->assertNotContains(SwitchSnapshot::OID_ENT_CONTAINED_IN, $walked);
+            $this->assertNotContains(Poe::OID_ENT_ALIAS, $walked);
+        }
     }
 
     public function test_a_bridge_address_of_zeros_or_not_six_octets_is_no_mac()

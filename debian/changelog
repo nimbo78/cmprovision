@@ -1,3 +1,19 @@
+cmprovision4 (2.3.2) unstable; urgency=medium
+
+  * The Ports page draws a switch's SFP cages and combo ports as the switch
+    lists them in ENTITY-MIB: a cage is the container named after the port,
+    a combo port has its RJ45 beside the cage. A dashed corner marks a combo
+    port, filled when an SFP is in, and the port details say what the cage
+    holds. The copper uplinks Gi0/9-10 of a Cisco WS-C2960CX-8PC-L are no
+    longer drawn as cages: "8 × 1G PoE · 2 × 1G · 2 × SFP".
+  * The chassis line takes a block's speed from its port names (Gi and GE
+    1G, Te and XGE 10G), and for names without one from the ports with a
+    link. It used to take the most common speed, and Cisco reports
+    10 Mbit/s for a port that is down: the WS-C2960CX-8PC-L was
+    "8 × 10M PoE · 4 × SFP".
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Tue, 13 Oct 2026 14:24:36 +0300
+
 cmprovision4 (2.3.1) unstable; urgency=medium
 
   * The Ports page names the switch: model and hardware revision, its name,
