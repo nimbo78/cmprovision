@@ -35,7 +35,7 @@
         @forelse ($channels as $c)
             <tr wire:key="channel-{{ $c->id }}">
                 <td >{{ $c->name }}@if (!$c->enabled) <span class="text-fg-muted">(off)</span>@endif</td>
-                <td >{{ $c->typeLabel() }}</td>
+                <td >{{ $c->typeLabel() }}@if (in_array($c->type, \App\Models\NotificationChannel::TLS_TYPES, true) && $c->setting('tls_insecure')) <span class="text-neg">· any certificate</span>@elseif (in_array($c->type, \App\Models\NotificationChannel::TLS_TYPES, true) && $c->setting('tls_ca')) <span class="text-fg-muted">· own certificate</span>@endif</td>
                 <td >{{ collect($c->events)->map(function ($e) { return \App\Models\NotificationChannel::EVENTS[$e] ?? $e; })->implode(', ') }}</td>
                 <td class="text-xs">
                     @if ($c->last_error)
@@ -136,6 +136,31 @@
                     <label class="{{ $label }}">Topic id (forum groups, optional)</label>
                     <input type="text" wire:model="topicId" class="{{ $input }}">
                     @error('topicId') <span class="text-neg text-sm">{{ $message }}</span> @enderror
+                </div>
+            @endif
+
+            @if (in_array($type, \App\Models\NotificationChannel::TLS_TYPES, true))
+                <div class="mb-4">
+                    <label class="{{ $label }}">Server certificate</label>
+                    <p class="text-xs text-fg-muted mb-2">Only for an https server whose certificate this system does not trust: a self-signed one or one from your own CA. The host name is still checked.</p>
+                    <button wire:click="fetchCertificate()" class="cmp-btn cmp-btn-secondary {{ $small }}">Fetch from the server</button>
+                    @if ($tlsFetched)
+                        <p class="text-sm mt-2">{{ $tlsFetched }}</p>
+                    @endif
+                    <textarea wire:model.blur="tlsCa" rows="3" spellcheck="false" class="{{ $input }} font-mono text-xs mt-2" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+                    @error('tlsCa') <span class="text-neg text-sm">{{ $message }}</span> @enderror
+                    @foreach ($tlsCerts as $cert)
+                        <div class="text-xs mt-1">
+                            <span class="font-semibold">{{ $cert['subject'] }}</span>
+                            · {{ $cert['self_signed'] ? 'self-signed' : 'issued by '.$cert['issuer'] }}
+                            · <span class="{{ $cert['valid_to'] < time() ? 'text-neg' : '' }}">valid until {{ \Illuminate\Support\Carbon::createFromTimestamp($cert['valid_to'])->local()->format('d.m.Y') }}</span>
+                            <div class="font-mono text-fg-muted break-all">SHA-256 {{ $cert['sha256'] }}</div>
+                        </div>
+                    @endforeach
+                    <label class="text-sm block mt-2"><input type="checkbox" wire:model.live="tlsInsecure"> Accept any certificate (insecure)</label>
+                    @if ($tlsInsecure)
+                        <p class="text-xs text-neg mt-1">The certificate is not checked: anyone on the way to the server can read the {{ $type === 'mattermost_bot' ? 'bot token and the ' : '' }}messages.</p>
+                    @endif
                 </div>
             @endif
 

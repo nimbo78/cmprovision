@@ -1,3 +1,24 @@
+cmprovision4 (2.3.3) unstable; urgency=medium
+
+  * Self-signed certificates for Mattermost and webhooks: a Mattermost bot,
+    Mattermost webhook or JSON webhook channel can trust its server's own
+    certificate. Fetch from the server takes the certificates the server
+    presents and shows their names, validity and SHA-256 fingerprints; the
+    channel then trusts them besides the system's CAs and still checks the
+    host name. A certificate counts only for the server it was saved with.
+    Accept any certificate (insecure) turns the check off and is marked in
+    the list of channels.
+  * A certificate error of a channel, its Test button or the channel lookup
+    says what to do instead of a bare cURL error 60: fetch the certificate,
+    put the name it was issued for in the address, or check the clock when
+    it has expired.
+  * Telegram errors on the settings page no longer show the bot token, which
+    Guzzle puts in the URL of its error messages.
+  * The package depends on php-curl, which hands the trusted certificates
+    to curl.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Tue, 13 Oct 2026 15:31:32 +0300
+
 cmprovision4 (2.3.2) unstable; urgency=medium
 
   * The Ports page draws a switch's SFP cages and combo ports as the switch
