@@ -13,6 +13,7 @@ use App\Services\Switch\Poe;
 use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
 use Livewire\Livewire;
 use Mockery\MockInterface;
@@ -104,6 +105,43 @@ class PortsPageTest extends TestCase
             ->assertSeeHtml('<span class="label">1 done</span>')   // the chip text has a box of its own to trim (app.css)
             ->assertSee('All done: the batch can be replaced')
             ->assertSeeHtml('<span class="short">UP</span>');
+    }
+
+    public function test_the_header_names_the_switch_by_its_model_name_serial_and_mac()
+    {
+        $this->switchWithModule();
+        $this->fake->tables[''] += [
+            SwitchSnapshot::OID_SYSNAME.'.0' => 'stand-sw',
+            SwitchSnapshot::OID_ENT_CLASS.'.1' => 3, SwitchSnapshot::OID_ENT_MODEL.'.1' => 'S5731-S24P4X',
+            SwitchSnapshot::OID_ENT_HW_REV.'.1' => 'VER.B', SwitchSnapshot::OID_ENT_SERIAL.'.1' => '2102351931P0K1000123',
+            SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0' => hex2bin('f4dee0123456'),
+        ];
+        Livewire::test(Ports::class)
+            ->assertSeeHtml('<span class="font-bold text-fg">S5731-S24P4X VER.B</span>')
+            ->assertSee('stand-sw · S/N 2102351931P0K1000123 · MAC f4:de:e0:12:34:56 · 192.0.2.10');
+    }
+
+    public function test_a_name_that_is_already_the_title_is_not_repeated()
+    {
+        $this->switchWithModule();
+        $this->fake->tables[''][SwitchSnapshot::OID_SYSDESCR.'.0'] = '';
+        $this->fake->tables[''][SwitchSnapshot::OID_SYSNAME.'.0'] = 'stand-sw';
+        Livewire::test(Ports::class)
+            ->assertSeeHtml('<span class="font-bold text-fg">stand-sw</span>')
+            ->assertDontSee('stand-sw · ');
+    }
+
+    public function test_a_snapshot_kept_by_the_previous_version_still_draws()
+    {
+        $this->switchWithModule();
+        Livewire::test(Ports::class);   // takes the snapshot all pages share
+        // as 2.3.0 kept it in the cache: without the identity
+        $state = Cache::get('switch-snapshot:192.0.2.10');
+        unset($state['snapshot']['identity']);
+        Cache::put('switch-snapshot:192.0.2.10', $state, 3600);
+        Livewire::test(Ports::class)
+            ->assertSeeHtml('<span class="font-bold text-fg">S5731-S24P4X</span>')
+            ->assertSee('1 module on the stand');
     }
 
     public function test_a_port_shows_its_details_with_the_module_card_and_identify()

@@ -1,3 +1,14 @@
+cmprovision4 (2.3.1) unstable; urgency=medium
+
+  * The Ports page names the switch: model and hardware revision, its name,
+    serial number and base MAC, from ENTITY-MIB, BRIDGE-MIB and sysName,
+    which Cisco and Huawei both answer. A Cisco IOS switch used to be named
+    by the first line of its sysDescr.
+  * Checked on a real switch, a Cisco WS-C2960CX-8PC-L: the modules' ports
+    are found, PoE is shown with watts and the PoE restart write is taken.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Tue, 13 Oct 2026 10:05:16 +0300
+
 cmprovision4 (2.3.0) unstable; urgency=medium
 
   * PoE restart: with write access to the switch (a write community, or a

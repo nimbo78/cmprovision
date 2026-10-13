@@ -16,7 +16,7 @@
     </div>
 @else
     <div class="text-sm text-fg-muted">
-        @if ($snapshot)<span class="font-bold text-fg">{{ $snapshot['model'] }}</span> · @endif {{ $host }}
+        @if ($header['title'])<span class="font-bold text-fg">{{ $header['title'] }}</span> · @endif {{ $header['facts'] }}
         @if ($snapshot) · polled {{ max(0, $now - $snapshot['taken_at']) }} s ago @endif
         @if ($snapshot && $snapshot['poe'])
             · PoE {{ number_format(array_sum(array_map(function ($p) { return $p['poe']['watts'] ?? 0; }, $snapshot['ports'])), 1) }} W

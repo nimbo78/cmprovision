@@ -28,6 +28,12 @@ class SwitchSnapshot
     const OID_IFALIAS = '.1.3.6.1.2.1.31.1.1.1.18';
     /* ethernetCsmacd; old agents report fastEther(62) and fastEtherFX(69), some gigabitEthernet(117) */
     const ETHERNET_TYPES = [6, 62, 69, 117];
+    /* What the switch is (identity()): standard objects that Cisco and Huawei both answer */
+    const OID_BRIDGE_ADDRESS = '.1.3.6.1.2.1.17.1.1';      // dot1dBaseBridgeAddress: the base MAC
+    const OID_ENT_CLASS = '.1.3.6.1.2.1.47.1.1.1.1.5';     // entPhysicalClass: chassis(3), module(9)
+    const OID_ENT_HW_REV = '.1.3.6.1.2.1.47.1.1.1.1.8';    // entPhysicalHardwareRev
+    const OID_ENT_SERIAL = '.1.3.6.1.2.1.47.1.1.1.1.11';   // entPhysicalSerialNum
+    const OID_ENT_MODEL = '.1.3.6.1.2.1.47.1.1.1.1.13';    // entPhysicalModelName
 
     protected $snmp, $macs, $poe, $id, $lastError;
 
@@ -47,7 +53,8 @@ class SwitchSnapshot
     }
 
     /**
-     * ['id', 'model', 'taken_at' (unix time), 'duration' (seconds), 'mac_method', 'poe' (any PoE data),
+     * ['id', 'model', 'identity' => ['revision', 'serial', 'name', 'mac'] (null when the switch does not say),
+     *  'taken_at' (unix time), 'duration' (seconds), 'mac_method', 'poe' (any PoE data),
      *  'ports' => [ifIndex => ['ifIndex', 'name', 'alias', 'up', 'speed' (Mbit/s as the switch reports
      *  it, also without a link; null when unknown), 'changed' (seconds in the current link state, null
      *  when unknown), 'macs' => the first MAC_KEEP, 'mac_count', 'poe' => Poe::read() entry or null]]].
@@ -112,9 +119,11 @@ class SwitchSnapshot
             if (isset($ports[$ifIndex]))
                 $ports[$ifIndex]['poe'] = $entry;
 
+        $identity = $this->identity();
         return [
             'id' => $this->id,
-            'model' => $this->model(),
+            'model' => $identity['model'],
+            'identity' => ['revision' => $identity['revision'], 'serial' => $identity['serial'], 'name' => $identity['name'], 'mac' => $identity['mac']],
             'taken_at' => Carbon::now()->getTimestamp(),
             'duration' => round(microtime(true) - $started, 3),
             'mac_method' => $table['method'],
@@ -175,6 +184,59 @@ class SwitchSnapshot
     protected function text($value): string
     {
         return trim((string) $value);
+    }
+
+    /* What the switch says it is: the chassis in ENTITY-MIB (model, hardware revision, serial; Huawei may keep the
+       serial on its main board instead), the base MAC in BRIDGE-MIB and sysName. What it does not say stays null;
+       without a chassis model the first line of sysDescr names it (model()) */
+    protected function identity(): array
+    {
+        $classes = $this->column(self::OID_ENT_CLASS);
+        $chassis = array_search(3, array_map('intval', $classes), true);
+        $model = $revision = $serial = null;
+        if ($chassis !== false)
+        {
+            $model = $this->value(self::OID_ENT_MODEL.'.'.$chassis);
+            $revision = $this->value(self::OID_ENT_HW_REV.'.'.$chassis);
+            $serial = $this->value(self::OID_ENT_SERIAL.'.'.$chassis);
+            if ($serial === null)
+            {
+                $serials = $this->column(self::OID_ENT_SERIAL);
+                foreach ($classes as $index => $class)
+                    if ((int) $class === 9 && $this->text($serials[$index] ?? '') !== '')
+                    {
+                        $serial = $this->text($serials[$index]);
+                        break;
+                    }
+            }
+        }
+        $mac = $this->value(self::OID_BRIDGE_ADDRESS.'.0', false);   // six octets as they are (SNMP_VALUE_PLAIN)
+        return [
+            'model' => $model ?? $this->model(),
+            'revision' => $revision,
+            'serial' => $serial,
+            'name' => $this->value(self::OID_SYSNAME.'.0'),
+            'mac' => is_string($mac) && strlen($mac) === 6 && trim($mac, "\0") !== '' ? implode(':', str_split(bin2hex($mac), 2)) : null,
+        ];
+    }
+
+    /* One object's value; null when the switch does not have it or it is empty text. A silent switch throws */
+    protected function value(string $oid, bool $text = true)
+    {
+        try
+        {
+            $value = $this->snmp->get($oid);
+        }
+        catch (SnmpError $e)
+        {
+            if ($e->timeout)
+                throw $e;
+            return null;
+        }
+        if (!$text)
+            return $value;
+        $value = $this->text($value);
+        return $value !== '' ? $value : null;
     }
 
     /* The first line of sysDescr, otherwise sysName, otherwise the address */
