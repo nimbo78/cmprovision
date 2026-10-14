@@ -27,7 +27,9 @@
                         <td>{{ $s['writable'] ? 'PoE restart' : 'none' }}</td>
                         <td class="text-fg-muted">{{ $s['state'] }}</td>
                         <td class="whitespace-nowrap text-right">
-                            <button type="button" wire:click="edit({{ $s['id'] }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
+                            <button type="button" wire:click="testSwitch({{ $s['id'] }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Test</button>
+                            <button type="button" wire:click="checkSwitch({{ $s['id'] }})" class="cmp-btn cmp-btn-secondary cmp-btn-small ml-1">Check write access</button>
+                            <button type="button" wire:click="edit({{ $s['id'] }})" class="cmp-btn cmp-btn-secondary cmp-btn-small ml-1">Edit</button>
                             <button type="button" wire:click="delete({{ $s['id'] }})" wire:confirm="Remove {{ $s['name'] }} ({{ $s['host'] }}) from the stand? Its modules keep their boards."
                                     class="cmp-btn cmp-btn-secondary cmp-btn-small ml-1">Delete</button>
                         </td>

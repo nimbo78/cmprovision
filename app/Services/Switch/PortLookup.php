@@ -34,6 +34,12 @@ class PortLookup
             if (!Stand::answering($state))
                 $silent[] = $state['switch']->hostname().' does not answer'.($state['error'] ? ' ('.$state['error']['message'].')' : '');
         $silentText = $silent ? implode('; ', $silent) : null;
+        // a switch another request was asking gave its last snapshot: the module may have come after it
+        $busy = '';
+        foreach ($stand['switches'] as $state)
+            if ($state['busy'] && $state['snapshot'])
+                $busy .= '; '.$state['switch']->hostname().' was busy with another request: its snapshot is from '
+                    .Carbon::createFromTimestamp($state['snapshot']['taken_at'])->local()->format('H:i:s');
         $owner = $stand['map']['owners'][$mac] ?? null;
         $tile = $owner && $owner['key'] !== null ? $stand['map']['tiles'][$owner['key']] : null;
 
@@ -54,7 +60,7 @@ class PortLookup
                 $t = $stand['map']['tiles'][$key];
                 return $t['label'].($t['link'] ? ' (link to '.$t['link'].')' : '');
             }, $owner['seen']));
-            return ['warning' => 'Switch port unknown: MAC '.$mac.' seen behind '.$where.($silentText ? '; '.$silentText : '')] + $none;
+            return ['warning' => 'Switch port unknown: MAC '.$mac.' seen behind '.$where.($silentText ? '; '.$silentText : '').$busy] + $none;
         }
         $asked = [];
         foreach ($stand['switches'] as $state)
@@ -62,6 +68,6 @@ class PortLookup
                 $asked[] = $state['switch']->hostname();
         return ['warning' => 'Switch port unknown: '
             .($asked ? implode(', ', $asked).' '.(count($asked) === 1 ? 'does' : 'do').' not know MAC '.$mac : 'no switch answers')
-            .($silentText ? '; '.$silentText : '')] + $none;
+            .($silentText ? '; '.$silentText : '').$busy] + $none;
     }
 }

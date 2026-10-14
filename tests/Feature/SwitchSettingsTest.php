@@ -166,6 +166,20 @@ class SwitchSettingsTest extends TestCase
             ->assertDontSee('Two switches are called');
     }
 
+    public function test_each_row_tests_its_switch_and_checks_its_write_access()
+    {
+        $this->fakeSwitch();
+        EthernetSwitch::create(['host' => '192.168.25.2', 'community' => 'line-ro', 'sys_name' => 'sw01']);
+        Livewire::test(SwitchSettings::class)
+            ->assertSeeHtml('wire:click="testSwitch(1)"')->assertSeeHtml('wire:click="checkSwitch(1)"')
+            ->call('testSwitch', 1)
+            ->assertSet('editingId', 1)
+            ->assertSee('GE0/0/5')
+            ->call('checkSwitch', 1)
+            ->assertSee('Enter the write community (v2c) or the write user (v3) first.');
+        $this->assertSame('line-ro', $this->configs[0]['community'], "the row's own community");
+    }
+
     public function test_switches_are_listed_and_a_second_one_is_added()
     {
         EthernetSwitch::create(['host' => '192.0.2.10', 'community' => 'public', 'sys_name' => 'sw01']);

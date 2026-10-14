@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\EthernetSwitch;
+use App\Models\PoeOutage;
 use App\Services\Snmp\SnmpClient;
 use App\Services\SwitchPortFinder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -47,6 +48,29 @@ class ConfigureEthernetSwitchTest extends TestCase
 
         $switch = EthernetSwitch::sole();
         $this->assertSame(['public', 'private'], [$switch->community, $switch->write_community]);
+    }
+
+    public function test_remove_keeps_a_switch_with_a_port_left_off()
+    {
+        $switch = EthernetSwitch::create(['host' => '192.0.2.10']);
+        PoeOutage::create(['switch_id' => $switch->id, 'switch_host' => '192.0.2.10', 'if_index' => 8, 'port' => 'sw01 GE0/0/3',
+            'oid' => '.1.3.6.1.4.1.2011.5.25.195.3.1.3.8', 'on_value' => 1, 'off_at' => now()->subMinutes(5), 'error' => 'timeout']);
+
+        $this->artisan('ethernetswitch:configure', ['--remove' => '192.0.2.10'])
+            ->expectsOutputToContain('Switch them on (Power on) or forget them first')
+            ->assertExitCode(1);
+        $this->assertSame(1, EthernetSwitch::count());
+    }
+
+    public function test_a_switch_on_snmpv3_is_not_turned_into_v2c()
+    {
+        EthernetSwitch::create(['host' => '192.0.2.10', 'snmp_version' => '3', 'user' => 'cmprov']);
+
+        $this->artisan('ethernetswitch:configure')
+            ->expectsQuestion('Ethernet switch IP-address (leave empty to list the switches)', '192.0.2.10')
+            ->expectsOutputToContain('uses SNMPv3')
+            ->assertExitCode(1);
+        $this->assertSame('3', EthernetSwitch::sole()->snmp_version);
     }
 
     public function test_an_empty_address_lists_and_remove_deletes_one()

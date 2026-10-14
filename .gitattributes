@@ -1,6 +1,8 @@
 # The app runs on Linux and ships shell scripts (debian/, scriptexecute, blade-rendered shell):
 # keep LF in the working tree on every platform.
 * text=auto eol=lf
+# the version and commit of a package: git archive fills them in (App\Support\AppVersion)
+config/version.php export-subst
 *.bin binary
 *.img binary
 *.dtb binary

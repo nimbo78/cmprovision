@@ -10,6 +10,7 @@ use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Sleep;
 use Tests\Support\PoeStand;
 use Tests\TestCase;
 
@@ -75,6 +76,21 @@ class PortLookupTest extends TestCase
         $found = PortLookup::find('10000000e611110f', 'e4:5f:01:00:00:99', now()->getTimestamp());
         $this->assertNull($found['board']);
         $this->assertSame('Switch port unknown: sw01 does not know MAC e4:5f:01:00:00:99', $found['warning']);
+    }
+
+    public function test_a_switch_busy_with_another_request_is_named_when_the_mac_is_not_found()
+    {
+        Carbon::setTestNow('2026-10-14 10:00:00');
+        $this->stand();
+        Stand::current();
+        Carbon::setTestNow('2026-10-14 10:00:20');
+        Sleep::fake(syncWithCarbon: true);
+        Cache::lock('switch-snapshot-lock:192.0.2.10', 600)->get();   // another start is asking sw01 right now
+
+        $found = PortLookup::find('10000000e611110f', 'e4:5f:01:00:00:99', now()->getTimestamp());
+
+        $this->assertStringContainsString('sw01 does not know MAC e4:5f:01:00:00:99', $found['warning']);
+        $this->assertStringContainsString('sw01 was busy with another request: its snapshot is from ', $found['warning']);
     }
 
     public function test_a_module_seen_alike_on_two_switches_is_on_multiple_ports()

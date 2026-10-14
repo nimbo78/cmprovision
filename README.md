@@ -110,7 +110,7 @@ Install the new package over the old one with `sudo apt install ./cmprovision4_*
 
 Upgrading from a version older than 2.4 (1.x, or 2.0 to 2.3) takes a snapshot by itself first: `/var/backups/cmprovision/<timestamp>-<old version>/`, with the old package inside, and `sudo cmprovision-restore <that directory>` goes back to the old version with its data. If no snapshot can be taken (three tries), the upgrade stops and the old version stays installed: try again while no module is on the stand, or upgrade without a way back with `sudo CMPROVISION_NO_SNAPSHOT=1 apt install ./cmprovision4_*.deb`. Reload browser tabs that were open during the upgrade.
 
-2.4 keeps the switches in a list of their own and makes the 2.3 switch settings its first entry; the 2.3 settings stay for going back. If you go back to 2.3 and upgrade again later, the list is made again from the 2.3 settings: check Settings → Ethernet switches.
+2.4 keeps the switches in a list of their own and makes the 2.3 switch settings its first entry; the 2.3 settings stay for going back. Going back with `cmprovision-restore` puts back the 2.3 database, so the next upgrade makes the list again from the 2.3 settings; after installing the 2.3 package over 2.4 without a restore, the list stays as 2.4 left it. Check Settings → Ethernet switches after either.
 
 For other upgrades take the snapshot yourself (the commands come with the package; in a checkout they are `tools/backup.sh` and `tools/restore.sh`). Only with `dpkg-repack` installed does it hold the installed package; without one, `cmprovision-restore` refuses it while another version is installed:
 

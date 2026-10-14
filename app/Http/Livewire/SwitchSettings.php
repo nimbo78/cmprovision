@@ -81,6 +81,22 @@ class SwitchSettings extends Component
             $this->open($switch);
     }
 
+    /* A row's Test: its form opens and the switch is asked */
+    public function testSwitch($id)
+    {
+        $this->edit($id);
+        if ($this->form && (int) $this->editingId === (int) $id)
+            $this->test();
+    }
+
+    /* A row's Check write access: its form opens and the check runs */
+    public function checkSwitch($id)
+    {
+        $this->edit($id);
+        if ($this->form && (int) $this->editingId === (int) $id)
+            $this->checkWrite();
+    }
+
     public function cancel()
     {
         $this->open(null);
@@ -214,7 +230,8 @@ class SwitchSettings extends Component
             return;
         }
         // the value it reads and writes back could be a restart's "off", written after the restart switched the port on
-        $id = $this->editingId ?? EthernetSwitch::where('host', $config['host'])->value('id');
+        // the switch the check talks to: the one at the form's address, else the one in the form
+        $id = EthernetSwitch::where('host', $config['host'])->value('id') ?? $this->editingId;
         $lock = Cache::lock(PoeRestart::LOCK.':'.($id ?? 'new'), 60);
         if (!$lock->get())
         {

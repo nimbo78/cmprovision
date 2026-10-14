@@ -6,6 +6,7 @@ use App\Models\Cm;
 use App\Models\EthernetSwitch;
 use App\Services\NetworkStatus;
 use App\Support\StandMap;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -39,7 +40,7 @@ class Stand
             if ($state['snapshot'] && !$state['error'])
                 self::remember($switch, $state['snapshot']);
             $states[$switch->id] = ['switch' => $switch, 'config' => $switch->config(), 'snapshot' => $state['snapshot'],
-                                    'error' => $state['error'], 'checked_at' => $state['checked_at']];
+                                    'error' => $state['error'], 'checked_at' => $state['checked_at'], 'busy' => $state['busy'] ?? false];
         }
 
         // one switch under two addresses (its IP and its name, say) answers with one base MAC: the later row stays out
@@ -64,11 +65,10 @@ class Stand
         $map = $snapshots
             ? (new StandMap($parts, array_merge(self::modulesOn($snapshots), $extra), app(NetworkStatus::class)->serverMac()))->build()
             : null;
-        // a link is found again while both switches answer; while its neighbour is silent the map keeps it from here
         if ($map)
             foreach ($states as $id => $state)
-                if (self::answering($state) && isset($map['switches'][$id]) && ($state['switch']->links ?? []) != $map['switches'][$id]['links'])
-                    $state['switch']->forceFill(['links' => $map['switches'][$id]['links']])->save();
+                if (self::answering($state) && isset($map['switches'][$id]))
+                    self::rememberLinks($state, $map['switches'][$id]['links']);
         return ['switches' => $states, 'map' => $map];
     }
 
@@ -100,6 +100,37 @@ class Stand
                 $silent[] = $state['switch']->hostname();
         return $silent ? 'not seen on the switches ('.implode(', ', $silent).' '.(count($silent) === 1 ? 'does' : 'do').' not answer)'
                        : 'not seen on the switch';
+    }
+
+    /* A link is found again while both switches answer; while its neighbour is silent the map keeps it from here. One
+       snapshot without the neighbour's MAC on it does not forget it (a neighbour just back is learnt there with its
+       next answers), the next one does, and so does the port's link going down */
+    protected static function rememberLinks(array $state, array $found): void
+    {
+        $switch = $state['switch'];
+        $takenAt = (int) $state['snapshot']['taken_at'];
+        $up = array_column($state['snapshot']['ports'], 'up', 'ifIndex');
+        $links = $found;
+        foreach ($switch->links ?? [] as $ifIndex => $neighbour)
+        {
+            $miss = 'switch-link-miss:'.$switch->id.':'.$ifIndex;
+            if (isset($found[$ifIndex]) || !($up[$ifIndex] ?? false))
+            {
+                Cache::forget($miss);
+                continue;
+            }
+            $first = Cache::get($miss);
+            if ($first === null || $first >= $takenAt)
+            {
+                Cache::put($miss, $first ?? $takenAt, 3600);
+                $links[$ifIndex] = (int) $neighbour;
+            }
+            else
+                Cache::forget($miss);
+        }
+        ksort($links);
+        if ($links != ($switch->links ?? []))
+            $switch->forceFill(['links' => $links])->save();
     }
 
     /* What the switch said about itself; a base MAC another row holds already stays unset (two rows for one switch) */

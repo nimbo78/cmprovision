@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\EthernetSwitch;
+use App\Models\PoeOutage;
 use App\Services\SwitchPortFinder;
 use Illuminate\Console\Command;
 
@@ -24,6 +25,12 @@ class ConfigureEthernetSwitch extends Command
                 $this->error('No switch at '.$this->option('remove').'.');
                 return 1;
             }
+            // nothing could switch such a port on from here once its switch is gone (the settings page refuses as well)
+            if (PoeOutage::stayedOff()->forSwitch($removed)->exists())
+            {
+                $this->error('Ports of '.$removed->hostname().' stayed off after a PoE restart. Switch them on (Power on) or forget them first.');
+                return 1;
+            }
             $removed->delete();
             $this->info('Removed '.$removed->hostname().' ('.$removed->host.').');
             return 0;
@@ -39,6 +46,13 @@ class ConfigureEthernetSwitch extends Command
                 $this->line('No switches.');
             $this->line('Nothing changed. Remove one with --remove=<address>; SNMPv3 and write access: settings page.');
             return 0;
+        }
+
+        $known = EthernetSwitch::where('host', $ip)->first();
+        if ($known && $known->snmp_version === '3')
+        {
+            $this->error($known->hostname().' ('.$ip.') uses SNMPv3: change it on the settings page.');
+            return 1;
         }
 
         do
