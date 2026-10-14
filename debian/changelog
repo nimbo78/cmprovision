@@ -1,3 +1,39 @@
+cmprovision4 (2.4.0~dev1) unstable; urgency=medium
+
+  * Several switches on the stand. Settings → Ethernet switches lists them,
+    each with its own address and SNMP read and write access; Add switch
+    and Edit open one at a time. Test and Save read what the switch calls
+    itself and its base MAC, so one switch is not added twice under two
+    addresses. The 2.3 switch settings become the first switch of the list
+    and stay in place for going back to 2.3.
+  * A module's board is "hostname port": the switch's sysName before the
+    first dot, then the port's description or name, with one switch too.
+    The module keeps its switch and port apart as well: the webhook's JSON
+    has "switch" and "port" next to "board", and labels may print $switch
+    and $port.
+  * The board comes from one map of the whole stand: every switch is read,
+    a port that leads to another switch of the stand (it shows that
+    switch's own MAC: base MAC, interface MACs, its address in the
+    provisioner's ARP cache) is a link and never a module's port, and each
+    module belongs to one port. A link found before holds while the switch
+    behind it is silent.
+  * The Ports page draws a block for each switch with its line inside:
+    hostname, serial, base MAC, address, model, when it was polled and its
+    PoE draw. A silent switch keeps its last snapshot and says since when
+    it is silent; two switches with one name are warned about; a link
+    shows → and where it leads.
+  * PoE restart works switch by switch: each has its own lock and write
+    access, a silent switch skips only its own ports, and the messages,
+    the module log and the outage banner name ports "hostname port". Power
+    on goes through the switch of the outage. The dashboard offers Restart
+    by the module's switch and lists up to 100 modules.
+  * A switch that did not answer is asked again after 30 seconds, not on
+    every page refresh and module start.
+  * The upgrade from a version before 2.4 takes a snapshot first, as the
+    upgrade to 2.0 does: cmprovision-restore goes back to 2.3.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Wed, 14 Oct 2026 11:16:08 +0300
+
 cmprovision4 (2.3.3) unstable; urgency=medium
 
   * Self-signed certificates for Mattermost and webhooks: a Mattermost bot,

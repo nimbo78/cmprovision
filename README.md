@@ -98,17 +98,19 @@ However that requires that network boot is enabled first in the EEPROM settings 
 
 You can create a SD card that enables that with [Imager](https://www.raspberrypi.com/software/), by going to: "Choose OS" -> "Misc utility images" -> "Bootloader" -> "Network boot"
 
-## Switch: port lookup, the Ports page and PoE restart ##
+## Switches: port lookup, the Ports page and PoE restart ##
 
-Settings → Ethernet switch takes the switch's address and SNMP read access (a community for v2c, a user for v3). With it a module gets its switch port as its board, and the Ports page shows the stand port by port.
+Settings → Ethernet switches lists the switches of the stand; **Add switch** takes a switch's address and SNMP read access (a community for v2c, a user for v3). With them a module gets its switch and port as its board, `sw01 Gi0/3` (the switch's sysName before the first dot, then the port's description or name), and the Ports page shows each switch's front panel port by port. A port that leads to another switch of the list is a link, never a module's port: it shows that switch's own MAC (its base MAC, the MAC of its VLAN interface, or the MAC of its address in the provisioner's ARP cache). The same switch cannot be added twice under two addresses. Two switches with the same sysName give boards that look the same: Settings and the Ports page warn about it, rename one on the switch.
 
-Write access is optional and only used to restart modules over PoE: a write community for v2c, or a user of its own for v3. **Check write access** writes one PoE port's current value back, so it changes nothing. With write access, the module card, the Ports page and the dashboard get a **Restart** button: the switch turns the port's PoE off for 5 seconds and on again. It is offered only on ports with one of the provisioner's modules (or a Raspberry Pi still booting) and nothing else, and not while the module writes its bootloader EEPROM. A port that does not come back on is listed on the dashboard, the Ports page and the module card with **Power on** until it does.
+Write access is optional, set for each switch, and only used to restart modules over PoE: a write community for v2c, or a user of its own for v3. **Check write access** writes one PoE port's current value back, so it changes nothing. With write access, the module card, the Ports page and the dashboard get a **Restart** button: the switch turns the port's PoE off for 5 seconds and on again. It is offered only on ports with one of the provisioner's modules (or a Raspberry Pi still booting) and nothing else, and not while the module writes its bootloader EEPROM. A port that does not come back on is listed on the dashboard, the Ports page and the module card with **Power on** until it does.
 
 ## Upgrading ##
 
 Install the new package over the old one with `sudo apt install ./cmprovision4_*.deb`; never `apt remove` it first, the package's removal step deletes the database and storage.
 
-Upgrading from 1.x to 2.0 takes a snapshot by itself first: `/var/backups/cmprovision/<timestamp>-<old version>/`, with the old package inside, and `sudo cmprovision-restore <that directory>` goes back to 1.x with its data. If no snapshot can be taken (three tries), the upgrade stops and 1.x stays installed: try again while no module is on the stand, or upgrade without a way back with `sudo CMPROVISION_NO_SNAPSHOT=1 apt install ./cmprovision4_*.deb`. Reload browser tabs that were open during the upgrade.
+Upgrading from a version older than 2.4 (1.x, or 2.0 to 2.3) takes a snapshot by itself first: `/var/backups/cmprovision/<timestamp>-<old version>/`, with the old package inside, and `sudo cmprovision-restore <that directory>` goes back to the old version with its data. If no snapshot can be taken (three tries), the upgrade stops and the old version stays installed: try again while no module is on the stand, or upgrade without a way back with `sudo CMPROVISION_NO_SNAPSHOT=1 apt install ./cmprovision4_*.deb`. Reload browser tabs that were open during the upgrade.
+
+2.4 keeps the switches in a list of their own and makes the 2.3 switch settings its first entry; the 2.3 settings stay for going back. If you go back to 2.3 and upgrade again later, the list is made again from the 2.3 settings: check Settings → Ethernet switches.
 
 For other upgrades take the snapshot yourself (the commands come with the package; in a checkout they are `tools/backup.sh` and `tools/restore.sh`). Only with `dpkg-repack` installed does it hold the installed package; without one, `cmprovision-restore` refuses it while another version is installed:
 

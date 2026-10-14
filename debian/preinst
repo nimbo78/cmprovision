@@ -1,6 +1,7 @@
 #!/bin/sh
-# Before an upgrade from 1.x to 2.0 (Laravel 13, new database columns) keep a snapshot of the data:
-# cmprovision-restore <snapshot> puts 1.x back. Uploaded images are not in it: the upgrade leaves them alone.
+# Before an upgrade from a version older than 2.4 keep a snapshot of the data (2.0: Laravel 13 and new database
+# columns; 2.4: the switches in a table of their own): cmprovision-restore <snapshot> puts the old version back.
+# Uploaded images are not in it: the upgrade leaves them alone.
 set -e
 
 # The snapshot's reinstallable .deb comes from dpkg-repack, which refuses a package that is not fully
@@ -36,7 +37,7 @@ pack_old_version() {
 take_snapshot() {
     for attempt in 1 2 3; do
         # each try in a directory of its own, so a failed one leaves nothing behind
-        dest=/var/backups/cmprovision/.before-2.0
+        dest=/var/backups/cmprovision/.before-upgrade
         rm -rf "$dest"
         if /usr/sbin/cmprovision-backup "$dest"; then
             snap=$(ls -d "$dest"/*-"$1" 2>/dev/null | head -1)
@@ -53,7 +54,7 @@ take_snapshot() {
     return 1
 }
 
-if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.0.0~"; then
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.4.0~"; then
     if [ -n "${CMPROVISION_NO_SNAPSHOT:-}" ]; then
         echo "cmprovision: CMPROVISION_NO_SNAPSHOT is set: upgrading from $2 without a snapshot" >&2
     elif [ ! -x /usr/sbin/cmprovision-backup ]; then
@@ -67,7 +68,7 @@ if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.0.0
     else
         echo "cmprovision: no snapshot of $2 could be taken (see above). The upgrade stops and $2 stays installed." >&2
         echo "cmprovision: try again when no module is on the stand, or upgrade without a way back:" >&2
-        echo "cmprovision:   sudo CMPROVISION_NO_SNAPSHOT=1 apt install <the 2.0 package>" >&2
+        echo "cmprovision:   sudo CMPROVISION_NO_SNAPSHOT=1 apt install <the new package>" >&2
         exit 1
     fi
 fi

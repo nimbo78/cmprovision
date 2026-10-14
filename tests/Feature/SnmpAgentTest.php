@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\Cm;
 use App\Services\Snmp\PhpSnmpClient;
 use App\Services\Snmp\SnmpError;
 use App\Services\Switch\Poe;
 use App\Services\Switch\PoeControl;
+use App\Services\Switch\SwitchSnapshot;
 use App\Services\SwitchPortFinder;
+use App\Support\StandMap;
 use Tests\TestCase;
 
 /**
@@ -65,6 +68,29 @@ class SnmpAgentTest extends TestCase
         $scan = $this->finder('routeros')->scan();
         $this->assertSame('line slot 3', $scan['ports'][self::MODULE]);
         $this->assertSame('qbridge', $scan['method']);
+    }
+
+    public function test_a_chain_of_two_switches_puts_the_module_on_its_own_switch()
+    {
+        // one agent, two data files: the community picks the switch
+        $take = function ($community) {
+            return SwitchSnapshot::forConfig(['host' => getenv('SNMPSIM_ENDPOINT'), 'community' => $community])->take();
+        };
+        $one = $take('chaina');
+        $two = $take('chainb');
+        $this->assertSame(['sw01', 'sw02'], [$one['identity']['name'], $two['identity']['name']]);
+        $this->assertContains('00:57:d2:97:a1:c0', $two['own_macs'], "sw02's Vlan1 MAC through ifPhysAddress");
+
+        $a = new Cm(['serial' => '10000000000000a1', 'mac' => self::MODULE, 'phase' => 'done']);
+        $b = new Cm(['serial' => '10000000000000b1', 'mac' => 'e4:5f:01:62:9f:d4', 'phase' => 'done']);
+        $map = (new StandMap([
+            ['id' => 1, 'name' => 'sw01', 'snapshot' => $one, 'own_macs' => $one['own_macs']],
+            ['id' => 2, 'name' => 'sw02', 'snapshot' => $two, 'own_macs' => $two['own_macs']],
+        ], [$a, $b], null))->build();
+
+        $this->assertSame('sw02', $map['tiles']['s1p24']['link'], "sw01 Gi0/24 leads to sw02");
+        $this->assertSame(['s1p1', 's2p3'], [$map['owners'][self::MODULE]['key'], $map['owners']['e4:5f:01:62:9f:d4']['key']]);
+        $this->assertSame('sw02 Gi0/3', $map['tiles']['s2p3']['board']);
     }
 
     public function test_snmpv3_vlan_context()
