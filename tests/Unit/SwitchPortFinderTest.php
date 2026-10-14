@@ -2,14 +2,14 @@
 
 namespace Tests\Unit;
 
-use App\Services\Snmp\SnmpError;
 use App\Services\SwitchPortFinder;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeSnmp;
 
 /**
- * Finding the switch port a module is plugged into, from the switch's MAC address table:
- * Q-BRIDGE-MIB, BRIDGE-MIB, Cisco IOS per-VLAN BRIDGE-MIB instances and HUAWEI-L2MAM-MIB.
+ * What the settings page's Test reads from the switch's MAC address table (SwitchPortFinder::scan()):
+ * Q-BRIDGE-MIB, BRIDGE-MIB, Cisco IOS per-VLAN BRIDGE-MIB instances and HUAWEI-L2MAM-MIB. A module's port at its
+ * start comes from the stand map (StandMapTest, PortLookupTest).
  */
 class SwitchPortFinderTest extends TestCase
 {
@@ -35,9 +35,9 @@ class SwitchPortFinderTest extends TestCase
             SwitchPortFinder::OID_BASEPORT_IFINDEX.'.8' => 8,
         ] + $this->ifTable([5 => 'gi5', 8 => 'gi8'])]);
 
-        $finder = new SwitchPortFinder($snmp);
-        $this->assertSame('gi5', $finder->portOf(self::MODULE));
-        $this->assertSame('qbridge', $finder->lastMethod());
+        $scan = (new SwitchPortFinder($snmp))->scan();
+        $this->assertSame('gi5', $scan['ports'][self::MODULE]);
+        $this->assertSame('qbridge', $scan['method']);
     }
 
     public function test_bridge_table_when_there_is_no_q_bridge()
@@ -47,7 +47,7 @@ class SwitchPortFinderTest extends TestCase
             SwitchPortFinder::OID_BASEPORT_IFINDEX.'.7' => 11,
         ] + $this->ifTable([11 => 'GE0/0/7'])]);
 
-        $this->assertSame('GE0/0/7', (new SwitchPortFinder($snmp))->portOf(self::MODULE));
+        $this->assertSame('GE0/0/7', (new SwitchPortFinder($snmp))->scan()['ports'][self::MODULE]);
     }
 
     public function test_cisco_ios_keeps_each_vlan_in_its_own_bridge_instance()
@@ -69,9 +69,9 @@ class SwitchPortFinderTest extends TestCase
             ],
         ]);
 
-        $finder = new SwitchPortFinder($snmp);
-        $this->assertSame('Gi0/5', $finder->portOf(self::MODULE));
-        $this->assertSame('cisco', $finder->lastMethod());
+        $scan = (new SwitchPortFinder($snmp))->scan();
+        $this->assertSame('Gi0/5', $scan['ports'][self::MODULE], 'VLAN 20 lives in its own instance');
+        $this->assertStringEndsWith(' entries', $scan['tried']['cisco']);
         $this->assertNotContains([SwitchPortFinder::OID_BRIDGE_FDB_PORT, 1002], $snmp->walks, 'reserved VLANs 1002-1005 are skipped');
         $this->assertNotContains([SwitchPortFinder::OID_BRIDGE_FDB_PORT, 30], $snmp->walks, 'only operational VLANs are read');
     }
@@ -84,7 +84,7 @@ class SwitchPortFinderTest extends TestCase
             SwitchPortFinder::OID_HUAWEI_L2IF_IFINDEX.'.32' => 35,
         ] + $this->ifTable([32 => 'GE1/0/29', 35 => 'GE1/0/30'])]);
 
-        $this->assertSame('GE1/0/30', (new SwitchPortFinder($snmp))->portOf(self::MODULE));
+        $this->assertSame('GE1/0/30', (new SwitchPortFinder($snmp))->scan()['ports'][self::MODULE]);
     }
 
     public function test_huawei_l2mam_table_gives_the_interface_directly()
@@ -94,9 +94,9 @@ class SwitchPortFinderTest extends TestCase
             SwitchPortFinder::OID_HUAWEI_FDB_PORT.'.'.self::MODULE_OID.'.20.0' => 9,
         ] + $this->ifTable([9 => 'GE0/0/3'])]);
 
-        $finder = new SwitchPortFinder($snmp);
-        $this->assertSame('GE0/0/3', $finder->portOf(self::MODULE));
-        $this->assertSame('huawei', $finder->lastMethod());
+        $scan = (new SwitchPortFinder($snmp))->scan();
+        $this->assertSame('GE0/0/3', $scan['ports'][self::MODULE]);
+        $this->assertSame('huawei', $scan['method']);
     }
 
     public function test_an_uplink_seeing_the_same_mac_loses_to_the_access_port()
@@ -110,7 +110,7 @@ class SwitchPortFinderTest extends TestCase
             SwitchPortFinder::OID_BASEPORT_IFINDEX.'.3' => 3, SwitchPortFinder::OID_BASEPORT_IFINDEX.'.8' => 8,
         ] + $this->ifTable([3 => 'ether3', 8 => 'ether8'])]);
 
-        $this->assertSame('ether3', (new SwitchPortFinder($snmp))->portOf(self::MODULE));
+        $this->assertSame('ether3', (new SwitchPortFinder($snmp))->scan()['ports'][self::MODULE]);
     }
 
     public function test_the_interface_description_is_preferred_when_set()
@@ -120,23 +120,19 @@ class SwitchPortFinderTest extends TestCase
             SwitchPortFinder::OID_BASEPORT_IFINDEX.'.2' => 2,
         ] + $this->ifTable([2 => 'Gi0/2'], [2 => 'Slot 2'])]);
 
-        $this->assertSame('Slot 2', (new SwitchPortFinder($snmp))->portOf(self::MODULE));
+        $this->assertSame('Slot 2', (new SwitchPortFinder($snmp))->scan()['ports'][self::MODULE]);
     }
 
-    public function test_an_unknown_mac_gives_null_and_a_silent_switch_an_error()
+    public function test_an_unknown_mac_is_not_listed_and_a_silent_switch_is_asked_once()
     {
         $snmp = new FakeSnmp(['' => [SwitchPortFinder::OID_BRIDGE_FDB_PORT.'.0.17.34.51.68.85' => 1]]);
-        $this->assertNull((new SwitchPortFinder($snmp))->portOf(self::MODULE));
+        $this->assertArrayNotHasKey(self::MODULE, (new SwitchPortFinder($snmp))->scan()['ports']);
 
         $silent = new FakeSnmp([]);
         $silent->timeout = true;
-        $finder = new SwitchPortFinder($silent);
-        try {
-            $finder->portOf(self::MODULE);
-            $this->fail('a switch that does not answer is an error, not an unknown MAC');
-        } catch (SnmpError $e) {
-            $this->assertStringContainsString('No response', $e->getMessage());
-        }
+        $scan = (new SwitchPortFinder($silent))->scan();
+        $this->assertFalse($scan['answered'], 'a switch that does not answer is an error, not an empty table');
+        $this->assertStringContainsString('No response', reset($scan['tried']));
         $this->assertCount(1, $silent->walks, 'no point trying every method against a switch that does not answer');
     }
 
@@ -159,7 +155,7 @@ class SwitchPortFinderTest extends TestCase
     {
         $snmp = new FakeSnmp(['' => [SwitchPortFinder::OID_QBRIDGE_FDB_PORT.'.10.'.self::MODULE_OID => 5]]);
 
-        $this->assertNull((new SwitchPortFinder($snmp, 'bridge'))->portOf(self::MODULE));
+        $this->assertSame([], (new SwitchPortFinder($snmp, 'bridge'))->scan()['ports']);
         foreach ($snmp->walks as $walk)
             $this->assertNotSame(SwitchPortFinder::OID_QBRIDGE_FDB_PORT, $walk[0]);
     }

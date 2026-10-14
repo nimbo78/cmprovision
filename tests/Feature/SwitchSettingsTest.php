@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Snmp\SnmpClient;
+use App\Services\Switch\SwitchSnapshot;
 use App\Services\SwitchPortFinder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -142,7 +143,10 @@ class SwitchSettingsTest extends TestCase
 
     public function test_a_module_gets_its_switch_port_as_board_and_the_working_method_is_remembered()
     {
-        $this->fakeSwitch();
+        $fake = $this->fakeSwitch();
+        $fake->tables[''] += [SwitchSnapshot::OID_SYSNAME.'.0' => 'sw01.stand.example',
+            SwitchSnapshot::OID_IFTYPE.'.5' => 6, SwitchSnapshot::OID_IFOPERSTATUS.'.5' => 1,
+            SwitchSnapshot::OID_IFTYPE.'.8' => 6, SwitchSnapshot::OID_IFOPERSTATUS.'.8' => 1];
         SwitchRow::put(['ip' => '192.168.25.2', 'snmp_community' => 'line-ro']);
 
         $image = new Image;
@@ -158,7 +162,8 @@ class SwitchSettingsTest extends TestCase
 
         $this->get('/scriptexecute?serial=10000000e611110c&model=CM4&storagesize=62500000&mac='.self::MODULE)->assertOk();
 
-        $this->assertSame('GE0/0/5', Cm::where('serial', '10000000e611110c')->value('provisioning_board'));
+        $cm = Cm::where('serial', '10000000e611110c')->first();
+        $this->assertSame(['sw01 GE0/0/5', 1, 'sw01', 'GE0/0/5'], [$cm->provisioning_board, $cm->switch_id, $cm->switch_name, $cm->switch_port]);
         $this->assertSame('qbridge', $this->setting('method_detected'));
     }
 }

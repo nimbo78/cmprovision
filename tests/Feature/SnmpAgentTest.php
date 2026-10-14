@@ -34,41 +34,37 @@ class SnmpAgentTest extends TestCase
 
     public function test_vlan_aware_switch_through_q_bridge()
     {
-        $finder = $this->finder('qbridge');
-        $this->assertSame('GE0/0/5', $finder->portOf(self::MODULE));
-        $this->assertSame('qbridge', $finder->lastMethod());
-
         $scan = $this->finder('qbridge')->scan();
+        $this->assertSame('GE0/0/5', $scan['ports'][self::MODULE]);
+        $this->assertSame('qbridge', $scan['method']);
         $this->assertSame('uplink', $scan['ports']['00:11:22:33:44:55'], 'a port description wins over the name');
         $this->assertSame(10, $scan['vlans'][self::MODULE]);
     }
 
     public function test_cisco_ios_per_vlan_instances_through_community_indexing()
     {
-        $finder = $this->finder('ciscoios');
-        $this->assertSame('Gi0/5', $finder->portOf(self::MODULE));
-        $this->assertSame('cisco', $finder->lastMethod());
+        $scan = $this->finder('ciscoios')->scan();
+        $this->assertSame('Gi0/5', $scan['ports'][self::MODULE]);
+        $this->assertStringEndsWith(' entries', $scan['tried']['cisco']);
     }
 
     public function test_huawei_l2mam_table()
     {
-        $finder = $this->finder('huawei');
-        $this->assertSame('GE0/0/3', $finder->portOf(self::MODULE));
-        $this->assertSame('huawei', $finder->lastMethod());
+        $this->assertSame('GE0/0/3', $this->finder('huawei')->scan()['ports'][self::MODULE]);
     }
 
     public function test_huawei_yunshan_bridge_ports_through_l2if()
     {
-        $finder = $this->finder('yunshan');
-        $this->assertSame('GE1/0/30', $finder->portOf(self::MODULE));
-        $this->assertSame('bridge', $finder->lastMethod());
+        $scan = $this->finder('yunshan')->scan();
+        $this->assertSame('GE1/0/30', $scan['ports'][self::MODULE]);
+        $this->assertSame('bridge', $scan['method']);
     }
 
     public function test_mikrotik_routeros_q_bridge_with_fdb_id_zero_and_comments()
     {
-        $finder = $this->finder('routeros');
-        $this->assertSame('line slot 3', $finder->portOf(self::MODULE));
-        $this->assertSame('qbridge', $finder->lastMethod());
+        $scan = $this->finder('routeros')->scan();
+        $this->assertSame('line slot 3', $scan['ports'][self::MODULE]);
+        $this->assertSame('qbridge', $scan['method']);
     }
 
     public function test_snmpv3_vlan_context()
