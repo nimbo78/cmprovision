@@ -3,10 +3,12 @@
 namespace App\Support;
 
 use App\Models\Cm;
+use App\Models\EthernetSwitch;
 
 /**
- * The stand as the Ports page draws it: a SwitchSnapshot and the modules behind its MAC addresses as
- * port tiles laid out like the switch's front panel, and what is on the stand now.
+ * The stand as the Ports page draws it: the snapshots of its switches and the modules behind their MAC addresses as
+ * port tiles laid out like each switch's front panel, and what is on the stand now. A port towards another switch of
+ * the stand is a link (it shows that switch's own MACs), and each module belongs to one port of the whole stand.
  */
 class StandMap
 {
@@ -34,31 +36,145 @@ class StandMap
     /* A running module's tile without a percent shows its step */
     const STEP_MARKS = ['preinstall' => 'PRE', 'write' => 'WRITE', 'verify' => 'VERIFY', 'postinstall' => 'POST'];
 
-    protected $snapshot, $modules = [], $serverMac;
+    protected $parts = [], $modules = [], $serverMac;
 
     /**
-     * @param array $snapshot SwitchSnapshot::take()
+     * @param array $parts one per switch: ['id' => int, 'name' => string, 'snapshot' => ?array (SwitchSnapshot::take()),
+     *        'answering' => bool (its last poll worked), 'own_macs' => string[], 'links' => [ifIndex => id of the
+     *        neighbour] found before]
      * @param iterable $modules Cm models; their mac in any case
      */
-    public function __construct(array $snapshot, iterable $modules, ?string $serverMac)
+    public function __construct(array $parts, iterable $modules, ?string $serverMac)
     {
-        $this->snapshot = $snapshot;
+        foreach ($parts as $part)
+            $this->parts[$part['id']] = [
+                'id' => $part['id'], 'name' => (string) $part['name'], 'snapshot' => $part['snapshot'] ?? null,
+                'answering' => $part['answering'] ?? !empty($part['snapshot']),
+                'own_macs' => array_map('strtolower', $part['own_macs'] ?? []), 'links' => $part['links'] ?? [],
+            ];
         foreach ($modules as $cm)
             if ($cm->mac)
                 $this->modules[strtolower($cm->mac)] = $cm;
         $this->serverMac = $serverMac ? strtolower($serverMac) : null;
     }
 
+    /** One switch (id 1), named by what it says about itself */
+    public static function of(array $snapshot, iterable $modules, ?string $serverMac): self
+    {
+        $name = EthernetSwitch::shortName($snapshot['identity']['name'] ?? null) ?? (string) ($snapshot['id'] ?? '');
+        return new self([['id' => 1, 'name' => $name, 'snapshot' => $snapshot, 'answering' => true]], $modules, $serverMac);
+    }
+
+    /**
+     * ['switches' => [id => ['id', 'name', 'blocks', 'composition', 'links' => [ifIndex => id of the neighbour]]],
+     *  'tiles' => [key => tile] of every switch, 'summary' => the whole stand,
+     *  'owners' => [module MAC => ['key' => its port or null, 'seen' => every port that lists it]],
+     *  'blocks' => the first switch's blocks]
+     */
     public function build(): array
     {
-        $ports = array_values($this->snapshot['ports'] ?? []);
-        usort($ports, function ($a, $b) { return strnatcasecmp($a['name'], $b['name']); });
-        $withPoe = (bool) array_filter($ports, function ($p) { return $p['poe'] !== null; });
+        $ports = [];
+        foreach ($this->parts as $id => $part)
+            foreach ($part['snapshot']['ports'] ?? [] as $port)
+                $ports['s'.$id.'p'.$port['ifIndex']] = ['switch' => $id, 'port' => $port, 'macs' => array_map('strtolower', $port['macs'])];
 
-        $main = $uplinks = [];
-        foreach ($ports as $port)
+        $links = $this->links($ports);
+        $uplinks = [];
+        foreach ($ports as $key => $p)
+            $uplinks[$key] = isset($links[$key]) || ($this->serverMac && in_array($this->serverMac, $p['macs'], true))
+                || $this->foreign($p) > self::UPLINK_MACS;
+        $owners = $this->owners($ports, $uplinks);
+
+        $switches = $tiles = [];
+        $allMain = [];
+        foreach ($this->parts as $id => $part)
         {
-            $tile = $this->tile($port);
+            $mine = array_filter($ports, function ($p) use ($id) { return $p['switch'] === $id; });
+            [$blocks, $main, $aside, $withPoe] = $this->layout($mine, $owners, $links, $uplinks);
+            foreach (array_merge($main, $aside) as $tile)
+                $tiles[$tile['key']] = $tile;
+            $allMain = array_merge($allMain, $main);
+            $found = [];
+            foreach ($mine as $key => $p)
+                if (isset($links[$key]))
+                    $found[$p['port']['ifIndex']] = $links[$key];
+            $switches[$id] = ['id' => $id, 'name' => $part['name'], 'blocks' => $blocks,
+                              'composition' => $main || $aside ? $this->composition($main, $aside, $withPoe) : '', 'links' => $found];
+        }
+        $first = reset($switches);
+        return ['switches' => $switches, 'tiles' => $tiles, 'summary' => $this->summary($allMain, $tiles),
+                'owners' => $owners, 'blocks' => $first ? $first['blocks'] : []];
+    }
+
+    /* A port towards another switch of the stand: it shows one of that switch's own MACs (the address it answers from
+       is learnt there), or it was found so before and that switch is silent now */
+    protected function links(array $ports): array
+    {
+        $links = [];
+        foreach ($ports as $key => $p)
+        {
+            if (!$p['port']['up'])
+                continue;
+            $remembered = $this->parts[$p['switch']]['links'];
+            foreach ($this->parts as $id => $other)
+                if ($id !== $p['switch'] && (array_intersect($p['macs'], $other['own_macs'])
+                        || (!$other['answering'] && (int) ($remembered[$p['port']['ifIndex']] ?? 0) === $id)))
+                {
+                    $links[$key] = $id;
+                    break;
+                }
+        }
+        return $links;
+    }
+
+    /* Every module MAC seen anywhere: the port it belongs to (the one with fewest addresses; on a tie the one where all
+       the others are modules too; otherwise none) and every port that lists it */
+    protected function owners(array $ports, array $uplinks): array
+    {
+        $owners = [];
+        foreach ($this->modules as $mac => $cm)
+        {
+            $seen = $candidates = [];
+            foreach ($ports as $key => $p)
+                if (in_array($mac, $p['macs'], true))
+                {
+                    $seen[] = $key;
+                    if ($p['port']['up'] && !$uplinks[$key])
+                        $candidates[$key] = $p['port']['mac_count'] ?? count($p['macs']);
+                }
+            if (!$seen)
+                continue;
+            $owner = null;
+            if ($candidates)
+            {
+                $fewest = array_keys($candidates, min($candidates));
+                if (count($fewest) > 1)
+                    $fewest = array_values(array_filter($fewest, function ($key) use ($ports) { return $this->foreign($ports[$key]) === 0; }));
+                $owner = count($fewest) === 1 ? $fewest[0] : null;
+            }
+            $owners[$mac] = ['key' => $owner, 'seen' => $seen];
+        }
+        return $owners;
+    }
+
+    /* Addresses on a port that are not modules */
+    protected function foreign(array $p): int
+    {
+        $modules = count(array_filter($p['macs'], function ($mac) { return isset($this->modules[$mac]); }));
+        return ($p['port']['mac_count'] ?? count($p['macs'])) - $modules;
+    }
+
+    /* One switch laid out like its front panel: PoE ports (or copper) in blocks of BLOCK, the rest beside them */
+    protected function layout(array $mine, array $owners, array $links, array $uplinks): array
+    {
+        uasort($mine, function ($a, $b) { return strnatcasecmp($a['port']['name'], $b['port']['name']); });
+        $withPoe = (bool) array_filter($mine, function ($p) { return $p['port']['poe'] !== null; });
+
+        $main = $aside = [];
+        foreach ($mine as $key => $p)
+        {
+            $port = $p['port'];
+            $tile = $this->tile($key, $p, $owners, $links, $uplinks);
             $media = $port['media'] ?? null;
             // the block of uplinks beside the main ports: no PoE on a PoE switch, otherwise a cage or combo port
             $tile['aside'] = $withPoe ? $port['poe'] === null : ($this->cage($port) || in_array($media, ['sfp', 'combo'], true));
@@ -69,7 +185,7 @@ class StandMap
             $tile['transceiver'] = $port['transceiver'] ?? null;
             $tile['mark'] = $this->mark($tile);
             if ($tile['aside'])
-                $uplinks[] = $tile;
+                $aside[] = $tile;
             else
                 $main[] = $tile;
         }
@@ -79,15 +195,9 @@ class StandMap
         foreach ($rows === 1 ? [$main] : array_chunk($main, self::BLOCK) as $chunk)
             if ($chunk)
                 $blocks[] = ['uplinks' => false, 'rows' => $rows, 'tiles' => $chunk];
-        if ($uplinks)
-            $blocks[] = ['uplinks' => true, 'rows' => $rows, 'tiles' => $uplinks];
-
-        $tiles = [];
-        foreach (array_merge($main, $uplinks) as $tile)
-            $tiles[$tile['key']] = $tile;
-
-        return ['switch' => $this->snapshot['id'] ?? null, 'blocks' => $blocks, 'tiles' => $tiles,
-                'summary' => $this->summary($main, $tiles, $uplinks, $withPoe)];
+        if ($aside)
+            $blocks[] = ['uplinks' => true, 'rows' => $rows, 'tiles' => $aside];
+        return [$blocks, $main, $aside, $withPoe];
     }
 
     /* What the dashboard says about a module, in one word */
@@ -112,6 +222,8 @@ class StandMap
         one of our modules, or a Raspberry Pi that has not asked the server yet */
     public static function restartBlocker(array $tile): ?string
     {
+        if ($tile['link'] ?? null)
+            return $tile['label'].' is the link to '.$tile['link'];
         if ($tile['state'] === 'free')
             return $tile['name'].' has no link';
         if (!$tile['poe'])
@@ -153,22 +265,31 @@ class StandMap
         }
     }
 
-    protected function tile(array $port): array
+    protected function tile(string $key, array $p, array $owners, array $links, array $uplinks): array
     {
-        $macs = array_map('strtolower', $port['macs']);
-        $modules = [];
+        $port = $p['port'];
+        $macs = $p['macs'];
+        // a module MAC belongs to one port of the stand; on the others it is neither a module nor another device
+        $own = $elsewhere = [];
         foreach ($macs as $mac)
             if (isset($this->modules[$mac]))
-                $modules[] = $this->modules[$mac];
-        $others = ($port['mac_count'] ?? count($macs)) - count($modules);
-        $modules = $this->present($modules);
+            {
+                if (($owners[$mac]['key'] ?? null) === $key)
+                    $own[] = $mac;
+                else
+                    $elsewhere[] = $mac;
+            }
+        $count = $port['mac_count'] ?? count($macs);
+        $others = $count - count($own) - count($elsewhere);
+        $macs = array_values(array_diff($macs, $elsewhere));
+        $modules = $this->present(array_map(function ($mac) { return $this->modules[$mac]; }, $own));
         usort($modules, function ($a, $b) {
             return array_search(self::moduleState($a), self::SEVERITY, true) - array_search(self::moduleState($b), self::SEVERITY, true);
         });
 
         if (!$port['up'])
             $state = 'free';   // a pulled module's MAC stays in the switch table for minutes
-        elseif (($this->serverMac && in_array($this->serverMac, $macs, true)) || $others > self::UPLINK_MACS)
+        elseif ($uplinks[$key])
             $state = 'uplink';
         elseif ($modules)
             $state = 'module';
@@ -180,8 +301,16 @@ class StandMap
             $state = 'boot';
 
         $filter = $state === 'module' ? self::moduleState($modules[0]) : ($state === 'quiet' ? 'foreign' : $state);
+        $part = $this->parts[$p['switch']];
+        $boardPort = ($port['alias'] ?? '') !== '' ? $port['alias'] : $port['name'];
         return [
-            'key' => 'p'.$port['ifIndex'],
+            'key' => $key,
+            'switch_id' => $p['switch'],
+            'switch' => $part['name'],
+            'label' => trim($part['name'].' '.$port['name']),
+            'board_port' => $boardPort,
+            'board' => trim($part['name'].' '.$boardPort),
+            'link' => isset($links[$key]) ? $this->parts[$links[$key]]['name'] : null,
             'ifIndex' => $port['ifIndex'],
             'name' => $port['name'],
             'alias' => $port['alias'],
@@ -191,7 +320,7 @@ class StandMap
             'changed' => $port['changed'] ?? null,
             'poe' => $port['poe'],
             'macs' => $macs,
-            'mac_count' => $port['mac_count'] ?? count($macs),
+            'mac_count' => $count,
             'others' => $others,   // addresses that are not modules (a PoE restart needs none)
             'state' => $state,
             'filter' => $filter,
@@ -199,7 +328,7 @@ class StandMap
             'filters' => $state === 'module' ? array_values(array_unique(array_map([self::class, 'moduleState'], $modules))) : [$filter],
             'modules' => $state === 'module' ? $modules : [],
             'short' => $state === 'module' ? strtoupper(substr($modules[0]->serial, -4))
-                : (['uplink' => 'UP', 'foreign' => 'MAC', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? ''),
+                : (isset($links[$key]) ? '→' : (['uplink' => 'UP', 'foreign' => 'MAC', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? '')),
         ];
     }
 
@@ -268,7 +397,7 @@ class StandMap
         return self::STEP_MARKS[$cm->phase] ?? '';
     }
 
-    protected function summary(array $main, array $tiles, array $aside, bool $withPoe): array
+    protected function summary(array $main, array $tiles): array
     {
         $counts = array_fill_keys(['ok', 'run', 'fail', 'stale', 'unknown', 'boot', 'foreign', 'free'], 0);
         $modules = 0;
@@ -292,8 +421,7 @@ class StandMap
         else
             $verdict = 'empty';
 
-        return ['modules' => $modules, 'ports' => count($main), 'counts' => $counts, 'verdict' => $verdict, 'busy' => $busy,
-                'composition' => $this->composition($main, $aside, $withPoe)];
+        return ['modules' => $modules, 'ports' => count($main), 'counts' => $counts, 'verdict' => $verdict, 'busy' => $busy];
     }
 
     /* "8 × 1G PoE · 2 × 1G · 2 × SFP": the main ports with their usual speed, then beside them the copper uplinks,

@@ -90,7 +90,7 @@
                     <div class="ports-chassis">
                         <div class="ports-model">
                             <span>{{ $snapshot['model'] }}</span>
-                            <span>{{ $s['composition'] }}</span>
+                            <span>{{ array_values($map['switches'])[0]['composition'] ?? '' }}</span>
                         </div>
                         @foreach ($map['blocks'] as $block)
                             @if ($block['rows'] === 1)

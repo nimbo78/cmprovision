@@ -21,7 +21,7 @@ use Livewire\Component;
 #[Title('Ports')]
 class Ports extends Component
 {
-    /** key of the port whose details are open, e.g. "p10003"; only select() sets it */
+    /** key of the port whose details are open, e.g. "s1p10003"; only select() sets it */
     #[Locked]
     public $selected = null;
 
@@ -29,7 +29,7 @@ class Ports extends Component
 
     public function select($key)
     {
-        $this->selected = is_string($key) && preg_match('/^p\d+$/', $key) ? $key : null;
+        $this->selected = is_string($key) && preg_match('/^s\d+p\d+$/', $key) ? $key : null;
     }
 
     public function identify($id)

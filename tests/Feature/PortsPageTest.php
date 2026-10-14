@@ -139,12 +139,12 @@ class PortsPageTest extends TestCase
         $this->cagesAndCombo([1042 => [10, 'XGE0/0/1', 30, 1041]]);
 
         Livewire::test(Ports::class)
-            ->call('select', 'p7')
+            ->call('select', 's1p7')
             ->assertSeeHtml('<dt class="text-fg-muted">Connector</dt>')
             ->assertSee('combo: RJ45 or SFP, no SFP')
-            ->call('select', 'p30')
+            ->call('select', 's1p30')
             ->assertSee('SFP cage, module in')
-            ->call('select', 'p8')
+            ->call('select', 's1p8')
             ->assertDontSeeHtml('<dt class="text-fg-muted">Connector</dt>');
     }
 
@@ -189,7 +189,7 @@ class PortsPageTest extends TestCase
         Livewire::test(Ports::class)
             ->assertSeeHtml('<span class="font-bold text-fg">S5731-S24P4X</span>')
             ->assertSee('1 module on the stand')
-            ->call('select', 'p30')
+            ->call('select', 's1p30')
             ->assertSeeHtml('<dd>SFP cage</dd>');
     }
 
@@ -197,7 +197,7 @@ class PortsPageTest extends TestCase
     {
         $cm = $this->switchWithModule();
         Livewire::test(Ports::class)
-            ->call('select', 'p8')
+            ->call('select', 's1p8')
             ->assertSee('GE0/0/3')
             ->assertSee(route('cm', $cm->serial), false)
             ->assertSee('delivering 6.9 W')
@@ -289,7 +289,7 @@ class PortsPageTest extends TestCase
     public function test_the_selected_port_is_set_by_the_page_only()
     {
         $this->expectException(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
-        Livewire::test(Ports::class)->set('selected', 'p8');
+        Livewire::test(Ports::class)->set('selected', 's1p8');
     }
 
     public function test_a_switch_without_a_mac_table_says_modules_cannot_be_matched_to_ports()
@@ -312,7 +312,7 @@ class PortsPageTest extends TestCase
 
         Livewire::test(Ports::class)
             ->assertSeeHtml('<span class="short">LNK</span>')
-            ->call('select', 'p6')
+            ->call('select', 's1p6')
             ->assertSee('Link up for 1 week');
     }
 
@@ -326,7 +326,7 @@ class PortsPageTest extends TestCase
 
         Livewire::test(Ports::class)
             ->assertSee('1 booting')
-            ->call('select', 'p6')
+            ->call('select', 's1p6')
             ->assertSeeHtml('A Raspberry Pi is on this port and has not asked the server yet: <span class="ports-serial">e4:5f:01:62:9f:d4</span>');
     }
 
@@ -363,9 +363,9 @@ class PortsPageTest extends TestCase
         Sleep::fake();
         $this->switchWithModule();
         $this->writeAccess();
-        Livewire::test(Ports::class)->call('select', 'p8')
+        Livewire::test(Ports::class)->call('select', 's1p8')
             ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on GE0/0/3? PoE goes off for 5 s; the module boots the system it was flashed with."')
-            ->call('restart', 'p8')
+            ->call('restart', 's1p8')
             ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.')
             ->assertDispatched('poe-outages-changed');
         $this->assertSame([[Poe::OID_HW_ENABLE.'.8', 'i', 2], [Poe::OID_HW_ENABLE.'.8', 'i', 1]], $this->fake->sets);
@@ -374,7 +374,7 @@ class PortsPageTest extends TestCase
     public function test_without_write_access_there_is_no_restart()
     {
         $this->switchWithModule();
-        Livewire::test(Ports::class)->call('select', 'p8')
+        Livewire::test(Ports::class)->call('select', 's1p8')
             ->assertDontSeeHtml('wire:click="restart(')
             ->assertDontSee('No PoE restart');
     }
@@ -383,7 +383,7 @@ class PortsPageTest extends TestCase
     {
         $this->switchWithModule();
         $this->writeAccess();
-        Livewire::test(Ports::class)->call('select', 'p30')->assertSee('No PoE restart: no PoE on XGE0/0/1');
+        Livewire::test(Ports::class)->call('select', 's1p30')->assertSee('No PoE restart: no PoE on XGE0/0/1');
     }
 
     public function test_failed_modules_on_the_stand_have_one_button()

@@ -55,7 +55,7 @@ class PoeRestart
         });
     }
 
-    /** Restart these ports (StandMap tile keys such as "p8") */
+    /** Restart these ports (StandMap tile keys such as "s1p8") */
     public static function ports(array $keys, ?string $user): array
     {
         return self::start($user, function (array $map) use ($keys) {

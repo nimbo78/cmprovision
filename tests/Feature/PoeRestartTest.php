@@ -157,8 +157,8 @@ class PoeRestartTest extends TestCase
     public function test_the_ports_page_restarts_by_port()
     {
         $this->stand();
-        $this->assertSame(['GE0/0/3' => '10000000e611110c'], PoeRestart::ports(['p8'], 'igor')['restarted']);
-        $this->assertSame(['GE0/0/1' => 'other devices on GE0/0/1'], PoeRestart::ports(['p6'], 'igor')['skipped'],
+        $this->assertSame(['GE0/0/3' => '10000000e611110c'], PoeRestart::ports(['s1p8'], 'igor')['restarted']);
+        $this->assertSame(['GE0/0/1' => 'other devices on GE0/0/1'], PoeRestart::ports(['s1p6'], 'igor')['skipped'],
             'a link without any address: nothing tells it is ours');
     }
 
@@ -183,7 +183,7 @@ class PoeRestartTest extends TestCase
         // d8:3a:dd:00:00:07 on GE0/0/2, its link up for 20 s: a Pi that has not asked the server yet, so no serial
         $this->fake->tables[''] += [MacTable::OID_HUAWEI_FDB_PORT.'.216.58.221.0.0.7.10.0' => 7,
             SwitchSnapshot::OID_SYSUPTIME.'.0' => 100000, SwitchSnapshot::OID_IFLASTCHANGE.'.7' => 98000];
-        $result = PoeRestart::ports(['p7'], 'igor');
+        $result = PoeRestart::ports(['s1p7'], 'igor');
 
         $this->assertSame(['GE0/0/2' => null], $result['restarted']);
         $this->assertSame([[self::OID7, 'i', PoeControl::OFF], [self::OID7, 'i', PoeControl::ON]], $this->fake->sets);

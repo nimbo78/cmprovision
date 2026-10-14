@@ -29,7 +29,7 @@ class Stand
             return SwitchSnapshot::forConfig($config)->take();
         }))->current();
         $map = $state['snapshot']
-            ? (new StandMap($state['snapshot'], self::modulesOn($state['snapshot']), app(NetworkStatus::class)->serverMac()))->build()
+            ? StandMap::of($state['snapshot'], self::modulesOn($state['snapshot']), app(NetworkStatus::class)->serverMac())->build()
             : null;
         return ['config' => $config, 'snapshot' => $state['snapshot'], 'error' => $state['error'], 'map' => $map,
                 'checked_at' => $state['checked_at']];
