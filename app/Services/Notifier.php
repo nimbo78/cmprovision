@@ -116,56 +116,64 @@ class Notifier
     }
 
     /* One batch's events in one message: a part per event the channel wants, a module per line. A bot answers in the
-       batch's thread, posting its summary first if needed, then edits the summary with the numbers of now, also when
-       no part is left. @return bool whether anything was sent */
+       batch's thread, posting its summary first if needed, and edits the summary with the numbers of now, also when no
+       part is left. The edit comes first and each message marks its events sent: a rate limit part way through sends
+       nothing twice. @return bool whether anything was sent */
     protected function deliverPack(NotificationChannel $channel, $rows)
     {
         $batch = $rows->first()->batch;
-        $lines = [];
+        $root = null;
+        if ($channel->isThreaded() && $batch)
+        {
+            $created = false;
+            $root = $this->thread($channel, $batch, $created);
+            if (!$created)
+                $this->edit($channel, $root, $this->summary($batch));
+        }
+
+        $first = $rows->first(fn ($row) => $row->cm);
+        $prefix = $root === null && $first ? $this->projectPrefix($first->cm) : '';
+        $sent = $root !== null;
+        foreach ($this->messages($channel, $rows) as [$text, $ids])
+        {
+            $this->send($channel, $prefix.$text, $root);
+            NotificationOutbox::whereKey($ids)->update(['sent_at' => now()]);
+            $sent = true;
+        }
+        return $sent;
+    }
+
+    /* The pack as messages of at most SPLIT characters, each with the outbox ids it carries: a part per event the
+       channel wants, a header and then a module per line; a header never ends a message */
+    protected function messages(NotificationChannel $channel, $rows)
+    {
+        $lines = [];   // [text, outbox id or null for a header]
         foreach (['started' => 'started', 'completed' => 'done', 'failed' => 'failed'] as $event => $word)
         {
             $mine = $rows->filter(fn ($row) => $row->event === $event && $row->cm && $channel->wants($event));
             if ($mine->isEmpty())
                 continue;
-            $lines[] = self::ICONS[$event].' '.$mine->count().' '.$word.':';
+            $lines[] = [self::ICONS[$event].' '.$mine->count().' '.$word.':', null];
             foreach ($mine as $row)
-                $lines[] = $this->moduleText($row->cm, $event);
+                $lines[] = [$this->moduleText($row->cm, $event), $row->id];
         }
 
-        if ($channel->isThreaded() && $batch)
-        {
-            $created = false;
-            $root = $this->thread($channel, $batch, $created);
-            foreach ($this->split($lines) as $text)
-                $this->send($channel, $text, $root);
-            if (!$created)
-                $this->edit($channel, $root, $this->summary($batch));
-            return true;
-        }
-
-        $first = $rows->first(fn ($row) => $row->cm);
-        $prefix = $first ? $this->projectPrefix($first->cm) : '';
-        foreach ($this->split($lines) as $text)
-            $this->send($channel, $prefix.$text);
-        return $lines !== [];
-    }
-
-    /* Lines into messages of at most SPLIT characters */
-    protected function split(array $lines)
-    {
         $messages = [];
-        $current = '';
-        foreach ($lines as $line)
+        [$text, $ids] = ['', []];
+        foreach ($lines as $i => [$line, $id])
         {
-            if ($current !== '' && mb_strlen($current) + 1 + mb_strlen($line) > self::SPLIT)
+            $needed = mb_strlen($line) + ($id === null && isset($lines[$i + 1]) ? 1 + mb_strlen($lines[$i + 1][0]) : 0);
+            if ($text !== '' && mb_strlen($text) + 1 + $needed > self::SPLIT)
             {
-                $messages[] = $current;
-                $current = '';
+                $messages[] = [$text, $ids];
+                [$text, $ids] = ['', []];
             }
-            $current = $current === '' ? $line : $current."\n".$line;
+            $text = $text === '' ? $line : $text."\n".$line;
+            if ($id !== null)
+                $ids[] = $id;
         }
-        if ($current !== '')
-            $messages[] = $current;
+        if ($text !== '')
+            $messages[] = [$text, $ids];
         return $messages;
     }
 

@@ -149,6 +149,58 @@ class NotificationOutboxTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_a_rate_limit_on_the_summary_sends_no_reply_twice()
+    {
+        Http::fake([
+            'tg.example/bot123:abc/sendMessage' => Http::response(['ok' => true, 'result' => ['message_id' => 50]]),
+            'tg.example/bot123:abc/editMessageText' => Http::sequence()
+                ->push(['ok' => false, 'error_code' => 429, 'description' => 'Too Many Requests: retry after 3',
+                        'parameters' => ['retry_after' => 3]], 429)
+                ->push(['ok' => true, 'result' => true]),
+        ]);
+        config(['cmprovision.telegram_api' => 'https://tg.example']);
+        $channel = $this->channel('telegram', ['bot_token' => '123:abc', 'chat_id' => '-100']);
+        NotificationThread::create(['batch_id' => $this->batch->id, 'channel_id' => $channel->id, 'external_id' => '42']);
+        app(Notifier::class)->notify($this->module(1, 'done'), 'completed');
+
+        $this->flush();                                             // the chat asks to wait at the summary
+        Carbon::setTestNow(now()->addSeconds(4));
+        $this->flush();
+
+        $this->assertSame(1, collect(Http::recorded())->filter(fn ($pair) => Str::endsWith($pair[0]->url(), '/sendMessage'))->count(),
+            'the reply went out once');
+        Http::assertSent(fn (Request $r) => Str::endsWith($r->url(), '/editMessageText') && Str::contains($r['text'], '✅ 1 done'));
+        $this->assertSame(0, NotificationOutbox::whereNull('sent_at')->count());
+    }
+
+    public function test_a_rate_limit_part_way_through_a_long_pack_resends_only_what_did_not_go()
+    {
+        Http::fake([
+            'tg.example/bot123:abc/sendMessage' => Http::sequence()
+                ->push(['ok' => true, 'result' => ['message_id' => 50]])
+                ->push(['ok' => false, 'error_code' => 429, 'description' => 'Too Many Requests: retry after 3',
+                        'parameters' => ['retry_after' => 3]], 429)
+                ->whenEmpty(Http::response(['ok' => true, 'result' => ['message_id' => 51]])),
+            'tg.example/bot123:abc/editMessageText' => Http::response(['ok' => true, 'result' => true]),
+        ]);
+        config(['cmprovision.telegram_api' => 'https://tg.example']);
+        $channel = $this->channel('telegram', ['bot_token' => '123:abc', 'chat_id' => '-100']);
+        NotificationThread::create(['batch_id' => $this->batch->id, 'channel_id' => $channel->id, 'external_id' => '42']);
+        for ($n = 1; $n <= 80; $n++)
+            app(Notifier::class)->notify($this->module($n, 'failed', ['phase_detail' => str_repeat('Missing eMMC/SD card. ', 3)]), 'failed');
+
+        $this->flush();                                             // the first message goes, the second meets the limit
+        Carbon::setTestNow(now()->addSeconds(4));
+        $this->flush();
+
+        $sent = collect(Http::recorded())->filter(fn ($pair) => Str::endsWith($pair[0]->url(), '/sendMessage') && $pair[1]->ok())
+            ->map(fn ($pair) => $pair[0]['text'])->values();
+        foreach (range(1, 80) as $n)
+            $this->assertSame(1, $sent->filter(fn ($text) => Str::contains($text, sprintf('1000000000000%03d', $n)))->count(),
+                "module $n is in exactly one message");
+        $this->assertSame(0, NotificationOutbox::whereNull('sent_at')->count());
+    }
+
     public function test_after_five_failures_an_event_is_given_up()
     {
         Http::fake(['hooks.example.org/*' => Http::response('down', 500)]);
