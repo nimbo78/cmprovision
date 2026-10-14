@@ -23,12 +23,20 @@ class PackagingTest extends TestCase
             'the owners are right before artisan writes as the web user');
     }
 
-    public function test_backup_and_restore_open_the_database_as_the_web_user()
+    public function test_restore_runs_artisan_as_the_web_user()
     {
-        $this->assertStringContainsString('runuser -u www-data -- sqlite3', $this->file('tools/backup.sh'));
         $restore = $this->file('tools/restore.sh');
         $this->assertStringContainsString('runuser -u www-data -- "$APP/artisan" migrate --force', $restore);
         $this->assertDoesNotMatchRegularExpression('#^\s*"\$APP/artisan"#m', $restore);
+    }
+
+    public function test_the_backup_copies_the_database_straight_into_the_root_only_snapshot()
+    {
+        // as root: SQLite gives the -wal and -shm files a root process creates the database file's owner, while a
+        // directory of the web user would let it plant a symlink for root to move or chown
+        $backup = $this->file('tools/backup.sh');
+        $this->assertStringContainsString("sqlite3 -cmd '.timeout 10000' \"\$APP/database/database.sqlite\" \".backup '\$OUT/database.sqlite'\"", $backup);
+        $this->assertStringNotContainsString('runuser', $backup);
     }
 
     public function test_two_queue_workers()
