@@ -14,6 +14,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Tests\Support\TestCertificates;
 use Tests\TestCase;
@@ -31,6 +32,7 @@ class NotificationsTest extends TestCase
         parent::setUp();
         Carbon::setTestNow('2026-10-09 08:00:00');
         config(['app.display_timezone' => 'Europe/Moscow']);
+        Sleep::fake();   // a second between calls to one chat
     }
 
     protected function tearDown(): void
