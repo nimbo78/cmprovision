@@ -7,6 +7,11 @@ if [ "$1" = "remove" ]; then
     rm -rf /var/lib/cmprovision/storage /var/lib/cmprovision/database
 fi
 
+if [ "$1" = "purge" ]; then
+    # the php-fpm pool postinst wrote for each PHP version it ran with
+    rm -f /etc/php/*/fpm/pool.d/cmprovision.conf
+fi
+
 #DEBHELPER#
 
 exit 0

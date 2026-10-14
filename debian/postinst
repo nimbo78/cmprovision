@@ -31,12 +31,41 @@ case "$1" in
     }
     fix_ownership || echo "Could not adjust file ownership in /var/lib/cmprovision"
 
-    if grep -q "fastcgi_pass unix:/run/php/php-fpm.sock" "/etc/nginx/sites-available/cmprovision"; then
-
-        # Change nginx configuration to point to exact PHP version socket file
-        echo "PHP version detected: $PHP_VERSION"
-        sed -i "s#/run/php/php-fpm.sock#/run/php/php${PHP_VERSION}-fpm.sock#" "/etc/nginx/sites-available/cmprovision"
-        echo "Changed socket file to /run/php/php${PHP_VERSION}-fpm.sock in /etc/nginx/sites-available/cmprovision"
+    # Its own php-fpm pool: 40-48 modules start and report at once. A file of ours for this PHP version, so the www
+    # pool's conffile stays untouched; a new PHP version needs this configure again (dpkg-reconfigure cmprovision4)
+    POOL=/etc/php/${PHP_VERSION}/fpm/pool.d/cmprovision.conf
+    if [ -d "$(dirname "$POOL")" ]; then
+        cat > "$POOL.new" <<'POOLCONF'
+; cmprovision4: its own pool, so 40-48 modules starting and reporting at once never wait for a worker
+[cmprovision]
+user = www-data
+group = www-data
+listen = /run/php/cmprovision-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+pm = dynamic
+pm.max_children = 16
+pm.start_servers = 4
+pm.min_spare_servers = 2
+pm.max_spare_servers = 6
+pm.max_requests = 500
+POOLCONF
+        if cmp -s "$POOL.new" "$POOL"; then
+            rm -f "$POOL.new"
+        else
+            mv "$POOL.new" "$POOL"
+            echo "php-fpm pool for cmprovision: $POOL"
+            deb-systemd-invoke restart php${PHP_VERSION}-fpm || true
+        fi
+    else
+        echo "WARNING: no php-fpm ${PHP_VERSION} pool directory: the web interface needs php${PHP_VERSION}-fpm"
+    fi
+    # The site talks to that pool. It is a conffile, so its shipped copy keeps php-fpm.sock and this edit is made here,
+    # on a new installation as on one that named the www pool's socket of its PHP version
+    if grep -q "fastcgi_pass unix:/run/php/php[0-9.]*-fpm.sock" "/etc/nginx/sites-available/cmprovision"; then
+        sed -i "s#fastcgi_pass unix:/run/php/php[0-9.]*-fpm.sock#fastcgi_pass unix:/run/php/cmprovision-fpm.sock#" "/etc/nginx/sites-available/cmprovision"
+        echo "The nginx site talks to /run/php/cmprovision-fpm.sock"
+        nginx -t >/dev/null 2>&1 && deb-systemd-invoke reload nginx || echo "nginx configuration test failed, not reloaded"
     fi
 
     if ! groups www-data | grep -q systemd-journal; then

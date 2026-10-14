@@ -39,4 +39,16 @@ class PackagingTest extends TestCase
         $this->assertStringContainsString('debian/cmprovision-queue-images.service lib/systemd/system', $this->file('debian/install'));
         $this->assertStringContainsString('cmprovision-queue-images', $this->file('tools/restore.sh'));
     }
+
+    public function test_the_site_talks_to_a_pool_of_its_own()
+    {
+        // the site is a conffile that postinst edits: a changed shipped copy would stop an upgrade at dpkg's question
+        $this->assertStringContainsString('fastcgi_pass unix:/run/php/php-fpm.sock;', $this->file('debian/cmprovision'));
+        $postinst = $this->file('debian/postinst');
+        $this->assertStringContainsString('s#fastcgi_pass unix:/run/php/php[0-9.]*-fpm.sock#fastcgi_pass unix:/run/php/cmprovision-fpm.sock#', $postinst);
+        foreach (['[cmprovision]', 'listen = /run/php/cmprovision-fpm.sock', 'pm = dynamic', 'pm.max_children = 16',
+                  'pm.start_servers = 4', 'pm.min_spare_servers = 2', 'pm.max_spare_servers = 6', 'pm.max_requests = 500'] as $line)
+            $this->assertStringContainsString($line, $postinst);
+        $this->assertStringContainsString('rm -f /etc/php/*/fpm/pool.d/cmprovision.conf', $this->file('debian/postrm'));
+    }
 }
