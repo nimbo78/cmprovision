@@ -9,9 +9,9 @@ use App\Models\Setting;
 
 EthernetSwitch::firstOrCreate(['host' => '127.0.0.1:1161'], ['community' => 'stand48a', 'snmp_version' => '2c']);
 EthernetSwitch::firstOrCreate(['host' => '127.0.0.1:1162'], ['community' => 'stand48b', 'snmp_version' => '2c']);
-$image = Image::firstOrNew(['filename' => 'load-48.img.gz']);
-$image->forceFill(['filename_extension' => 'gz', 'filename_on_server' => 'load-48.img.gz', 'sha256' => str_repeat('a', 64),
-    'uncompressed_size' => 8 * 1024 * 1024])->save();
+$image = Image::where('filename', 'load-48.img.gz')->first() ?? new Image;
+$image->forceFill(['filename' => 'load-48.img.gz', 'filename_extension' => 'gz', 'filename_on_server' => 'load-48.img.gz',
+    'sha256' => str_repeat('a', 64), 'uncompressed_size' => 8 * 1024 * 1024])->save();
 $project = Project::firstOrCreate(['name' => 'load-48'], ['device' => 'cm4', 'storage' => '/dev/mmcblk0',
     'image_id' => $image->id, 'label_moment' => 'never', 'verify' => false]);
 Setting::updateOrCreate(['key' => 'active_project'], ['value' => $project->id]);
