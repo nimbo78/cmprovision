@@ -12,7 +12,7 @@
     @endforeach
 
     @if ($switches)
-        <div class="overflow-x-auto mb-4">
+        <div class="cmp-card-scroll mb-4">
             <table class="cmp-table">
                 <thead><tr><th>Name</th><th>Address</th><th>SNMP</th><th>Write access</th><th>Last answer</th><th></th></tr></thead>
                 <tbody>
