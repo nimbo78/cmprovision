@@ -56,7 +56,7 @@ class Ports extends Component
     public function restartFailed()
     {
         $stand = Stand::current();
-        $cms = $stand && $stand['map'] ? self::failedOnStand($stand['map']) : [];
+        $cms = $stand && $stand['map'] ? self::failedOnStand($stand) : [];
         $this->report(PoeRestart::modules($cms, auth()->user()->name ?? null));
     }
 
@@ -65,24 +65,26 @@ class Ports extends Component
         $stand = Stand::current();
         if (!$stand)
             return view('livewire.ports', ['configured' => false]);
-        // a port left off that the switch shows switched on again was switched on at the switch
-        if ($stand['snapshot'] && !$stand['error'])
-            PoeOutage::closeSeenOn(app(SnmpClient::class, ['config' => $stand['config']]), $stand['config']['host']);
+        // a port left off that its switch shows switched on again was switched on at the switch
+        foreach ($stand['switches'] as $state)
+            if (Stand::answering($state))
+                PoeOutage::closeSeenOn(app(SnmpClient::class, ['config' => $state['config']]), $state['switch']);
 
+        $first = reset($stand['switches']);
         $tile = $stand['map']['tiles'][$this->selected] ?? null;
-        $writable = PoeControl::writable($stand['config']);
+        $writable = (bool) array_filter($stand['switches'], function ($state) { return PoeControl::writable($state['config']); });
         return view('livewire.ports', [
             'configured' => true,
-            'header' => self::header($stand['snapshot'], $stand['config']['host']),
-            'snapshot' => $stand['snapshot'],
-            'error' => $stand['error'],
+            'header' => self::header($first['snapshot'], $first['config']['host']),
+            'snapshot' => $first['snapshot'],
+            'error' => $first['error'],
             'map' => $stand['map'],
             'tile' => $tile,
             'now' => Carbon::now()->getTimestamp(),
             'writable' => $writable,
-            'failed' => $writable && $stand['map'] ? count(self::failedOnStand($stand['map'])) : 0,
-            'restart' => $tile ? ['blocker' => StandMap::restartBlocker($tile),
-                                  'confirm' => PoeRestart::confirm($tile['modules'][0] ?? null, $tile['name'])] : null,
+            'failed' => $writable && $stand['map'] ? count(self::failedOnStand($stand)) : 0,
+            'restart' => $tile ? ['blocker' => PoeRestart::switchBlocker($stand['switches'][$tile['switch_id']] ?? null) ?? StandMap::restartBlocker($tile),
+                                  'confirm' => PoeRestart::confirm($tile['modules'][0] ?? null, $tile['label'])] : null,
         ]);
     }
 
@@ -104,12 +106,12 @@ class Ports extends Component
         ];
     }
 
-    /* Failed and silent modules on ports that may be restarted */
-    protected static function failedOnStand(array $map): array
+    /* Failed and silent modules on ports that may be restarted, on switches that may write and answer */
+    protected static function failedOnStand(array $stand): array
     {
         $cms = [];
-        foreach ($map['tiles'] as $tile)
-            if (StandMap::restartBlocker($tile) === null)
+        foreach ($stand['map']['tiles'] as $tile)
+            if (PoeRestart::switchBlocker($stand['switches'][$tile['switch_id']] ?? null) === null && StandMap::restartBlocker($tile) === null)
                 foreach ($tile['modules'] as $cm)
                     if (in_array(StandMap::moduleState($cm), ['fail', 'stale'], true))
                         $cms[] = $cm;

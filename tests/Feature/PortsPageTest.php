@@ -364,9 +364,9 @@ class PortsPageTest extends TestCase
         $this->switchWithModule();
         $this->writeAccess();
         Livewire::test(Ports::class)->call('select', 's1p8')
-            ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on GE0/0/3? PoE goes off for 5 s; the module boots the system it was flashed with."')
+            ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on 192.0.2.10 GE0/0/3? PoE goes off for 5 s; the module boots the system it was flashed with."')
             ->call('restart', 's1p8')
-            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.')
+            ->assertSee('Restarted 192.0.2.10 GE0/0/3 (10000000e611110c): PoE was off for 5 s.')
             ->assertDispatched('poe-outages-changed');
         $this->assertSame([[Poe::OID_HW_ENABLE.'.8', 'i', 2], [Poe::OID_HW_ENABLE.'.8', 'i', 1]], $this->fake->sets);
     }
@@ -383,7 +383,7 @@ class PortsPageTest extends TestCase
     {
         $this->switchWithModule();
         $this->writeAccess();
-        Livewire::test(Ports::class)->call('select', 's1p30')->assertSee('No PoE restart: no PoE on XGE0/0/1');
+        Livewire::test(Ports::class)->call('select', 's1p30')->assertSee('No PoE restart: no PoE on 192.0.2.10 XGE0/0/1');
     }
 
     public function test_failed_modules_on_the_stand_have_one_button()
@@ -396,6 +396,6 @@ class PortsPageTest extends TestCase
             ->assertSee('Restart failed (1)')
             ->assertSeeHtml('wire:confirm="Restart 1 module (failed or without a report)? PoE goes off for 5 s on each port."')
             ->call('restartFailed')
-            ->assertSee('Restarted GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
+            ->assertSee('Restarted 192.0.2.10 GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
     }
 }

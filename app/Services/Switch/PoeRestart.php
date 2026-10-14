@@ -4,48 +4,49 @@ namespace App\Services\Switch;
 
 use App\Models\Cm;
 use App\Models\Cmlog;
+use App\Models\EthernetSwitch;
 use App\Models\PoeOutage;
 use App\Services\Snmp\SnmpClient;
 use App\Services\Snmp\SnmpError;
-use App\Services\SwitchPortFinder;
 use App\Support\StandMap;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
 
 /**
- * PoE restart of modules (docs/superpowers/specs/2026-10-12-poe-restart-design.md). One at a time for the whole
- * stand, only on ports with nothing but our modules or a booting Pi (StandMap::restartBlocker()), checked on a
- * fresh snapshot. Each port gets a poe_outages row before its PoE goes off, then OFF_SECONDS of darkness, then the
- * ports are switched on one after the other (STAGGER_MS apart, three tries each, read back). What happened goes
- * to cmlogs and back to the operator.
+ * PoE restart of modules (docs/superpowers/specs/2026-10-12-poe-restart-design.md). One at a time on each switch of
+ * the stand, only on ports with nothing but our modules or a booting Pi (StandMap::restartBlocker()), each switch
+ * checked on its fresh snapshot. Each port gets a poe_outages row before its PoE goes off, then OFF_SECONDS of
+ * darkness for all of them, then each switch's ports are switched on one after the other (STAGGER_MS apart, three
+ * tries each, read back). What happened goes to cmlogs and back to the operator.
  */
 class PoeRestart
 {
     const OFF_SECONDS = 5;
     const STAGGER_MS = 500;
+    /* The lock of switch N is LOCK.':'.N; Check write access takes it too */
     const LOCK = 'poe-restart';
     // a whole 48-port stand whose switch stops answering: about 8.5 minutes of 2 s timeouts (PoeRestartTest)
     const LOCK_SECONDS = 600;
     const SNAPSHOT_SECONDS = 30;   // a restart decides on a snapshot at most this old
 
-    protected $control, $host, $user;
+    protected $control, $switch, $user;
 
-    public function __construct(PoeControl $control, string $host, ?string $user)
+    public function __construct(PoeControl $control, EthernetSwitch $switch, ?string $user)
     {
         $this->control = $control;
-        $this->host = $host;
+        $this->switch = $switch;
         $this->user = $user;
     }
 
     /** Restart the ports these modules are on now */
     public static function modules(iterable $cms, ?string $user): array
     {
-        return self::start($user, function (array $map) use ($cms) {
+        return self::start($user, function (array $stand) use ($cms) {
             $tiles = $skipped = [];
             foreach ($cms as $cm)
             {
-                $tile = Stand::tileOf($map, $cm);
-                $why = $tile ? StandMap::restartBlocker($tile) : 'not seen on the switch';
+                $tile = Stand::tileOf($stand['map'], $cm);
+                $why = $tile ? StandMap::restartBlocker($tile) : Stand::notSeen($stand);
                 if ($why !== null)
                     $skipped[$cm->serial] = $why;
                 else
@@ -58,14 +59,14 @@ class PoeRestart
     /** Restart these ports (StandMap tile keys such as "s1p8") */
     public static function ports(array $keys, ?string $user): array
     {
-        return self::start($user, function (array $map) use ($keys) {
+        return self::start($user, function (array $stand) use ($keys) {
             $tiles = $skipped = [];
             foreach ($keys as $key)
             {
-                $tile = $map['tiles'][$key] ?? null;
+                $tile = $stand['map']['tiles'][$key] ?? null;
                 $why = $tile ? StandMap::restartBlocker($tile) : 'no such port';
                 if ($why !== null)
-                    $skipped[$tile['name'] ?? $key] = $why;
+                    $skipped[$tile['label'] ?? $key] = $why;
                 else
                     $tiles[$key] = $tile + ['serial' => $tile['modules'] ? $tile['modules'][0]->serial : null];
             }
@@ -77,24 +78,23 @@ class PoeRestart
     public static function message(array $r): array
     {
         if ($r['busy'])
-            return ['text' => 'A restart is already running.', 'error' => true];
+            return ['text' => 'A restart is already running on '.$r['busy'].'.', 'error' => true];
         if ($r['error'])
             return ['text' => $r['error'].'.', 'error' => true];
         $parts = [];
         if (count($r['restarted']) === 1)
         {
-            $port = array_key_first($r['restarted']);
-            $serial = $r['restarted'][$port];
-            $parts[] = 'Restarted '.$port.($serial ? ' ('.$serial.')' : '').': PoE was off for '.self::OFF_SECONDS.' s.';
+            $port = reset($r['restarted']);
+            $parts[] = 'Restarted '.$port['label'].($port['serial'] ? ' ('.$port['serial'].')' : '').': PoE was off for '.self::OFF_SECONDS.' s.';
         }
         elseif ($r['restarted'])
-            $parts[] = 'Restarted '.count($r['restarted']).' ports: '.implode(', ', array_keys($r['restarted'])).'.';
-        foreach ($r['unconfirmed'] ?? [] as $port => $why)
-            $parts[] = 'The switch did not confirm switching off '.$port.' ('.$why.'); PoE is on now.';
-        foreach ($r['stayed_off'] as $port => $why)
-            $parts[] = 'PoE on '.$port.' stays OFF: '.$why.'. Use Power on.';
-        foreach ($r['failed'] as $port => $why)
-            $parts[] = 'The switch did not switch off '.$port.': '.$why.'.';
+            $parts[] = 'Restarted '.count($r['restarted']).' ports: '.implode(', ', array_column($r['restarted'], 'label')).'.';
+        foreach ($r['unconfirmed'] ?? [] as $port)
+            $parts[] = 'The switch did not confirm switching off '.$port['label'].' ('.$port['why'].'); PoE is on now.';
+        foreach ($r['stayed_off'] as $port)
+            $parts[] = 'PoE on '.$port['label'].' stays OFF: '.$port['why'].'. Use Power on.';
+        foreach ($r['failed'] as $port)
+            $parts[] = 'The switch did not switch off '.$port['label'].': '.$port['why'].'.';
         foreach ($r['skipped'] as $what => $why)
             $parts[] = 'Not restarted: '.$what.' ('.$why.').';
         return ['text' => $parts ? implode(' ', $parts) : 'Nothing to restart.',
@@ -122,90 +122,153 @@ class PoeRestart
             .self::OFF_SECONDS.' s on each port.';
     }
 
+    /** Why no port of this switch (Stand::current()'s state of it) is restarted now; null when they may be */
+    public static function switchBlocker(?array $state): ?string
+    {
+        if (!$state)
+            return 'the switch is gone';
+        $name = $state['switch']->hostname();
+        if (!PoeControl::writable($state['config']))
+            return 'no write access on '.$name;
+        if (!Stand::answering($state))
+            return $name.' does not answer';
+        // while another page asks the switch, the stand comes as it was last seen, which may be long ago
+        $age = now()->getTimestamp() - (int) $state['checked_at'];
+        return $age > self::SNAPSHOT_SECONDS ? $name.' was last read '.$age.' s ago: try again' : null;
+    }
+
     protected static function start(?string $user, callable $choose): array
     {
         $result = ['restarted' => [], 'unconfirmed' => [], 'skipped' => [], 'failed' => [], 'stayed_off' => [], 'busy' => false, 'error' => null];
-        $config = SwitchPortFinder::config();
-        $control = PoeControl::forConfig($config);
-        if (!$control)
-            return ['error' => 'No write access to the switch: set it under Settings → Ethernet switch'] + $result;
+        $switches = EthernetSwitch::orderBy('id')->get();
+        if ($switches->isEmpty())
+            return ['error' => 'No switch is set up: add one under Settings → Ethernet switches'] + $result;
+        if (!$switches->contains(function ($switch) { return PoeControl::writable($switch->config()); }))
+            return ['error' => 'No write access to the switches: set it under Settings → Ethernet switches'] + $result;
 
-        $lock = Cache::lock(self::LOCK, self::LOCK_SECONDS);
-        if (!$lock->get())
-            return ['busy' => true] + $result;
+        $stand = Stand::current();
+        if (!$stand || !$stand['map'])
+            return ['error' => 'No switch answers'.self::errors($stand)] + $result;
+        [$tiles, $result['skipped']] = $choose($stand);
+        $groups = [];
+        foreach ($tiles as $key => $tile)
+        {
+            $why = self::switchBlocker($stand['switches'][$tile['switch_id']] ?? null);
+            if ($why !== null)
+                $result['skipped'][$tile['serial'] ?? $tile['label']] = $why;
+            else
+                $groups[$tile['switch_id']][$key] = $tile;
+        }
+        if (!$groups)
+            return $result;
+
+        ksort($groups);   // locks are always taken in the same order
+        $locks = [];
+        foreach (array_keys($groups) as $id)
+        {
+            $lock = Cache::lock(self::LOCK.':'.$id, self::LOCK_SECONDS);
+            if (!$lock->get())
+            {
+                foreach ($locks as $held)
+                    $held->release();
+                return ['busy' => $stand['switches'][$id]['switch']->hostname()] + $result;
+            }
+            $locks[] = $lock;
+        }
         try
         {
             @set_time_limit(self::LOCK_SECONDS);
-            $stand = Stand::current();
-            if (!$stand['map'] || $stand['error'])
-                return ['error' => 'The switch does not answer'.($stand['error'] ? ': '.$stand['error']['message'] : '')] + $result;
-            // while another page asks the switch, the stand comes as it was last seen, which may be long ago
-            $age = now()->getTimestamp() - (int) $stand['checked_at'];
-            if ($age > self::SNAPSHOT_SECONDS)
-                return ['error' => 'The switch was last read '.$age.' s ago: try again'] + $result;
-            [$tiles, $result['skipped']] = $choose($stand['map']);
-            if (!$tiles)
-                return $result;
-            $names = array_map(function ($port) { return $port['name']; }, $stand['snapshot']['ports']);
-            try
+            $runs = [];
+            foreach ($groups as $id => $group)
             {
-                $admin = (new Poe(app(SnmpClient::class, ['config' => $config])))->admin($names);
+                $state = $stand['switches'][$id];
+                $names = array_map(function ($port) { return $port['name']; }, $state['snapshot']['ports']);
+                try
+                {
+                    $admin = (new Poe(app(SnmpClient::class, ['config' => $state['config']])))->admin($names);
+                }
+                catch (\Throwable $e)
+                {
+                    foreach ($group as $tile)
+                        $result['skipped'][$tile['serial'] ?? $tile['label']] = $state['switch']->hostname().' does not answer: '.$e->getMessage();
+                    continue;
+                }
+                $runs[] = [new self(PoeControl::forConfig($state['config']), $state['switch'], $user), $group, $admin];
             }
-            catch (\Throwable $e)
-            {
-                return ['error' => 'The switch does not answer: '.$e->getMessage()] + $result;
-            }
-            return (new self($control, $config['host'], $user))->run($tiles, $admin, $result);
+            return self::runAll($runs, $result);
         }
         finally
         {
-            $lock->release();
+            foreach ($locks as $held)
+                $held->release();
         }
     }
 
-    protected function run(array $tiles, array $admin, array $result): array
+    /* " (sw01: No response from …; …)" for the switches that did not answer */
+    protected static function errors(?array $stand): string
+    {
+        $errors = [];
+        foreach ($stand['switches'] ?? [] as $state)
+            if ($state['error'])
+                $errors[] = $state['switch']->hostname().': '.$state['error']['message'];
+        return $errors ? ' ('.implode('; ', $errors).')' : '';
+    }
+
+    /* Every switch's ports go off first, then one pause, then each switch switches its ports on one after the other */
+    protected static function runAll(array $runs, array $result): array
     {
         $off = [];
-        foreach ($tiles as $tile)
+        foreach ($runs as $n => [$run, $tiles, $admin])
+            $off[$n] = $run->switchAllOff($tiles, $admin, $result);
+        if (!array_filter($off))
+            return $result;
+
+        Sleep::for(self::OFF_SECONDS)->seconds();
+        foreach ($runs as $n => [$run])
+            foreach ($off[$n] as $i => [$outage, $tile])
+            {
+                if ($i > 0)
+                    Sleep::for(self::STAGGER_MS)->milliseconds();
+                try
+                {
+                    $run->switchOn($outage, $tile, $result);
+                }
+                catch (\Throwable $e)
+                {
+                    report($e);   // nothing may keep the next ports off
+                    $result['stayed_off'][$tile['key']] = self::entry($tile, $e->getMessage());
+                }
+            }
+        return $result;
+    }
+
+    /* Each port's row, then its PoE off: [[outage, tile]] of the ports that may be off now */
+    protected function switchAllOff(array $tiles, array $admin, array &$result): array
+    {
+        $off = [];
+        foreach ($tiles as $key => $tile)
         {
             $oid = $admin[$tile['ifIndex']] ?? null;
             if ($oid === null)
             {
-                $result['skipped'][$tile['name']] = 'no PoE object to write on '.$tile['name'];
+                $result['skipped'][$tile['label']] = 'no PoE object to write on '.$tile['label'];
                 continue;
             }
-            $outage = PoeOutage::create(['switch_host' => $this->host, 'if_index' => $tile['ifIndex'], 'port' => $tile['name'],
-                'oid' => $oid, 'on_value' => PoeControl::ON, 'cm_serial' => $tile['serial'], 'user' => $this->user, 'off_at' => now()]);
+            $outage = PoeOutage::create(['switch_id' => $this->switch->id, 'switch_host' => $this->switch->host,
+                'if_index' => $tile['ifIndex'], 'port' => $tile['label'], 'oid' => $oid, 'on_value' => PoeControl::ON,
+                'cm_serial' => $tile['serial'], 'user' => $this->user, 'off_at' => now()]);
             [$state, $why] = $this->switchOff($oid);
             if ($state === 'refused')
             {
                 $outage->delete();
-                $result['failed'][$tile['name']] = $why;
-                $this->log($tile, 'error', 'PoE restart of '.$tile['name'].' by '.$this->who().' failed: the switch did not switch it off: '.$why);
+                $result['failed'][$key] = self::entry($tile, $why);
+                $this->log($tile, 'error', 'PoE restart of '.$tile['label'].' by '.$this->who().' failed: the switch did not switch it off: '.$why);
                 continue;
             }
             // without an answer the port may be off as well: it is switched on with the others after the pause
             $off[] = [$outage, $state === 'off' ? $tile : $tile + ['unconfirmed' => $why]];
         }
-        if (!$off)
-            return $result;
-
-        Sleep::for(self::OFF_SECONDS)->seconds();
-        foreach ($off as $n => [$outage, $tile])
-        {
-            if ($n > 0)
-                Sleep::for(self::STAGGER_MS)->milliseconds();
-            try
-            {
-                $this->switchOn($outage, $tile, $result);
-            }
-            catch (\Throwable $e)
-            {
-                report($e);   // nothing may keep the next ports off
-                $result['stayed_off'][$tile['name']] = $e->getMessage();
-            }
-        }
-        return $result;
+        return $off;
     }
 
     /* [state, why]: 'off'; 'unknown' when the switch did not answer or php-snmp failed, so the port may be off;
@@ -244,28 +307,34 @@ class PoeRestart
             $outage->update(['on_at' => now()]);
             if (isset($tile['unconfirmed']))
             {
-                $result['unconfirmed'][$tile['name']] = $tile['unconfirmed'];
-                $this->log($tile, 'warning', 'PoE restart of '.$tile['name'].' by '.$this->who().': the switch did not confirm switching it off ('
+                $result['unconfirmed'][$tile['key']] = self::entry($tile, $tile['unconfirmed']);
+                $this->log($tile, 'warning', 'PoE restart of '.$tile['label'].' by '.$this->who().': the switch did not confirm switching it off ('
                     .$tile['unconfirmed'].'); PoE is on');
             }
             else
             {
-                $result['restarted'][$tile['name']] = $tile['serial'];
-                $this->log($tile, 'info', 'PoE restart of '.$tile['name'].' by '.$this->who().': off for '.self::OFF_SECONDS.' s');
+                $result['restarted'][$tile['key']] = self::entry($tile, null);
+                $this->log($tile, 'info', 'PoE restart of '.$tile['label'].' by '.$this->who().': off for '.self::OFF_SECONDS.' s');
             }
         }
         else
         {
             $outage->update(['error' => $error]);
-            $result['stayed_off'][$tile['name']] = $error;
-            $this->log($tile, 'error', 'PoE on '.$tile['name'].' stays OFF after a restart by '.$this->who().': '.$error);
+            $result['stayed_off'][$tile['key']] = self::entry($tile, $error);
+            $this->log($tile, 'error', 'PoE on '.$tile['label'].' stays OFF after a restart by '.$this->who().': '.$error);
         }
+    }
+
+    /* A port in the result: what the operator reads about it */
+    protected static function entry(array $tile, ?string $why): array
+    {
+        return ['label' => $tile['label'], 'serial' => $tile['serial'] ?? null, 'why' => $why];
     }
 
     /* A line of the module log; a booting Raspberry Pi has no serial yet */
     protected function log(array $tile, string $level, string $message): void
     {
-        Cmlog::create(['cm' => $tile['serial'] ?? '', 'board' => $tile['name'], 'loglevel' => $level, 'msg' => $message]);
+        Cmlog::create(['cm' => $tile['serial'] ?? '', 'board' => $tile['label'], 'loglevel' => $level, 'msg' => $message]);
     }
 
     protected function who(): string

@@ -33,6 +33,7 @@ class StandMapTest extends TestCase
         foreach ($ports as $p)
             $byIndex[$p['ifIndex']] = $p;
         return ['id' => '192.0.2.10', 'model' => 'S5731', 'taken_at' => 0, 'duration' => 0.3, 'mac_method' => 'huawei',
+                'identity' => ['revision' => null, 'serial' => null, 'name' => 'sw01', 'mac' => null],
                 'poe' => (bool) array_filter($ports, function ($p) { return $p['poe'] !== null; }), 'ports' => $byIndex];
     }
 
@@ -296,11 +297,12 @@ class StandMapTest extends TestCase
 
     public function test_the_map_names_its_switch()
     {
-        $this->assertSame('192.0.2.10', $this->build([$this->port(1, 'GE0/0/1', false)])['switches'][1]['name'], 'no sysName: its address');
         $snapshot = $this->snapshot([$this->port(1, 'GE0/0/1', false)]);
-        $snapshot['identity'] = ['revision' => null, 'serial' => null, 'name' => 't-iof-sw01-provision.corp.example', 'mac' => null];
+        $snapshot['identity']['name'] = 't-iof-sw01-provision.corp.example';
         $map = StandMap::of($snapshot, [], self::SERVER)->build();
         $this->assertSame(['t-iof-sw01-provision', 't-iof-sw01-provision GE0/0/1'], [$map['switches'][1]['name'], $map['tiles']['s1p1']['label']]);
+        unset($snapshot['identity']);
+        $this->assertSame('192.0.2.10', StandMap::of($snapshot, [], self::SERVER)->build()['switches'][1]['name'], 'no sysName: its address');
     }
 
     public function test_a_module_moved_to_another_port_shows_on_the_new_one_only()
@@ -450,11 +452,11 @@ class StandMapTest extends TestCase
         $why = function ($ifIndex) use ($map) { return StandMap::restartBlocker($map['tiles']['s1p'.$ifIndex]); };
 
         $this->assertNull($why(1));
-        $this->assertSame('other devices on GE0/0/2', $why(2));
-        $this->assertSame('no PoE on GE0/0/3', $why(3));
-        $this->assertSame('other devices on GE0/0/4', $why(4));
-        $this->assertSame('GE0/0/5 has no link', $why(5));
-        $this->assertSame('GE0/0/6 is the uplink', $why(6));
+        $this->assertSame('other devices on sw01 GE0/0/2', $why(2));
+        $this->assertSame('no PoE on sw01 GE0/0/3', $why(3));
+        $this->assertSame('other devices on sw01 GE0/0/4', $why(4));
+        $this->assertSame('sw01 GE0/0/5 has no link', $why(5));
+        $this->assertSame('sw01 GE0/0/6 is the uplink', $why(6));
         $this->assertNull($why(7));
         $this->assertSame([1, 2], [$map['tiles']['s1p2']['others'], $map['tiles']['s1p2']['ifIndex']]);
     }
@@ -488,8 +490,8 @@ class StandMapTest extends TestCase
             $this->module('1000000000000004', 'e4:5f:01:00:00:04', ['progress_updated_at' => Carbon::now()->subHour()] + $eeprom)]);
         $why = function ($ifIndex) use ($map) { return StandMap::restartBlocker($map['tiles']['s1p'.$ifIndex]); };
 
-        $this->assertSame('2 modules on GE0/0/1', $why(1));
-        $this->assertSame('the module on GE0/0/2 is writing its bootloader EEPROM', $why(2));
+        $this->assertSame('2 modules on sw01 GE0/0/1', $why(1));
+        $this->assertSame('the module on sw01 GE0/0/2 is writing its bootloader EEPROM', $why(2));
         $this->assertNull($why(3), 'a module silent on that step for long may be restarted');
     }
 
@@ -497,7 +499,7 @@ class StandMapTest extends TestCase
     {
         $map = $this->build([$this->port(1, 'GE0/0/1', true, ['e4:5f:01:00:00:01'], ['state' => 'disabled', 'class' => null, 'watts' => null])],
             [$this->module('1000000000000001', 'e4:5f:01:00:00:01')]);
-        $this->assertSame('PoE is off on GE0/0/1', StandMap::restartBlocker($map['tiles']['s1p1']), 'someone switched it off: a restart would switch it on');
+        $this->assertSame('PoE is off on sw01 GE0/0/1', StandMap::restartBlocker($map['tiles']['s1p1']), 'someone switched it off: a restart would switch it on');
     }
 
     public function test_poe_in_words()

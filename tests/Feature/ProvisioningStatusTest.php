@@ -12,12 +12,13 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Livewire\Livewire;
+use Tests\Support\PoeStand;
 use Tests\TestCase;
 
 /** The dashboard shows every module being provisioned: phase, progress bar, speed and remaining time. */
 class ProvisioningStatusTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PoeStand;
 
     protected function setUp(): void
     {
@@ -145,6 +146,34 @@ class ProvisioningStatusTest extends TestCase
         $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'label_moment' => 'never', 'verify' => false]);
         Setting::updateOrCreate(['key' => 'active_project'], ['value' => $project->id]);
         return NotificationBatch::create(['project_id' => $project->id, 'started_at' => now()->subHours(4), 'last_event_at' => now()->subMinute()]);
+    }
+
+    public function test_restart_is_offered_by_the_write_access_of_the_module_s_switch()
+    {
+        $this->stand(['snmp_write_community' => 'private']);                 // sw01 may write
+        $this->secondSwitch(['write_community' => '']);                      // sw02 may not
+        $batch = $this->openBatch();
+        $one = Cm::where('serial', '10000000e611110c')->first();
+        $one->update(['switch_id' => 1, 'notification_batch_id' => $batch->id]);
+        $two = Cm::where('serial', '10000000e611110e')->first();
+        $two->update(['switch_id' => 2, 'notification_batch_id' => $batch->id]);
+
+        $html = Livewire::test(ProvisioningStatus::class)->html();
+
+        $this->assertStringContainsString('restart('.$one->id.')', $html);
+        $this->assertStringNotContainsString('restart('.$two->id.')', $html);
+        $this->assertStringContainsString('Restart failed (1)', $html);
+    }
+
+    public function test_a_stand_of_two_24_port_switches_fits_the_panel()
+    {
+        $batch = $this->openBatch();
+        for ($i = 1; $i <= 60; $i++)
+            Cm::create(['serial' => sprintf('1000000000%06d', $i), 'mac' => sprintf('e4:5f:01:00:%02x:%02x', intdiv($i, 256), $i % 256),
+                'phase' => 'write', 'provisioning_started_at' => now()->subMinutes($i), 'notification_batch_id' => $batch->id]);
+
+        $html = Livewire::test(ProvisioningStatus::class)->html();
+        $this->assertStringContainsString('1000000000000060', $html, 'the first module of 60 is not cut off');
     }
 
     public function test_the_summary_counts_the_open_batch()

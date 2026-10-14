@@ -2,9 +2,9 @@
 
 namespace App\Http\Livewire;
 
+use App\Models\EthernetSwitch;
 use App\Models\PoeOutage;
 use App\Services\Switch\PoeControl;
-use App\Services\SwitchPortFinder;
 use Livewire\Component;
 
 /* Ports a PoE restart left off (PoeOutage::stayedOff()), on the dashboard, the Ports page and the module card until
@@ -21,12 +21,13 @@ class PoeOutages extends Component
         $outage = PoeOutage::whereNull('on_at')->find($id);
         if (!$outage)
             return;
-        $config = SwitchPortFinder::config();
-        if ($config['host'] !== $outage->switch_host)
-            return $this->say('The switch has changed: switch '.$outage->port.' on at the switch.', true);
-        $control = PoeControl::forConfig($config);
+        // a row from before 2.4 knows its switch by address only
+        $switch = $outage->switch_id ? EthernetSwitch::find($outage->switch_id) : EthernetSwitch::where('host', $outage->switch_host)->first();
+        if (!$switch)
+            return $this->say('The switch is gone: switch '.$outage->port.' on at the switch.', true);
+        $control = PoeControl::forConfig($switch->config());
         if (!$control)
-            return $this->say('No write access to the switch: set it under Settings → Ethernet switch.', true);
+            return $this->say('No write access on '.$switch->hostname().': set it under Settings → Ethernet switches.', true);
 
         $error = $control->switchOnChecked($outage->oid, $outage->on_value);
         if ($error !== null)

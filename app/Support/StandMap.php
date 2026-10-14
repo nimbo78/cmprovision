@@ -225,23 +225,23 @@ class StandMap
         if ($tile['link'] ?? null)
             return $tile['label'].' is the link to '.$tile['link'];
         if ($tile['state'] === 'free')
-            return $tile['name'].' has no link';
+            return $tile['label'].' has no link';
         if (!$tile['poe'])
-            return 'no PoE on '.$tile['name'];
+            return 'no PoE on '.$tile['label'];
         if ($tile['poe']['state'] === 'disabled')
-            return 'PoE is off on '.$tile['name'];   // switched off on purpose, or left off by a restart (Power on)
+            return 'PoE is off on '.$tile['label'];   // switched off on purpose, or left off by a restart (Power on)
         if ($tile['state'] === 'uplink')
-            return $tile['name'].' is the uplink';
+            return $tile['label'].' is the uplink';
         // one of them may be gone with its MAC still listed: nothing tells which one the power would cut
         if (count($tile['modules']) > 1)
-            return count($tile['modules']).' modules on '.$tile['name'];
+            return count($tile['modules']).' modules on '.$tile['label'];
         // power cut mid-write can leave a bootloader that no longer boots from the network; a module silent on that step may go
         foreach ($tile['modules'] as $cm)
             if (self::writingEeprom($cm) && $cm->isActive() && $cm->silentFor() === null)
-                return 'the module on '.$tile['name'].' is writing its bootloader EEPROM';
+                return 'the module on '.$tile['label'].' is writing its bootloader EEPROM';
         if (($tile['state'] === 'module' && $tile['others'] === 0) || ($tile['state'] === 'boot' && $tile['macs']))
             return null;
-        return 'other devices on '.$tile['name'];
+        return 'other devices on '.$tile['label'];
     }
 
     /** A port's PoE in words, as the module card shows it */

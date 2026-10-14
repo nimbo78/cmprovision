@@ -4,10 +4,10 @@ namespace App\Http\Livewire;
 
 use App\Models\Cm;
 use App\Models\Cmlog;
+use App\Models\EthernetSwitch;
 use App\Services\Switch\PoeControl;
 use App\Services\Switch\PoeRestart;
 use App\Services\Switch\Stand;
-use App\Services\SwitchPortFinder;
 use App\Support\FailureAdvice;
 use App\Support\RunTimeline;
 use App\Support\StandMap;
@@ -68,27 +68,28 @@ class CmCard extends Component
             'history' => Cmlog::where('cm', $this->serial)->orderByDesc('id')->limit(self::HISTORY_ROWS)->get(),
             'zone' => config('app.display_timezone'),
             'power' => $this->powerLoaded ? $this->power($cm) : null,
-            'powerPending' => !$this->powerLoaded && SwitchPortFinder::config()['host'] !== '',
+            'powerPending' => !$this->powerLoaded && EthernetSwitch::exists(),
         ])->title($cm->serial);
     }
 
-    /* The module's port and its PoE on the switch's snapshot, and why it may not be restarted; null without a switch */
+    /* The module's port and its PoE on its switch's snapshot, and why it may not be restarted; null without a switch */
     protected function power(Cm $cm): ?array
     {
         $stand = Stand::current();
         if (!$stand)
             return null;
         $tile = Stand::tileOf($stand['map'], $cm);
-        if (!PoeControl::writable($stand['config']))
-            $blocker = 'no write access (Settings → Ethernet switch)';
-        elseif (!$stand['map'] || $stand['error'])
-            $blocker = 'the switch does not answer';
-        elseif (!$tile)
-            $blocker = 'not seen on the switch';
+        $state = $tile ? $stand['switches'][$tile['switch_id']] : null;
+        if (!$tile)
+            $blocker = Stand::notSeen($stand);
+        elseif (!PoeControl::writable($state['config']))
+            $blocker = 'no write access on '.$tile['switch'].' (Settings → Ethernet switches)';
+        elseif (!Stand::answering($state))
+            $blocker = $tile['switch'].' does not answer';
         else
             $blocker = StandMap::restartBlocker($tile);
-        return ['port' => $tile['name'] ?? null, 'poe' => $tile['poe'] ?? null, 'blocker' => $blocker,
-                'confirm' => PoeRestart::confirm($cm, $tile['name'] ?? null)];
+        return ['port' => $tile['label'] ?? null, 'poe' => $tile['poe'] ?? null, 'blocker' => $blocker,
+                'confirm' => PoeRestart::confirm($cm, $tile['label'] ?? null)];
     }
 
     /* Both sides of the bootloader settings line by line ('before' or 'after' is null when unknown);

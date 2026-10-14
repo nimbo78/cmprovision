@@ -78,7 +78,7 @@ class SwitchWriteAccessTest extends TestCase
     public function test_check_write_access_waits_for_a_restart()
     {
         $this->stand([]);
-        Cache::lock('poe-restart', 60)->get();   // its value written back could undo the restart's switch-on
+        Cache::lock('poe-restart:1', 60)->get();   // its value written back could undo the restart's switch-on
         Livewire::test(SwitchSettings::class)->set('host', '192.0.2.10')->set('community', 'public')->set('writeCommunity', 'rw')
             ->call('checkWrite')
             ->assertSee('A restart is running: check again in a minute.');

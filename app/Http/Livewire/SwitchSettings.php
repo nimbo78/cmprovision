@@ -143,7 +143,7 @@ class SwitchSettings extends Component
             return;
         }
         // the value it reads and writes back could be a restart's "off", written after the restart switched the port on
-        $lock = Cache::lock(PoeRestart::LOCK, 60);
+        $lock = Cache::lock(PoeRestart::LOCK.':'.EthernetSwitch::where('host', $config['host'])->value('id'), 60);
         if (!$lock->get())
         {
             $this->flash('A restart is running: check again in a minute.', true);
