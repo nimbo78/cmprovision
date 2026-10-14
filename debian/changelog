@@ -1,4 +1,4 @@
-cmprovision4 (2.5.1~dev1) unstable; urgency=medium
+cmprovision4 (2.5.1~dev2) unstable; urgency=medium
 
   * /scriptexecute answers only the stand network 172.20.0.0/16 and the
     server itself: from the office network it returns 403 with the reason.
