@@ -253,6 +253,9 @@ body { background: var(--page); color: var(--text); }
 .ports-serial { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .ports-chassis { background: #2b2f36; border-radius: 8px; padding: 10px 12px 12px; display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; }
 .ports-model { width: 100%; display: flex; justify-content: space-between; gap: 12px; color: #c9ced6; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.ports-model .ports-line { text-transform: none; letter-spacing: normal; font-size: 12px; }
+.ports-silent { color: #f2c94c; }
+.ports-empty { width: 100%; margin: 0; color: #c9ced6; font-size: 13px; }
 .ports-block { display: grid; grid-auto-flow: column; grid-template-rows: auto 50px 50px auto; gap: 4px 5px; }
 .ports-block.one-row { grid-auto-flow: row; grid-template-rows: auto 50px; }
 .ports-block.uplinks { padding-left: 14px; border-left: 1px solid #454b55; }

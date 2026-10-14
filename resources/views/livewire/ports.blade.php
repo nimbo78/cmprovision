@@ -15,38 +15,11 @@
         to see the stand by its ports.
     </div>
 @else
-    <div class="text-sm text-fg-muted">
-        @if ($header['title'])<span class="font-bold text-fg">{{ $header['title'] }}</span> · @endif {{ $header['facts'] }}
-        @if ($snapshot) · polled {{ max(0, $now - $snapshot['taken_at']) }} s ago @endif
-        @if ($snapshot && $snapshot['poe'])
-            · PoE {{ number_format(array_sum(array_map(function ($p) { return $p['poe']['watts'] ?? 0; }, $snapshot['ports'])), 1) }} W
-        @endif
-    </div>
-
-    @if ($snapshot)
-        @php($taken = \Illuminate\Support\Carbon::createFromTimestamp($snapshot['taken_at'])->local())
-        @php($takenAt = $taken->format($taken->isToday() ? 'H:i:s' : 'j M H:i'))
-    @endif
-    @if ($error)
-        <div class="bg-warn-bg border-l-4 border-warn-bar text-warn px-4 py-3 rounded" role="alert">
-            @if ($snapshot)
-                The switch has not answered for {{ max(0, $now - $error['since']) }} s ({{ $error['message'] }});
-                showing what it said at {{ $takenAt }}.
-            @else
-                Cannot read the switch: {{ $error['message'] }}
-            @endif
-        </div>
-    @endif
-    @if (!$snapshot && !$error)
-        {{-- another page holds the poll: its snapshot comes with the next refresh --}}
-        <div class="cmp-card px-4 py-3 text-fg">Asking the switch…</div>
-    @endif
-    @if ($snapshot && $snapshot['mac_method'] === null && in_array(true, array_column($snapshot['ports'], 'up'), true))
+    @foreach ($duplicates as $name)
         <div class="bg-warn-bg border-l-4 border-warn-bar text-warn px-4 py-3 rounded" role="status">
-            The switch gave no MAC address table, so modules cannot be matched to ports. Check the MAC table method under
-            <a href="{{ route('settings') }}" class="underline">Settings → Ethernet switch</a>.
+            Two switches are called {{ $name }}: their boards look the same. Rename one on the switch.
         </div>
-    @endif
+    @endforeach
 
     @if ($map)
         @php($s = $map['summary'])
@@ -71,9 +44,9 @@
             {{-- one-line php directives only: Blade would read a php block here, or even its closing word in a comment, as running from the first one-line directive above --}}
             @php($unknown = $s['counts']['unknown'] ? ', '.$s['counts']['unknown'].' without data' : '')
             @php($verdict = ['running' => $s['busy'].' still in progress, '.$s['counts']['fail'].' failed: keep the batch on the stand', 'failed' => 'All finished, '.$s['counts']['fail'].' failed'.$unknown.': restart or replace them', 'done' => 'All done: the batch can be replaced', 'empty' => 'No modules on the stand'][$s['verdict']])
-            {{-- a map from before the switch went silent may no longer be the stand --}}
-            <div class="text-sm font-bold rounded px-3 py-2 {{ $error ? 'bg-head text-fg' : $verdictColor }}">
-                {{ ($error ? 'As of '.$takenAt.', before the switch went silent: ' : '').$verdict }}
+            {{-- a map from before a switch went silent may no longer be the stand --}}
+            <div class="text-sm font-bold rounded px-3 py-2 {{ $asOf ? 'bg-head text-fg' : $verdictColor }}">
+                {{ $asOf.$verdict }}
             </div>
             @if ($writable && $failed)
                 <button type="button" wire:click="restartFailed" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirmFailed($failed) }}" wire:loading.attr="disabled"
@@ -83,16 +56,28 @@
                 </button>
             @endif
         </section>
+    @endif
 
         <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
-            <div class="cmp-card px-4 py-3 min-w-0">
+            <div class="grid gap-4 min-w-0">
+            @foreach ($switches as $sw)
+            <section class="cmp-card px-4 py-3 min-w-0" aria-label="{{ $sw['name'] }}">
+                @if ($sw['noMacTable'])
+                    <div class="bg-warn-bg border-l-4 border-warn-bar text-warn px-4 py-3 rounded mb-3" role="status">
+                        The switch gave no MAC address table, so modules cannot be matched to its ports. Check the MAC table method under
+                        <a href="{{ route('settings') }}" class="underline">Settings → Ethernet switch</a>.
+                    </div>
+                @endif
                 <div class="overflow-x-auto pb-1">
                     <div class="ports-chassis">
                         <div class="ports-model">
-                            <span>{{ $snapshot['model'] }}</span>
-                            <span>{{ array_values($map['switches'])[0]['composition'] ?? '' }}</span>
+                            <span class="ports-line">{{ $sw['line'] }}@if ($sw['note']) · <span class="ports-silent">{{ $sw['note'] }}</span>@endif</span>
+                            <span>{{ $sw['part']['composition'] ?? '' }}</span>
                         </div>
-                        @foreach ($map['blocks'] as $block)
+                        @if ($sw['placeholder'])
+                            <p class="ports-empty">{{ $sw['placeholder'] }}</p>
+                        @endif
+                        @foreach ($sw['part']['blocks'] ?? [] as $block)
                             @if ($block['rows'] === 1)
                                 <div class="ports-block one-row {{ $block['uplinks'] ? 'uplinks' : '' }}" style="grid-template-columns: repeat({{ count($block['tiles']) }}, 50px)">
                                     @foreach ($block['tiles'] as $t)<span class="ports-num">{{ $t['number'] }}</span>@endforeach
@@ -115,12 +100,17 @@
                         @endforeach
                     </div>
                 </div>
-                <p class="text-xs text-fg-muted mt-3">The last 4 characters of the serial and the result (✓, ✕, write %) per port; ⚡ the port powers its device; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
+            </section>
+            @endforeach
+            @if ($map)
+                <p class="text-xs text-fg-muted">The last 4 characters of the serial and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
+            @endif
             </div>
 
+            @if ($map)
             <aside class="cmp-card px-4 py-3 text-sm" aria-live="polite">
                 @if ($tile)
-                    <h3 class="ports-serial font-bold text-base">{{ $tile['name'] }}</h3>
+                    <h3 class="ports-serial font-bold text-base">{{ $tile['label'] }}</h3>
                     <div class="text-fg-muted mb-3">{{ $tile['alias'] !== '' ? $tile['alias'] : 'no description' }}</div>
                     @foreach ($tile['modules'] as $cm)
                         @php($advice = \App\Support\FailureAdvice::for($cm))
@@ -168,6 +158,8 @@
                         <p class="mb-2">Link up, nothing has talked to the server from this port yet.</p>
                     @elseif ($tile['state'] === 'quiet')
                         <p class="mb-2">Link up for {{ \Carbon\CarbonInterval::seconds($tile['changed'])->cascade()->forHumans(['parts' => 1]) }}, and nothing has talked from this port: a quiet device, a member of a link aggregation, or the provisioner's own port after a long idle time.</p>
+                    @elseif ($tile['link'])
+                        <p class="mb-2">The link to {{ $tile['link'] }}: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @elseif ($tile['state'] === 'uplink')
                         <p class="mb-2">Uplink: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @endif
@@ -211,8 +203,8 @@
                     <p class="text-fg-muted">Click a port for its details.</p>
                 @endif
             </aside>
+            @endif
         </div>
-    @endif
 @endif
 </div>
 </div>

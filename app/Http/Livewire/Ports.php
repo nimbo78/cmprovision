@@ -15,8 +15,9 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * The stand by the switch's ports (docs/superpowers/specs/2026-10-11-ports-page-design.md): the front
- * panel with the module in each port, the status filter (Alpine, in the browser) and one port's details.
+ * The stand by its switches' ports (docs/superpowers/specs/2026-10-11-ports-page-design.md,
+ * 2026-10-14-multi-switch-design.md): each switch's front panel with its line and the module in each port, one
+ * summary of the stand, the status filter (Alpine, in the browser) and one port's details.
  */
 #[Title('Ports')]
 class Ports extends Component
@@ -70,17 +71,22 @@ class Ports extends Component
             if (Stand::answering($state))
                 PoeOutage::closeSeenOn(app(SnmpClient::class, ['config' => $state['config']]), $state['switch']);
 
-        $first = reset($stand['switches']);
+        $now = Carbon::now()->getTimestamp();
+        $switches = [];
+        foreach ($stand['switches'] as $id => $state)
+            $switches[] = self::block($id, $state, $stand['map']['switches'][$id] ?? null, $now);
+        usort($switches, function ($a, $b) { return strnatcasecmp($a['name'], $b['name']) ?: $a['id'] - $b['id']; });
         $tile = $stand['map']['tiles'][$this->selected] ?? null;
         $writable = (bool) array_filter($stand['switches'], function ($state) { return PoeControl::writable($state['config']); });
         return view('livewire.ports', [
             'configured' => true,
-            'header' => self::header($first['snapshot'], $first['config']['host']),
-            'snapshot' => $first['snapshot'],
-            'error' => $first['error'],
+            'switches' => $switches,
+            // two switches with one name give boards nobody can tell apart
+            'duplicates' => array_keys(array_filter(array_count_values(array_column($switches, 'name')), function ($n) { return $n > 1; })),
+            'asOf' => self::asOf($stand['switches']),
             'map' => $stand['map'],
             'tile' => $tile,
-            'now' => Carbon::now()->getTimestamp(),
+            'now' => $now,
             'writable' => $writable,
             'failed' => $writable && $stand['map'] ? count(self::failedOnStand($stand)) : 0,
             'restart' => $tile ? ['blocker' => PoeRestart::switchBlocker($stand['switches'][$tile['switch_id']] ?? null) ?? StandMap::restartBlocker($tile),
@@ -88,22 +94,67 @@ class Ports extends Component
         ]);
     }
 
-    /* The line above the stand: the model and its revision in bold, then the switch's name (unless the model already
-       is its name), serial, base MAC and address. A snapshot kept by 2.3.0 has no identity yet */
-    protected static function header(?array $snapshot, string $host): array
+    /* One switch's block: its line, what it says while silent, a placeholder before its first answer */
+    protected static function block(int $id, array $state, ?array $part, int $now): array
     {
+        $snapshot = $state['snapshot'];
+        $error = $state['error'];
+        $note = $placeholder = null;
+        if ($snapshot && $error)
+            $note = 'As of '.self::clock($snapshot['taken_at']).', not answering since '.self::clock($error['since']).': '.$error['message'];
+        elseif (!$snapshot)
+            // another page may hold the poll: its snapshot comes with the next refresh
+            $placeholder = $error ? 'Cannot read the switch: '.$error['message'] : 'Asking the switch…';
+        return ['id' => $id, 'name' => $state['switch']->hostname(), 'line' => self::header($state, $now), 'note' => $note,
+                'placeholder' => $placeholder, 'part' => $part,
+                'noMacTable' => $snapshot && $snapshot['mac_method'] === null && in_array(true, array_column($snapshot['ports'], 'up'), true)];
+    }
+
+    /* The line inside a switch's block: its name first, then its serial, base MAC and address, its model and revision,
+       when it was polled and what its ports draw. A snapshot kept by 2.3.0 has no identity yet */
+    protected static function header(array $state, int $now): string
+    {
+        $snapshot = $state['snapshot'];
         $who = $snapshot['identity'] ?? [];
+        $name = $state['switch']->hostname();
+        $host = $state['config']['host'];
         $model = $snapshot['model'] ?? null;
-        $name = $who['name'] ?? null;
-        return [
-            'title' => $model !== null ? trim($model.' '.($who['revision'] ?? '')) : null,
-            'facts' => implode(' · ', array_filter([
-                $name !== $model ? $name : null,
-                isset($who['serial']) ? 'S/N '.$who['serial'] : null,
-                isset($who['mac']) ? 'MAC '.$who['mac'] : null,
-                $host,
-            ])),
-        ];
+        // without a sysDescr the model is the switch's own name
+        $model = $model !== null && $model !== $name && $model !== ($who['name'] ?? null) ? trim($model.' '.($who['revision'] ?? '')) : null;
+        $watts = !empty($snapshot['poe']) ? array_sum(array_map(function ($p) { return $p['poe']['watts'] ?? 0; }, $snapshot['ports'])) : null;
+        return implode(' · ', array_filter([
+            $name,
+            isset($who['serial']) ? 'S/N '.$who['serial'] : null,
+            isset($who['mac']) ? 'MAC '.$who['mac'] : null,
+            $host !== $name ? $host : null,
+            $model,
+            $snapshot ? 'polled '.max(0, $now - $snapshot['taken_at']).' s ago' : null,
+            $watts !== null ? 'PoE '.number_format($watts, 1).' W' : null,
+        ]));
+    }
+
+    /* The verdict's start while switches do not answer: what the stand looked like and who is silent */
+    protected static function asOf(array $states): string
+    {
+        $silent = [];
+        $oldest = null;
+        foreach ($states as $state)
+            if ($state['error'])
+            {
+                $silent[] = $state['switch']->hostname();
+                if ($state['snapshot'])
+                    $oldest = min($oldest ?? PHP_INT_MAX, $state['snapshot']['taken_at']);
+            }
+        if (!$silent)
+            return '';
+        return ($oldest !== null ? 'As of '.self::clock($oldest).', ' : '').implode(', ', $silent).' '.(count($silent) === 1 ? 'is' : 'are').' not answering: ';
+    }
+
+    /* A moment as the page shows it: the time today, the day and time before */
+    protected static function clock(int $at): string
+    {
+        $time = Carbon::createFromTimestamp($at)->local();
+        return $time->format($time->isToday() ? 'H:i:s' : 'j M H:i');
     }
 
     /* Failed and silent modules on ports that may be restarted, on switches that may write and answer */

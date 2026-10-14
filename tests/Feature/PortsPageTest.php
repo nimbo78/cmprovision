@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Livewire\Ports;
 use App\Models\Cm;
+use App\Models\EthernetSwitch;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\NetworkStatus;
@@ -18,15 +19,16 @@ use Illuminate\Support\Sleep;
 use Livewire\Livewire;
 use Mockery\MockInterface;
 use Tests\Support\FakeSnmp;
+use Tests\Support\FakeSwitches;
 use Tests\Support\SwitchRow;
 use Tests\TestCase;
 
 /**
- * The Ports page: the switch's front panel with the module in each port, the summary and one port's details.
+ * The Ports page: each switch's front panel with the module in each port, the summary and one port's details.
  */
 class PortsPageTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, FakeSwitches;
 
     const MODULE_MAC = 'e4:5f:01:62:9f:d3';
     const MODULE_OID = '228.95.1.98.159.211';
@@ -107,18 +109,19 @@ class PortsPageTest extends TestCase
             ->assertSeeHtml('<span class="short">UP</span>');
     }
 
-    public function test_the_header_names_the_switch_by_its_model_name_serial_and_mac()
+    public function test_the_block_line_names_the_switch_first_then_its_serial_mac_address_and_model()
     {
+        Carbon::setTestNow('2026-10-14 10:00:00');
         $this->switchWithModule();
         $this->fake->tables[''] += [
-            SwitchSnapshot::OID_SYSNAME.'.0' => 'stand-sw',
+            SwitchSnapshot::OID_SYSNAME.'.0' => 'stand-sw.corp.example',
             SwitchSnapshot::OID_ENT_CLASS.'.1' => 3, SwitchSnapshot::OID_ENT_MODEL.'.1' => 'S5731-S24P4X',
             SwitchSnapshot::OID_ENT_HW_REV.'.1' => 'VER.B', SwitchSnapshot::OID_ENT_SERIAL.'.1' => '2102351931P0K1000123',
             SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0' => hex2bin('f4dee0123456'),
         ];
         Livewire::test(Ports::class)
-            ->assertSeeHtml('<span class="font-bold text-fg">S5731-S24P4X VER.B</span>')
-            ->assertSee('stand-sw · S/N 2102351931P0K1000123 · MAC f4:de:e0:12:34:56 · 192.0.2.10');
+            ->assertSee('stand-sw · S/N 2102351931P0K1000123 · MAC f4:de:e0:12:34:56 · 192.0.2.10 · S5731-S24P4X VER.B · polled 0 s ago · PoE 6.9 W')
+            ->assertSee('3 × 1G PoE · 1 × SFP');
     }
 
     public function test_cages_and_combo_ports_are_drawn_as_the_switch_lists_them()
@@ -166,14 +169,14 @@ class PortsPageTest extends TestCase
         $this->fake->tables[''] += $t;
     }
 
-    public function test_a_name_that_is_already_the_title_is_not_repeated()
+    public function test_a_name_that_is_already_the_model_is_not_repeated()
     {
         $this->switchWithModule();
         $this->fake->tables[''][SwitchSnapshot::OID_SYSDESCR.'.0'] = '';
         $this->fake->tables[''][SwitchSnapshot::OID_SYSNAME.'.0'] = 'stand-sw';
         Livewire::test(Ports::class)
-            ->assertSeeHtml('<span class="font-bold text-fg">stand-sw</span>')
-            ->assertDontSee('stand-sw · ');
+            ->assertSee('stand-sw · 192.0.2.10 · polled')
+            ->assertDontSee('stand-sw · 192.0.2.10 · stand-sw');
     }
 
     public function test_a_snapshot_kept_by_the_previous_version_still_draws()
@@ -187,7 +190,7 @@ class PortsPageTest extends TestCase
             unset($state['snapshot']['ports'][$ifIndex]['media'], $state['snapshot']['ports'][$ifIndex]['transceiver']);
         Cache::put('switch-snapshot:192.0.2.10', $state, 3600);
         Livewire::test(Ports::class)
-            ->assertSeeHtml('<span class="font-bold text-fg">S5731-S24P4X</span>')
+            ->assertSee('192.0.2.10 · S5731-S24P4X · polled')
             ->assertSee('1 module on the stand')
             ->call('select', 's1p30')
             ->assertSeeHtml('<dd>SFP cage</dd>');
@@ -225,7 +228,8 @@ class PortsPageTest extends TestCase
         $this->fake->timeout = true;
         Carbon::setTestNow('2026-10-12 10:00:30');
         $page->call('$refresh')
-            ->assertSee('The switch has not answered for 0 s')
+            ->assertSee('not answering since')
+            ->assertSee('No response from 192.0.2.1')
             ->assertSee('110C');
     }
 
@@ -268,7 +272,7 @@ class PortsPageTest extends TestCase
         $page = Livewire::test(Ports::class);
         $this->fake->timeout = true;
         Carbon::setTestNow('2026-10-12 10:00:30');
-        $page->call('$refresh')->assertSee('before the switch went silent: All done: the batch can be replaced');
+        $page->call('$refresh')->assertSee('192.0.2.10 is not answering: All done: the batch can be replaced');
     }
 
     public function test_while_another_page_asks_the_switch_it_says_so_and_names_the_switch_once()
@@ -284,6 +288,87 @@ class PortsPageTest extends TestCase
         } finally {
             $lock->release();
         }
+    }
+
+    /* A second Huawei at 192.0.2.11 called sw02, with a device on GE0/0/3; the first one is called sw01 */
+    protected function secondFakeSwitch(bool $silent = false): FakeSnmp
+    {
+        $this->fake->tables[''][SwitchSnapshot::OID_SYSNAME.'.0'] = 'sw01';
+        $second = new FakeSnmp(['' => [
+            SwitchSnapshot::OID_SYSDESCR.'.0' => 'S5735-S24P4X', SwitchSnapshot::OID_SYSNAME.'.0' => 'sw02',
+            SwitchSnapshot::OID_IFNAME.'.8' => 'GE0/0/3', SwitchSnapshot::OID_IFTYPE.'.8' => 6,
+            SwitchSnapshot::OID_IFCONNECTOR.'.8' => 1, SwitchSnapshot::OID_IFOPERSTATUS.'.8' => 1,
+            SwitchSnapshot::OID_IFHIGHSPEED.'.8' => 1000,
+        ]], '192.0.2.11');
+        $second->timeout = $silent;
+        EthernetSwitch::create(['host' => '192.0.2.11', 'community' => 'public']);
+        $this->bindSwitches(['192.0.2.10' => $this->fake, '192.0.2.11' => $second]);
+        return $second;
+    }
+
+    public function test_each_switch_has_its_block_with_its_line_inside()
+    {
+        $this->switchWithModule();
+        $this->secondFakeSwitch();
+        Livewire::test(Ports::class)
+            ->assertSeeInOrder(['sw01 · 192.0.2.10 · S5731-S24P4X', 'sw02 · 192.0.2.11 · S5735-S24P4X'])
+            ->assertSeeHtml('wire:key="s2p8"');
+    }
+
+    public function test_a_silent_switch_keeps_its_last_snapshot_in_its_block()
+    {
+        Carbon::setTestNow('2026-10-14 10:00:00');
+        $this->switchWithModule();
+        $second = $this->secondFakeSwitch();
+        Livewire::test(Ports::class);                 // both answer once
+        $second->timeout = true;
+        Carbon::setTestNow('2026-10-14 10:00:40');
+        Livewire::test(Ports::class)
+            ->assertSee('not answering since')
+            ->assertSee('No response from 192.0.2.11')
+            ->assertSee('sw02 is not answering: ')
+            ->assertSeeHtml('wire:key="s2p8"');      // its last snapshot's ports stay
+    }
+
+    public function test_a_switch_that_never_answered_shows_a_placeholder()
+    {
+        $this->switchWithModule();
+        $this->secondFakeSwitch(true);
+        Livewire::test(Ports::class)
+            ->assertSee('Cannot read the switch: No response from 192.0.2.11')
+            ->assertDontSeeHtml('wire:key="s2p8"')
+            ->assertSeeHtml('wire:key="s1p8"');
+    }
+
+    public function test_two_switches_with_one_name_are_warned_about()
+    {
+        $this->switchWithModule();
+        $second = $this->secondFakeSwitch();
+        $this->fake->tables[''][SwitchSnapshot::OID_SYSNAME.'.0'] = 'Switch';
+        $second->tables[''][SwitchSnapshot::OID_SYSNAME.'.0'] = 'Switch';
+        Livewire::test(Ports::class)
+            ->assertSee('Two switches are called Switch: their boards look the same. Rename one on the switch.');
+    }
+
+    public function test_a_port_of_the_second_switch_opens_its_details()
+    {
+        $this->switchWithModule();
+        $this->secondFakeSwitch();
+        Livewire::test(Ports::class)
+            ->call('select', 's2p8')->assertSet('selected', 's2p8')->assertSee('sw02 GE0/0/3')
+            ->call('select', 'p8')->assertSet('selected', null);
+    }
+
+    public function test_a_link_between_the_switches_is_drawn_as_one()
+    {
+        $this->switchWithModule();
+        $second = $this->secondFakeSwitch();
+        $second->tables[''][SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0'] = hex2bin('0057d297a180');
+        $this->fake->tables[''][SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;
+        $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.0.87.210.151.161.128.1.0'] = 6;   // sw02's base MAC on GE0/0/1
+        Livewire::test(Ports::class)
+            ->assertSeeHtml('title="sw01 GE0/0/1 · link to sw02"')
+            ->assertSeeHtml('<span class="short">→</span>');
     }
 
     public function test_the_selected_port_is_set_by_the_page_only()
