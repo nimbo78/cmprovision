@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Обзор
 
-Веб-приложение для массовой прошивки Raspberry Pi Compute Module 3/3+/4 (и Pi 4 с включённой сетевой загрузкой). Стек: Laravel 13, Jetstream 5.5 (Livewire 3 + Fortify + Sanctum 4), Tailwind 3.4 (самостоятельный бинарник, без Node), SQLite. Форк `raspberrypi/cmprovision`.
+Веб-приложение для массовой прошивки Raspberry Pi Compute Module 4 (и Pi 4 с включённой сетевой загрузкой); CM3/3+ с 2.5.1 не поддерживаются. Стек: Laravel 13, Jetstream 5.5 (Livewire 3 + Fortify + Sanctum 4), Tailwind 3.4 (самостоятельный бинарник, без Node), SQLite. Форк `raspberrypi/cmprovision`.
 
 Целевая среда — Raspberry Pi OS на Pi 4: пакет `cmprovision4` ставится в `/var/lib/cmprovision` и работает поверх nginx + php-fpm, dnsmasq, rpiboot и systemd. Код вызывает Linux-утилиты (`systemctl`, `journalctl`, `sudo`, `bash`, `gzip`/`xz`/`bunzip2`, `sha256sum`), поэтому страница Settings и подсчёт хешей образов работают только на Linux, а сквозной провижининг проверяется только на Pi с подключёнными модулями.
 
@@ -37,7 +37,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Модуль загружает `scriptexecute` — готовые бинарники из `scriptexecute/` (ядро, initramfs `scriptexecute.img`, загрузочные файлы, оверлеи; исходников в репозитории нет):
 
 - **CM4 / Pi 4 — по Ethernet.** `etc/dnsmasq.conf` (сервис `cmprovision-dnsmasq`) раздаёт DHCP в 172.20.0.0/16, узнаёт Pi по сигнатуре в GUID из DHCP option 97 (в обоих порядках байтов) и отдаёт `scriptexecute/` по TFTP.
-- **CM3/3+ — по USB.** `rpiboot -l -d scriptexecute` (сервис `cmprovision-rpiboot`). Модуль поднимает USB-Ethernet gadget и обращается к серверу по IPv6 link-local (секция `[pi3]` в `scriptexecute/config.txt` → `cmdline.txt.ipv6ll`). Поэтому `postinst` переключает dhcpcd на `slaac hwaddr`, а контроллер превращает `[addr]` в `[addr%usb0]`. С Bookworm сетью управляет NetworkManager, и dhcpcd нет: такой адрес должен дать профиль `ifname 'usb*'` с `ipv6.addr-gen-mode eui64` из README. Путь CM3 на Trixie не проверялся.
+- **CM4 по USB.** Модуль, загруженный по USB (bootmode 3: новый CM4 или переключённый джампером), получает `scriptexecute` от `rpiboot -l -d scriptexecute` (сервис `cmprovision-rpiboot`), а к серверу идёт по Ethernet, как при сетевой загрузке. CM3/3+ с 2.5.1 не поддерживаются: у них нет Ethernet, а USB-гаджету с IPv6 link-local `/scriptexecute` не отвечает; секции `[pi3]`, файла `cmdline.txt.ipv6ll` и правки dhcpcd в `postinst` больше нет, загрузочные файлы CM3 в `scriptexecute/` остались как есть.
 
 Дальше модуль общается с `/scriptexecute` → `ScriptExecuteController`. Маршрут открыт без входа, но только для сети стенда: `routes/module.php` подключается в `RouteServiceProvider` с middleware `stand` (`App\Http\Middleware\StandNetworkOnly`) вместо группы `web`, поэтому у модуля нет ни сессии (раньше каждый его запрос писал строку в `sessions`), ни cookie, ни проверки CSRF. Пропускаются `NetworkStatus::STAND_NETWORK` (`172.20.0.0/16`) и loopback (`127.0.0.0/8`, `::1`: репетиция, дымовой тест стенда и `simulate-modules.sh` ходят на `127.0.0.1`) по сырому `REMOTE_ADDR` соединения, а не по `$request->ip()`; остальным, в том числе IPv6 link-local (он есть и у Wi-Fi-аплинков), — 403 `text/plain` с причиной. Обратный прокси перед nginx стал бы адресом клиента сам и открыл бы маршрут всем.
 
@@ -63,7 +63,7 @@ EEPROM «до и после»: сервер хранит доложенный з
 
 ## Связи между файлами
 
-- Параметры запроса модуля задаются плейсхолдерами в `scriptexecute/cmdline.txt` и `cmdline.txt.ipv6ll` (их подставляет initramfs) и читаются в `ScriptExecuteController::startProvisoning()`. Меняйте обе стороны вместе.
+- Параметры запроса модуля задаются плейсхолдерами в `scriptexecute/cmdline.txt` (их подставляет initramfs) и читаются в `ScriptExecuteController::startProvisoning()`. Меняйте обе стороны вместе.
 - Подсеть 172.20.0.0/16 с сервером 172.20.0.1 зашита в `etc/dnsmasq.conf`, `scriptexecute/cmdline.txt`, `Host::firstAvailableIP()`, `NetworkStatus::SERVER_ADDRESS`, `NetworkStatus::STAND_NETWORK` (проверка `StandNetworkOnly`) и README.
 - `scriptexecute.blade.php` рендерит shell, а `{{ }}` экранирует HTML (`&` → `&amp;`): сырой shell-код вставляйте через `{!! !!}`. Пользовательские скрипты записываются в файлы через quoted heredoc с маркером `CMPROVISIONINGEOF`. Директива Blade в конце строки с shell-кодом (`... @endif`) компилируется в `?>`, после которого PHP съедает перевод строки, и следующая строка склеивается с этой; хвост строки выводите через `{!! !!}` (после echo Blade перевод строки сохраняет). Так однажды `RETCODE=$?` приклеился к запуску скрипта.
 - Строки `dhcp-host=` в `etc/dnsmasq.conf` генерирует `Settings::regenDnsmasqConfAndRestart()` из таблицы `hosts`, остальные строки сохраняются. Файл объявлен conffile в `debian/conffiles`.

@@ -169,13 +169,6 @@ POOLCONF
         deb-systemd-invoke restart cmprovision-dnsmasq || true
     fi
 
-    # The Ethernet-over-USB method used for provisioning CM3 requires server has predicatable IPv6 link-local addresses
-    if grep -q "slaac private" /etc/dhcpcd.conf; then
-        echo "Changing dhcpcd settings to let server have predictable IPv6 link-local address"
-        sed -i "s#slaac private#slaac hwaddr#" "/etc/dhcpcd.conf"
-        deb-systemd-invoke restart dhcpcd || true
-    fi
-
     # Ownership again (fix_ownership above): what the steps run as root created
     fix_ownership || echo "Could not adjust file ownership in /var/lib/cmprovision"
 

@@ -223,4 +223,24 @@ class StandNetworkTest extends TestCase
         $this->assertNotContains(StartSession::class, $middleware);
         $this->assertNotContains(VerifyCsrfToken::class, $middleware);
     }
+
+    public static function serverAddresses(): array
+    {
+        return [
+            'the stand address' => ['172.20.5.5', 'http://172.20.0.1', '172.20.0.1'],
+            'this server over IPv6' => ['::1', 'http://[::1]', '[::1]'],
+        ];
+    }
+
+    #[DataProvider('serverAddresses')]
+    public function test_the_script_names_the_server_as_the_module_reached_it($from, $base, $server)
+    {
+        $this->activeProject();
+        $script = $this->fromAddress($from)->get($base.self::START)->assertOk()->getContent();
+
+        $this->assertStringContainsString('export SERVER="'.$server.'"', $script);
+        $this->assertStringContainsString('-G "http://'.$server.'/scriptexecute"', $script);
+        // CM3 over USB is gone (2.5.1): nothing rewrites the server into a link-local address of usb0
+        $this->assertStringNotContainsString('%usb0', $script);
+    }
 }

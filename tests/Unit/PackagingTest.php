@@ -87,4 +87,12 @@ class PackagingTest extends TestCase
             $this->assertStringContainsString($line, $postinst);
         $this->assertStringContainsString('rm -f /etc/php/*/fpm/pool.d/cmprovision.conf', $this->file('debian/postrm'));
     }
+
+    public function test_no_trace_of_the_cm3_usb_network()
+    {
+        // CM3 reached the server only over USB with IPv6 link-local addresses, which /scriptexecute no longer answers (2.5.1)
+        $this->assertStringNotContainsString('dhcpcd', $this->file('debian/postinst'));
+        $this->assertStringNotContainsString('[pi3]', $this->file('scriptexecute/config.txt'));
+        $this->assertFileDoesNotExist(dirname(__DIR__, 2).'/scriptexecute/cmdline.txt.ipv6ll');
+    }
 }
