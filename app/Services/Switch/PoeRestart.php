@@ -66,7 +66,7 @@ class PoeRestart
                 $tile = $stand['map']['tiles'][$key] ?? null;
                 $why = $tile ? StandMap::restartBlocker($tile) : 'no such port';
                 if ($why !== null)
-                    $skipped[$tile['label'] ?? $key] = $why;
+                    self::skip($skipped, $tile['label'] ?? $key, $why, $tile ? $stand['switches'][$tile['switch_id']]['config']['host'] : null);
                 else
                     $tiles[$key] = $tile + ['serial' => $tile['modules'] ? $tile['modules'][0]->serial : null];
             }
@@ -155,7 +155,7 @@ class PoeRestart
         {
             $why = self::switchBlocker($stand['switches'][$tile['switch_id']] ?? null);
             if ($why !== null)
-                $result['skipped'][$tile['serial'] ?? $tile['label']] = $why;
+                self::skip($result['skipped'], $tile['serial'] ?? $tile['label'], $why, $stand['switches'][$tile['switch_id']]['config']['host'] ?? null);
             else
                 $groups[$tile['switch_id']][$key] = $tile;
         }
@@ -190,7 +190,8 @@ class PoeRestart
                 catch (\Throwable $e)
                 {
                     foreach ($group as $tile)
-                        $result['skipped'][$tile['serial'] ?? $tile['label']] = $state['switch']->hostname().' does not answer: '.$e->getMessage();
+                        self::skip($result['skipped'], $tile['serial'] ?? $tile['label'], $state['switch']->hostname().' does not answer: '.$e->getMessage(),
+                            $state['config']['host']);
                     continue;
                 }
                 $runs[] = [new self(PoeControl::forConfig($state['config']), $state['switch'], $user), $group, $admin];
@@ -251,7 +252,7 @@ class PoeRestart
             $oid = $admin[$tile['ifIndex']] ?? null;
             if ($oid === null)
             {
-                $result['skipped'][$tile['label']] = 'no PoE object to write on '.$tile['label'];
+                self::skip($result['skipped'], $tile['label'], 'no PoE object to write on '.$tile['label'], $this->switch->host);
                 continue;
             }
             $outage = PoeOutage::create(['switch_id' => $this->switch->id, 'switch_host' => $this->switch->host,
@@ -323,6 +324,15 @@ class PoeRestart
             $result['stayed_off'][$tile['key']] = self::entry($tile, $error);
             $this->log($tile, 'error', 'PoE on '.$tile['label'].' stays OFF after a restart by '.$this->who().': '.$error);
         }
+    }
+
+    /* Why a module or port is not restarted; a second port with the same label (one name for two switches) is told
+       apart by its switch's address */
+    protected static function skip(array &$skipped, string $what, string $why, ?string $host = null): void
+    {
+        if (isset($skipped[$what]) && $host !== null)
+            $what .= ' ('.$host.')';
+        $skipped[$what] = $why;
     }
 
     /* A port in the result: what the operator reads about it */

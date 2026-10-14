@@ -3,7 +3,6 @@
 namespace App\Support;
 
 use App\Models\Cm;
-use App\Models\EthernetSwitch;
 
 /**
  * The stand as the Ports page draws it: the snapshots of its switches and the modules behind their MAC addresses as
@@ -58,13 +57,6 @@ class StandMap
         $this->serverMac = $serverMac ? strtolower($serverMac) : null;
     }
 
-    /** One switch (id 1), named by what it says about itself */
-    public static function of(array $snapshot, iterable $modules, ?string $serverMac): self
-    {
-        $name = EthernetSwitch::shortName($snapshot['identity']['name'] ?? null) ?? (string) ($snapshot['id'] ?? '');
-        return new self([['id' => 1, 'name' => $name, 'snapshot' => $snapshot, 'answering' => true]], $modules, $serverMac);
-    }
-
     /**
      * ['switches' => [id => ['id', 'name', 'blocks', 'composition', 'links' => [ifIndex => id of the neighbour]]],
      *  'tiles' => [key => tile] of every switch, 'summary' => the whole stand,
@@ -107,24 +99,52 @@ class StandMap
     }
 
     /* A port towards another switch of the stand: it shows one of that switch's own MACs (the address it answers from
-       is learnt there), or it was found so before and that switch is silent now */
+       is learnt there), or it was found so before and that switch is silent now. A port that shows several switches
+       leads to the nearest of them (nearest()) */
     protected function links(array $ports): array
     {
+        $seen = [];   // switch id => [port key => its MACs]: where each switch sees the others
+        foreach ($ports as $key => $p)
+            if ($p['port']['up'])
+                $seen[$p['switch']][$key] = $p['macs'];
         $links = [];
         foreach ($ports as $key => $p)
         {
             if (!$p['port']['up'])
                 continue;
             $remembered = $this->parts[$p['switch']]['links'];
+            $candidates = [];
             foreach ($this->parts as $id => $other)
                 if ($id !== $p['switch'] && (array_intersect($p['macs'], $other['own_macs'])
                         || (!$other['answering'] && (int) ($remembered[$p['port']['ifIndex']] ?? 0) === $id)))
-                {
-                    $links[$key] = $id;
-                    break;
-                }
+                    $candidates[] = $id;
+            if ($candidates)
+                $links[$key] = $this->nearest($p['switch'], $candidates, $seen);
         }
         return $links;
+    }
+
+    /* Of the switches one port of $from leads to, the one all the others are behind; the first when none is */
+    protected function nearest(int $from, array $candidates, array $seen): int
+    {
+        foreach ($candidates as $x)
+        {
+            $nearer = true;
+            foreach ($candidates as $y)
+                $nearer = $nearer && ($y === $x || $this->behind($y, $x, $from, $seen));
+            if ($nearer)
+                return $x;
+        }
+        return $candidates[0];
+    }
+
+    /* $y is behind $x, seen from $from: $x sees $y's own MACs on a port where it does not see $from's */
+    protected function behind(int $y, int $x, int $from, array $seen): bool
+    {
+        foreach ($seen[$x] ?? [] as $macs)
+            if (array_intersect($macs, $this->parts[$y]['own_macs']) && !array_intersect($macs, $this->parts[$from]['own_macs']))
+                return true;
+        return false;
     }
 
     /* Every module MAC seen anywhere: the port it belongs to (the one with fewest addresses; on a tie the one where all
@@ -372,9 +392,11 @@ class StandMap
             || ($port['up'] && $port['speed'] !== null && $port['speed'] >= 10000);
     }
 
-    /* The line under the serial: ✓, ✕, !, ?, percent, step, or ×N for several modules */
+    /* The line under the serial: ✓, ✕, !, ?, percent, step, or ×N for several modules; a link names where it leads */
     protected function mark(array $tile): string
     {
+        if ($tile['link'])
+            return $tile['link'];
         if ($tile['state'] === 'free')
             return $tile['sfp'] ? 'SFP' : '';
         if ($tile['state'] !== 'module')

@@ -117,6 +117,24 @@ class SwitchWriteAccessTest extends TestCase
         }
     }
 
+    public function test_check_write_access_locks_the_switch_at_the_form_s_address()
+    {
+        $this->stand();
+        $this->secondSwitch();
+        $lock = Cache::lock(PoeRestart::LOCK.':1', 60);
+        $lock->get();
+        try
+        {
+            // sw02's form with sw01's address: the check talks to sw01, whose restart is running
+            Livewire::test(SwitchSettings::class)->call('edit', 2)->set('host', '192.0.2.10')->set('community', 'public')
+                ->set('writeCommunity', 'private')->call('checkWrite')->assertSee('A restart is running');
+        }
+        finally
+        {
+            $lock->release();
+        }
+    }
+
     public function test_remove_write_access_keeps_the_read_one()
     {
         $this->saved();

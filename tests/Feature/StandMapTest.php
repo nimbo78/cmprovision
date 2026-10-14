@@ -45,7 +45,7 @@ class StandMapTest extends TestCase
 
     protected function build(array $ports, array $modules = [])
     {
-        return StandMap::of($this->snapshot($ports), $modules, self::SERVER)->build();
+        return (new StandMap([['id' => 1, 'name' => 'sw01', 'snapshot' => $this->snapshot($ports), 'answering' => true]], $modules, self::SERVER))->build();
     }
 
     /* One switch of a stand for StandMap: its id, name, ports (null: it never answered), own MACs and remembered links */
@@ -70,6 +70,7 @@ class StandMapTest extends TestCase
 
         $link = $map['tiles']['s1p24'];
         $this->assertSame(['uplink', 'sw02', []], [$link['state'], $link['link'], $link['modules']]);
+        $this->assertSame(['→', 'sw02'], [$link['short'], $link['mark']], 'the tile names where it leads');
         $this->assertSame('sw01 Gi0/24 is the link to sw02', StandMap::restartBlocker($link));
         $this->assertSame([$m2->serial], array_map(function ($cm) { return $cm->serial; }, $map['tiles']['s2p1']['modules']));
         $this->assertSame('s2p1', $map['owners'][$m2->mac]['key']);
@@ -295,14 +296,24 @@ class StandMapTest extends TestCase
         $this->assertSame('uplink', $this->build([$port])['tiles']['s1p30']['state']);
     }
 
-    public function test_the_map_names_its_switch()
+    public function test_the_map_names_each_switch_as_its_part_says()
     {
-        $snapshot = $this->snapshot([$this->port(1, 'GE0/0/1', false)]);
-        $snapshot['identity']['name'] = 't-iof-sw01-provision.corp.example';
-        $map = StandMap::of($snapshot, [], self::SERVER)->build();
+        $map = (new StandMap([$this->part(1, 't-iof-sw01-provision', [$this->port(1, 'GE0/0/1', false)])], [], self::SERVER))->build();
         $this->assertSame(['t-iof-sw01-provision', 't-iof-sw01-provision GE0/0/1'], [$map['switches'][1]['name'], $map['tiles']['s1p1']['label']]);
-        unset($snapshot['identity']);
-        $this->assertSame('192.0.2.10', StandMap::of($snapshot, [], self::SERVER)->build()['switches'][1]['name'], 'no sysName: its address');
+    }
+
+    public function test_a_port_that_sees_two_switches_leads_to_the_nearer_one()
+    {
+        // sw01 Gi0/24 -> sw02 Gi0/24, sw02 Gi0/23 -> sw03 Gi0/1: sw01's port sees both, sw02 sees sw03 where sw01 is not
+        $own = ['sw01' => '00:00:00:00:01:01', 'sw02' => '00:00:00:00:02:02', 'sw03' => '00:00:00:00:03:03'];
+        $map = (new StandMap([
+            $this->part(1, 'sw01', [$this->port(24, 'Gi0/24', true, [$own['sw02'], $own['sw03']])], [$own['sw01']]),
+            $this->part(2, 'sw03', [$this->port(1, 'Gi0/1', true, [$own['sw01'], $own['sw02']])], [$own['sw03']]),
+            $this->part(3, 'sw02', [$this->port(24, 'Gi0/24', true, [$own['sw01']]), $this->port(23, 'Gi0/23', true, [$own['sw03']])], [$own['sw02']]),
+        ], [], self::SERVER))->build();
+
+        $this->assertSame(['sw02', 'sw02', 'sw03', 'sw01'],
+            [$map['tiles']['s1p24']['link'], $map['tiles']['s2p1']['link'], $map['tiles']['s3p23']['link'], $map['tiles']['s3p24']['link']]);
     }
 
     public function test_a_module_moved_to_another_port_shows_on_the_new_one_only()

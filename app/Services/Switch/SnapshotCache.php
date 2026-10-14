@@ -48,7 +48,7 @@ class SnapshotCache
         }
         catch (LockTimeoutException $e)
         {
-            return $state;   // another page is asking the switch right now
+            return $state + ['busy' => true];   // another request is asking the switch right now
         }
         try
         {

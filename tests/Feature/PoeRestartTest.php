@@ -343,6 +343,18 @@ class PoeRestartTest extends TestCase
         $this->assertSame('no write access on sw02', $result['skipped'][$two->serial]);
     }
 
+    public function test_two_ports_with_one_label_both_say_why()
+    {
+        $this->stand();
+        $this->secondSwitch();
+        foreach ([$this->fake, $this->fake2] as $fake)
+            $fake->tables[''][SwitchSnapshot::OID_SYSNAME.'.0'] = 'sw';   // one name; both GE0/0/1 have a link and nothing on it
+
+        $result = PoeRestart::ports(['s1p6', 's2p6'], 'Igor');
+
+        $this->assertSame(['sw GE0/0/1', 'sw GE0/0/1 (192.0.2.11)'], array_keys($result['skipped']));
+    }
+
     public function test_the_lock_outlasts_a_restart_of_a_whole_stand_whose_switch_stops_answering()
     {
         // 48 ports, every SNMP request times out after 2 s (PhpSnmpClient: 1 s and one retry): each switch-off once,

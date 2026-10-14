@@ -64,6 +64,8 @@
                             @csrf
                             <x-dropdown-link href="{{ route('logout') }}" onclick="event.preventDefault(); this.closest('form').submit();">{{ __('Log Out') }}</x-dropdown-link>
                         </form>
+                        <div class="border-t border-pline"></div>
+                        <div class="block px-4 py-2 text-xs text-fg-faint">cmprovision {{ \App\Support\AppVersion::text() }}</div>
                     </x-slot>
                 </x-dropdown>
             </div>
@@ -96,6 +98,7 @@
                     @csrf
                     <x-responsive-nav-link href="{{ route('logout') }}" onclick="event.preventDefault(); this.closest('form').submit();">{{ __('Log Out') }}</x-responsive-nav-link>
                 </form>
+                <div class="px-4 pt-2 text-xs text-fg-faint">cmprovision {{ \App\Support\AppVersion::text() }}</div>
             </div>
         </div>
     </div>

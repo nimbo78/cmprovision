@@ -383,7 +383,8 @@ class PortsPageTest extends TestCase
         $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.0.87.210.151.161.128.1.0'] = 6;   // sw02's base MAC on GE0/0/1
         Livewire::test(Ports::class)
             ->assertSeeHtml('title="sw01 GE0/0/1 · link to sw02"')
-            ->assertSeeHtml('<span class="short">→</span>');
+            ->assertSeeHtml('<span class="short">→</span>')
+            ->assertSeeHtml('<span class="mark">sw02</span>');
     }
 
     public function test_the_selected_port_is_set_by_the_page_only()

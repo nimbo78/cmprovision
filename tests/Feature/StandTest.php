@@ -7,6 +7,7 @@ use App\Models\EthernetSwitch;
 use App\Services\Switch\Stand;
 use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\Support\PoeStand;
 use Tests\TestCase;
 
@@ -65,6 +66,29 @@ class StandTest extends TestCase
         $this->assertSame([null, 1], [$stand['switches'][1]['same_as'], $stand['switches'][2]['same_as']]);
         $this->assertSame([1], array_keys($stand['map']['switches']), 'its twin ports would tie every module');
         $this->assertSame('s1p8', Stand::tileOf($stand['map'], Cm::where('serial', '10000000e611110c')->first())['key']);
+    }
+
+    public function test_a_link_missed_once_is_kept_and_forgotten_after_the_second_miss()
+    {
+        Carbon::setTestNow('2026-10-14 10:00:00');
+        $this->stand();
+        $this->secondSwitch();
+        EthernetSwitch::find(1)->forceFill(['links' => [6 => 2]])->save();   // GE0/0/1 led to sw02; sw02 answers, its MAC is not there now
+        Stand::current();
+        $this->assertSame([6 => 2], EthernetSwitch::find(1)->links, "one poll without the neighbour's MAC: it may just be back");
+        Carbon::setTestNow('2026-10-14 10:00:06');
+        Stand::current();
+        $this->assertSame([], EthernetSwitch::find(1)->links);
+    }
+
+    public function test_a_link_whose_port_went_down_is_forgotten_at_once()
+    {
+        $this->stand();
+        $this->secondSwitch();
+        EthernetSwitch::find(1)->forceFill(['links' => [6 => 2]])->save();
+        $this->fake->tables[''][SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 2;
+        Stand::current();
+        $this->assertSame([], EthernetSwitch::find(1)->links);
     }
 
     public function test_a_link_found_between_the_switches_is_remembered()

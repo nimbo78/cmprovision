@@ -7,6 +7,7 @@ use App\Services\Switch\SnapshotCache;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 /**
@@ -120,6 +121,18 @@ class SnapshotCacheTest extends TestCase
         Carbon::setTestNow('2026-10-12 10:00:40');
         $this->cache()->current();
         $this->assertSame(2, $this->polls);
+    }
+
+    public function test_a_state_given_without_waiting_for_another_poll_says_so()
+    {
+        Carbon::setTestNow('2026-10-14 10:00:00');
+        $this->assertArrayNotHasKey('busy', $this->cache()->current());
+        Carbon::setTestNow('2026-10-14 10:00:10');
+        Sleep::fake(syncWithCarbon: true);                               // the wait for the lock passes in test time
+        Cache::lock('switch-snapshot-lock:192.0.2.10', 60)->get();      // another request is asking the switch
+        $state = $this->cache()->current();
+        $this->assertTrue($state['busy']);
+        $this->assertSame(1, $this->polls);
     }
 
     public function test_a_failed_poll_is_not_repeated_for_thirty_seconds()
