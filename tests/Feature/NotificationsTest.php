@@ -6,6 +6,7 @@ use App\Models\Cm;
 use App\Models\Image;
 use App\Models\NotificationBatch;
 use App\Models\NotificationChannel;
+use App\Services\Notifier;
 use App\Models\Project;
 use App\Models\Setting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -181,6 +182,22 @@ class NotificationsTest extends TestCase
                 && $r['serial'] === '1000000000000c03' && $r['mac'] === 'e4:5f:01:00:00:03' && $r['project'] === '78';
         });
         Http::assertSentCount(2);   // "started" is not selected for these channels
+    }
+
+    public function test_the_webhook_names_the_switch_and_the_port()
+    {
+        $this->activeProject();
+        $this->channel('webhook', ['url' => 'https://collector.line.local/x']);
+        Http::fake();
+        $cm = Cm::create(['serial' => '1000000000000c31', 'mac' => 'e4:5f:01:00:00:31', 'phase' => 'done',
+            'provisioning_board' => 'sw02 GE0/0/3', 'switch_name' => 'sw02', 'switch_port' => 'GE0/0/3',
+            'provisioning_started_at' => now()->subMinutes(5), 'provisioning_complete_at' => now()]);
+
+        (new Notifier)->notify($cm, 'completed');
+
+        Http::assertSent(function (Request $r) {
+            return $r['board'] === 'sw02 GE0/0/3' && $r['switch'] === 'sw02' && $r['port'] === 'GE0/0/3';
+        });
     }
 
     public function test_modules_within_the_idle_gap_share_a_batch_and_a_new_batch_starts_after_it()

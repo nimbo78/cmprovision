@@ -278,6 +278,9 @@ class Notifier
             'serial' => $cm->serial,
             'mac' => $cm->mac,
             'board' => $cm->provisioning_board,
+            // the board's two halves, for a collector that sorts by switch: null without a switch
+            'switch' => $cm->switch_name,
+            'port' => $cm->switch_port,
             'project' => $cm->project ? $cm->project->name : null,
             'image' => $cm->image_filename,
             'eeprom_firmware' => $cm->project ? $cm->project->eeprom_firmware : null,

@@ -583,7 +583,9 @@ exit 1
         $labelsettings = $this->cm->project->label;
         $label = str_replace('$mac', $this->cm->mac, $labelsettings->template);
         $label = str_replace('$serial', $this->serial, $label);
-        $label = str_replace('$provisionboard', $this->cm->provisioning_board, $label);
+        // the board ("sw01 Gi0/3") and its two halves; empty without a switch
+        $label = str_replace(['$provisionboard', '$switch', '$port'],
+            [(string) $this->cm->provisioning_board, (string) $this->cm->switch_name, (string) $this->cm->switch_port], $label);
         $tmpfile = tempnam(sys_get_temp_dir(), "label-");
 
         try
