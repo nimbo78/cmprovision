@@ -11,7 +11,6 @@ use App\Http\Livewire\Scripts;
 use App\Http\Livewire\Firmwares;
 use App\Http\Livewire\Settings;
 use App\Http\Controllers\AddImageController;
-use App\Http\Controllers\ScriptExecuteController;
 
 /*
 |--------------------------------------------------------------------------
@@ -43,5 +42,3 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/labels', Labels::class)->name('labels');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/firmware', Firmwares::class)->name('firmware');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/settings', Settings::class)->name('settings');
-
-Route::any('/scriptexecute', ScriptExecuteController::class);

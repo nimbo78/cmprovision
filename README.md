@@ -23,6 +23,8 @@ This process requires a Raspberry Pi 4 which will be used solely to mass program
 
 **WARNING:** Do NOT connect eth0 to your office/public network, since it may also provision other Raspberry Pi devices. Instead, use the wireless LAN interface to access the web interface, and your local network.
 
+The modules' endpoint `/scriptexecute` takes no login, so it answers only the stand network 172.20.0.0/16 and the server itself: a request from any other network, the office included, gets 403.
+
 1. Start with a fresh 64-bit Raspberry Pi OS (Lite) installation. For simplicity, use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) and the advanced settings menu (Ctrl-Shift-X) to set the password, hostname and wireless LAN configuration.  
     
     **NOTE:** If you intend to write images larger than 2 GB, you MUST install the **64-bit** edition of Raspberry Pi OS (Lite), which is available in Raspberry Pi Imager under the category "Raspberry Pi OS (other)" -> "Raspberry Pi OS Lite (64-bit)".
