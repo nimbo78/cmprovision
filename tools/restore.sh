@@ -66,16 +66,7 @@ if [ -f "$SRC/database.sqlite" ]; then
     rm -f "$APP/database/database.sqlite-journal" "$APP/database/database.sqlite-wal" "$APP/database/database.sqlite-shm"
     install -o www-data -g www-data -m 600 "$SRC/database.sqlite" "$APP/database/database.sqlite"
 fi
-if [ "$DATA_ONLY" = 1 ]; then
-    # the snapshot may come from an older version
-    "$APP/artisan" migrate --force
-else
-    tar xzf "$SRC/system-config.tar.gz" -C / 2>/dev/null || true
-fi
-
-"$APP/artisan" config:clear >/dev/null
-"$APP/artisan" view:clear >/dev/null
-# Ownership as debian/postinst sets it (after artisan, which runs as root): code root's, the web server writes only to its own places
+# Ownership as debian/postinst sets it, before artisan writes as the web user: code root's, the web server writes only to its own places
 find "$APP" -xdev \( -path "$APP/storage" -o -path "$APP/bootstrap/cache" -o -path "$APP/public/uploads" \
     -o -path "$APP/etc" -o -path "$APP/.env" -o -path "$APP/database/database.sqlite*" \) -prune \
     -o -user www-data -exec chown -h root:root {} +
@@ -85,6 +76,16 @@ chown -h www-data:www-data "$APP/database"
 for f in "$APP/.env" "$APP"/database/database.sqlite*; do
     if [ -f "$f" ] && [ ! -L "$f" ]; then chown -h www-data:www-data "$f"; fi
 done
+# artisan runs as the web user: the database is in WAL, and -wal and -shm files root created would lock it out
+if [ "$DATA_ONLY" = 1 ]; then
+    # the snapshot may come from an older version
+    runuser -u www-data -- "$APP/artisan" migrate --force
+else
+    tar xzf "$SRC/system-config.tar.gz" -C / 2>/dev/null || true
+fi
+
+runuser -u www-data -- "$APP/artisan" config:clear >/dev/null
+runuser -u www-data -- "$APP/artisan" view:clear >/dev/null
 systemctl restart 'php*-fpm' nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot \
     || echo "not every service restarted, see their states:"
 systemctl is-active nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot | tr '\n' ' '; echo

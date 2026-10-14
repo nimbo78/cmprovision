@@ -21,8 +21,14 @@ umask 077
 mkdir -p -m 700 "$DEST"
 mkdir -m 700 "$OUT"
 
-# .timeout: on a server in use, wait for a writer instead of failing
-sqlite3 -cmd '.timeout 10000' "$APP/database/database.sqlite" ".backup '$OUT/database.sqlite'"
+# The copy is made by the web user: the database is in WAL, and a root sqlite3 would leave -wal and -shm files the
+# web server cannot write. .timeout: on a server in use, wait for a writer instead of failing
+TMPDB=$(mktemp -d /var/tmp/cmprovision-backup.XXXXXX)
+chown www-data:www-data "$TMPDB"
+runuser -u www-data -- sqlite3 -cmd '.timeout 10000' "$APP/database/database.sqlite" ".backup '$TMPDB/database.sqlite'"
+mv "$TMPDB/database.sqlite" "$OUT/database.sqlite"
+chown root:root "$OUT/database.sqlite"
+rmdir "$TMPDB"
 
 EXCLUDE="--exclude=$APP/public/uploads"
 [ "$WITH_UPLOADS" = 1 ] && EXCLUDE=""

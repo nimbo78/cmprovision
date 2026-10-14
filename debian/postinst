@@ -7,6 +7,30 @@ case "$1" in
 
     PHP_VERSION=`echo "<?php echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;" | php`
 
+    # artisan runs as the web user: the database is in WAL, and -wal and -shm files a root process created would
+    # stay root's and lock the web server out
+    ARTISAN="runuser -u www-data -- /var/lib/cmprovision/artisan"
+
+    # Ownership: the code belongs to root, the web server writes only to storage, bootstrap/cache,
+    # public/uploads, etc (dnsmasq.conf) and the SQLite database. Packages before 1.6.7 gave
+    # www-data the whole tree, and dpkg keeps the owner of existing directories on upgrade; it runs
+    # before artisan writes as the web user, and again at the end for what the steps run as root created.
+    # chown -h everywhere: these places are writable by the web user, and following a symlink planted
+    # there would hand it any file on the system.
+    fix_ownership() {
+        APP=/var/lib/cmprovision
+        find "$APP" -xdev \( -path "$APP/storage" -o -path "$APP/bootstrap/cache" -o -path "$APP/public/uploads" \
+            -o -path "$APP/etc" -o -path "$APP/.env" -o -path "$APP/database/database.sqlite*" \) -prune \
+            -o -user www-data -exec chown -h root:root {} +
+        chown -R -h www-data:www-data "$APP/storage" "$APP/bootstrap/cache" "$APP/public/uploads" "$APP/etc"
+        chown -h www-data:www-data "$APP/database"
+        for f in "$APP/.env" "$APP"/database/database.sqlite*; do
+            if [ -f "$f" ] && [ ! -L "$f" ]; then chown -h www-data:www-data "$f"; fi
+        done
+        return 0
+    }
+    fix_ownership || echo "Could not adjust file ownership in /var/lib/cmprovision"
+
     if grep -q "fastcgi_pass unix:/run/php/php-fpm.sock" "/etc/nginx/sites-available/cmprovision"; then
 
         # Change nginx configuration to point to exact PHP version socket file
@@ -24,8 +48,8 @@ case "$1" in
 
         # Set Laravel app key
         install -o www-data -g www-data -m 600 /var/lib/cmprovision/env.example /var/lib/cmprovision/.env
-        /var/lib/cmprovision/artisan key:generate
-        /var/lib/cmprovision/artisan config:cache
+        $ARTISAN key:generate
+        $ARTISAN config:cache
 
         # Make sure log is owned by www-data
         # install replaces whatever is there (never follows a symlink planted by the web user)
@@ -94,17 +118,17 @@ case "$1" in
     sed -i "s/^APP_ENV=local$/APP_ENV=production/; s/^APP_DEBUG=true$/APP_DEBUG=false/" /var/lib/cmprovision/.env
 
     sed -i "s/QUEUE_CONNECTION=sync/QUEUE_CONNECTION=database/" /var/lib/cmprovision/.env
-    /var/lib/cmprovision/artisan config:clear
-    /var/lib/cmprovision/artisan view:clear
+    $ARTISAN config:clear
+    $ARTISAN view:clear
 
     DB=/var/lib/cmprovision/database/database.sqlite
     if [ -L "$DB" ]; then rm -f "$DB"; fi   # the database directory is the web user's: no symlinks for root to follow
     if [ ! -e "$DB" ]; then
         install -m 600 -o www-data -g www-data /dev/null "$DB"
         echo "Initializing database"
-        /var/lib/cmprovision/artisan migrate --seed --force
+        $ARTISAN migrate --seed --force
     else
-        /var/lib/cmprovision/artisan migrate --force
+        $ARTISAN migrate --force
         # New PHP code: restart php-fpm so opcache stops serving the previous version. debhelper gives
         # every file the timestamp of the changelog entry, so a rebuild of the same version is invisible
         # to opcache's mtime check (seen as a fatal error from the old composer autoloader).
@@ -122,24 +146,7 @@ case "$1" in
         deb-systemd-invoke restart dhcpcd || true
     fi
 
-    # Ownership: the code belongs to root, the web server writes only to storage, bootstrap/cache,
-    # public/uploads, etc (dnsmasq.conf) and the SQLite database. Packages before 1.6.7 gave
-    # www-data the whole tree, and dpkg keeps the owner of existing directories on upgrade; this
-    # also repairs files the artisan commands above (run as root) may have created.
-    # chown -h everywhere: these places are writable by the web user, and following a symlink planted
-    # there would hand it any file on the system.
-    fix_ownership() {
-        APP=/var/lib/cmprovision
-        find "$APP" -xdev \( -path "$APP/storage" -o -path "$APP/bootstrap/cache" -o -path "$APP/public/uploads" \
-            -o -path "$APP/etc" -o -path "$APP/.env" -o -path "$APP/database/database.sqlite*" \) -prune \
-            -o -user www-data -exec chown -h root:root {} +
-        chown -R -h www-data:www-data "$APP/storage" "$APP/bootstrap/cache" "$APP/public/uploads" "$APP/etc"
-        chown -h www-data:www-data "$APP/database"
-        for f in "$APP/.env" "$APP"/database/database.sqlite*; do
-            if [ -f "$f" ] && [ ! -L "$f" ]; then chown -h www-data:www-data "$f"; fi
-        done
-        return 0
-    }
+    # Ownership again (fix_ownership above): what the steps run as root created
     fix_ownership || echo "Could not adjust file ownership in /var/lib/cmprovision"
 
   ;;
