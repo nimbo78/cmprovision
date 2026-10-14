@@ -74,15 +74,17 @@ class Ports extends Component
         $now = Carbon::now()->getTimestamp();
         $switches = [];
         foreach ($stand['switches'] as $id => $state)
-            $switches[] = self::block($id, $state, $stand['map']['switches'][$id] ?? null, $now);
+            $switches[] = self::block($id, $state, $stand['map']['switches'][$id] ?? null, $now,
+                $state['same_as'] ? $stand['switches'][$state['same_as']] : null);
         usort($switches, function ($a, $b) { return strnatcasecmp($a['name'], $b['name']) ?: $a['id'] - $b['id']; });
         $tile = $stand['map']['tiles'][$this->selected] ?? null;
         $writable = (bool) array_filter($stand['switches'], function ($state) { return PoeControl::writable($state['config']); });
         return view('livewire.ports', [
             'configured' => true,
             'switches' => $switches,
-            // two switches with one name give boards nobody can tell apart
-            'duplicates' => array_keys(array_filter(array_count_values(array_column($switches, 'name')), function ($n) { return $n > 1; })),
+            // two switches with one name give boards nobody can tell apart (one switch under two addresses says so itself)
+            'duplicates' => array_keys(array_filter(array_count_values(array_column(array_filter($switches, function ($s) { return !$s['same']; }), 'name')),
+                function ($n) { return $n > 1; })),
             'asOf' => self::asOf($stand['switches']),
             'map' => $stand['map'],
             'tile' => $tile,
@@ -94,19 +96,23 @@ class Ports extends Component
         ]);
     }
 
-    /* One switch's block: its line, what it says while silent, a placeholder before its first answer */
-    protected static function block(int $id, array $state, ?array $part, int $now): array
+    /* One switch's block: its line, what it says while silent, a placeholder before its first answer or instead of the
+       ports of a switch that is in the list twice ($same: the state of the row that is drawn) */
+    protected static function block(int $id, array $state, ?array $part, int $now, ?array $same = null): array
     {
         $snapshot = $state['snapshot'];
         $error = $state['error'];
         $note = $placeholder = null;
-        if ($snapshot && $error)
+        if ($same)
+            $placeholder = 'Same switch as '.$same['switch']->hostname().' ('.$same['switch']->host
+                .'): delete one of them under Settings → Ethernet switches.';
+        elseif ($snapshot && $error)
             $note = 'As of '.self::clock($snapshot['taken_at']).', not answering since '.self::clock($error['since']).': '.$error['message'];
         elseif (!$snapshot)
             // another page may hold the poll: its snapshot comes with the next refresh
             $placeholder = $error ? 'Cannot read the switch: '.$error['message'] : 'Asking the switch…';
         return ['id' => $id, 'name' => $state['switch']->hostname(), 'line' => self::header($state, $now), 'note' => $note,
-                'placeholder' => $placeholder, 'part' => $part,
+                'placeholder' => $placeholder, 'part' => $part, 'same' => (bool) $same,
                 'noMacTable' => $snapshot && $snapshot['mac_method'] === null && in_array(true, array_column($snapshot['ports'], 'up'), true)];
     }
 

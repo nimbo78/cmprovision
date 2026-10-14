@@ -350,6 +350,21 @@ class PortsPageTest extends TestCase
             ->assertSee('Two switches are called Switch: their boards look the same. Rename one on the switch.');
     }
 
+    public function test_one_switch_under_two_addresses_is_shown_once_with_what_to_do()
+    {
+        $this->switchWithModule();
+        $second = $this->secondFakeSwitch();
+        foreach ([$this->fake, $second] as $fake) {
+            $fake->tables[''][SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0'] = hex2bin('0057d297a180');
+            $fake->tables[''][SwitchSnapshot::OID_SYSNAME.'.0'] = 'sw01';
+        }
+        Livewire::test(Ports::class)
+            ->assertSee('Same switch as sw01 (192.0.2.10): delete one of them under Settings → Ethernet switches.')
+            ->assertDontSee('Two switches are called')
+            ->assertDontSeeHtml('wire:key="s2p8"')
+            ->assertSee('1 module on the stand');
+    }
+
     public function test_a_port_of_the_second_switch_opens_its_details()
     {
         $this->switchWithModule();

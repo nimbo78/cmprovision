@@ -3,6 +3,7 @@
 namespace App\Services\Switch;
 
 use App\Models\Cm;
+use Illuminate\Support\Carbon;
 
 /* The port of a module that has just asked for its script: the stand map's port for its MAC (Stand, the map every page
    uses), as a board "hostname port"; a warning names the switches that did not answer */
@@ -23,8 +24,10 @@ class PortLookup
         $stand = Stand::current(null, self::WAIT, [$module]);
         if (!$stand)
             return $none;
-        if (!isset($stand['map']['owners'][$mac]))
-            $stand = Stand::current($since, self::WAIT, [$module]);   // the switches learnt it after their last poll
+        // no port of its own yet (unknown, behind a link only, or a tie): the switches may have learnt it after their
+        // last poll, and a slow switch's snapshot stays fresh for twice its poll time
+        if (($stand['map']['owners'][$mac]['key'] ?? null) === null)
+            $stand = Stand::current($since, self::WAIT, [$module]);
 
         $silent = [];
         foreach ($stand['switches'] as $state)
@@ -34,6 +37,11 @@ class PortLookup
         $owner = $stand['map']['owners'][$mac] ?? null;
         $tile = $owner && $owner['key'] !== null ? $stand['map']['tiles'][$owner['key']] : null;
 
+        // a switch that does not answer shows where the module was when it last did: it may be elsewhere by now
+        $state = $tile ? $stand['switches'][$tile['switch_id']] : null;
+        if ($tile && !Stand::answering($state))
+            return ['warning' => 'Switch port unknown: MAC '.$mac.' last seen on '.$tile['label'].' at '
+                .Carbon::createFromTimestamp($state['snapshot']['taken_at'])->local()->format('H:i:s').'; '.$silentText] + $none;
         // other addresses on its port may be a link to a silent switch nobody can tell now
         if ($tile && !($silent && $tile['others'] > 0))
             return ['switch' => $stand['switches'][$tile['switch_id']]['switch'], 'port' => $tile['board_port'],

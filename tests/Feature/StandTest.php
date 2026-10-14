@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\Cm;
 use App\Models\EthernetSwitch;
 use App\Services\Switch\Stand;
+use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\PoeStand;
 use Tests\TestCase;
@@ -48,6 +50,21 @@ class StandTest extends TestCase
         $map = Stand::current()['map'];
 
         $this->assertSame(['s1p8', 's2p8'], [Stand::tileOf($map, $one)['key'], Stand::tileOf($map, $two)['key']]);
+    }
+
+    public function test_one_switch_under_two_addresses_is_drawn_once()
+    {
+        $this->stand();
+        $this->secondSwitch();
+        // 192.0.2.11 answers as the switch at 192.0.2.10: the same base MAC
+        foreach ([$this->fake, $this->fake2] as $fake)
+            $fake->tables[''][SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0'] = hex2bin('0057d297a180');
+
+        $stand = Stand::current();
+
+        $this->assertSame([null, 1], [$stand['switches'][1]['same_as'], $stand['switches'][2]['same_as']]);
+        $this->assertSame([1], array_keys($stand['map']['switches']), 'its twin ports would tie every module');
+        $this->assertSame('s1p8', Stand::tileOf($stand['map'], Cm::where('serial', '10000000e611110c')->first())['key']);
     }
 
     public function test_a_link_found_between_the_switches_is_remembered()

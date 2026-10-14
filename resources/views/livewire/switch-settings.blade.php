@@ -5,6 +5,9 @@
     @if ($notice)
         <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $notice }}</div>
     @endif
+    @foreach ($same as $text)
+        <div class="bg-warn-bg border-l-4 border-warn-bar text-warn px-4 py-3 rounded mb-4" role="status">{{ $text }}</div>
+    @endforeach
     @foreach ($duplicates as $name)
         <div class="bg-warn-bg border-l-4 border-warn-bar text-warn px-4 py-3 rounded mb-4" role="status">
             Two switches are called {{ $name }}: their boards look the same. Rename one on the switch.

@@ -15,14 +15,16 @@ use App\Services\Switch\SwitchSnapshot;
 use App\Services\SwitchPortFinder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use App\Services\Switch\Stand;
 use Tests\Support\FakeSnmp;
+use Tests\Support\PoeStand;
 use Tests\Support\SwitchRow;
 use Tests\TestCase;
 
 /** The SNMP switches that tell which port a module is plugged into are listed and set up on the settings page. */
 class SwitchSettingsTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PoeStand;
 
     const MODULE = 'e4:5f:01:62:9f:d3';
 
@@ -148,6 +150,20 @@ class SwitchSettingsTest extends TestCase
             ->call('add')->set('host', '192.168.25.2')->set('version', '2c')->set('community', '')
             ->call('save')
             ->assertHasErrors(['community']);
+    }
+
+    public function test_one_switch_under_two_addresses_is_named_in_the_list()
+    {
+        $this->stand();
+        $this->secondSwitch(['write_community' => '']);
+        foreach ([$this->fake, $this->fake2] as $fake) {
+            $fake->tables[''][SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0'] = hex2bin('0057d297a180');
+            $fake->tables[''][SwitchSnapshot::OID_SYSNAME.'.0'] = 'sw01';
+        }
+        Stand::current();   // what each address answered stays in the snapshot cache
+        Livewire::test(SwitchSettings::class)
+            ->assertSee('sw01 (192.0.2.10) and sw01 (192.0.2.11) are the same switch (base MAC 00:57:d2:97:a1:80): delete one of them.')
+            ->assertDontSee('Two switches are called');
     }
 
     public function test_switches_are_listed_and_a_second_one_is_added()

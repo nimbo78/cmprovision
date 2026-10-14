@@ -19,7 +19,8 @@ class Stand
        modules, not the office network behind an uplink */
     const LOOKUP_MACS = 48;
 
-    /** ['switches' => [id => ['switch' => EthernetSwitch, 'config', 'snapshot', 'error', 'checked_at']], 'map'] (a
+    /** ['switches' => [id => ['switch' => EthernetSwitch, 'config', 'snapshot', 'error', 'checked_at', 'same_as' => id of the
+        row of the same switch, which is in the map instead]], 'map'] (a
         snapshot is null until its switch has answered once, the map until one of them has; checked_at: when the switch
         was last asked), or null without a switch. $notOlderThan and $wait go to SnapshotCache::current(); $extra:
         modules the database does not hold yet (one at its start) */
@@ -41,12 +42,24 @@ class Stand
                                     'error' => $state['error'], 'checked_at' => $state['checked_at']];
         }
 
+        // one switch under two addresses (its IP and its name, say) answers with one base MAC: the later row stays out
+        // of the map, or every module would tie between their twin ports
+        $first = [];
+        foreach ($states as $id => $state)
+        {
+            $mac = $state['snapshot']['identity']['mac'] ?? null;
+            $states[$id]['same_as'] = $mac !== null && isset($first[$mac]) ? $first[$mac] : null;
+            if ($mac !== null && !isset($first[$mac]))
+                $first[$mac] = $id;
+        }
+
         $parts = [];
         foreach ($states as $id => $state)
-            $parts[] = ['id' => $id, 'name' => $state['switch']->hostname(), 'snapshot' => $state['snapshot'],
-                        'answering' => self::answering($state), 'own_macs' => $state['switch']->own_macs ?? [],
-                        'links' => $state['switch']->links ?? []];
-        $snapshots = array_values(array_filter(array_column($states, 'snapshot')));
+            if (!$state['same_as'])
+                $parts[] = ['id' => $id, 'name' => $state['switch']->hostname(), 'snapshot' => $state['snapshot'],
+                            'answering' => self::answering($state), 'own_macs' => $state['switch']->own_macs ?? [],
+                            'links' => $state['switch']->links ?? []];
+        $snapshots = array_values(array_filter(array_column($parts, 'snapshot')));
         $extra = is_array($extra) ? $extra : iterator_to_array($extra, false);
         $map = $snapshots
             ? (new StandMap($parts, array_merge(self::modulesOn($snapshots), $extra), app(NetworkStatus::class)->serverMac()))->build()
@@ -54,7 +67,7 @@ class Stand
         // a link is found again while both switches answer; while its neighbour is silent the map keeps it from here
         if ($map)
             foreach ($states as $id => $state)
-                if (self::answering($state) && ($state['switch']->links ?? []) != $map['switches'][$id]['links'])
+                if (self::answering($state) && isset($map['switches'][$id]) && ($state['switch']->links ?? []) != $map['switches'][$id]['links'])
                     $state['switch']->forceFill(['links' => $map['switches'][$id]['links']])->save();
         return ['switches' => $states, 'map' => $map];
     }

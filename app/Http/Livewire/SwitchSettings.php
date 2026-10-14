@@ -38,18 +38,34 @@ class SwitchSettings extends Component
 
     public function render()
     {
-        $switches = [];
+        $switches = $byMac = [];
         foreach (EthernetSwitch::orderBy('id')->get() as $switch)
         {
             $config = $switch->config();
-            $switches[] = ['id' => $switch->id, 'name' => $switch->hostname(), 'host' => $switch->host,
-                           'version' => 'v'.$config['version'], 'writable' => PoeControl::writable($config),
-                           'state' => self::lastAnswer($switch->host)];
+            $last = (new SnapshotCache($switch->host, function () { return null; }))->last();
+            $switches[$switch->id] = ['id' => $switch->id, 'name' => $switch->hostname(), 'host' => $switch->host,
+                                      'version' => 'v'.$config['version'], 'writable' => PoeControl::writable($config),
+                                      'state' => self::lastAnswer($last), 'same' => false];
+            // one switch under two addresses: the base MAC each address answered with (Stand draws only the first)
+            $mac = $last['snapshot']['identity']['mac'] ?? $switch->base_mac;
+            if ($mac !== null)
+                $byMac[$mac][] = $switch->id;
         }
+        $same = [];
+        foreach ($byMac as $mac => $ids)
+            if (count($ids) > 1)
+            {
+                $same[] = implode(' and ', array_map(function ($id) use ($switches) { return $switches[$id]['name'].' ('.$switches[$id]['host'].')'; }, $ids))
+                    .' are the same switch (base MAC '.$mac.'): delete one of them.';
+                foreach ($ids as $id)
+                    $switches[$id]['same'] = true;
+            }
         return view('livewire.switch-settings', [
-            'switches' => $switches,
+            'switches' => array_values($switches),
+            'same' => $same,
             // two switches with one name give boards nobody can tell apart
-            'duplicates' => array_keys(array_filter(array_count_values(array_column($switches, 'name')), function ($n) { return $n > 1; })),
+            'duplicates' => array_keys(array_filter(array_count_values(array_column(array_filter($switches, function ($s) { return !$s['same']; }), 'name')),
+                function ($n) { return $n > 1; })),
         ]);
     }
 
@@ -376,10 +392,9 @@ class SwitchSettings extends Component
         return $other ? 'This is '.$other->hostname().' ('.$other->host.') under another address.' : null;
     }
 
-    /* What the stand's last poll of the switch said (SnapshotCache), without asking it now */
-    protected static function lastAnswer(string $host): string
+    /* What the stand's last poll of the switch said (SnapshotCache::last()), without asking it now */
+    protected static function lastAnswer(array $state): string
     {
-        $state = (new SnapshotCache($host, function () { return null; }))->last();
         if (!$state['checked_at'])
             return 'not asked yet';
         if ($state['error'])

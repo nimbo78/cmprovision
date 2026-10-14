@@ -8,6 +8,8 @@ use App\Services\Switch\PortLookup;
 use App\Services\Switch\Stand;
 use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Tests\Support\PoeStand;
 use Tests\TestCase;
 
@@ -91,6 +93,46 @@ class PortLookupTest extends TestCase
         $walks = count($this->fake->walks);
         PortLookup::find('10000000e611110c', 'e4:5f:01:62:9f:d3', now()->getTimestamp() - 1);
         $this->assertSame($walks, count($this->fake->walks));
+    }
+
+    public function test_a_module_seen_only_on_the_link_has_its_own_switch_asked_again()
+    {
+        Carbon::setTestNow('2026-10-14 10:00:00');
+        $this->stand();
+        $this->secondSwitch();
+        $this->fake2->tables[''][SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0'] = hex2bin('0057d297a180');
+        $module = MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.98.159.213.10.0';   // e4:5f:01:62:9f:d5
+        unset($this->fake2->tables[''][$module]);                             // not up yet
+        Stand::current();
+        // sw02 is slow: its snapshot holds twice its poll time, here 20 s
+        $state = Cache::get('switch-snapshot:192.0.2.11');
+        $state['snapshot']['duration'] = 10;
+        Cache::put('switch-snapshot:192.0.2.11', $state, 3600);
+        // the module comes up on sw02 GE0/0/3; sw01 sees it on GE0/0/2, its link to sw02
+        $this->fake2->tables[''][$module] = 8;
+        $this->fake->tables[''][$module] = 7;
+        $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.0.87.210.151.161.128.1.0'] = 7;
+        Carbon::setTestNow('2026-10-14 10:00:06');
+
+        $found = PortLookup::find('10000000e611110f', 'e4:5f:01:62:9f:d5', now()->getTimestamp());
+
+        $this->assertSame('sw02 GE0/0/3', $found['board'], "sw02's snapshot is from before the module's request");
+    }
+
+    public function test_a_silent_switch_s_last_snapshot_gives_no_board()
+    {
+        Carbon::setTestNow('2026-10-14 10:00:00');
+        $this->stand();
+        $this->secondSwitch(['write_community' => 'private', 'sys_name' => 'sw02']);
+        Stand::current();                               // sw02 saw the module on GE0/0/3 then
+        $this->fake2->timeout = true;
+        Carbon::setTestNow('2026-10-14 11:00:00');      // an hour on, sw02 does not answer: the module may be anywhere
+
+        $found = PortLookup::find('10000000e611110f', 'e4:5f:01:62:9f:d5', now()->getTimestamp());
+
+        $this->assertSame([null, null, null], [$found['board'], $found['switch'], $found['port']]);
+        $this->assertStringContainsString('Switch port unknown: MAC e4:5f:01:62:9f:d5 last seen on sw02 GE0/0/3 at ', $found['warning']);
+        $this->assertStringContainsString('sw02 does not answer', $found['warning']);
     }
 
     public function test_a_module_that_came_after_the_last_poll_gets_a_new_one()
