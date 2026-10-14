@@ -30,13 +30,14 @@ class PackagingTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('#^\s*"\$APP/artisan"#m', $restore);
     }
 
-    public function test_the_backup_copies_the_database_straight_into_the_root_only_snapshot()
+    public function test_the_backup_never_opens_a_file_of_the_web_user_as_root()
     {
-        // as root: SQLite gives the -wal and -shm files a root process creates the database file's owner, while a
-        // directory of the web user would let it plant a symlink for root to move or chown
+        // a root sqlite3 would open the -wal and -shm files in the web user's directory, where a planted symlink makes
+        // root write to or chown any file; root only writes its own snapshot from what the web user's cat reads
         $backup = $this->file('tools/backup.sh');
-        $this->assertStringContainsString("sqlite3 -cmd '.timeout 10000' \"\$APP/database/database.sqlite\" \".backup '\$OUT/database.sqlite'\"", $backup);
-        $this->assertStringNotContainsString('runuser', $backup);
+        $this->assertStringContainsString("runuser -u www-data -- sqlite3 -cmd '.timeout 10000' \"\$APP/database/database.sqlite\" \".backup '\$TMPDB/database.sqlite'\"", $backup);
+        $this->assertStringContainsString('runuser -u www-data -- cat "$TMPDB/database.sqlite" > "$OUT/database.sqlite"', $backup);
+        $this->assertDoesNotMatchRegularExpression('#^\s*(sqlite3|mv|chown) #m', $backup);
     }
 
     public function test_two_queue_workers()
