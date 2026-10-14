@@ -30,8 +30,9 @@ class Notifier
     const RETRY_SECONDS = 30;           // after a failed delivery
     const GAP_MICROSECONDS = 1000000;   // between two calls to one chat
     const SPLIT = 4000;                 // characters in one message (Telegram takes 4096)
-    const BLOCKED = 'notify-blocked:';  // cache: until when a chat asked to be left alone
+    const BLOCKED = 'notify-blocked:';  // cache: until when the channel is left alone (a rate limit, a failed delivery)
     const LAST_CALL = 'notify-last-call:';
+    const STALE_THREAD_SECONDS = 60;    // a summary not posted by then was left half done by a process that died
 
     protected $editError = null;   // a summary that could not be edited while the pack went out
 
@@ -104,7 +105,11 @@ class Notifier
                 $row->update(['attempts' => $attempts, 'error' => $error, 'sent_at' => $attempts >= self::ATTEMPTS ? now() : null]);
                 $left = $left || $attempts < self::ATTEMPTS;
             }
-            return $left ? self::RETRY_SECONDS : null;
+            if (!$left)
+                return null;
+            // a run queued by a new event meanwhile leaves the channel alone until then too
+            Cache::put(self::BLOCKED.$channel->id, now()->getTimestamp() + self::RETRY_SECONDS, self::RETRY_SECONDS + 60);
+            return self::RETRY_SECONDS;
         }
     }
 
@@ -197,6 +202,12 @@ class Notifier
     {
         $key = ['batch_id' => $batch->id, 'channel_id' => $channel->id];
         $thread = NotificationThread::where($key)->first();
+        // a summary another process began to post and never finished (it was killed): post it again
+        if ($thread && $thread->external_id === '' && $thread->created_at->lt(now()->subSeconds(self::STALE_THREAD_SECONDS)))
+        {
+            NotificationThread::whereKey($thread->id)->where('external_id', '')->delete();
+            $thread = null;
+        }
         if (!$thread)
         {
             try
@@ -225,7 +236,7 @@ class Notifier
             $thread = NotificationThread::where($key)->first();
             if ($thread && $thread->external_id !== '')
                 return $thread->external_id;
-            usleep(250000);
+            Sleep::usleep(250000);
         }
         throw new \RuntimeException('Batch summary was not posted in time');
     }

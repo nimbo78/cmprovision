@@ -13,6 +13,8 @@ use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Sleep;
 use Tests\Support\PoeStand;
 use Tests\TestCase;
@@ -227,6 +229,24 @@ class PoeRestartTest extends TestCase
 
         $this->assertSame([], $this->fake->sets);
         $this->assertSame('the module on sw01 GE0/0/2 is writing its bootloader EEPROM', $result['skipped']['sw01 GE0/0/2']);
+    }
+
+    public function test_a_port_whose_eeprom_check_fails_keeps_its_power_and_the_rest_restart()
+    {
+        $this->stand();
+        $this->secondModule();                                       // a failed module on GE0/0/2 as well
+        $this->fake->onSet = function ($oid) {
+            if ($oid === self::OID8 && Schema::hasTable('cms'))
+                DB::statement('alter table cms rename to cms_away'); // the database fails part way through
+        };
+
+        $result = PoeRestart::ports(['s1p8', 's1p7'], 'igor');
+        DB::statement('alter table cms_away rename to cms');
+
+        $this->assertSame(['s1p8'], array_keys($result['restarted']));
+        $this->assertStringStartsWith('could not check whether the module on sw01 GE0/0/2 writes its bootloader EEPROM',
+            $result['skipped']['10000000e611110d']);
+        $this->assertNotContains([self::OID7, 'i', PoeControl::OFF], $this->fake->sets);
     }
 
     public function test_a_switch_off_without_an_answer_is_switched_on_again_after_the_pause()

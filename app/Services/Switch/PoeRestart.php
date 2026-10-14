@@ -258,7 +258,18 @@ class PoeRestart
             }
             // the snapshot may be half a minute old and the ports go off one by one: a module that began writing its
             // bootloader since then would be left with one that no longer boots from the network
-            if (self::eepromWriter($tile))
+            try
+            {
+                $writer = self::eepromWriter($tile);
+            }
+            catch (\Throwable $e)
+            {
+                // a port nobody could check keeps its power
+                self::skip($result['skipped'], $tile['serial'] ?? $tile['label'], 'could not check whether the module on '
+                    .$tile['label'].' writes its bootloader EEPROM: '.$e->getMessage(), $this->switch->host);
+                continue;
+            }
+            if ($writer)
             {
                 self::skip($result['skipped'], $tile['serial'] ?? $tile['label'],
                     'the module on '.$tile['label'].' is writing its bootloader EEPROM', $this->switch->host);

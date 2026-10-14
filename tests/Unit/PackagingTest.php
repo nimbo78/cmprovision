@@ -30,6 +30,22 @@ class PackagingTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('#^\s*"\$APP/artisan"#m', $restore);
     }
 
+    public function test_going_back_below_2_5_stops_the_image_worker()
+    {
+        // the unit file leaves with the package; without this the worker runs the old code until a reboot
+        $prerm = $this->file('debian/prerm');
+        $this->assertStringContainsString('dpkg --compare-versions "$2" lt "2.5.0~"', $prerm);
+        $this->assertStringContainsString('deb-systemd-invoke stop cmprovision-queue-images.service', $prerm);
+        $this->assertStringContainsString('#DEBHELPER#', $prerm);
+    }
+
+    public function test_the_pool_file_says_it_is_rewritten_and_the_site_moves_only_to_a_pool_that_exists()
+    {
+        $postinst = $this->file('debian/postinst');
+        $this->assertStringContainsString('; written by the cmprovision4 package on every configure: local changes are lost', $postinst);
+        $this->assertStringContainsString('if [ -f "$POOL" ] && grep -q "fastcgi_pass unix:/run/php/php[0-9.]*-fpm.sock"', $postinst);
+    }
+
     public function test_restore_stops_the_web_server_before_it_replaces_the_database()
     {
         // in WAL every connection opens -wal and -shm by name: one left open across the swap would mix the old files

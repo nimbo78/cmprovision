@@ -19,6 +19,7 @@ class FlushNotifications implements ShouldQueue, ShouldBeUniqueUntilProcessing
     use Dispatchable, InteractsWithQueue, Queueable;
 
     const WINDOW = 10;
+    const KEEP_DAYS = 7;    // sent events are kept this long for a look at what went out
 
     public $uniqueFor = 600;
     public $timeout = 80;   // under the database queue's retry_after (90 s): never run twice at once
@@ -36,6 +37,7 @@ class FlushNotifications implements ShouldQueue, ShouldBeUniqueUntilProcessing
 
     public function handle(Notifier $notifier): void
     {
+        NotificationOutbox::whereNotNull('sent_at')->where('sent_at', '<', now()->subDays(self::KEEP_DAYS))->delete();
         $wait = null;
         $ids = NotificationOutbox::whereNull('sent_at')->distinct()->pluck('channel_id');
         foreach (NotificationChannel::whereIn('id', $ids)->orderBy('id')->get() as $channel)

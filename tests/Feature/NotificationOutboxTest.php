@@ -233,6 +233,61 @@ class NotificationOutboxTest extends TestCase
         Queue::assertPushed(FlushNotifications::class, fn ($job) => (int) now()->diffInSeconds($job->delay, true) === Notifier::RETRY_SECONDS);
     }
 
+    public function test_a_failed_delivery_waits_its_30_seconds_even_when_a_new_event_comes()
+    {
+        Http::fake(['hooks.example.org/*' => Http::response('down', 500)]);
+        $this->channel('webhook', ['url' => 'https://hooks.example.org/cm']);
+        app(Notifier::class)->notify($this->module(1, 'done'), 'completed');
+        $this->flush();                                             // fails: the next try in 30 s
+        app(Notifier::class)->notify($this->module(2, 'done'), 'completed');
+        Carbon::setTestNow(now()->addSeconds(FlushNotifications::WINDOW));
+
+        $this->flush();                                             // the run the new event queued
+        Http::assertSentCount(1);
+
+        Carbon::setTestNow(now()->addSeconds(Notifier::RETRY_SECONDS));
+        $this->flush();
+        Http::assertSentCount(2);                                   // the first event again, still failing
+    }
+
+    public function test_a_summary_left_half_posted_by_a_killed_run_is_posted_again()
+    {
+        $channel = $this->mattermost();
+        $stale = NotificationThread::create(['batch_id' => $this->batch->id, 'channel_id' => $channel->id, 'external_id' => '']);
+        NotificationThread::whereKey($stale->id)->update(['created_at' => now()->subMinutes(2)]);
+        app(Notifier::class)->notify($this->module(1, 'done'), 'completed');
+
+        $this->flush();
+
+        $this->assertCount(1, $this->replies());
+        $this->assertSame('summary1', NotificationThread::sole()->external_id);
+    }
+
+    public function test_the_summary_is_edited_when_the_pack_has_nothing_the_channel_wants()
+    {
+        $channel = $this->mattermost(['failed']);
+        NotificationThread::create(['batch_id' => $this->batch->id, 'channel_id' => $channel->id, 'external_id' => 'summary1']);
+        app(Notifier::class)->notify($this->module(1, 'done'), 'completed');
+
+        $this->flush();
+
+        $this->assertCount(0, $this->replies());
+        Http::assertSent(fn (Request $r) => Str::endsWith($r->url(), '/posts/summary1/patch') && Str::contains($r['message'], '✅ 1 done'));
+    }
+
+    public function test_events_sent_a_week_ago_are_cleared()
+    {
+        Http::fake();
+        $channel = $this->channel('webhook', ['url' => 'https://hooks.example.org/cm']);
+        $old = NotificationOutbox::create(['channel_id' => $channel->id, 'event' => 'completed', 'sent_at' => now()->subDays(FlushNotifications::KEEP_DAYS + 1)]);
+        $recent = NotificationOutbox::create(['channel_id' => $channel->id, 'event' => 'completed', 'sent_at' => now()->subDays(FlushNotifications::KEEP_DAYS - 1)]);
+
+        $this->flush();
+
+        $this->assertNull(NotificationOutbox::find($old->id));
+        $this->assertNotNull(NotificationOutbox::find($recent->id));
+    }
+
     public function test_after_five_failures_an_event_is_given_up()
     {
         Http::fake(['hooks.example.org/*' => Http::response('down', 500)]);
@@ -240,7 +295,10 @@ class NotificationOutboxTest extends TestCase
         app(Notifier::class)->notify($this->module(1, 'done'), 'completed');
 
         for ($i = 0; $i < Notifier::ATTEMPTS; $i++)
+        {
             $this->flush();
+            Carbon::setTestNow(now()->addSeconds(Notifier::RETRY_SECONDS));
+        }
 
         $row = NotificationOutbox::sole();
         $this->assertNotNull($row->sent_at);

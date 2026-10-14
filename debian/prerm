@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -e
+
+# Going back to a version without the image checksum worker (older than 2.5): its unit file leaves with this package,
+# so stop and disable the worker now, or it would run the old code next to the old worker until a reboot
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.5.0~"; then
+    deb-systemd-invoke stop cmprovision-queue-images.service >/dev/null || true
+    deb-systemd-helper disable cmprovision-queue-images.service >/dev/null || true
+fi
+
+#DEBHELPER#
+
+exit 0

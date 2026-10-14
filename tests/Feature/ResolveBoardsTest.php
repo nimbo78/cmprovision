@@ -12,6 +12,7 @@ use App\Models\Label;
 use App\Models\Project;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\NetworkStatus;
 use App\Services\Switch\MacTable;
 use App\Services\Switch\Stand;
 use Illuminate\Contracts\Bus\Dispatcher;
@@ -275,6 +276,52 @@ class ResolveBoardsTest extends TestCase
         $this->get(self::START.'10000000e611110c&mac=e4:5f:01:62:9f:d3')->assertOk()->assertSee('Writing image from');
 
         $this->assertSame('write', Cm::where('serial', '10000000e611110c')->value('phase'));
+    }
+
+    public function test_the_log_of_a_start_gets_its_board_once_it_is_known()
+    {
+        Queue::fake();
+        $this->stand();
+        $this->project();
+        $this->get(self::START.'10000000e611110c&mac=e4:5f:01:62:9f:d3')->assertOk();
+        $started = fn () => Cmlog::where('cm', '10000000e611110c')->where('msg', 'like', 'Provisioning started%')->value('board');
+        $this->assertNull($started());
+
+        (new ResolveBoards)->handle();
+
+        $this->assertSame('sw01 GE0/0/3', $started());
+    }
+
+    public function test_a_stand_that_cannot_be_read_waits_and_then_warns()
+    {
+        Queue::fake();
+        $this->stand();
+        $this->mock(NetworkStatus::class, function ($mock) {
+            $mock->shouldReceive('serverMac')->andThrow(new \RuntimeException('no route to the stand'));
+            $mock->shouldReceive('current')->andReturn(null);
+        });
+        $cm = $this->pending('10000000e611110c', 'e4:5f:01:62:9f:d3');
+
+        (new ResolveBoards)->handle();
+        $this->assertNotNull($cm->fresh()->board_pending_since);
+        Queue::assertPushed(ResolveBoards::class);
+
+        Carbon::setTestNow(now()->addSeconds(ResolveBoards::GIVE_UP_SECONDS));
+        (new ResolveBoards)->handle();
+        $this->assertNull($cm->fresh()->board_pending_since);
+        $this->assertSame(1, Cmlog::where('cm', '10000000e611110c')->where('msg', 'Switch port unknown: no route to the stand')->count());
+    }
+
+    public function test_a_module_whose_switches_are_gone_gets_no_board_at_once()
+    {
+        Queue::fake();
+        $cm = $this->pending('10000000e611110c', 'e4:5f:01:62:9f:d3');   // the switches were removed after the start
+
+        (new ResolveBoards)->handle();
+
+        $this->assertSame([null, null], [$cm->fresh()->provisioning_board, $cm->fresh()->board_pending_since]);
+        $this->assertSame(0, Cmlog::where('cm', '10000000e611110c')->count());
+        Queue::assertNothingPushed();
     }
 
     public function test_the_dashboard_and_the_card_say_the_board_is_being_looked_up()

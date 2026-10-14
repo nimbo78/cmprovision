@@ -92,7 +92,8 @@ class ResolveBoards implements ShouldQueue, ShouldBeUniqueUntilProcessing
         another run recorded it first. A module refused at its start (failed by now) gets no label, as before 2.5 */
     public static function settle(Cm $cm, array $found): bool
     {
-        $recorded = Cm::whereKey($cm->id)->where('board_pending_since', $cm->board_pending_since)->update([
+        $since = $cm->board_pending_since;
+        $recorded = Cm::whereKey($cm->id)->where('board_pending_since', $since)->update([
             'provisioning_board' => $found['board'],
             'switch_id' => $found['switch']->id ?? null,
             'switch_name' => $found['switch'] ? $found['switch']->hostname() : null,
@@ -101,6 +102,9 @@ class ResolveBoards implements ShouldQueue, ShouldBeUniqueUntilProcessing
         ]);
         if (!$recorded)
             return false;
+        // the lines this start wrote before its board was known
+        if ($found['board'] !== null)
+            Cmlog::where('cm', $cm->serial)->whereNull('board')->where('created_at', '>=', $since)->update(['board' => $found['board']]);
         $cm->refresh();
         if ($found['warning'])
             Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => 'warning', 'msg' => $found['warning']]);
