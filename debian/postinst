@@ -150,6 +150,9 @@ POOLCONF
     sed -i "s/QUEUE_CONNECTION=sync/QUEUE_CONNECTION=database/" /var/lib/cmprovision/.env
     $ARTISAN config:clear
     $ARTISAN view:clear
+    # a route cache made by hand (artisan optimize) would keep the routes of the old version: since 2.5.1 that would
+    # put /scriptexecute back in the web group, refuse every module report (419) and drop the stand check
+    $ARTISAN route:clear
 
     DB=/var/lib/cmprovision/database/database.sqlite
     if [ -L "$DB" ]; then rm -f "$DB"; fi   # the database directory is the web user's: no symlinks for root to follow

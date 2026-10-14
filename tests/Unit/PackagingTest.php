@@ -88,6 +88,14 @@ class PackagingTest extends TestCase
         $this->assertStringContainsString('rm -f /etc/php/*/fpm/pool.d/cmprovision.conf', $this->file('debian/postrm'));
     }
 
+    public function test_an_upgrade_or_a_restore_never_keeps_a_cached_route_table()
+    {
+        // a route cache an operator once made (artisan optimize) would keep /scriptexecute in the web group: every module
+        // report a silent 419, and no stand check at all (2.5.1)
+        $this->assertStringContainsString('$ARTISAN route:clear', $this->file('debian/postinst'));
+        $this->assertStringContainsString('runuser -u www-data -- "$APP/artisan" route:clear', $this->file('tools/restore.sh'));
+    }
+
     public function test_no_trace_of_the_cm3_usb_network()
     {
         // CM3 reached the server only over USB with IPv6 link-local addresses, which /scriptexecute no longer answers (2.5.1)

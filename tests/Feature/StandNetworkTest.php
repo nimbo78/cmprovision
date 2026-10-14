@@ -151,6 +151,15 @@ class StandNetworkTest extends TestCase
         $this->assertSame(0, Cm::count());
     }
 
+    public function test_a_forwarded_header_does_not_open_the_door_even_with_every_proxy_trusted()
+    {
+        // then $request->ip() would be the header's 172.20.5.5: the check reads the connection's own address
+        config(['trustedproxy.proxies' => '*']);
+        $this->activeProject();
+        $this->fromAddress(self::OFFICE)->withHeaders(['X-Forwarded-For' => '172.20.5.5'])->get(self::START)->assertForbidden();
+        $this->assertSame(0, Cm::count());
+    }
+
     public function test_reports_from_another_network_leave_the_module_alone()
     {
         $this->activeProject();

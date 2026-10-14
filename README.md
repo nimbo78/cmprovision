@@ -23,7 +23,7 @@ This process requires a Raspberry Pi 4 which will be used solely to mass program
 
 **WARNING:** Do NOT connect eth0 to your office/public network, since it may also provision other Raspberry Pi devices. Instead, use the wireless LAN interface to access the web interface, and your local network.
 
-The modules' endpoint `/scriptexecute` takes no login, so it answers only the stand network 172.20.0.0/16 and the server itself: a request from any other network, the office included, gets 403.
+The modules' endpoint `/scriptexecute` takes no login, so it answers only the stand network 172.20.0.0/16 and the server itself: a request from any other network, the office included, gets 403. Keep nginx talking to the clients directly: a reverse proxy in front of it, or nginx's realip module (`set_real_ip_from`, `real_ip_header`), would make the client address come from a header.
 
 1. Start with a fresh 64-bit Raspberry Pi OS (Lite) installation. For simplicity, use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) and the advanced settings menu (Ctrl-Shift-X) to set the password, hostname and wireless LAN configuration.  
     

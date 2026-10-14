@@ -88,6 +88,8 @@ fi
 
 runuser -u www-data -- "$APP/artisan" config:clear >/dev/null
 runuser -u www-data -- "$APP/artisan" view:clear >/dev/null
+# a route cache made by hand (artisan optimize) goes too: the routes come from the files just put back
+runuser -u www-data -- "$APP/artisan" route:clear >/dev/null
 # the cache holds the queue's locks of jobs the restored table no longer has: they would hold new jobs back for minutes
 runuser -u www-data -- "$APP/artisan" cache:clear >/dev/null
 systemctl restart 'php*-fpm' nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot \
