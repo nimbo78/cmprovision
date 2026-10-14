@@ -10,6 +10,7 @@ use App\Services\Snmp\SnmpClient;
 use App\Services\Snmp\SnmpError;
 use App\Support\StandMap;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 
 /**
@@ -255,6 +256,14 @@ class PoeRestart
                 self::skip($result['skipped'], $tile['label'], 'no PoE object to write on '.$tile['label'], $this->switch->host);
                 continue;
             }
+            // the snapshot may be half a minute old and the ports go off one by one: a module that began writing its
+            // bootloader since then would be left with one that no longer boots from the network
+            if (self::eepromWriter($tile))
+            {
+                self::skip($result['skipped'], $tile['serial'] ?? $tile['label'],
+                    'the module on '.$tile['label'].' is writing its bootloader EEPROM', $this->switch->host);
+                continue;
+            }
             $outage = PoeOutage::create(['switch_id' => $this->switch->id, 'switch_host' => $this->switch->host,
                 'if_index' => $tile['ifIndex'], 'port' => $tile['label'], 'oid' => $oid, 'on_value' => PoeControl::ON,
                 'cm_serial' => $tile['serial'], 'user' => $this->user, 'off_at' => now()]);
@@ -270,6 +279,22 @@ class PoeRestart
             $off[] = [$outage, $state === 'off' ? $tile : $tile + ['unconfirmed' => $why]];
         }
         return $off;
+    }
+
+    /* A module behind this port that writes its bootloader EEPROM now, read from the database at the last moment: by
+       the MACs the snapshot saw on the port and by the port its board lookup recorded */
+    protected static function eepromWriter(array $tile): ?Cm
+    {
+        $candidates = Cm::where('phase', 'preinstall')->where(function ($q) use ($tile) {
+            $q->whereIn(DB::raw('lower(mac)'), $tile['macs'])
+              ->orWhere(function ($q) use ($tile) {
+                  $q->where('switch_id', $tile['switch_id'])->whereIn('switch_port', [$tile['board_port'], $tile['name']]);
+              });
+        })->get();
+        foreach ($candidates as $cm)
+            if (StandMap::writingEeprom($cm) && $cm->isActive() && $cm->silentFor() === null)
+                return $cm;
+        return null;
     }
 
     /* [state, why]: 'off'; 'unknown' when the switch did not answer or php-snmp failed, so the port may be off;

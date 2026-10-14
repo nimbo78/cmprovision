@@ -14,6 +14,7 @@ class FakeSnmp implements SnmpClient
     // what a php-snmp warning becomes (an ErrorException), "ignored" is taken without changing anything
     public $refuse = [];
     public $onWalk = null;   // called on every walk: a test acts while a poll runs
+    public $onSet = null;    // called on every write: a test acts while a restart runs
 
     public function __construct(array $tables, string $host = '192.0.2.1')
     {
@@ -47,6 +48,8 @@ class FakeSnmp implements SnmpClient
     public function set($oid, $type, $value)
     {
         $this->sets[] = [$oid, $type, $value];
+        if ($this->onSet)
+            ($this->onSet)($oid, $type, $value);
         $why = $this->refuse[$oid.'='.$value] ?? $this->refuse[$oid] ?? null;
         if ($this->timeout || $why === 'timeout')
             throw new SnmpError('No response from '.$this->host, true);

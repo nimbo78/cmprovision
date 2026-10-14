@@ -371,7 +371,7 @@ class StandMap
     }
 
     /* The step that flashes the project's bootloader EEPROM (ScriptExecuteController names it "Flash EEPROM firmware") */
-    protected static function writingEeprom(Cm $cm): bool
+    public static function writingEeprom(Cm $cm): bool
     {
         return $cm->phase === 'preinstall' && stripos((string) $cm->phase_detail, 'eeprom') !== false;
     }
