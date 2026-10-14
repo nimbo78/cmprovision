@@ -38,7 +38,7 @@ class Cm extends Model
         'temp1', 'temp2', 'provisioning_board', 'provisioning_started_at', 'provisioning_complete_at', 'project_id',
         'phase', 'phase_detail', 'phase_started_at', 'progress_bytes', 'progress_total', 'progress_updated_at',
         'notification_batch_id', 'eeprom_before', 'eeprom_config_before', 'eeprom_config_after', 'eeprom_result',
-        'switch_id', 'switch_name', 'switch_port',
+        'switch_id', 'switch_name', 'switch_port', 'board_pending_since',
         'timeline', 'polled_at', 'identify_until',
     ];
 
@@ -52,6 +52,7 @@ class Cm extends Model
         'timeline' => 'array',
         'polled_at' => 'datetime',
         'identify_until' => 'datetime',
+        'board_pending_since' => 'datetime',
     ];
 
     /* A module that finished and still asks the server whether to blink, i.e. is still on the bench */

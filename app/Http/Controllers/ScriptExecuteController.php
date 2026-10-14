@@ -7,15 +7,16 @@ use Illuminate\Support\Str;
 use App\Events\CmProvisioningComplete;
 use App\Events\CmProvisioningFailed;
 use App\Events\CmProvisioningStarted;
+use App\Jobs\ResolveBoards;
 use App\Models\Cm;
 use App\Models\Cmlog;
 use App\Models\EthernetSwitch;
-use App\Services\Switch\PortLookup;
 use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
 use App\Services\EepromImage;
+use App\Services\LabelPrinter;
 
 class ScriptExecuteController extends Controller
 {
@@ -91,6 +92,7 @@ class ScriptExecuteController extends Controller
                 {
                     $this->cm->markFailed($msg)->save();
                     $this->failed();
+                    $this->lookUpBoardLater();
                 }
             }
             catch (\Throwable $ignored)
@@ -137,27 +139,16 @@ exit 1
 
     public function startProvisoning(Request $req)
     {
-        $since = now()->getTimestamp();   // a switch's snapshot from before this may not know the module yet
         $project = Project::getActive();
         $image   = $project ? $project->image : null;
         $bootmode = $req->query('bootmode');
         $jumper  = $req->query('inversejumper');
 
-        $switchWarning = null;
-        $found = ['switch' => null, 'port' => null, 'board' => null];
-        if ($req->query('mac') && EthernetSwitch::exists())
+        // with switches the board is looked up in the background (ResolveBoards): the module gets its script at once
+        $lookUp = $req->query('mac') && EthernetSwitch::exists();
+        if ($lookUp)
         {
-            // the stand map's port (Stand): every switch asked, a link between them never taken for the module's port
-            try
-            {
-                $found = PortLookup::find((string) $this->serial, (string) $req->query('mac'), $since);
-                $switchWarning = $found['warning'];
-            }
-            catch (\Throwable $e)
-            {
-                $switchWarning = "Switch port unknown: ".$e->getMessage();
-            }
-            $board = $found['board'];
+            $board = null;
         }
         else if ($jumper)
         {
@@ -197,9 +188,10 @@ exit 1
             'image_filename' => $image ? $image->filename : null,
             'image_sha256'   => $image ? $image->sha256 : null,
             'provisioning_board' => $board,
-            'switch_id' => $found['switch']->id ?? null,
-            'switch_name' => $found['switch'] ? $found['switch']->hostname() : null,
-            'switch_port' => $found['port'],
+            'switch_id' => null,
+            'switch_name' => null,
+            'switch_port' => null,
+            'board_pending_since' => $lookUp ? now() : null,
             'provisioning_started_at' => now(),
             'provisioning_complete_at' => null,
             'phase' => null,
@@ -219,11 +211,6 @@ exit 1
             'eeprom_config_after' => $project && $project->eeprom_firmware ? EepromImage::normalizeConfig($project->eeprom_settings) : null,
             'eeprom_result' => null,
         ]);
-
-        if ($switchWarning)
-        {
-            $this->logInfo($switchWarning, 'warning');
-        }
 
         if (!$project)
         {
@@ -314,7 +301,7 @@ exit 1
         $msg = "Provisioning started.";
         if ($project->label_moment == 'preinstall' && $project->label)
         {
-            $msg .= " Printing label.";
+            $msg .= $this->cm->board_pending_since ? " Printing label once the switch port is known." : " Printing label.";
         }
         if (count($preinstall_scripts))
         {
@@ -330,7 +317,7 @@ exit 1
         }
         $this->logInfo($msg);
 
-        if ($project->label_moment == 'preinstall' && $project->label)
+        if ($project->label_moment == 'preinstall' && $project->label && !$this->cm->board_pending_since)
         {
             $this->printLabel();
         }
@@ -348,6 +335,7 @@ exit 1
             $part2 = $storage."2";
         }
 
+        $this->lookUpBoardLater();
         return response()->view('scriptexecute', [
             'cm' => $this->cm,
             'project' => $project,
@@ -533,6 +521,7 @@ exit 1
             $this->cm->markFailed($reason)->save();
             $this->failed();
         }
+        $this->lookUpBoardLater();
 
         return $this->failureScript(request(), $consoleMessage ?: $reason);
     }
@@ -580,50 +569,14 @@ exit 1
 
     public function printLabel()
     {
-        $labelsettings = $this->cm->project->label;
-        $label = str_replace('$mac', $this->cm->mac, $labelsettings->template);
-        $label = str_replace('$serial', $this->serial, $label);
-        // the board ("sw01 Gi0/3") and its two halves; empty without a switch
-        $label = str_replace(['$provisionboard', '$switch', '$port'],
-            [(string) $this->cm->provisioning_board, (string) $this->cm->switch_name, (string) $this->cm->switch_port], $label);
-        $tmpfile = tempnam(sys_get_temp_dir(), "label-");
+        LabelPrinter::print($this->cm, request()->ip());
+    }
 
-        try
-        {
-            if (!@file_put_contents($tmpfile, $label))
-                throw new \Exception("Error creating temporary file for label '$tmpfile'");
-
-            if ($labelsettings->printer_type == 'ftp')
-            {
-                $ftp = @ftp_connect($labelsettings->ftp_hostname);
-                if (!$ftp)
-                    throw new \Exception("Error connecting to printer's FTP server ".$labelsettings->ftp_hostname);
-                if (!@ftp_login($ftp, $labelsettings->ftp_username, $labelsettings->ftp_password))
-                    throw new \Exception("Error logging in to printer's FTP server. Check username and password");
-                @ftp_pasv($ftp, true);
-                if (!@ftp_put($ftp, "label-".$this->serial.".".$labelsettings->file_extension, $tmpfile))
-                    throw new \Exception("Error uploading file to printer's FTP server");
-                @ftp_close($ftp);
-            }
-            else if ($labelsettings->printer_type == 'command')
-            {
-                $cmd = str_replace('$file', escapeshellarg($tmpfile), $labelsettings->print_command);
-                $output = $retcode = null;
-                // stderr too: sh reports a file it cannot write there; the newline survives a trailing comment
-                if (@exec('{ '.$cmd."\n} 2>&1", $output, $retcode) === false)
-                    throw new \Exception("Error executing '$cmd'");
-                if ($retcode)
-                    throw new \Exception("Executing '$cmd' returned exit code $retcode. Program output:\n".implode("\n", $output));
-                // a command can report trouble and still exit 0 (a CSV it cannot write): keep what it said
-                $said = trim(implode("\n", $output));
-                if ($said !== '')
-                    $this->logInfo('Label command output: '.$said);
-            }
-        }
-        catch (\Exception $e)
-        {
-            $this->loginfo($e->getMessage(), 'error');
-        }
-        @unlink($tmpfile);
+    /* The module's board, when its start waits for one: looked up by the queue once the start has answered, so a
+       refused module is known as one by then */
+    protected function lookUpBoardLater()
+    {
+        if ($this->cm && $this->cm->board_pending_since)
+            ResolveBoards::dispatch();
     }
 }
