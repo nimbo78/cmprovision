@@ -10,8 +10,8 @@
 
 @if (!$configured)
     <div class="cmp-card px-4 py-3 text-fg">
-        No switch is set up. Enter its address under
-        <a href="{{ route('settings') }}" class="text-link hover:underline">Settings → Ethernet switch</a>
+        No switch is set up. Add one under
+        <a href="{{ route('settings') }}" class="text-link hover:underline">Settings → Ethernet switches</a>
         to see the stand by its ports.
     </div>
 @else
@@ -65,7 +65,7 @@
                 @if ($sw['noMacTable'])
                     <div class="bg-warn-bg border-l-4 border-warn-bar text-warn px-4 py-3 rounded mb-3" role="status">
                         The switch gave no MAC address table, so modules cannot be matched to its ports. Check the MAC table method under
-                        <a href="{{ route('settings') }}" class="underline">Settings → Ethernet switch</a>.
+                        <a href="{{ route('settings') }}" class="underline">Settings → Ethernet switches</a>.
                     </div>
                 @endif
                 <div class="overflow-x-auto pb-1">

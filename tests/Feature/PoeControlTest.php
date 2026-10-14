@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\EthernetSwitch;
 use App\Models\Setting;
 use App\Services\Snmp\SnmpClient;
 use App\Services\Switch\Poe;
 use App\Services\Switch\PoeControl;
-use App\Services\SwitchPortFinder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeSnmp;
@@ -22,8 +22,7 @@ class PoeControlTest extends TestCase
 
     protected function settings(array $values)
     {
-        SwitchRow::put($values);
-        return SwitchPortFinder::config();
+        return SwitchRow::put($values)->config();
     }
 
     public function test_write_access_needs_a_write_community_or_a_write_user()

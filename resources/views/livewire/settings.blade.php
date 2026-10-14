@@ -58,11 +58,12 @@
 
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
-                <h3 class="text-lg font-medium text-fg">Ethernet switch</h3>
+                <h3 class="text-lg font-medium text-fg">Ethernet switches</h3>
                 <p class="mt-1 text-sm text-fg-muted">
-                    With a managed switch, each module gets the switch port it is plugged into as its board:
-                    the server reads the switch's MAC address table over SNMP when the module starts.
-                    Without one, the board comes from the jumpers.
+                    With managed switches, each module gets the switch and port it is plugged into as its board
+                    ("sw01 Gi0/3"): the server reads the switches' MAC address tables over SNMP when the module starts.
+                    A port that leads to another switch of the list is never a module's port. Without a switch, the
+                    board comes from the jumpers.
                 </p>
             </div>
         </div>

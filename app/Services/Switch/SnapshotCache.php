@@ -86,6 +86,12 @@ class SnapshotCache
         return $state;
     }
 
+    /** The last poll's state without asking the switch (the settings page's list) */
+    public function last(): array
+    {
+        return $this->stored();
+    }
+
     protected function stored(): array
     {
         $state = Cache::get('switch-snapshot:'.$this->id);

@@ -3,13 +3,49 @@
     @php($label = 'block text-fg text-sm font-bold mb-2')
 
     @if ($notice)
-        <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}">{{ $notice }}</div>
+        <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $notice }}</div>
+    @endif
+    @foreach ($duplicates as $name)
+        <div class="bg-warn-bg border-l-4 border-warn-bar text-warn px-4 py-3 rounded mb-4" role="status">
+            Two switches are called {{ $name }}: their boards look the same. Rename one on the switch.
+        </div>
+    @endforeach
+
+    @if ($switches)
+        <div class="overflow-x-auto mb-4">
+            <table class="cmp-table">
+                <thead><tr><th>Name</th><th>Address</th><th>SNMP</th><th>Write access</th><th>Last answer</th><th></th></tr></thead>
+                <tbody>
+                @foreach ($switches as $s)
+                    <tr wire:key="switch-{{ $s['id'] }}" @class(['bg-head' => $form && (int) $editingId === $s['id']])>
+                        <td class="font-semibold">{{ $s['name'] }}</td>
+                        <td class="font-mono">{{ $s['host'] }}</td>
+                        <td>{{ $s['version'] }}</td>
+                        <td>{{ $s['writable'] ? 'PoE restart' : 'none' }}</td>
+                        <td class="text-fg-muted">{{ $s['state'] }}</td>
+                        <td class="whitespace-nowrap text-right">
+                            <button type="button" wire:click="edit({{ $s['id'] }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
+                            <button type="button" wire:click="delete({{ $s['id'] }})" wire:confirm="Remove {{ $s['name'] }} ({{ $s['host'] }}) from the stand? Its modules keep their boards."
+                                    class="cmp-btn cmp-btn-secondary cmp-btn-small ml-1">Delete</button>
+                        </td>
+                    </tr>
+                @endforeach
+                </tbody>
+            </table>
+        </div>
+    @else
+        <p class="text-sm text-fg-muted mb-4">No switch yet: boards come from the jumpers.</p>
     @endif
 
+    @if (!$form)
+        <button type="button" wire:click="add" class="cmp-btn">Add switch</button>
+    @else
+    <div class="border-t border-pline pt-4">
+    <div class="font-bold mb-3">{{ $editingId ? 'Edit switch' : 'New switch' }}</div>
     <div class="flex mb-4">
         <div class="w-full" style="margin-right: 1rem">
             <label class="{{ $label }}">Switch address</label>
-            <input type="text" wire:model="host" class="{{ $input }}" placeholder="192.168.25.2 (empty: lookup off)">
+            <input type="text" wire:model="host" class="{{ $input }}" placeholder="192.168.25.2">
             @error('host') <span class="text-neg text-sm">{{ $message }}</span> @enderror
         </div>
         <div style="min-width: 9rem">
@@ -127,11 +163,17 @@
 
     <button wire:click="test()" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary">Test</button>
     <button wire:click="checkWrite()" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary ml-2">Check write access</button>
-    <button wire:click="save()" class="cmp-btn ml-2">Save</button>
-    <span wire:loading wire:target="test,checkWrite" class="text-sm text-fg-muted ml-2">asking the switch...</span>
+    <button wire:click="save()" wire:loading.attr="disabled" class="cmp-btn ml-2">Save</button>
+    <button type="button" wire:click="cancel" class="cmp-btn cmp-btn-secondary ml-2">Cancel</button>
+    <span wire:loading wire:target="test,checkWrite,save" class="text-sm text-fg-muted ml-2">asking the switch...</span>
+    </div>
+    @endif
 
     @if ($result)
         <div class="mt-4 text-sm">
+            @if ($result['name'] || $result['mac'])
+                <div class="mb-2">The switch calls itself <span class="font-semibold">{{ $result['name'] ?? 'nothing' }}</span>@if ($result['mac']), base MAC <span class="font-mono">{{ $result['mac'] }}</span>@endif.</div>
+            @endif
             @if ($result['method'])
                 <div class="mb-2">MAC table read with <span class="font-semibold">{{ $result['method'] }}</span>: {{ count($result['rows']) }} addresses.</div>
             @endif

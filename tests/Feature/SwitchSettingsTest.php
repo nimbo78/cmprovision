@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Http\Livewire\SwitchSettings;
 use App\Models\Cm;
+use App\Models\EthernetSwitch;
 use App\Models\Image;
+use App\Models\PoeOutage;
 use App\Models\Project;
 use App\Models\Setting;
 use App\Models\User;
@@ -17,7 +19,7 @@ use Tests\Support\FakeSnmp;
 use Tests\Support\SwitchRow;
 use Tests\TestCase;
 
-/** The SNMP switch used to tell which port a module is plugged into is set up on the settings page. */
+/** The SNMP switches that tell which port a module is plugged into are listed and set up on the settings page. */
 class SwitchSettingsTest extends TestCase
 {
     use RefreshDatabase;
@@ -25,6 +27,13 @@ class SwitchSettingsTest extends TestCase
     const MODULE = 'e4:5f:01:62:9f:d3';
 
     protected $configs = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // saving reads the switch's name and base MAC: no real SNMP unless a test fakes a switch
+        $this->app->bind(SnmpClient::class, function () { return new FakeSnmp(['' => []]); });
+    }
 
     protected function fakeSwitch()
     {
@@ -51,7 +60,7 @@ class SwitchSettingsTest extends TestCase
 
     public function test_the_settings_page_has_a_switch_section()
     {
-        $this->actingAs(User::factory()->create())->get('/settings')->assertOk()->assertSee('Ethernet switch');
+        $this->actingAs(User::factory()->create())->get('/settings')->assertOk()->assertSee('Ethernet switches');
     }
 
     public function test_test_shows_ports_methods_and_known_modules()
@@ -60,7 +69,7 @@ class SwitchSettingsTest extends TestCase
         Cm::create(['serial' => '10000000e611110c', 'mac' => self::MODULE]);
 
         Livewire::test(SwitchSettings::class)
-            ->set('host', '192.168.25.2')->set('version', '2c')->set('community', 'line-ro')
+            ->call('add')->set('host', '192.168.25.2')->set('version', '2c')->set('community', 'line-ro')
             ->call('test')
             ->assertSee('GE0/0/5')
             ->assertSee(self::MODULE)
@@ -76,24 +85,24 @@ class SwitchSettingsTest extends TestCase
         $this->fakeSwitch()->timeout = true;
 
         Livewire::test(SwitchSettings::class)
-            ->set('host', '192.0.2.1')->set('version', '2c')->set('community', 'wrong')
+            ->call('add')->set('host', '192.0.2.1')->set('version', '2c')->set('community', 'wrong')
             ->call('test')
             ->assertSee('did not answer')
             ->assertDontSee('switch answered');
     }
 
-    public function test_v2c_settings_are_saved_and_an_empty_address_switches_the_lookup_off()
+    public function test_v2c_settings_are_saved_and_deleting_the_switch_switches_the_lookup_off()
     {
         Livewire::test(SwitchSettings::class)
-            ->set('host', '192.168.25.2')->set('version', '2c')->set('community', 'line-ro')->set('method', 'auto')
+            ->call('add')->set('host', '192.168.25.2')->set('version', '2c')->set('community', 'line-ro')->set('method', 'auto')
             ->call('save')->assertHasNoErrors();
 
         $this->assertSame('192.168.25.2', $this->setting('ip'));
         $this->assertSame('line-ro', $this->setting('snmp_community'));
         $this->assertSame('2c', $this->setting('snmp_version'));
 
-        Livewire::test(SwitchSettings::class)->set('host', '')->call('save');
-        $this->assertSame(0, \App\Models\EthernetSwitch::count());
+        Livewire::test(SwitchSettings::class)->call('delete', EthernetSwitch::sole()->id)->assertSee('Boards come from the jumpers again');
+        $this->assertSame(0, EthernetSwitch::count());
     }
 
     public function test_secrets_are_not_shown_and_kept_when_left_empty()
@@ -101,7 +110,7 @@ class SwitchSettingsTest extends TestCase
         SwitchRow::put(['ip' => '192.168.25.2', 'snmp_version' => '3', 'snmp_user' => 'cmprov', 'snmp_auth_protocol' => 'SHA',
                   'snmp_auth_password' => 'auth-secret', 'snmp_priv_protocol' => 'AES', 'snmp_priv_password' => 'priv-secret']);
 
-        Livewire::test(SwitchSettings::class)
+        Livewire::test(SwitchSettings::class)->call('edit', 1)
             ->assertSet('host', '192.168.25.2')->assertSet('user', 'cmprov')
             ->assertSet('authPassword', '')->assertSet('privPassword', '')
             ->assertDontSee('auth-secret')
@@ -116,29 +125,101 @@ class SwitchSettingsTest extends TestCase
         $this->fakeSwitch();
         SwitchRow::put(['ip' => '192.168.25.2', 'snmp_version' => '2c', 'snmp_community' => 'stored-secret']);
 
-        Livewire::test(SwitchSettings::class)->set('host', '203.0.113.9')->call('test');
+        Livewire::test(SwitchSettings::class)->call('edit', 1)->set('host', '203.0.113.9')->call('test');
         $this->assertNotSame('stored-secret', $this->configs[0]['community'] ?? null, 'test with a new address uses no stored community');
 
-        Livewire::test(SwitchSettings::class)->set('host', '203.0.113.9')->call('save')->assertHasErrors(['community']);
+        Livewire::test(SwitchSettings::class)->call('edit', 1)->set('host', '203.0.113.9')->call('save')->assertHasErrors(['community']);
         $this->assertSame('192.168.25.2', $this->setting('ip'));
 
         // the same switch keeps its stored community
-        Livewire::test(SwitchSettings::class)->call('test');
+        Livewire::test(SwitchSettings::class)->call('edit', 1)->call('test');
         $this->assertSame('stored-secret', end($this->configs)['community']);
     }
 
     public function test_settings_are_checked()
     {
         Livewire::test(SwitchSettings::class)
-            ->set('host', '192.168.25.2')->set('version', '3')->set('user', '')
+            ->call('add')->set('host', '192.168.25.2')->set('version', '3')->set('user', '')
             ->set('authProtocol', 'SHA')->set('authPassword', 'short')
             ->call('save')
             ->assertHasErrors(['user', 'authPassword']);
 
         Livewire::test(SwitchSettings::class)
-            ->set('host', '192.168.25.2')->set('version', '2c')->set('community', '')
+            ->call('add')->set('host', '192.168.25.2')->set('version', '2c')->set('community', '')
             ->call('save')
             ->assertHasErrors(['community']);
+    }
+
+    public function test_switches_are_listed_and_a_second_one_is_added()
+    {
+        EthernetSwitch::create(['host' => '192.0.2.10', 'community' => 'public', 'sys_name' => 'sw01']);
+        Livewire::test(SwitchSettings::class)
+            ->assertSee('sw01')->assertSee('192.0.2.10')
+            ->call('add')->set('host', '192.0.2.11')->set('community', 'public')->call('save')->assertHasNoErrors();
+        $this->assertSame(['192.0.2.10', '192.0.2.11'], EthernetSwitch::orderBy('id')->pluck('host')->all());
+    }
+
+    public function test_an_address_in_the_list_is_not_added_twice()
+    {
+        EthernetSwitch::create(['host' => '192.0.2.10', 'community' => 'public']);
+        Livewire::test(SwitchSettings::class)
+            ->call('add')->set('host', '192.0.2.10')->set('community', 'public')->call('save')->assertHasErrors(['host']);
+        $this->assertSame(1, EthernetSwitch::count());
+    }
+
+    public function test_a_secret_stays_with_its_own_switch()
+    {
+        EthernetSwitch::create(['host' => '192.0.2.10', 'community' => 'secret-one']);
+        $two = EthernetSwitch::create(['host' => '192.0.2.11', 'community' => 'secret-two']);
+        $page = Livewire::test(SwitchSettings::class)->call('edit', $two->id);
+        $this->assertStringNotContainsString('secret-two', $page->html());
+        $this->assertStringNotContainsString('secret-one', $page->html());
+        $page->set('method', 'bridge')->call('save')->assertHasNoErrors();
+        $this->assertSame('secret-two', $two->fresh()->community, 'left empty: kept for its own switch');
+        $page->call('edit', $two->id)->set('host', '192.0.2.12')->call('save')->assertHasErrors(['community']);
+    }
+
+    public function test_the_same_switch_under_another_address_is_refused()
+    {
+        EthernetSwitch::create(['host' => '192.0.2.10', 'base_mac' => '00:57:d2:97:a1:80', 'sys_name' => 'sw01']);
+        $fake = $this->fakeSwitch();   // answers any address: here 192.0.2.20, the same switch
+        $fake->tables[''][SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0'] = hex2bin('0057d297a180');
+        Livewire::test(SwitchSettings::class)->call('add')->set('host', '192.0.2.20')->set('community', 'public')->call('save')
+            ->assertHasErrors(['host'])->assertSee('This is sw01 (192.0.2.10) under another address');
+        $this->assertSame(1, EthernetSwitch::count());
+    }
+
+    public function test_a_switch_with_a_port_left_off_cannot_be_deleted()
+    {
+        $switch = EthernetSwitch::create(['host' => '192.0.2.10']);
+        PoeOutage::create(['switch_id' => $switch->id, 'switch_host' => '192.0.2.10', 'if_index' => 8, 'port' => 'sw01 GE0/0/3',
+            'oid' => '.1.3.6.1.4.1.2011.5.25.195.3.1.3.8', 'on_value' => 1, 'off_at' => now()->subMinutes(5), 'error' => 'timeout']);
+        Livewire::test(SwitchSettings::class)->call('delete', $switch->id)->assertSee('Switch them on (Power on) or forget them first');
+        $this->assertSame(1, EthernetSwitch::count());
+    }
+
+    public function test_test_and_save_read_the_name_and_base_mac()
+    {
+        $fake = $this->fakeSwitch();
+        $fake->tables[''][SwitchSnapshot::OID_SYSNAME.'.0'] = 'sw03.corp.example.com';
+        $fake->tables[''][SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0'] = hex2bin('0057d297a180');
+        Livewire::test(SwitchSettings::class)
+            ->call('add')->set('host', '192.0.2.13')->set('community', 'public')
+            ->call('test')->assertSee('sw03.corp.example.com')->assertSee('00:57:d2:97:a1:80')
+            ->call('save')->assertHasNoErrors();
+        $switch = EthernetSwitch::sole();
+        $this->assertSame(['sw03.corp.example.com', '00:57:d2:97:a1:80', 'sw03'], [$switch->sys_name, $switch->base_mac, $switch->hostname()]);
+    }
+
+    public function test_a_new_address_forgets_what_the_old_switch_said()
+    {
+        $switch = EthernetSwitch::create(['host' => '192.0.2.10', 'community' => 'public', 'sys_name' => 'sw01', 'base_mac' => '00:57:d2:97:a1:80',
+            'own_macs' => ['00:57:d2:97:a1:80'], 'links' => [24 => 2], 'method_detected' => 'bridge']);
+        Livewire::test(SwitchSettings::class)->call('edit', $switch->id)->set('host', '192.0.2.30')->set('community', 'public')
+            ->call('save')->assertHasNoErrors();
+        $switch->refresh();
+        $this->assertSame(['192.0.2.30', null, null, null, null, null],
+            [$switch->host, $switch->sys_name, $switch->base_mac, $switch->own_macs, $switch->links, $switch->method_detected]);
     }
 
     public function test_a_module_gets_its_switch_port_as_board_and_the_working_method_is_remembered()

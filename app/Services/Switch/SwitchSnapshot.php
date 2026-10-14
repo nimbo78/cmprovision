@@ -50,7 +50,7 @@ class SwitchSnapshot
         $this->id = $id;
     }
 
-    /* The switch of these settings (SwitchPortFinder::config()), named by its address */
+    /* The switch of these settings (EthernetSwitch::config()), named by its address */
     public static function forConfig(array $config): self
     {
         $snmp = app(SnmpClient::class, ['config' => $config]);
@@ -157,6 +157,19 @@ class SwitchSnapshot
         return array_values(array_unique($macs));
     }
 
+    /** What the switch calls itself (sysName) and its base MAC, for the settings page; null for what it does not say.
+        A silent switch throws */
+    public function nameAndMac(): array
+    {
+        return ['name' => $this->value(self::OID_SYSNAME.'.0'), 'mac' => self::mac($this->value(self::OID_BRIDGE_ADDRESS.'.0', false))];
+    }
+
+    /* Six octets as php-snmp gives them, as "00:57:d2:97:a1:80"; null for zeros or anything else */
+    protected static function mac($octets): ?string
+    {
+        return is_string($octets) && strlen($octets) === 6 && trim($octets, "\0") !== '' ? implode(':', str_split(bin2hex($octets), 2)) : null;
+    }
+
     /* [index => value] of a one-index column; [] when the switch does not have it; a silent switch throws */
     protected function column(string $oid): array
     {
@@ -240,7 +253,7 @@ class SwitchSnapshot
             'revision' => $revision,
             'serial' => $serial,
             'name' => $this->value(self::OID_SYSNAME.'.0'),
-            'mac' => is_string($mac) && strlen($mac) === 6 && trim($mac, "\0") !== '' ? implode(':', str_split(bin2hex($mac), 2)) : null,
+            'mac' => self::mac($mac),
         ];
     }
 

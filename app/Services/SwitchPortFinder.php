@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\EthernetSwitch;
 use App\Services\Snmp\SnmpClient;
 use App\Services\Snmp\SnmpError;
 use App\Services\Switch\MacTable;
@@ -36,17 +35,10 @@ class SwitchPortFinder
         $this->table = new MacTable($snmp, $method, $preferred);
     }
 
-    /* A finder for these settings (see config()), e.g. to test them before saving */
+    /* A finder for these settings (EthernetSwitch::config()), e.g. to test them before saving */
     public static function forConfig(array $config)
     {
         return new self(app(SnmpClient::class, ['config' => $config]), $config['method'] ?? 'auto', $config['detected'] ?? null);
-    }
-
-    /* The first switch of the stand, until every caller knows several (docs/superpowers/plans/2026-10-14-multi-switch.md) */
-    public static function config()
-    {
-        $switch = EthernetSwitch::orderBy('id')->first();
-        return $switch ? $switch->config() : EthernetSwitch::emptyConfig();
     }
 
     /**
