@@ -1,3 +1,15 @@
+cmprovision4 (2.5.1~dev1) unstable; urgency=medium
+
+  * /scriptexecute answers only the stand network 172.20.0.0/16 and the
+    server itself: from the office network it returns 403 with the reason.
+    The modules' route runs without the web middleware group, so a module
+    request no longer writes a row into the sessions table.
+  * Compute Module 3 and 3+ are no longer supported: they reached the
+    server only over USB with IPv6 link-local addresses. CM4 still boots
+    over USB through rpiboot.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 15 Oct 2026 02:36:25 +0300
+
 cmprovision4 (2.5.0) unstable; urgency=medium
 
   * 48 modules at once: a php-fpm pool of its own, SQLite in WAL with
