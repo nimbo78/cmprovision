@@ -54,7 +54,7 @@
                     @php($left = $m->secondsLeft())
                     @php($step = $m->phase === 'failed' && $m->phase_detail ? 'Failed: '.$m->phase_detail : $m->phaseLabel())
                     <tr wire:key="cm-{{ $m->id }}" class="{{ $m->phase === 'failed' ? 'bg-neg-bg' : '' }}">
-                        <td class="text-fg-muted whitespace-nowrap">{{ $m->provisioning_board }}</td>
+                        <td class="text-fg-muted whitespace-nowrap">@if ($m->board_pending_since)<span title="looking up the switch port">…</span>@else{{ $m->provisioning_board }}@endif</td>
                         <td class="mono"><a href="{{ route('cm', $m->serial) }}" class="text-link hover:underline">{{ $m->serial }}</a></td>
                         <td class="mono text-fg-muted">{{ $m->mac }}</td>
                         {{-- The step takes the width the other columns leave: a long reason wraps to two lines, all of it in the tooltip and on the module card --}}

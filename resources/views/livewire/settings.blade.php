@@ -122,6 +122,30 @@
                 <tr>
                     <td>
                         <ul class="list-outside list-disc ml-6">
+                            <li @if ($queueRunning) class="text-pos" @else class="text-neg" @endif>
+                                <span class="text-fg"> queue worker (switch ports, notifications)</span>
+                            </li>
+                        </ul>
+                    </td>
+                    <td>
+                        <button wire:click="viewLogQueue()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <ul class="list-outside list-disc ml-6">
+                            <li @if ($imagesQueueRunning) class="text-pos" @else class="text-neg" @endif>
+                                <span class="text-fg"> queue worker (image checksums)</span>
+                            </li>
+                        </ul>
+                    </td>
+                    <td>
+                        <button wire:click="viewLogImagesQueue()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <ul class="list-outside list-disc ml-6">
                             <li class="text-pos">
                                 <span class="text-fg"> web interface</span>
                             </li>

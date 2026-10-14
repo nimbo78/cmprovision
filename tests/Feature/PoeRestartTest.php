@@ -13,6 +13,8 @@ use App\Services\Switch\SwitchSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Sleep;
 use Tests\Support\PoeStand;
 use Tests\TestCase;
@@ -190,6 +192,61 @@ class PoeRestartTest extends TestCase
         $this->assertSame([[self::OID7, 'i', PoeControl::OFF], [self::OID7, 'i', PoeControl::ON]], $this->fake->sets);
         $this->assertDatabaseHas('cmlogs', ['cm' => '', 'board' => 'sw01 GE0/0/2', 'msg' => 'PoE restart of sw01 GE0/0/2 by igor: off for 5 s']);
         $this->assertSame('Restarted sw01 GE0/0/2: PoE was off for 5 s.', PoeRestart::message($result)['text']);
+    }
+
+    public function test_a_module_that_began_writing_its_eeprom_during_the_restart_keeps_its_power()
+    {
+        $this->stand();
+        // d8:3a:dd:00:00:07 on GE0/0/2, its link up for 20 s: a booting Pi; it starts and flashes its EEPROM while
+        // GE0/0/3 goes off
+        $this->fake->tables[''] += [MacTable::OID_HUAWEI_FDB_PORT.'.216.58.221.0.0.7.10.0' => 7,
+            SwitchSnapshot::OID_SYSUPTIME.'.0' => 100000, SwitchSnapshot::OID_IFLASTCHANGE.'.7' => 98000];
+        $this->fake->onSet = function ($oid) {
+            if ($oid === self::OID8 && !Cm::where('mac', 'd8:3a:dd:00:00:07')->exists())
+                Cm::create(['serial' => '10000000e6110007', 'mac' => 'd8:3a:dd:00:00:07', 'phase' => 'preinstall',
+                    'phase_detail' => 'Flash EEPROM firmware (default/pieeprom-2026-09-23.bin)', 'provisioning_started_at' => now(),
+                    'phase_started_at' => now(), 'progress_updated_at' => now()]);
+        };
+
+        $result = PoeRestart::ports(['s1p8', 's1p7'], 'igor');
+
+        $this->assertSame(['s1p8'], array_keys($result['restarted']));
+        $this->assertSame('the module on sw01 GE0/0/2 is writing its bootloader EEPROM', $result['skipped']['sw01 GE0/0/2']);
+        $this->assertNotContains([self::OID7, 'i', PoeControl::OFF], $this->fake->sets);
+    }
+
+    public function test_a_module_on_the_port_its_board_lookup_recorded_keeps_its_power_while_it_writes_its_eeprom()
+    {
+        $this->stand();
+        $this->fake->tables[''] += [MacTable::OID_HUAWEI_FDB_PORT.'.216.58.221.0.0.7.10.0' => 7,
+            SwitchSnapshot::OID_SYSUPTIME.'.0' => 100000, SwitchSnapshot::OID_IFLASTCHANGE.'.7' => 98000];
+        // not the MAC the switch lists there, but its board lookup put it on GE0/0/2
+        Cm::create(['serial' => '10000000e6110008', 'mac' => 'd8:3a:dd:00:00:08', 'phase' => 'preinstall', 'switch_id' => 1,
+            'switch_port' => 'GE0/0/2', 'phase_detail' => 'Flash EEPROM firmware (default/pieeprom-2026-09-23.bin)',
+            'provisioning_started_at' => now(), 'phase_started_at' => now(), 'progress_updated_at' => now()]);
+
+        $result = PoeRestart::ports(['s1p7'], 'igor');
+
+        $this->assertSame([], $this->fake->sets);
+        $this->assertSame('the module on sw01 GE0/0/2 is writing its bootloader EEPROM', $result['skipped']['sw01 GE0/0/2']);
+    }
+
+    public function test_a_port_whose_eeprom_check_fails_keeps_its_power_and_the_rest_restart()
+    {
+        $this->stand();
+        $this->secondModule();                                       // a failed module on GE0/0/2 as well
+        $this->fake->onSet = function ($oid) {
+            if ($oid === self::OID8 && Schema::hasTable('cms'))
+                DB::statement('alter table cms rename to cms_away'); // the database fails part way through
+        };
+
+        $result = PoeRestart::ports(['s1p8', 's1p7'], 'igor');
+        DB::statement('alter table cms_away rename to cms');
+
+        $this->assertSame(['s1p8'], array_keys($result['restarted']));
+        $this->assertStringStartsWith('could not check whether the module on sw01 GE0/0/2 writes its bootloader EEPROM',
+            $result['skipped']['10000000e611110d']);
+        $this->assertNotContains([self::OID7, 'i', PoeControl::OFF], $this->fake->sets);
     }
 
     public function test_a_switch_off_without_an_answer_is_switched_on_again_after_the_pause()

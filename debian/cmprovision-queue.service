@@ -1,11 +1,11 @@
 [Unit]
-Description=CMProvision queue worker
+Description=CMProvision queue worker (switch ports, notifications)
 
 [Service]
 User=www-data
 Group=www-data
 Restart=always
-ExecStart=/var/lib/cmprovision/artisan queue:work
+ExecStart=/var/lib/cmprovision/artisan queue:work --queue=boards,notifications
 
 [Install]
 WantedBy=multi-user.target

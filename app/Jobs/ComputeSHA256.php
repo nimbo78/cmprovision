@@ -32,6 +32,7 @@ class ComputeSHA256 implements ShouldQueue
     public function __construct(Image $image)
     {
         $this->image = $image;
+        $this->onQueue('images');   // minutes of hashing: a worker of its own (cmprovision-queue-images)
     }
 
     /**

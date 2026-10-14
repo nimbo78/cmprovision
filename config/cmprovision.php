@@ -31,4 +31,15 @@ return [
 
     'dnsmasq_restart' => env('CMPROVISION_DNSMASQ_RESTART', 'sudo -n /bin/systemctl restart cmprovision-dnsmasq'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Notifications
+    |--------------------------------------------------------------------------
+    |
+    | The Telegram Bot API; the load rehearsal points it to a stand-in (tests/load).
+    |
+    */
+
+    'telegram_api' => env('TELEGRAM_API', 'https://api.telegram.org'),
+
 ];

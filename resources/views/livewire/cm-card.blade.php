@@ -85,7 +85,7 @@
                 @endif
                 <tr><td class="text-fg-muted">MAC</td><td class="font-mono">{{ $cm->mac }}</td></tr>
                 <tr><td class="text-fg-muted">Model</td><td>{{ $cm->model }}</td></tr>
-                <tr><td class="text-fg-muted">Board</td><td>{{ $cm->provisioning_board }}</td></tr>
+                <tr><td class="text-fg-muted">Board</td><td>{{ $cm->board_pending_since ? 'looking up the switch port…' : $cm->provisioning_board }}</td></tr>
                 <tr><td class="text-fg-muted">Project</td><td>{{ $cm->project ? $cm->project->name : '' }}</td></tr>
                 <tr><td class="text-fg-muted">Image</td><td>{{ $cm->image_filename }} <span class="text-xs text-fg-muted font-mono">{{ $cm->image_sha256 }}</span></td></tr>
                 <tr>

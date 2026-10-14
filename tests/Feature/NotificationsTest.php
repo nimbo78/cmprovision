@@ -14,6 +14,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Tests\Support\TestCertificates;
 use Tests\TestCase;
@@ -31,6 +32,7 @@ class NotificationsTest extends TestCase
         parent::setUp();
         Carbon::setTestNow('2026-10-09 08:00:00');
         config(['app.display_timezone' => 'Europe/Moscow']);
+        Sleep::fake();   // a second between calls to one chat
     }
 
     protected function tearDown(): void
@@ -311,6 +313,21 @@ class NotificationsTest extends TestCase
         $this->complete('1000000000000c10');
 
         Http::assertNothingSent();
+    }
+
+    public function test_a_notification_that_cannot_be_queued_does_not_fail_the_module()
+    {
+        $this->activeProject();
+        $this->channel('webhook', ['url' => 'https://hooks.example.org/cm']);
+        Http::fake();
+        $this->start('1000000000000c40');
+        $this->mock(Notifier::class, function ($mock) {
+            $mock->shouldReceive('notify')->andThrow(new \RuntimeException('database is locked'));
+        });
+
+        $this->complete('1000000000000c40');
+
+        $this->assertSame('done', Cm::where('serial', '1000000000000c40')->value('phase'), 'the module flashed fine');
     }
 
     public function test_started_events_are_sent_when_selected()

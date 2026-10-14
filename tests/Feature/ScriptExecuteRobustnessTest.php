@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ResolveBoards;
 use App\Models\Cm;
 use App\Models\Cmlog;
 use App\Models\Image;
 use App\Models\Project;
 use App\Models\Setting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\SwitchRow;
 use Tests\TestCase;
@@ -53,7 +55,12 @@ class ScriptExecuteRobustnessTest extends TestCase
         $response = $this->get(self::QUERY)->assertOk();
 
         $this->assertStringContainsString('Writing image from', $response->getContent());
-        $this->assertNull(Cm::where('serial', self::SERIAL)->firstOrFail()->provisioning_board);
+        $cm = Cm::where('serial', self::SERIAL)->firstOrFail();
+        $this->assertNull($cm->provisioning_board);
+        $this->assertNotNull($cm->board_pending_since, 'the board is looked up in the background, the module flashes meanwhile');
+
+        Carbon::setTestNow(now()->addSeconds(ResolveBoards::GIVE_UP_SECONDS));
+        (new ResolveBoards)->handle();
         $warning = Cmlog::where('cm', self::SERIAL)->where('loglevel', 'warning')->first();
         $this->assertNotNull($warning, 'the failed switch lookup should be visible in the web log');
         $this->assertStringContainsString('192.0.2.1', $warning->msg);

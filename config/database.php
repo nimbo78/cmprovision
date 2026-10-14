@@ -41,6 +41,13 @@ return [
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
+            // 40-48 modules write at once: readers no longer block the writer (WAL), a writer waits its turn
+            'busy_timeout' => 5000,
+            'journal_mode' => 'wal',
+            'synchronous' => 'normal',
+            // a transaction takes the write lock when it begins (PHP 8.4 and later): one that read first and then writes
+            // fails at once when another writer came in between, busy_timeout or not (two queue workers reserving jobs)
+            'transaction_mode' => 'IMMEDIATE',
         ],
 
         'mysql' => [

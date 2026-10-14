@@ -2,40 +2,114 @@
 
 namespace App\Services;
 
+use App\Jobs\FlushNotifications;
 use App\Models\Cm;
 use App\Models\NotificationBatch;
 use App\Models\NotificationChannel;
+use App\Models\NotificationOutbox;
 use App\Models\NotificationThread;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 
 /**
- * Delivers provisioning events to the notification channels.
- *  - Bot channels (Mattermost bot, Telegram) keep a thread per batch: a summary message that is
- *    edited on every event, with a reply per module for the selected events.
- *  - Webhook channels get one message per selected event.
- * Errors are recorded on the channel and never reach the caller.
+ * Delivers provisioning events to the notification channels. An event becomes a row in notification_outbox for each
+ * channel that is on (notify()); FlushNotifications sends them from the queue in packs (flush()):
+ *  - bot channels (Mattermost bot, Telegram) keep a thread per batch: a summary message, edited with the numbers of
+ *    now after each pack, and a reply per pack with the events the channel selected;
+ *  - a Mattermost webhook gets a message per pack, a JSON webhook a request per event.
+ * Errors are recorded on the channel and never reach the module.
  */
 class Notifier
 {
     const TIMEOUT = 10;
     const ICONS = ['started' => '▶️', 'completed' => '✅', 'failed' => '❌', 'test' => '🔔'];
+    const ATTEMPTS = 5;
+    const RETRY_SECONDS = 30;           // after a failed delivery
+    const GAP_MICROSECONDS = 1000000;   // between two calls to one chat
+    const SPLIT = 4000;                 // characters in one message (Telegram takes 4096)
+    const BLOCKED = 'notify-blocked:';  // cache: until when the channel is left alone (a rate limit, a failed delivery)
+    const LAST_CALL = 'notify-last-call:';
+    const STALE_THREAD_SECONDS = 60;    // a summary not posted by then was left half done by a process that died
 
+    protected $editError = null;   // a summary that could not be edited while the pack went out
+
+    /* A provisioning event: a row for each channel that is on now; FlushNotifications sends them in packs */
     public function notify(Cm $cm, $event)
     {
-        $batch = $cm->notification_batch_id ? NotificationBatch::find($cm->notification_batch_id) : null;
+        $channels = NotificationChannel::where('enabled', true)->pluck('id');
+        foreach ($channels as $id)
+            NotificationOutbox::create(['channel_id' => $id, 'batch_id' => $cm->notification_batch_id, 'cm_id' => $cm->id, 'event' => $event]);
+        if ($channels->isNotEmpty())
+            FlushNotifications::soon();
+    }
 
-        foreach (NotificationChannel::where('enabled', true)->orderBy('id')->get() as $channel)
+    /** Send what waits for this channel; null when nothing is left to send, else the seconds until the next try (the
+        wait a chat asked for, or RETRY_SECONDS after a failed delivery) */
+    public function flush(NotificationChannel $channel)
+    {
+        $rows = NotificationOutbox::with(['cm.project', 'batch'])->where('channel_id', $channel->id)->whereNull('sent_at')
+            ->orderBy('id')->get();
+        if ($rows->isEmpty())
+            return null;
+        if (!$channel->enabled)
         {
-            try
+            NotificationOutbox::whereKey($rows->modelKeys())->update(['sent_at' => now(), 'error' => 'channel turned off']);
+            return null;
+        }
+        $blocked = (int) Cache::get(self::BLOCKED.$channel->id, 0) - now()->getTimestamp();
+        if ($blocked > 0)
+            return $blocked;
+
+        $this->editError = null;
+        try
+        {
+            $sent = false;
+            if ($channel->type === 'webhook')
+                foreach ($rows as $row)
+                {
+                    if ($row->cm && $channel->wants($row->event))
+                    {
+                        $this->sendWebhook($channel, $this->payload($row->cm, $row->event, $row->batch, $this->moduleLine($row->cm, $row->event)));
+                        $sent = true;
+                    }
+                    $row->update(['sent_at' => now()]);
+                }
+            else
+                foreach ($rows->groupBy('batch_id') as $group)
+                {
+                    $sent = $this->deliverPack($channel, $group) || $sent;
+                    NotificationOutbox::whereKey($group->modelKeys())->update(['sent_at' => now()]);
+                }
+            if ($sent)
+                $channel->update(['last_sent_at' => now(),
+                    'last_error' => $this->editError ? now()->local()->format('Y-m-d H:i').' '.$this->editError : null]);
+            return null;
+        }
+        catch (\Throwable $e)
+        {
+            $retryAfter = self::retryAfter($e);
+            if ($retryAfter !== null)
             {
-                if ($this->deliver($channel, $cm, $event, $batch))
-                    $channel->update(['last_sent_at' => now(), 'last_error' => null]);
+                Cache::put(self::BLOCKED.$channel->id, now()->getTimestamp() + $retryAfter, $retryAfter + 60);
+                return $retryAfter;
             }
-            catch (\Throwable $e)
+            $error = self::errorText($e, $channel);
+            $channel->update(['last_error' => now()->local()->format('Y-m-d H:i').' '.$error]);
+            $left = false;
+            foreach (NotificationOutbox::whereKey($rows->modelKeys())->whereNull('sent_at')->get() as $row)
             {
-                $channel->update(['last_error' => now()->local()->format('Y-m-d H:i').' '.self::errorText($e, $channel)]);
+                $attempts = $row->attempts + 1;
+                $row->update(['attempts' => $attempts, 'error' => $error, 'sent_at' => $attempts >= self::ATTEMPTS ? now() : null]);
+                $left = $left || $attempts < self::ATTEMPTS;
             }
+            if (!$left)
+                return null;
+            // a run queued by a new event meanwhile leaves the channel alone until then too
+            Cache::put(self::BLOCKED.$channel->id, now()->getTimestamp() + self::RETRY_SECONDS, self::RETRY_SECONDS + 60);
+            return self::RETRY_SECONDS;
         }
     }
 
@@ -50,37 +124,76 @@ class Notifier
         $channel->update(['last_sent_at' => now(), 'last_error' => null]);
     }
 
-    /* @return bool whether anything was sent */
-    protected function deliver(NotificationChannel $channel, Cm $cm, $event, $batch)
+    /* One batch's events in one message: a part per event the channel wants, a module per line. A bot answers in the
+       batch's thread, posting its summary first if needed, and edits the summary with the numbers of now, also when no
+       part is left. The edit comes first and each message marks its events sent: a rate limit part way through sends
+       nothing twice. @return bool whether anything was sent */
+    protected function deliverPack(NotificationChannel $channel, $rows)
     {
-        $line = $this->moduleLine($cm, $event);
-
-        if (!$channel->isThreaded())
+        $batch = $rows->first()->batch;
+        $root = null;
+        if ($channel->isThreaded() && $batch)
         {
-            if (!$channel->wants($event))
-                return false;
-            if ($channel->type === 'webhook')
-                $this->sendWebhook($channel, $this->payload($cm, $event, $batch, $line));
-            else
-                $this->send($channel, $this->projectPrefix($cm).$line);
-            return true;
+            $created = false;
+            $root = $this->thread($channel, $batch, $created);
+            if (!$created)
+                try
+                {
+                    $this->edit($channel, $root, $this->summary($batch));
+                }
+                catch (\Throwable $e)
+                {
+                    // a summary someone deleted must not hold the replies back; a rate limit waits for all of them
+                    if (self::retryAfter($e) !== null)
+                        throw $e;
+                    $this->editError = self::errorText($e, $channel);
+                }
         }
 
-        if (!$batch)
+        $first = $rows->first(fn ($row) => $row->cm);
+        $prefix = $root === null && $first ? $this->projectPrefix($first->cm) : '';
+        $sent = $root !== null;
+        foreach ($this->messages($channel, $rows) as [$text, $ids])
         {
-            if (!$channel->wants($event))
-                return false;
-            $this->send($channel, $this->projectPrefix($cm).$line);
-            return true;
+            $this->send($channel, $prefix.$text, $root);
+            NotificationOutbox::whereKey($ids)->update(['sent_at' => now()]);
+            $sent = true;
+        }
+        return $sent;
+    }
+
+    /* The pack as messages of at most SPLIT characters, each with the outbox ids it carries: a part per event the
+       channel wants, a header and then a module per line; a header never ends a message */
+    protected function messages(NotificationChannel $channel, $rows)
+    {
+        $lines = [];   // [text, outbox id or null for a header]
+        foreach (['started' => 'started', 'completed' => 'done', 'failed' => 'failed'] as $event => $word)
+        {
+            $mine = $rows->filter(fn ($row) => $row->event === $event && $row->cm && $channel->wants($event));
+            if ($mine->isEmpty())
+                continue;
+            $lines[] = [self::ICONS[$event].' '.$mine->count().' '.$word.':', null];
+            foreach ($mine as $row)
+                $lines[] = [$this->moduleText($row->cm, $event), $row->id];
         }
 
-        $created = false;
-        $root = $this->thread($channel, $batch, $created);
-        if ($channel->wants($event))
-            $this->send($channel, $line, $root);
-        if (!$created)
-            $this->edit($channel, $root, $this->summary($batch));
-        return true;
+        $messages = [];
+        [$text, $ids] = ['', []];
+        foreach ($lines as $i => [$line, $id])
+        {
+            $needed = mb_strlen($line) + ($id === null && isset($lines[$i + 1]) ? 1 + mb_strlen($lines[$i + 1][0]) : 0);
+            if ($text !== '' && mb_strlen($text) + 1 + $needed > self::SPLIT)
+            {
+                $messages[] = [$text, $ids];
+                [$text, $ids] = ['', []];
+            }
+            $text = $text === '' ? $line : $text."\n".$line;
+            if ($id !== null)
+                $ids[] = $id;
+        }
+        if ($text !== '')
+            $messages[] = [$text, $ids];
+        return $messages;
     }
 
     /* Id of the batch summary in this channel, posting it first if needed. The unique key on
@@ -89,6 +202,12 @@ class Notifier
     {
         $key = ['batch_id' => $batch->id, 'channel_id' => $channel->id];
         $thread = NotificationThread::where($key)->first();
+        // a summary another process began to post and never finished (it was killed): post it again
+        if ($thread && $thread->external_id === '' && $thread->created_at->lt(now()->subSeconds(self::STALE_THREAD_SECONDS)))
+        {
+            NotificationThread::whereKey($thread->id)->where('external_id', '')->delete();
+            $thread = null;
+        }
         if (!$thread)
         {
             try
@@ -117,7 +236,7 @@ class Notifier
             $thread = NotificationThread::where($key)->first();
             if ($thread && $thread->external_id !== '')
                 return $thread->external_id;
-            usleep(250000);
+            Sleep::usleep(250000);
         }
         throw new \RuntimeException('Batch summary was not posted in time');
     }
@@ -125,6 +244,7 @@ class Notifier
     /* Post a message (as a reply when $root is given); returns the new message id */
     protected function send(NotificationChannel $channel, $text, $root = null)
     {
+        $this->pace($channel);
         switch ($channel->type)
         {
             case 'mattermost_bot':
@@ -150,6 +270,7 @@ class Notifier
 
     protected function edit(NotificationChannel $channel, $id, $text)
     {
+        $this->pace($channel);
         if ($channel->type === 'mattermost_bot')
         {
             $this->mattermost($channel)->put($this->mattermostUrl($channel, "/posts/$id/patch"), ['message' => $text])->throw();
@@ -171,6 +292,25 @@ class Notifier
     protected function sendWebhook(NotificationChannel $channel, array $payload)
     {
         $this->http($channel)->post($channel->setting('url'), $payload)->throw();
+    }
+
+    /* Seconds a chat server asked to wait (HTTP 429), or null for any other failure */
+    protected static function retryAfter(\Throwable $e)
+    {
+        if ($e instanceof RateLimited)
+            return $e->retryAfter;
+        if ($e instanceof RequestException && $e->response->status() == 429)
+            return max(1, ((int) $e->response->header('Retry-After')) ?: 10);
+        return null;
+    }
+
+    /* At least GAP_MICROSECONDS between two calls to one chat (Telegram: about one message a second in a chat) */
+    protected function pace(NotificationChannel $channel)
+    {
+        $wait = self::GAP_MICROSECONDS - (int) ((microtime(true) - (float) Cache::get(self::LAST_CALL.$channel->id, 0)) * 1000000);
+        if ($wait > 0)
+            Sleep::usleep($wait);
+        Cache::put(self::LAST_CALL.$channel->id, microtime(true), 60);
     }
 
     /* What a failed delivery says on the settings page: without the Telegram bot token that Guzzle puts in the URL of
@@ -201,23 +341,17 @@ class Notifier
         return rtrim($channel->setting('server_url'), '/').'/api/v4'.$path;
     }
 
-    /* Telegram Bot API call; waits once when the chat is rate limited (HTTP 429, retry_after) */
+    /* Telegram Bot API call; a rate limit (HTTP 429) comes back as RateLimited, for the queue to wait it out */
     protected function telegram(NotificationChannel $channel, $method, array $body)
     {
-        $url = 'https://api.telegram.org/bot'.$channel->setting('bot_token').'/'.$method;
-        for ($attempt = 1; ; $attempt++)
-        {
-            $response = $this->http($channel)->post($url, $body);
-            $retryAfter = (int) $response->json('parameters.retry_after');
-            if ($response->status() == 429 && $attempt == 1 && $retryAfter > 0 && $retryAfter <= 10)
-            {
-                sleep($retryAfter);
-                continue;
-            }
-            if (!$response->json('ok'))
-                throw new \RuntimeException('Telegram '.$method.': HTTP '.$response->status().' '.($response->json('description') ?: $response->body()));
-            return $response->json('result');
-        }
+        $url = rtrim(config('cmprovision.telegram_api'), '/').'/bot'.$channel->setting('bot_token').'/'.$method;
+        $response = $this->http($channel)->post($url, $body);
+        $said = $response->json('description') ?: $response->body();
+        if ($response->status() == 429)
+            throw new RateLimited((int) $response->json('parameters.retry_after') ?: 30, 'Telegram '.$method.': HTTP 429 '.$said);
+        if (!$response->json('ok'))
+            throw new \RuntimeException('Telegram '.$method.': HTTP '.$response->status().' '.$said);
+        return $response->json('result');
     }
 
     public function summary(NotificationBatch $batch)
@@ -236,6 +370,12 @@ class Notifier
 
     public function moduleLine(Cm $cm, $event)
     {
+        return (self::ICONS[$event] ?? '').' '.$this->moduleText($cm, $event);
+    }
+
+    /* A module in a message: serial, MAC, board and what the event adds (duration, EEPROM, reason) */
+    public function moduleText(Cm $cm, $event)
+    {
         $parts = [$cm->serial, $cm->mac];
         if ($cm->provisioning_board)
             $parts[] = 'board '.$cm->provisioning_board;
@@ -247,7 +387,7 @@ class Notifier
             $parts[] = $cm->phase_detail;
         if ($event === 'started')
             $parts[] = 'started';
-        return (self::ICONS[$event] ?? '').' '.implode(' · ', $parts);
+        return implode(' · ', $parts);
     }
 
     /* "EEPROM 2021-02-16 → 2026-09-23" when flashrom wrote it, "EEPROM 2026-09-23 (unchanged)" when it

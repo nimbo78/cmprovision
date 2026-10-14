@@ -18,17 +18,24 @@ class PortLookup
     public static function find(string $serial, string $mac, int $since): array
     {
         $mac = strtolower($mac);
-        $none = ['switch' => null, 'port' => null, 'board' => null, 'warning' => null];
         // the module may have no row yet: the map still has to count its MAC as a module's
         $module = new Cm(['serial' => $serial, 'mac' => $mac]);
         $stand = Stand::current(null, self::WAIT, [$module]);
         if (!$stand)
-            return $none;
+            return ['switch' => null, 'port' => null, 'board' => null, 'warning' => null];
         // no port of its own yet (unknown, behind a link only, or a tie): the switches may have learnt it after their
         // last poll, and a slow switch's snapshot stays fresh for twice its poll time
         if (($stand['map']['owners'][$mac]['key'] ?? null) === null)
             $stand = Stand::current($since, self::WAIT, [$module]);
+        return self::resolve($stand, $mac);
+    }
 
+    /** What the stand map says about this MAC: as find(), on a stand the caller has (ResolveBoards polls once for a
+        wave of modules) */
+    public static function resolve(array $stand, string $mac): array
+    {
+        $mac = strtolower($mac);
+        $none = ['switch' => null, 'port' => null, 'board' => null, 'warning' => null];
         $silent = [];
         foreach ($stand['switches'] as $state)
             if (!Stand::answering($state))
