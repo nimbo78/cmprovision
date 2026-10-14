@@ -45,6 +45,9 @@ return [
             'busy_timeout' => 5000,
             'journal_mode' => 'wal',
             'synchronous' => 'normal',
+            // a transaction takes the write lock when it begins (PHP 8.4 and later): one that read first and then writes
+            // fails at once when another writer came in between, busy_timeout or not (two queue workers reserving jobs)
+            'transaction_mode' => 'IMMEDIATE',
         ],
 
         'mysql' => [
