@@ -1,15 +1,22 @@
-cmprovision4 (2.5.0~dev1) unstable; urgency=medium
+cmprovision4 (2.5.0) unstable; urgency=medium
 
-  * 48 modules at once: a php-fpm pool of its own, SQLite in WAL, a second
-    queue worker for image checksums.
+  * 48 modules at once: a php-fpm pool of its own, SQLite in WAL with
+    transactions that lock when they begin, a second queue worker for image
+    checksums that also takes boards.
   * A module's board is looked up in the background: its start answers at
-    once, and one poll of the stand serves a wave of modules.
+    once, one poll of the stand serves a wave of modules, a failed run queues
+    the next. The preinstall label prints in a job of its own once the board
+    is known.
   * Notifications go out in packs through the queue, within chat limits; the
-    batch summary is edited with fresh numbers after each pack.
+    batch summary is edited with fresh numbers, and a rate limit or a failed
+    delivery never sends a message twice.
   * One batch for a wave; a PoE restart asks the database whether a module
     writes its EEPROM right before each port goes off.
+  * root never opens the web user's database files: artisan in postinst and
+    restore runs as www-data, the backup copy is made by www-data, and a
+    restore stops the web server before it replaces the database.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Wed, 14 Oct 2026 17:27:03 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Wed, 14 Oct 2026 19:28:33 +0300
 
 cmprovision4 (2.4.1) unstable; urgency=medium
 
