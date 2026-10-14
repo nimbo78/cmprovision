@@ -90,7 +90,9 @@ class SnapshotCacheTest extends TestCase
         $this->assertSame(Carbon::parse('2026-10-12 10:00:05')->getTimestamp(), $state['error']['since'], 'since the first failure');
 
         $this->silent = false;
-        Carbon::setTestNow('2026-10-12 10:00:15');
+        Carbon::setTestNow('2026-10-12 10:00:34');
+        $this->assertNotNull($this->cache()->current()['error'], 'asked again only 30 s after the failure');
+        Carbon::setTestNow('2026-10-12 10:00:35');
         $this->assertNull($this->cache()->current()['error']);
 
         Log::shouldHaveReceived('warning')->once();
@@ -105,19 +107,52 @@ class SnapshotCacheTest extends TestCase
         $this->assertSame('No response from 192.0.2.10', $state['error']['message']);
     }
 
-    public function test_a_poll_that_fails_slowly_is_not_repeated_sooner_either()
+    public function test_a_poll_that_fails_slowly_holds_twice_its_time_when_that_is_longer()
     {
         $this->silent = true;
-        $this->slow = 4;
+        $this->slow = 20;
         Carbon::setTestNow('2026-10-12 10:00:00');
         $this->cache()->current();
         $this->slow = 0;
-        Carbon::setTestNow('2026-10-12 10:00:07');
+        Carbon::setTestNow('2026-10-12 10:00:39');
         $this->cache()->current();
-        $this->assertSame(1, $this->polls, 'a failed poll that took 4 s holds for 8 s');
-        Carbon::setTestNow('2026-10-12 10:00:08');
+        $this->assertSame(1, $this->polls, 'a failed poll that took 20 s holds for 40 s');
+        Carbon::setTestNow('2026-10-12 10:00:40');
         $this->cache()->current();
         $this->assertSame(2, $this->polls);
+    }
+
+    public function test_a_failed_poll_is_not_repeated_for_thirty_seconds()
+    {
+        $this->silent = true;
+        Carbon::setTestNow('2026-10-14 10:00:00');
+        $this->cache()->current();
+        Carbon::setTestNow('2026-10-14 10:00:20');
+        $state = $this->cache()->current();
+        $this->assertSame(1, $this->polls, 'a silent switch is not asked again on every page poll');
+        $this->assertSame('No response from 192.0.2.10', $state['error']['message']);
+        Carbon::setTestNow('2026-10-14 10:00:30');
+        $this->cache()->current();
+        $this->assertSame(2, $this->polls);
+    }
+
+    public function test_a_snapshot_older_than_asked_for_is_taken_again_unless_the_switch_is_silent()
+    {
+        Carbon::setTestNow('2026-10-14 10:00:00');
+        $this->cache()->current();
+        Carbon::setTestNow('2026-10-14 10:00:02');
+        $this->cache()->current();
+        $this->assertSame(1, $this->polls, 'fresh for five seconds');
+        $this->cache()->current(Carbon::now()->getTimestamp() - 1);
+        $this->assertSame(2, $this->polls, 'a module that came after the snapshot needs a newer one');
+
+        $this->silent = true;
+        Carbon::setTestNow('2026-10-14 10:00:10');
+        $this->cache()->current();
+        $this->assertSame(3, $this->polls);
+        Carbon::setTestNow('2026-10-14 10:00:12');
+        $this->cache()->current(Carbon::now()->getTimestamp());
+        $this->assertSame(3, $this->polls, 'a silent switch keeps its pause even for a module');
     }
 
     public function test_any_other_failure_of_the_snmp_extension_is_a_switch_error_too()

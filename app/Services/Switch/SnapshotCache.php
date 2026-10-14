@@ -20,6 +20,8 @@ class SnapshotCache
     const LOCK_WAIT = 1;
     const LOCK_SECONDS = 60;
     const KEEP_SECONDS = 86400;
+    /* A switch whose last poll failed is asked again after this long: every page poll and module start would wait for its timeout */
+    const ERROR_SECONDS = 30;
 
     protected $id, $take;
 
@@ -30,17 +32,19 @@ class SnapshotCache
         $this->take = $take;
     }
 
-    /** ['snapshot' => the last good one or null, 'error' => null or ['message', 'since'], 'checked_at' => unix time or null] */
-    public function current(): array
+    /** ['snapshot' => the last good one or null, 'error' => null or ['message', 'since'], 'checked_at' => unix time or null].
+        $notOlderThan: a snapshot taken before this unix time is taken again (unless the switch is in its pause after an
+        error); $wait: how long to wait for another request's poll before taking the stored state */
+    public function current(?int $notOlderThan = null, float $wait = self::LOCK_WAIT): array
     {
         $state = $this->stored();
-        if ($this->fresh($state))
+        if ($this->fresh($state, $notOlderThan))
             return $state;
 
         $lock = Cache::lock('switch-snapshot-lock:'.$this->id, self::LOCK_SECONDS);
         try
         {
-            $lock->block(self::LOCK_WAIT);
+            $lock->block($wait);
         }
         catch (LockTimeoutException $e)
         {
@@ -49,7 +53,7 @@ class SnapshotCache
         try
         {
             $state = $this->stored();
-            return $this->fresh($state) ? $state : $this->poll($state);
+            return $this->fresh($state, $notOlderThan) ? $state : $this->poll($state);
         }
         finally
         {
@@ -88,13 +92,19 @@ class SnapshotCache
         return is_array($state) ? $state : ['snapshot' => null, 'error' => null, 'checked_at' => null];
     }
 
-    /* Checked less than FRESH_SECONDS ago, or twice the poll's duration (the good one's or the last attempt's) for a slow switch */
-    protected function fresh(array $state): bool
+    /* Checked less than FRESH_SECONDS ago, or twice the poll's duration (the good one's or the last attempt's) for a slow
+       switch, and not before $notOlderThan; a failed poll holds ERROR_SECONDS at least */
+    protected function fresh(array $state, ?int $notOlderThan = null): bool
     {
         if (!$state['checked_at'])
             return false;
+        $age = Carbon::now()->getTimestamp() - $state['checked_at'];
         $duration = max((float) ($state['snapshot']['duration'] ?? 0), (float) ($state['took'] ?? 0));
         $life = $duration > self::SLOW_POLL ? 2 * $duration : self::FRESH_SECONDS;
-        return Carbon::now()->getTimestamp() - $state['checked_at'] < $life;
+        if ($state['error'])
+            return $age < max(self::ERROR_SECONDS, $life);
+        if ($notOlderThan !== null && $state['checked_at'] < $notOlderThan)
+            return false;
+        return $age < $life;
     }
 }
