@@ -3,7 +3,7 @@
 namespace App\Http\Livewire;
 
 use App\Models\Cm;
-use App\Models\Setting;
+use App\Models\EthernetSwitch;
 use App\Services\Snmp\PhpSnmpClient;
 use App\Services\Snmp\SnmpClient;
 use App\Services\Switch\Poe;
@@ -109,7 +109,7 @@ class SwitchSettings extends Component
         $this->notice = null;
         if (trim($this->host) === '')
         {
-            Setting::where('key', 'like', 'ethernetswitch_%')->delete();
+            EthernetSwitch::query()->get()->each->delete();
             $this->mount();
             $this->flash('Switch lookup is off: boards come from the jumpers again.');
             return;
@@ -117,20 +117,13 @@ class SwitchSettings extends Component
 
         $this->validate($this->rules());
 
-        $before = SwitchPortFinder::config();
+        $switch = EthernetSwitch::orderBy('id')->first() ?? new EthernetSwitch;
+        $before = $switch->exists ? $switch->config() : EthernetSwitch::emptyConfig();
         $config = $this->formConfig();
-        $values = [
-            'ip' => $config['host'], 'snmp_version' => $config['version'], 'snmp_community' => $config['community'],
-            'snmp_user' => $config['user'], 'snmp_auth_protocol' => $config['auth_protocol'], 'snmp_auth_password' => $config['auth_password'],
-            'snmp_priv_protocol' => $config['priv_protocol'], 'snmp_priv_password' => $config['priv_password'], 'method' => $this->method,
-            'snmp_write_community' => $config['write']['community'], 'snmp_write_user' => $config['write']['user'],
-            'snmp_write_auth_protocol' => $config['write']['auth_protocol'], 'snmp_write_auth_password' => $config['write']['auth_password'],
-            'snmp_write_priv_protocol' => $config['write']['priv_protocol'], 'snmp_write_priv_password' => $config['write']['priv_password'],
-        ];
-        foreach ($values as $key => $value)
-            Setting::updateOrCreate(['key' => 'ethernetswitch_'.$key], ['value' => (string) $value]);
+        $switch->fillConfig($config);
         if ($before['host'] !== $config['host'] || $before['method'] !== $this->method)
-            Setting::destroy('ethernetswitch_method_detected');
+            $switch->method_detected = null;
+        $switch->save();
 
         $this->mount();
         $this->community = $this->authPassword = $this->privPassword = '';
@@ -180,7 +173,10 @@ class SwitchSettings extends Component
     /* No more PoE restarts: the write credentials go, the read ones stay */
     public function forgetWrite()
     {
-        Setting::where('key', 'like', 'ethernetswitch_snmp_write_%')->delete();
+        $switch = EthernetSwitch::orderBy('id')->first();
+        if ($switch)
+            $switch->fill(['write_community' => null, 'write_user' => null, 'write_auth_protocol' => null, 'write_auth_password' => null,
+                           'write_priv_protocol' => null, 'write_priv_password' => null])->save();
         $this->mount();
         $this->writeCommunity = $this->writeAuthPassword = $this->writePrivPassword = '';
         $this->flash('Write access removed: no PoE restarts.');

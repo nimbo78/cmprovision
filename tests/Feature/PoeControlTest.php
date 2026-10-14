@@ -10,6 +10,7 @@ use App\Services\SwitchPortFinder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeSnmp;
+use Tests\Support\SwitchRow;
 use Tests\TestCase;
 
 /** Writing a port's PoE with the switch's write credentials (Settings, "Write access") */
@@ -21,8 +22,7 @@ class PoeControlTest extends TestCase
 
     protected function settings(array $values)
     {
-        foreach ($values as $key => $value)
-            Setting::updateOrCreate(['key' => 'ethernetswitch_'.$key], ['value' => $value]);
+        SwitchRow::put($values);
         return SwitchPortFinder::config();
     }
 

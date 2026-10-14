@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\Setting;
+use App\Models\EthernetSwitch;
 use App\Services\Snmp\SnmpClient;
 use App\Services\Snmp\SnmpError;
 use App\Services\Switch\MacTable;
@@ -49,34 +49,11 @@ class SwitchPortFinder
         return new self(app(SnmpClient::class, ['config' => $config]), $config['method'] ?? 'auto', $config['detected'] ?? null);
     }
 
-    /* Switch settings as stored (keys ethernetswitch_*) */
+    /* The first switch of the stand, until every caller knows several (docs/superpowers/plans/2026-10-14-multi-switch.md) */
     public static function config()
     {
-        $get = function ($key, $default = '') {
-            $s = Setting::find('ethernetswitch_'.$key);
-            return $s && $s->value !== null ? $s->value : $default;
-        };
-        return [
-            'host' => $get('ip'),
-            'version' => $get('snmp_version', '2c'),
-            'community' => $get('snmp_community'),
-            'user' => $get('snmp_user'),
-            'auth_protocol' => $get('snmp_auth_protocol'),
-            'auth_password' => $get('snmp_auth_password'),
-            'priv_protocol' => $get('snmp_priv_protocol'),
-            'priv_password' => $get('snmp_priv_password'),
-            'method' => $get('method', 'auto'),
-            'detected' => $get('method_detected', null),
-            // PoE restart (PoeControl): its own community (v2c) or user (v3), kept like the read ones
-            'write' => [
-                'community' => $get('snmp_write_community'),
-                'user' => $get('snmp_write_user'),
-                'auth_protocol' => $get('snmp_write_auth_protocol'),
-                'auth_password' => $get('snmp_write_auth_password'),
-                'priv_protocol' => $get('snmp_write_priv_protocol'),
-                'priv_password' => $get('snmp_write_priv_password'),
-            ],
-        ];
+        $switch = EthernetSwitch::orderBy('id')->first();
+        return $switch ? $switch->config() : EthernetSwitch::emptyConfig();
     }
 
     public function lastMethod()

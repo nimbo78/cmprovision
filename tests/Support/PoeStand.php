@@ -29,10 +29,7 @@ trait PoeStand
     protected function stand(array $settings = ['snmp_write_community' => 'private']): Cm
     {
         $this->mockNetwork();
-        Setting::create(['key' => 'ethernetswitch_ip', 'value' => '192.0.2.10']);
-        Setting::create(['key' => 'ethernetswitch_snmp_community', 'value' => 'public']);
-        foreach ($settings as $key => $value)
-            Setting::create(['key' => 'ethernetswitch_'.$key, 'value' => $value]);
+        SwitchRow::put(['ip' => '192.0.2.10', 'snmp_community' => 'public'] + $settings);
 
         $t = [SwitchSnapshot::OID_SYSDESCR.'.0' => 'S5731-S24P4X'];
         foreach ([6 => 'GE0/0/1', 7 => 'GE0/0/2', 8 => 'GE0/0/3', 30 => 'XGE0/0/1'] as $i => $name)

@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Setting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
+use Tests\Support\SwitchRow;
 use Tests\TestCase;
 
 /**
@@ -47,8 +48,7 @@ class ScriptExecuteRobustnessTest extends TestCase
             return $this->markTestSkipped('php-snmp is not installed.');
         }
         $this->activeProject();
-        Setting::updateOrCreate(['key' => 'ethernetswitch_ip'], ['value' => '192.0.2.1']);   // TEST-NET, never answers
-        Setting::updateOrCreate(['key' => 'ethernetswitch_snmp_community'], ['value' => 'public']);
+        SwitchRow::put(['ip' => '192.0.2.1', 'snmp_community' => 'public']);   // TEST-NET, never answers
 
         $response = $this->get(self::QUERY)->assertOk();
 

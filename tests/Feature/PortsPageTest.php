@@ -18,6 +18,7 @@ use Illuminate\Support\Sleep;
 use Livewire\Livewire;
 use Mockery\MockInterface;
 use Tests\Support\FakeSnmp;
+use Tests\Support\SwitchRow;
 use Tests\TestCase;
 
 /**
@@ -51,8 +52,7 @@ class PortsPageTest extends TestCase
     /* A Huawei with three PoE ports, the module on GE0/0/3 and the provisioner behind XGE0/0/1 */
     protected function switchWithModule()
     {
-        Setting::create(['key' => 'ethernetswitch_ip', 'value' => '192.0.2.10']);
-        Setting::create(['key' => 'ethernetswitch_snmp_community', 'value' => 'public']);
+        SwitchRow::put(['ip' => '192.0.2.10', 'snmp_community' => 'public']);
         $t = [SwitchSnapshot::OID_SYSDESCR.'.0' => 'S5731-S24P4X'];
         foreach ([6 => ['GE0/0/1', 2], 7 => ['GE0/0/2', 2], 8 => ['GE0/0/3', 1], 30 => ['XGE0/0/1', 1]] as $i => [$name, $oper])
             $t += [
@@ -238,7 +238,7 @@ class PortsPageTest extends TestCase
 
     public function test_a_switch_name_that_does_not_resolve_says_so_instead_of_breaking_the_page()
     {
-        Setting::create(['key' => 'ethernetswitch_ip', 'value' => 'switch.invalid']);
+        SwitchRow::put(['ip' => 'switch.invalid']);
         $this->app->bind(SnmpClient::class, function () {
             throw new \ErrorException('SNMP::__construct(): Unknown host switch.invalid');
         });
@@ -273,7 +273,7 @@ class PortsPageTest extends TestCase
 
     public function test_while_another_page_asks_the_switch_it_says_so_and_names_the_switch_once()
     {
-        Setting::create(['key' => 'ethernetswitch_ip', 'value' => '192.0.2.10']);
+        SwitchRow::put(['ip' => '192.0.2.10']);
         // real time here: the page waits for the lock by the clock
         $lock = \Illuminate\Support\Facades\Cache::lock('switch-snapshot-lock:192.0.2.10', 60);
         $this->assertTrue($lock->get());
@@ -354,7 +354,7 @@ class PortsPageTest extends TestCase
 
     protected function writeAccess()
     {
-        Setting::create(['key' => 'ethernetswitch_snmp_write_community', 'value' => 'private']);
+        SwitchRow::put(['snmp_write_community' => 'private']);
         $this->fake->tables[''][Poe::OID_HW_ENABLE.'.8'] = 1;
     }
 

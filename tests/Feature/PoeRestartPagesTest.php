@@ -16,6 +16,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Sleep;
 use Livewire\Livewire;
 use Tests\Support\PoeStand;
+use Tests\Support\SwitchRow;
 use Tests\TestCase;
 
 /** The Restart buttons of the module card and the dashboard */
@@ -44,7 +45,7 @@ class PoeRestartPagesTest extends TestCase
         $cm = $this->stand([]);
         Livewire::test(CmCard::class, ['serial' => $cm->serial])->call('loadPower')
             ->assertSee('no restart: no write access (Settings → Ethernet switch)');
-        Setting::create(['key' => 'ethernetswitch_snmp_write_community', 'value' => 'private']);
+        SwitchRow::put(['snmp_write_community' => 'private']);
         $away = Cm::create(['serial' => '10000000e611ffff', 'mac' => 'e4:5f:01:00:ff:ff', 'phase' => 'failed']);
         Livewire::test(CmCard::class, ['serial' => $away->serial])->call('loadPower')->assertSee('no restart: not seen on the switch');
     }

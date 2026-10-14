@@ -12,7 +12,7 @@ class PoeOutage extends Model
     /* An open row without an error is a restart in its dark seconds for this long; after it, the restart stopped midway */
     const STUCK_SECONDS = 120;
 
-    protected $fillable = ['switch_host', 'if_index', 'port', 'oid', 'on_value', 'cm_serial', 'user', 'off_at', 'on_at', 'error'];
+    protected $fillable = ['switch_id', 'switch_host', 'if_index', 'port', 'oid', 'on_value', 'cm_serial', 'user', 'off_at', 'on_at', 'error'];
 
     protected $casts = ['off_at' => 'datetime', 'on_at' => 'datetime', 'if_index' => 'integer', 'on_value' => 'integer'];
 

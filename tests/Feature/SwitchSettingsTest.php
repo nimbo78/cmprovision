@@ -13,6 +13,7 @@ use App\Services\SwitchPortFinder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\Support\FakeSnmp;
+use Tests\Support\SwitchRow;
 use Tests\TestCase;
 
 /** The SNMP switch used to tell which port a module is plugged into is set up on the settings page. */
@@ -44,7 +45,7 @@ class SwitchSettingsTest extends TestCase
 
     protected function setting($key)
     {
-        return Setting::find('ethernetswitch_'.$key)->value ?? null;
+        return SwitchRow::get($key);
     }
 
     public function test_the_settings_page_has_a_switch_section()
@@ -91,14 +92,13 @@ class SwitchSettingsTest extends TestCase
         $this->assertSame('2c', $this->setting('snmp_version'));
 
         Livewire::test(SwitchSettings::class)->set('host', '')->call('save');
-        $this->assertSame(0, Setting::where('key', 'like', 'ethernetswitch_%')->count());
+        $this->assertSame(0, \App\Models\EthernetSwitch::count());
     }
 
     public function test_secrets_are_not_shown_and_kept_when_left_empty()
     {
-        foreach (['ip' => '192.168.25.2', 'snmp_version' => '3', 'snmp_user' => 'cmprov', 'snmp_auth_protocol' => 'SHA',
-                  'snmp_auth_password' => 'auth-secret', 'snmp_priv_protocol' => 'AES', 'snmp_priv_password' => 'priv-secret'] as $k => $v)
-            Setting::create(['key' => 'ethernetswitch_'.$k, 'value' => $v]);
+        SwitchRow::put(['ip' => '192.168.25.2', 'snmp_version' => '3', 'snmp_user' => 'cmprov', 'snmp_auth_protocol' => 'SHA',
+                  'snmp_auth_password' => 'auth-secret', 'snmp_priv_protocol' => 'AES', 'snmp_priv_password' => 'priv-secret']);
 
         Livewire::test(SwitchSettings::class)
             ->assertSet('host', '192.168.25.2')->assertSet('user', 'cmprov')
@@ -113,8 +113,7 @@ class SwitchSettingsTest extends TestCase
     public function test_stored_secrets_are_never_sent_to_another_switch()
     {
         $this->fakeSwitch();
-        foreach (['ip' => '192.168.25.2', 'snmp_version' => '2c', 'snmp_community' => 'stored-secret'] as $k => $v)
-            Setting::create(['key' => 'ethernetswitch_'.$k, 'value' => $v]);
+        SwitchRow::put(['ip' => '192.168.25.2', 'snmp_version' => '2c', 'snmp_community' => 'stored-secret']);
 
         Livewire::test(SwitchSettings::class)->set('host', '203.0.113.9')->call('test');
         $this->assertNotSame('stored-secret', $this->configs[0]['community'] ?? null, 'test with a new address uses no stored community');
@@ -144,8 +143,7 @@ class SwitchSettingsTest extends TestCase
     public function test_a_module_gets_its_switch_port_as_board_and_the_working_method_is_remembered()
     {
         $this->fakeSwitch();
-        Setting::create(['key' => 'ethernetswitch_ip', 'value' => '192.168.25.2']);
-        Setting::create(['key' => 'ethernetswitch_snmp_community', 'value' => 'line-ro']);
+        SwitchRow::put(['ip' => '192.168.25.2', 'snmp_community' => 'line-ro']);
 
         $image = new Image;
         $image->filename = 'os.img.gz';

@@ -9,6 +9,7 @@ use App\Events\CmProvisioningFailed;
 use App\Events\CmProvisioningStarted;
 use App\Models\Cm;
 use App\Models\Cmlog;
+use App\Models\EthernetSwitch;
 use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Script;
@@ -156,7 +157,7 @@ exit 1
                 else if ($finder->lastMethod() !== $switchConfig['detected'])
                 {
                     // try the method that works first next time
-                    Setting::updateOrCreate(['key' => 'ethernetswitch_method_detected'], ['value' => $finder->lastMethod()]);
+                    EthernetSwitch::whereKey($switchConfig['id'])->update(['method_detected' => $finder->lastMethod()]);
                 }
             }
             catch (\Throwable $e)
