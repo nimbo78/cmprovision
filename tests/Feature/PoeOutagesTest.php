@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Livewire\PoeOutages;
 use App\Http\Livewire\Ports;
+use App\Models\EthernetSwitch;
 use App\Models\PoeOutage;
 use App\Models\User;
 use App\Services\Switch\Poe;
@@ -76,8 +77,61 @@ class PoeOutagesTest extends TestCase
     {
         $this->stand();
         $outage = $this->outage(['error' => 'noAccess', 'switch_host' => '192.0.2.99']);
-        Livewire::test(PoeOutages::class)->call('powerOn', $outage->id)->assertSee('The switch has changed: switch GE0/0/3 on at the switch.');
+        Livewire::test(PoeOutages::class)->call('powerOn', $outage->id)->assertSee('The switch is gone: switch GE0/0/3 on at the switch.');
         $this->assertSame([], $this->fake->sets);
+    }
+
+    protected function leftOff(array $columns): PoeOutage
+    {
+        return PoeOutage::create($columns + ['if_index' => 8, 'port' => 'sw02 GE0/0/3', 'oid' => Poe::OID_HW_ENABLE.'.8',
+            'on_value' => 1, 'off_at' => now()->subMinutes(5), 'error' => 'timeout']);
+    }
+
+    public function test_power_on_finds_the_switch_of_the_row()
+    {
+        Sleep::fake();
+        $this->stand();
+        $this->secondSwitch();
+        $this->fake2->tables[''][Poe::OID_HW_ENABLE.'.8'] = 2;
+        $outage = $this->leftOff(['switch_id' => 2, 'switch_host' => '192.0.2.11']);
+
+        Livewire::test(PoeOutages::class)->call('powerOn', $outage->id)->assertSee('PoE on sw02 GE0/0/3 is on again.');
+
+        $this->assertSame(['.1.3.6.1.4.1.2011.5.25.195.3.1.3.8', 'i', 1], end($this->fake2->sets));
+        $this->assertSame([], $this->fake->sets, 'the other switch is not touched');
+    }
+
+    public function test_a_row_from_before_2_4_finds_its_switch_by_address_and_one_of_a_removed_switch_says_so()
+    {
+        Sleep::fake();
+        $this->stand();
+        $this->secondSwitch();
+        $old = $this->leftOff(['switch_host' => '192.0.2.11']);
+        $gone = $this->leftOff(['switch_host' => '192.0.2.99']);
+
+        Livewire::test(PoeOutages::class)->call('powerOn', $old->id)->assertSee('is on again')
+            ->call('powerOn', $gone->id)->assertSee('The switch is gone: switch sw02 GE0/0/3 on at the switch.');
+        $this->assertSame([], $this->fake->sets);
+    }
+
+    public function test_power_on_without_write_access_names_the_switch()
+    {
+        $this->stand([]);   // never asked yet: named by its address
+        $outage = $this->leftOff(['switch_id' => 1, 'switch_host' => '192.0.2.10', 'port' => '192.0.2.10 GE0/0/3']);
+        Livewire::test(PoeOutages::class)->call('powerOn', $outage->id)
+            ->assertSee('No write access on 192.0.2.10: set it under Settings → Ethernet switches.');
+    }
+
+    public function test_rows_close_only_on_their_own_switch()
+    {
+        $this->stand();
+        $this->secondSwitch();
+        $two = $this->leftOff(['switch_id' => 2, 'switch_host' => '192.0.2.11']);
+
+        PoeOutage::closeSeenOn($this->fake, EthernetSwitch::find(1));   // sw01 reads its own .8 as on
+        $this->assertNull($two->fresh()->on_at);
+        PoeOutage::closeSeenOn($this->fake2, EthernetSwitch::find(2));
+        $this->assertNotNull($two->fresh()->on_at);
     }
 
     public function test_forget_closes_without_writing()

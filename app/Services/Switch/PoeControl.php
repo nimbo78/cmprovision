@@ -33,7 +33,7 @@ class PoeControl
         return $config['version'] === '3' ? ($write['user'] ?? '') !== '' : ($write['community'] ?? '') !== '';
     }
 
-    /* A control talking with the write credentials of these settings (SwitchPortFinder::config()), null without them */
+    /* A control talking with the write credentials of these settings (EthernetSwitch::config()), null without them */
     public static function forConfig(array $config): ?self
     {
         if (!self::writable($config))

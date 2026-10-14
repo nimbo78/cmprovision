@@ -15,13 +15,14 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * The stand by the switch's ports (docs/superpowers/specs/2026-10-11-ports-page-design.md): the front
- * panel with the module in each port, the status filter (Alpine, in the browser) and one port's details.
+ * The stand by its switches' ports (docs/superpowers/specs/2026-10-11-ports-page-design.md,
+ * 2026-10-14-multi-switch-design.md): each switch's front panel with its line and the module in each port, one
+ * summary of the stand, the status filter (Alpine, in the browser) and one port's details.
  */
 #[Title('Ports')]
 class Ports extends Component
 {
-    /** key of the port whose details are open, e.g. "p10003"; only select() sets it */
+    /** key of the port whose details are open, e.g. "s1p10003"; only select() sets it */
     #[Locked]
     public $selected = null;
 
@@ -29,7 +30,7 @@ class Ports extends Component
 
     public function select($key)
     {
-        $this->selected = is_string($key) && preg_match('/^p\d+$/', $key) ? $key : null;
+        $this->selected = is_string($key) && preg_match('/^s\d+p\d+$/', $key) ? $key : null;
     }
 
     public function identify($id)
@@ -56,7 +57,7 @@ class Ports extends Component
     public function restartFailed()
     {
         $stand = Stand::current();
-        $cms = $stand && $stand['map'] ? self::failedOnStand($stand['map']) : [];
+        $cms = $stand && $stand['map'] ? self::failedOnStand($stand) : [];
         $this->report(PoeRestart::modules($cms, auth()->user()->name ?? null));
     }
 
@@ -65,51 +66,109 @@ class Ports extends Component
         $stand = Stand::current();
         if (!$stand)
             return view('livewire.ports', ['configured' => false]);
-        // a port left off that the switch shows switched on again was switched on at the switch
-        if ($stand['snapshot'] && !$stand['error'])
-            PoeOutage::closeSeenOn(app(SnmpClient::class, ['config' => $stand['config']]), $stand['config']['host']);
+        // a port left off that its switch shows switched on again was switched on at the switch
+        foreach ($stand['switches'] as $state)
+            if (Stand::answering($state))
+                PoeOutage::closeSeenOn(app(SnmpClient::class, ['config' => $state['config']]), $state['switch']);
 
+        $now = Carbon::now()->getTimestamp();
+        $switches = [];
+        foreach ($stand['switches'] as $id => $state)
+            $switches[] = self::block($id, $state, $stand['map']['switches'][$id] ?? null, $now,
+                $state['same_as'] ? $stand['switches'][$state['same_as']] : null);
+        usort($switches, function ($a, $b) { return strnatcasecmp($a['name'], $b['name']) ?: $a['id'] - $b['id']; });
         $tile = $stand['map']['tiles'][$this->selected] ?? null;
-        $writable = PoeControl::writable($stand['config']);
+        $writable = (bool) array_filter($stand['switches'], function ($state) { return PoeControl::writable($state['config']); });
         return view('livewire.ports', [
             'configured' => true,
-            'header' => self::header($stand['snapshot'], $stand['config']['host']),
-            'snapshot' => $stand['snapshot'],
-            'error' => $stand['error'],
+            'switches' => $switches,
+            // two switches with one name give boards nobody can tell apart (one switch under two addresses says so itself)
+            'duplicates' => array_keys(array_filter(array_count_values(array_column(array_filter($switches, function ($s) { return !$s['same']; }), 'name')),
+                function ($n) { return $n > 1; })),
+            'asOf' => self::asOf($stand['switches']),
             'map' => $stand['map'],
             'tile' => $tile,
-            'now' => Carbon::now()->getTimestamp(),
+            'now' => $now,
             'writable' => $writable,
-            'failed' => $writable && $stand['map'] ? count(self::failedOnStand($stand['map'])) : 0,
-            'restart' => $tile ? ['blocker' => StandMap::restartBlocker($tile),
-                                  'confirm' => PoeRestart::confirm($tile['modules'][0] ?? null, $tile['name'])] : null,
+            'failed' => $writable && $stand['map'] ? count(self::failedOnStand($stand)) : 0,
+            'restart' => $tile ? ['blocker' => PoeRestart::switchBlocker($stand['switches'][$tile['switch_id']] ?? null) ?? StandMap::restartBlocker($tile),
+                                  'confirm' => PoeRestart::confirm($tile['modules'][0] ?? null, $tile['label'])] : null,
         ]);
     }
 
-    /* The line above the stand: the model and its revision in bold, then the switch's name (unless the model already
-       is its name), serial, base MAC and address. A snapshot kept by 2.3.0 has no identity yet */
-    protected static function header(?array $snapshot, string $host): array
+    /* One switch's block: its line, what it says while silent, a placeholder before its first answer or instead of the
+       ports of a switch that is in the list twice ($same: the state of the row that is drawn) */
+    protected static function block(int $id, array $state, ?array $part, int $now, ?array $same = null): array
     {
-        $who = $snapshot['identity'] ?? [];
-        $model = $snapshot['model'] ?? null;
-        $name = $who['name'] ?? null;
-        return [
-            'title' => $model !== null ? trim($model.' '.($who['revision'] ?? '')) : null,
-            'facts' => implode(' · ', array_filter([
-                $name !== $model ? $name : null,
-                isset($who['serial']) ? 'S/N '.$who['serial'] : null,
-                isset($who['mac']) ? 'MAC '.$who['mac'] : null,
-                $host,
-            ])),
-        ];
+        $snapshot = $state['snapshot'];
+        $error = $state['error'];
+        $note = $placeholder = null;
+        if ($same)
+            $placeholder = 'Same switch as '.$same['switch']->hostname().' ('.$same['switch']->host
+                .'): delete one of them under Settings → Ethernet switches.';
+        elseif ($snapshot && $error)
+            $note = 'As of '.self::clock($snapshot['taken_at']).', not answering since '.self::clock($error['since']).': '.$error['message'];
+        elseif (!$snapshot)
+            // another page may hold the poll: its snapshot comes with the next refresh
+            $placeholder = $error ? 'Cannot read the switch: '.$error['message'] : 'Asking the switch…';
+        return ['id' => $id, 'name' => $state['switch']->hostname(), 'line' => self::header($state, $now), 'note' => $note,
+                'placeholder' => $placeholder, 'part' => $part, 'same' => (bool) $same,
+                'noMacTable' => $snapshot && $snapshot['mac_method'] === null && in_array(true, array_column($snapshot['ports'], 'up'), true)];
     }
 
-    /* Failed and silent modules on ports that may be restarted */
-    protected static function failedOnStand(array $map): array
+    /* The line inside a switch's block: its name first, then its serial, base MAC and address, its model and revision,
+       when it was polled and what its ports draw. A snapshot kept by 2.3.0 has no identity yet */
+    protected static function header(array $state, int $now): string
+    {
+        $snapshot = $state['snapshot'];
+        $who = $snapshot['identity'] ?? [];
+        $name = $state['switch']->hostname();
+        $host = $state['config']['host'];
+        $model = $snapshot['model'] ?? null;
+        // without a sysDescr the model is the switch's own name
+        $model = $model !== null && $model !== $name && $model !== ($who['name'] ?? null) ? trim($model.' '.($who['revision'] ?? '')) : null;
+        $watts = !empty($snapshot['poe']) ? array_sum(array_map(function ($p) { return $p['poe']['watts'] ?? 0; }, $snapshot['ports'])) : null;
+        return implode(' · ', array_filter([
+            $name,
+            isset($who['serial']) ? 'S/N '.$who['serial'] : null,
+            isset($who['mac']) ? 'MAC '.$who['mac'] : null,
+            $host !== $name ? $host : null,
+            $model,
+            $snapshot ? 'polled '.max(0, $now - $snapshot['taken_at']).' s ago' : null,
+            $watts !== null ? 'PoE '.number_format($watts, 1).' W' : null,
+        ]));
+    }
+
+    /* The verdict's start while switches do not answer: what the stand looked like and who is silent */
+    protected static function asOf(array $states): string
+    {
+        $silent = [];
+        $oldest = null;
+        foreach ($states as $state)
+            if ($state['error'])
+            {
+                $silent[] = $state['switch']->hostname();
+                if ($state['snapshot'])
+                    $oldest = min($oldest ?? PHP_INT_MAX, $state['snapshot']['taken_at']);
+            }
+        if (!$silent)
+            return '';
+        return ($oldest !== null ? 'As of '.self::clock($oldest).', ' : '').implode(', ', $silent).' '.(count($silent) === 1 ? 'is' : 'are').' not answering: ';
+    }
+
+    /* A moment as the page shows it: the time today, the day and time before */
+    protected static function clock(int $at): string
+    {
+        $time = Carbon::createFromTimestamp($at)->local();
+        return $time->format($time->isToday() ? 'H:i:s' : 'j M H:i');
+    }
+
+    /* Failed and silent modules on ports that may be restarted, on switches that may write and answer */
+    protected static function failedOnStand(array $stand): array
     {
         $cms = [];
-        foreach ($map['tiles'] as $tile)
-            if (StandMap::restartBlocker($tile) === null)
+        foreach ($stand['map']['tiles'] as $tile)
+            if (PoeRestart::switchBlocker($stand['switches'][$tile['switch_id']] ?? null) === null && StandMap::restartBlocker($tile) === null)
                 foreach ($tile['modules'] as $cm)
                     if (in_array(StandMap::moduleState($cm), ['fail', 'stale'], true))
                         $cms[] = $cm;

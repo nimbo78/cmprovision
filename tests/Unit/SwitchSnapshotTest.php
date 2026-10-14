@@ -6,6 +6,7 @@ use App\Services\Snmp\SnmpError;
 use App\Services\Switch\MacTable;
 use App\Services\Switch\Poe;
 use App\Services\Switch\SwitchSnapshot;
+use App\Support\ArpTable;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeSnmp;
 
@@ -198,6 +199,28 @@ class SwitchSnapshotTest extends TestCase
             $this->assertNotContains(SwitchSnapshot::OID_ENT_CONTAINED_IN, $walked);
             $this->assertNotContains(Poe::OID_ENT_ALIAS, $walked);
         }
+    }
+
+    public function test_own_macs_are_the_base_mac_the_interfaces_and_the_arp_entry()
+    {
+        $arp = tempnam(sys_get_temp_dir(), 'arp');
+        file_put_contents($arp, "IP address HW type Flags HW address Mask Device\n192.0.2.10 0x1 0x2 00:57:d2:97:a1:c0 * eth0\n");
+        ArpTable::$path = $arp;
+        try
+        {
+            $s = $this->take($this->interfaces([1 => ['Gi0/1', 6, 1, 1, 1000]]) + [
+                SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0' => hex2bin('0057d297a180'),
+                SwitchSnapshot::OID_IFPHYSADDRESS.'.1' => hex2bin('0057d297a181'),
+                SwitchSnapshot::OID_IFPHYSADDRESS.'.900' => hex2bin('0057d297a1c0'),   // Vl1
+                SwitchSnapshot::OID_IFPHYSADDRESS.'.901' => '',                        // a tunnel: none
+            ]);
+        }
+        finally
+        {
+            ArpTable::$path = '/proc/net/arp';
+            unlink($arp);
+        }
+        $this->assertSame(['00:57:d2:97:a1:80', '00:57:d2:97:a1:81', '00:57:d2:97:a1:c0'], $s['own_macs']);
     }
 
     public function test_a_bridge_address_of_zeros_or_not_six_octets_is_no_mac()

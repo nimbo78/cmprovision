@@ -12,7 +12,7 @@ class PoeOutage extends Model
     /* An open row without an error is a restart in its dark seconds for this long; after it, the restart stopped midway */
     const STUCK_SECONDS = 120;
 
-    protected $fillable = ['switch_host', 'if_index', 'port', 'oid', 'on_value', 'cm_serial', 'user', 'off_at', 'on_at', 'error'];
+    protected $fillable = ['switch_id', 'switch_host', 'if_index', 'port', 'oid', 'on_value', 'cm_serial', 'user', 'off_at', 'on_at', 'error'];
 
     protected $casts = ['off_at' => 'datetime', 'on_at' => 'datetime', 'if_index' => 'integer', 'on_value' => 'integer'];
 
@@ -24,12 +24,22 @@ class PoeOutage extends Model
         })->orderBy('off_at');
     }
 
+    /* Rows of this switch: by its id, and rows from before 2.4 by its address */
+    public function scopeForSwitch($query, EthernetSwitch $switch)
+    {
+        return $query->where(function ($q) use ($switch) {
+            $q->where('switch_id', $switch->id)->orWhere(function ($q) use ($switch) {
+                $q->whereNull('switch_id')->where('switch_host', $switch->host);
+            });
+        });
+    }
+
     /* A port left off that the switch shows switched on again (at the switch, or a write it applied late): its row
        closes. The port's own object is read, not its PoE status: the status words differ by vendor (Huawei's are not
        verified) and a snapshot may have been read before the port went off. Only rows of this switch. */
-    public static function closeSeenOn(SnmpClient $snmp, string $host): void
+    public static function closeSeenOn(SnmpClient $snmp, EthernetSwitch $switch): void
     {
-        foreach (self::stayedOff()->where('switch_host', $host)->get() as $outage)
+        foreach (self::stayedOff()->forSwitch($switch)->get() as $outage)
         {
             try
             {

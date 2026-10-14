@@ -1,5 +1,7 @@
 """Generate snmpsim data files (oid|type|value, sorted by OID) for the switch lookup tests.
-Usage: python3 tests/fixtures/snmp/generate.py tests/fixtures/snmp"""
+Usage: python3 tests/fixtures/snmp/generate.py tests/fixtures/snmp [name ...]
+With names only those files are written: c9200's ENTITY-MIB, sysName and base MAC rows were added by hand in
+2.3.1-2.3.2, so regenerating c9200 drops them."""
 import os, sys
 
 MODULE = '228.95.1.98.159.211'      # e4:5f:01:62:9f:d3
@@ -131,12 +133,41 @@ FILES['crs'] = [
     (f'{BASE}.4', 2, 4),
 ] + ports(CRS)
 
+# Two switches in a chain (2.4): sw01's Gi0/24 leads to sw02, so sw02's own SVI MAC and its module B show there;
+# on sw02 module B is on Gi0/3, where it belongs. Module A is on sw01's Gi0/1.
+SYSNAME = '1.3.6.1.2.1.1.5.0'
+IFPHYS = '1.3.6.1.2.1.2.2.1.6'
+MODULE_B = '228.95.1.98.159.212'    # e4:5f:01:62:9f:d4
+SVI_B = '0.87.210.151.161.192'      # 00:57:d2:97:a1:c0, sw02's Vlan1
+FILES['chaina'] = [
+    (SYSDESCR, 4, 'bench chain sw01'), (SYSNAME, 4, 'sw01'),
+    (f'{HWFDB}.{MODULE}.10.0', 2, 1),
+    (f'{HWFDB}.{MODULE_B}.10.0', 2, 24),
+    (f'{HWFDB}.{SVI_B}.1.0', 2, 24),
+] + ports({1: ('Gi0/1', 6, 1, 1, 1000), 2: ('Gi0/2', 6, 1, 2, 1000), 24: ('Gi0/24', 6, 1, 1, 1000)})
+FILES['chainb'] = [
+    (SYSDESCR, 4, 'bench chain sw02'), (SYSNAME, 4, 'sw02'),
+    (f'{IFPHYS}.100', '4x', '0057d297a1c0'),
+    (f'{HWFDB}.{MODULE_B}.10.0', 2, 3),
+] + ports({1: ('Gi0/1', 6, 1, 2, 1000), 3: ('Gi0/3', 6, 1, 1, 1000), 100: ('Vlan1', 136, 2, 1, 1000)})
+
+# Writable PoE objects for the PoE restart tests (snmpsim's writecache variation module): hwPoePortEnable in s5731,
+# pethPsePortAdminEnable in c9200 and cbs350, one per port the PoE status rows name, on (1) at the start
+WRITABLE = [('s5731', HW_POE_STATUS, '1.3.6.1.4.1.2011.5.25.195.3.1.3'),
+            ('c9200', PETH_DET, '1.3.6.1.2.1.105.1.1.1.3'),
+            ('cbs350', PETH_DET, '1.3.6.1.2.1.105.1.1.1.3')]
+for name, status, admin in WRITABLE:
+    FILES[name] += [(admin + oid[len(status):], '2:writecache', 'value=1') for oid, _, _ in FILES[name] if oid.startswith(status + '.')]
+
 def key(rec):
     return tuple(int(p) for p in rec[0].split('.'))
 
 out = sys.argv[1]
+only = set(sys.argv[2:])
 os.makedirs(out, exist_ok=True)
 for name, recs in FILES.items():
+    if only and name not in only:
+        continue
     with open(os.path.join(out, name + '.snmprec'), 'w', newline='\n') as f:
         for oid, typ, val in sorted(recs, key=key):
             f.write(f'{oid}|{typ}|{val}\n')

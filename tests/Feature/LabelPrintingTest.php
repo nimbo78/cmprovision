@@ -89,6 +89,23 @@ class LabelPrintingTest extends TestCase
         $this->assertSame(0, Cmlog::where('msg', 'like', 'Label command output%')->count());
     }
 
+    public function test_the_test_label_fills_the_switch_and_the_port()
+    {
+        Livewire::test(Labels::class)
+            ->set('printer_type', 'command')->set('print_command', 'cat $file')
+            ->set('template', '$switch|$port|$provisionboard')->set('file_extension', 'txt')
+            ->call('printTestLabel')
+            ->assertSee('Command output: sw01|Gi0/3|sw01 Gi0/3');
+    }
+
+    public function test_a_module_label_fills_the_switch_and_the_port()
+    {
+        $this->projectPrintingWith('cat $file');
+        Label::first()->update(['template' => '$serial|$switch|$port']);
+        $this->start('1000000000000e01');   // no switch: both empty
+        $this->assertSame(1, Cmlog::where('msg', 'like', '%1000000000000e01||%')->count());
+    }
+
     public function test_the_test_label_shows_what_the_command_said()
     {
         Livewire::test(Labels::class)

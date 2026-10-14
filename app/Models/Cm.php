@@ -38,6 +38,7 @@ class Cm extends Model
         'temp1', 'temp2', 'provisioning_board', 'provisioning_started_at', 'provisioning_complete_at', 'project_id',
         'phase', 'phase_detail', 'phase_started_at', 'progress_bytes', 'progress_total', 'progress_updated_at',
         'notification_batch_id', 'eeprom_before', 'eeprom_config_before', 'eeprom_config_after', 'eeprom_result',
+        'switch_id', 'switch_name', 'switch_port',
         'timeline', 'polled_at', 'identify_until',
     ];
 

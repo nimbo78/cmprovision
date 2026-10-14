@@ -3,14 +3,15 @@
 namespace App\Services\Switch;
 
 use App\Models\Cm;
+use App\Models\EthernetSwitch;
 use App\Services\NetworkStatus;
-use App\Services\SwitchPortFinder;
 use App\Support\StandMap;
 use Illuminate\Support\Facades\DB;
 
 /**
  * The stand as the Ports page shows it, for every page that needs it (the Ports page, the module card, a PoE
- * restart): the switch's snapshot (SnapshotCache, shared by all pages, at most FRESH_SECONDS old) and its map.
+ * restart): each switch's snapshot (SnapshotCache, shared by all pages, at most FRESH_SECONDS old) and one map of
+ * them all (StandMap). Each switch's row keeps what it said about itself and the links found to the others.
  */
 class Stand
 {
@@ -18,49 +19,115 @@ class Stand
        modules, not the office network behind an uplink */
     const LOOKUP_MACS = 48;
 
-    /** ['config' => SwitchPortFinder::config(), 'snapshot', 'error', 'map', 'checked_at'] (snapshot and map are null
-        until the switch has answered once; checked_at: when the switch was last asked), or null without a switch */
-    public static function current(): ?array
+    /** ['switches' => [id => ['switch' => EthernetSwitch, 'config', 'snapshot', 'error', 'checked_at', 'same_as' => id of the
+        row of the same switch, which is in the map instead]], 'map'] (a
+        snapshot is null until its switch has answered once, the map until one of them has; checked_at: when the switch
+        was last asked), or null without a switch. $notOlderThan and $wait go to SnapshotCache::current(); $extra:
+        modules the database does not hold yet (one at its start) */
+    public static function current(?int $notOlderThan = null, ?float $wait = null, iterable $extra = []): ?array
     {
-        $config = SwitchPortFinder::config();
-        if (!$config['host'])
+        $switches = EthernetSwitch::orderBy('id')->get();
+        if ($switches->isEmpty())
             return null;
-        $state = (new SnapshotCache($config['host'], function () use ($config) {
-            return SwitchSnapshot::forConfig($config)->take();
-        }))->current();
-        $map = $state['snapshot']
-            ? (new StandMap($state['snapshot'], self::modulesOn($state['snapshot']), app(NetworkStatus::class)->serverMac()))->build()
+        $states = [];
+        foreach ($switches as $switch)
+        {
+            $config = $switch->config();
+            $state = (new SnapshotCache($config['host'], function () use ($config) {
+                return SwitchSnapshot::forConfig($config)->take();
+            }))->current($notOlderThan, $wait ?? SnapshotCache::LOCK_WAIT);
+            if ($state['snapshot'] && !$state['error'])
+                self::remember($switch, $state['snapshot']);
+            $states[$switch->id] = ['switch' => $switch, 'config' => $switch->config(), 'snapshot' => $state['snapshot'],
+                                    'error' => $state['error'], 'checked_at' => $state['checked_at']];
+        }
+
+        // one switch under two addresses (its IP and its name, say) answers with one base MAC: the later row stays out
+        // of the map, or every module would tie between their twin ports
+        $first = [];
+        foreach ($states as $id => $state)
+        {
+            $mac = $state['snapshot']['identity']['mac'] ?? null;
+            $states[$id]['same_as'] = $mac !== null && isset($first[$mac]) ? $first[$mac] : null;
+            if ($mac !== null && !isset($first[$mac]))
+                $first[$mac] = $id;
+        }
+
+        $parts = [];
+        foreach ($states as $id => $state)
+            if (!$state['same_as'])
+                $parts[] = ['id' => $id, 'name' => $state['switch']->hostname(), 'snapshot' => $state['snapshot'],
+                            'answering' => self::answering($state), 'own_macs' => $state['switch']->own_macs ?? [],
+                            'links' => $state['switch']->links ?? []];
+        $snapshots = array_values(array_filter(array_column($parts, 'snapshot')));
+        $extra = is_array($extra) ? $extra : iterator_to_array($extra, false);
+        $map = $snapshots
+            ? (new StandMap($parts, array_merge(self::modulesOn($snapshots), $extra), app(NetworkStatus::class)->serverMac()))->build()
             : null;
-        return ['config' => $config, 'snapshot' => $state['snapshot'], 'error' => $state['error'], 'map' => $map,
-                'checked_at' => $state['checked_at']];
+        // a link is found again while both switches answer; while its neighbour is silent the map keeps it from here
+        if ($map)
+            foreach ($states as $id => $state)
+                if (self::answering($state) && isset($map['switches'][$id]) && ($state['switch']->links ?? []) != $map['switches'][$id]['links'])
+                    $state['switch']->forceFill(['links' => $map['switches'][$id]['links']])->save();
+        return ['switches' => $states, 'map' => $map];
     }
 
-    /** The port a module is on now: a port the map shows it on, the one with the fewest addresses when there are
-        several. Never an uplink, a port without link or a port where the switch still lists its MAC next to the
-        module now plugged in there (StandMap::present()); null when the switch does not show it */
+    /** The switch answered its last poll */
+    public static function answering(array $state): bool
+    {
+        return $state['snapshot'] !== null && $state['error'] === null;
+    }
+
+    /** The port a module is on now: the one the map gives its MAC (StandMap::owners()), if the module is among the
+        port's modules there. Never an uplink, a port without link or a port where the switch still lists its MAC next
+        to the module now plugged in there (StandMap::present()); null when the switches do not show it */
     public static function tileOf(?array $map, Cm $cm): ?array
     {
-        if (!$map || !$cm->mac)
+        $key = $map && $cm->mac ? ($map['owners'][strtolower($cm->mac)]['key'] ?? null) : null;
+        $tile = $key !== null ? ($map['tiles'][$key] ?? null) : null;
+        if (!$tile)
             return null;
-        $found = null;
-        foreach ($map['tiles'] as $tile)
-        {
-            $serials = array_map(function ($module) { return $module->serial; }, $tile['modules']);
-            if ($tile['state'] === 'module' && in_array($cm->serial, $serials, true)
-                && (!$found || $tile['mac_count'] < $found['mac_count']))
-                $found = $tile;
-        }
-        return $found;
+        $serials = array_map(function ($module) { return $module->serial; }, $tile['modules']);
+        return in_array($cm->serial, $serials, true) ? $tile : null;
+    }
+
+    /** Why a module is not on the map: no switch shows it, and which switches could not be asked */
+    public static function notSeen(array $stand): string
+    {
+        $silent = [];
+        foreach ($stand['switches'] as $state)
+            if (!self::answering($state))
+                $silent[] = $state['switch']->hostname();
+        return $silent ? 'not seen on the switches ('.implode(', ', $silent).' '.(count($silent) === 1 ? 'does' : 'do').' not answer)'
+                       : 'not seen on the switch';
+    }
+
+    /* What the switch said about itself; a base MAC another row holds already stays unset (two rows for one switch) */
+    protected static function remember(EthernetSwitch $switch, array $snapshot): void
+    {
+        $name = $snapshot['identity']['name'] ?? null;
+        if ($name !== null)
+            $switch->sys_name = $name;
+        if (isset($snapshot['own_macs']))
+            $switch->own_macs = $snapshot['own_macs'];
+        if ($snapshot['mac_method'] ?? null)
+            $switch->method_detected = $snapshot['mac_method'];
+        $mac = $snapshot['identity']['mac'] ?? null;
+        if ($mac && $mac !== $switch->base_mac && !EthernetSwitch::where('base_mac', $mac)->whereKeyNot($switch->id)->exists())
+            $switch->base_mac = $mac;
+        if ($switch->isDirty())
+            $switch->save();
     }
 
     /* Modules behind ports with a link and few enough addresses to be devices, not uplinks */
-    protected static function modulesOn(array $snapshot)
+    protected static function modulesOn(array $snapshots)
     {
         $macs = [];
-        foreach ($snapshot['ports'] as $port)
-            if ($port['up'] && ($port['mac_count'] ?? count($port['macs'])) <= self::LOOKUP_MACS)
-                foreach ($port['macs'] as $mac)
-                    $macs[strtolower($mac)] = true;
+        foreach ($snapshots as $snapshot)
+            foreach ($snapshot['ports'] as $port)
+                if ($port['up'] && ($port['mac_count'] ?? count($port['macs'])) <= self::LOOKUP_MACS)
+                    foreach ($port['macs'] as $mac)
+                        $macs[strtolower($mac)] = true;
         $modules = [];
         foreach (array_chunk(array_keys($macs), 500) as $chunk)
             foreach (Cm::whereIn(DB::raw('lower(mac)'), $chunk)->get() as $cm)

@@ -3,10 +3,10 @@
 namespace App\Http\Livewire;
 
 use App\Models\Cm;
+use App\Models\EthernetSwitch;
 use App\Models\NotificationBatch;
 use App\Services\Switch\PoeControl;
 use App\Services\Switch\PoeRestart;
-use App\Services\SwitchPortFinder;
 use App\Support\BatchSummary;
 use Livewire\Component;
 
@@ -16,7 +16,7 @@ class ProvisioningStatus extends Component
 {
     const RECENT_HOURS = 2;      // modules outside any batch stay visible this long after they finish
     const ACTIVE_HOURS = Cm::ACTIVE_HOURS;     // a module still "in progress" after this long was unplugged
-    const MAX_ROWS = 50;
+    const MAX_ROWS = 100;    // a stand of two 48-port switches
 
     public $restartMessage = null, $restartError = false;
 
@@ -89,13 +89,19 @@ class ProvisioningStatus extends Component
             })
             ->values();
 
-        $writable = PoeControl::writable(SwitchPortFinder::config());
+        // a module's switch must take writes; one found before 2.4 (no switch_id) needs any switch that does
+        $writable = EthernetSwitch::all()->filter(function ($switch) { return PoeControl::writable($switch->config()); })->modelKeys();
+        $canRestart = function (Cm $cm) use ($writable) {
+            return $cm->switch_id ? in_array($cm->switch_id, $writable) : (bool) $writable;
+        };
         return view('livewire.provisioning-status', [
             'summary' => $summary,
             'modules' => $modules,
             'activeCount' => $modules->filter->isActive()->count(),
-            'writable' => $writable,
-            'failedToRestart' => $writable && $summary && $summary->open ? $summary->counts['failed'] + $summary->silent : 0,
+            'canRestart' => $canRestart,
+            'failedToRestart' => $summary && $summary->open ? $summary->modules->filter(function ($cm) use ($canRestart) {
+                return ($cm->phase === 'failed' || $cm->silentFor() !== null) && $canRestart($cm);
+            })->count() : 0,
         ]);
     }
 

@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\Cm;
 use App\Services\Snmp\PhpSnmpClient;
 use App\Services\Snmp\SnmpError;
 use App\Services\Switch\Poe;
 use App\Services\Switch\PoeControl;
+use App\Services\Switch\SwitchSnapshot;
 use App\Services\SwitchPortFinder;
+use App\Support\StandMap;
 use Tests\TestCase;
 
 /**
@@ -34,41 +37,60 @@ class SnmpAgentTest extends TestCase
 
     public function test_vlan_aware_switch_through_q_bridge()
     {
-        $finder = $this->finder('qbridge');
-        $this->assertSame('GE0/0/5', $finder->portOf(self::MODULE));
-        $this->assertSame('qbridge', $finder->lastMethod());
-
         $scan = $this->finder('qbridge')->scan();
+        $this->assertSame('GE0/0/5', $scan['ports'][self::MODULE]);
+        $this->assertSame('qbridge', $scan['method']);
         $this->assertSame('uplink', $scan['ports']['00:11:22:33:44:55'], 'a port description wins over the name');
         $this->assertSame(10, $scan['vlans'][self::MODULE]);
     }
 
     public function test_cisco_ios_per_vlan_instances_through_community_indexing()
     {
-        $finder = $this->finder('ciscoios');
-        $this->assertSame('Gi0/5', $finder->portOf(self::MODULE));
-        $this->assertSame('cisco', $finder->lastMethod());
+        $scan = $this->finder('ciscoios')->scan();
+        $this->assertSame('Gi0/5', $scan['ports'][self::MODULE]);
+        $this->assertStringEndsWith(' entries', $scan['tried']['cisco']);
     }
 
     public function test_huawei_l2mam_table()
     {
-        $finder = $this->finder('huawei');
-        $this->assertSame('GE0/0/3', $finder->portOf(self::MODULE));
-        $this->assertSame('huawei', $finder->lastMethod());
+        $this->assertSame('GE0/0/3', $this->finder('huawei')->scan()['ports'][self::MODULE]);
     }
 
     public function test_huawei_yunshan_bridge_ports_through_l2if()
     {
-        $finder = $this->finder('yunshan');
-        $this->assertSame('GE1/0/30', $finder->portOf(self::MODULE));
-        $this->assertSame('bridge', $finder->lastMethod());
+        $scan = $this->finder('yunshan')->scan();
+        $this->assertSame('GE1/0/30', $scan['ports'][self::MODULE]);
+        $this->assertSame('bridge', $scan['method']);
     }
 
     public function test_mikrotik_routeros_q_bridge_with_fdb_id_zero_and_comments()
     {
-        $finder = $this->finder('routeros');
-        $this->assertSame('line slot 3', $finder->portOf(self::MODULE));
-        $this->assertSame('qbridge', $finder->lastMethod());
+        $scan = $this->finder('routeros')->scan();
+        $this->assertSame('line slot 3', $scan['ports'][self::MODULE]);
+        $this->assertSame('qbridge', $scan['method']);
+    }
+
+    public function test_a_chain_of_two_switches_puts_the_module_on_its_own_switch()
+    {
+        // one agent, two data files: the community picks the switch
+        $take = function ($community) {
+            return SwitchSnapshot::forConfig(['host' => getenv('SNMPSIM_ENDPOINT'), 'community' => $community])->take();
+        };
+        $one = $take('chaina');
+        $two = $take('chainb');
+        $this->assertSame(['sw01', 'sw02'], [$one['identity']['name'], $two['identity']['name']]);
+        $this->assertContains('00:57:d2:97:a1:c0', $two['own_macs'], "sw02's Vlan1 MAC through ifPhysAddress");
+
+        $a = new Cm(['serial' => '10000000000000a1', 'mac' => self::MODULE, 'phase' => 'done']);
+        $b = new Cm(['serial' => '10000000000000b1', 'mac' => 'e4:5f:01:62:9f:d4', 'phase' => 'done']);
+        $map = (new StandMap([
+            ['id' => 1, 'name' => 'sw01', 'snapshot' => $one, 'own_macs' => $one['own_macs']],
+            ['id' => 2, 'name' => 'sw02', 'snapshot' => $two, 'own_macs' => $two['own_macs']],
+        ], [$a, $b], null))->build();
+
+        $this->assertSame('sw02', $map['tiles']['s1p24']['link'], "sw01 Gi0/24 leads to sw02");
+        $this->assertSame(['s1p1', 's2p3'], [$map['owners'][self::MODULE]['key'], $map['owners']['e4:5f:01:62:9f:d4']['key']]);
+        $this->assertSame('sw02 Gi0/3', $map['tiles']['s2p3']['board']);
     }
 
     public function test_snmpv3_vlan_context()

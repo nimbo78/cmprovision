@@ -2,32 +2,51 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use App\Models\Setting;
+use App\Models\EthernetSwitch;
 use App\Services\SwitchPortFinder;
+use Illuminate\Console\Command;
 
+/* Add a switch of the stand by SNMP v2c, or change the one at that address (its write access and SNMPv3 settings stay);
+   the settings page does the rest */
 class ConfigureEthernetSwitch extends Command
 {
-    protected $signature = 'ethernetswitch:configure';
+    protected $signature = 'ethernetswitch:configure {--remove= : address of a switch to remove}';
 
-    protected $description = 'Connect to managed Ethernet switch by SNMP v2c for port identification (SNMPv3 and the lookup method: settings page)';
+    protected $description = 'Add or change an Ethernet switch of the stand by SNMP v2c (SNMPv3, write access and the lookup method: settings page)';
 
     public function handle()
     {
-        $ip = $this->ask("Ethernet switch IP-address (leave empty to disable module)");
+        if ($this->option('remove') !== null)
+        {
+            $removed = EthernetSwitch::where('host', $this->option('remove'))->first();
+            if (!$removed)
+            {
+                $this->error('No switch at '.$this->option('remove').'.');
+                return 1;
+            }
+            $removed->delete();
+            $this->info('Removed '.$removed->hostname().' ('.$removed->host.').');
+            return 0;
+        }
+
+        $ip = $this->ask('Ethernet switch IP-address (leave empty to list the switches)');
         if (!$ip)
         {
-            Setting::where('key', 'like', 'ethernetswitch_%')->delete();
-            $this->info("Disabled Ethernet switch integration");
+            $rows = EthernetSwitch::orderBy('id')->get()->map(function ($s) { return [$s->hostname(), $s->host, $s->snmp_version]; })->all();
+            if ($rows)
+                $this->table(['Name', 'Address', 'SNMP'], $rows);
+            else
+                $this->line('No switches.');
+            $this->line('Nothing changed. Remove one with --remove=<address>; SNMPv3 and write access: settings page.');
             return 0;
         }
 
         do
         {
-            $community = $this->ask("SNMP v2c community name");
+            $community = $this->ask('SNMP v2c community name');
         } while (!$community);
 
-        $this->line("Trying to communicate with Ethernet switch...");
+        $this->line('Trying to communicate with Ethernet switch...');
         try
         {
             $scan = SwitchPortFinder::forConfig(['host' => $ip, 'version' => '2c', 'community' => $community])->scan();
@@ -39,11 +58,11 @@ class ConfigureEthernetSwitch extends Command
         }
 
         foreach ($scan['tried'] as $method => $answer)
-            $this->line(sprintf("  %-8s %s", $method, $answer));
+            $this->line(sprintf('  %-8s %s', $method, $answer));
 
         if (!$scan['ports'])
         {
-            $this->error("No MAC address table found. Settings unchanged.");
+            $this->error('No MAC address table found. Settings unchanged.');
             return 1;
         }
 
@@ -51,11 +70,10 @@ class ConfigureEthernetSwitch extends Command
             return [$mac, $scan['ports'][$mac], $scan['vlans'][$mac]];
         }, array_keys($scan['ports'])));
 
-        Setting::where('key', 'like', 'ethernetswitch_%')->delete();
-        foreach (['ip' => $ip, 'snmp_version' => '2c', 'snmp_community' => $community, 'method' => 'auto', 'method_detected' => $scan['method']] as $key => $value)
-            Setting::create(['key' => 'ethernetswitch_'.$key, 'value' => $value]);
-
-        $this->info("Communication successful (".SwitchPortFinder::METHODS[$scan['method']]."). Enabled Ethernet switch integration.");
+        $switch = EthernetSwitch::firstOrNew(['host' => $ip]);
+        $switch->fill(['snmp_version' => '2c', 'community' => $community, 'method' => 'auto', 'method_detected' => $scan['method']])->save();
+        $this->info('Communication successful ('.SwitchPortFinder::METHODS[$scan['method']].'). '
+            .($switch->wasRecentlyCreated ? 'Added' : 'Changed').' '.$ip.'.');
         return 0;
     }
 }

@@ -9,12 +9,13 @@ use App\Events\CmProvisioningFailed;
 use App\Events\CmProvisioningStarted;
 use App\Models\Cm;
 use App\Models\Cmlog;
+use App\Models\EthernetSwitch;
+use App\Services\Switch\PortLookup;
 use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
 use App\Services\EepromImage;
-use App\Services\SwitchPortFinder;
 
 class ScriptExecuteController extends Controller
 {
@@ -136,34 +137,27 @@ exit 1
 
     public function startProvisoning(Request $req)
     {
+        $since = now()->getTimestamp();   // a switch's snapshot from before this may not know the module yet
         $project = Project::getActive();
         $image   = $project ? $project->image : null;
         $bootmode = $req->query('bootmode');
         $jumper  = $req->query('inversejumper');
-        $switchConfig = SwitchPortFinder::config();
 
         $switchWarning = null;
-        if ($switchConfig['host'] && $req->query('mac'))
+        $found = ['switch' => null, 'port' => null, 'board' => null];
+        if ($req->query('mac') && EthernetSwitch::exists())
         {
+            // the stand map's port (Stand): every switch asked, a link between them never taken for the module's port
             try
             {
-                $finder = SwitchPortFinder::forConfig($switchConfig);
-                $board = $finder->portOf($req->query('mac'));
-                if ($board === null)
-                {
-                    $switchWarning = "Switch port unknown: ".$switchConfig['host']." does not know MAC ".$req->query('mac');
-                }
-                else if ($finder->lastMethod() !== $switchConfig['detected'])
-                {
-                    // try the method that works first next time
-                    Setting::updateOrCreate(['key' => 'ethernetswitch_method_detected'], ['value' => $finder->lastMethod()]);
-                }
+                $found = PortLookup::find((string) $this->serial, (string) $req->query('mac'), $since);
+                $switchWarning = $found['warning'];
             }
             catch (\Throwable $e)
             {
-                $board = null;
-                $switchWarning = "Switch port unknown: error talking to ".$switchConfig['host'].": ".$e->getMessage();
+                $switchWarning = "Switch port unknown: ".$e->getMessage();
             }
+            $board = $found['board'];
         }
         else if ($jumper)
         {
@@ -203,6 +197,9 @@ exit 1
             'image_filename' => $image ? $image->filename : null,
             'image_sha256'   => $image ? $image->sha256 : null,
             'provisioning_board' => $board,
+            'switch_id' => $found['switch']->id ?? null,
+            'switch_name' => $found['switch'] ? $found['switch']->hostname() : null,
+            'switch_port' => $found['port'],
             'provisioning_started_at' => now(),
             'provisioning_complete_at' => null,
             'phase' => null,
@@ -586,7 +583,9 @@ exit 1
         $labelsettings = $this->cm->project->label;
         $label = str_replace('$mac', $this->cm->mac, $labelsettings->template);
         $label = str_replace('$serial', $this->serial, $label);
-        $label = str_replace('$provisionboard', $this->cm->provisioning_board, $label);
+        // the board ("sw01 Gi0/3") and its two halves; empty without a switch
+        $label = str_replace(['$provisionboard', '$switch', '$port'],
+            [(string) $this->cm->provisioning_board, (string) $this->cm->switch_name, (string) $this->cm->switch_port], $label);
         $tmpfile = tempnam(sys_get_temp_dir(), "label-");
 
         try

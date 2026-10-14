@@ -109,7 +109,7 @@ class Labels extends Component
         $serial = '1000000012345678';
         $label = str_replace('$mac', '11:22:33:44:55:66', $this->template);
         $label = str_replace('$serial', $serial, $label);
-        $label = str_replace('$provisionboard', '000 (0)', $label);
+        $label = str_replace(['$provisionboard', '$switch', '$port'], ['sw01 Gi0/3', 'sw01', 'Gi0/3'], $label);
         $tmpfile = tempnam(sys_get_temp_dir(), "label-");
         $ftp_password = $this->ftp_password;
         if ($ftp_password == $this->dummypassword)

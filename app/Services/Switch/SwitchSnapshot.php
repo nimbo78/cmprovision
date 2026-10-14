@@ -4,6 +4,7 @@ namespace App\Services\Switch;
 
 use App\Services\Snmp\SnmpClient;
 use App\Services\Snmp\SnmpError;
+use App\Support\ArpTable;
 use Illuminate\Support\Carbon;
 
 /**
@@ -30,6 +31,7 @@ class SwitchSnapshot
     const ETHERNET_TYPES = [6, 62, 69, 117];
     /* What the switch is (identity()): standard objects that Cisco and Huawei both answer */
     const OID_BRIDGE_ADDRESS = '.1.3.6.1.2.1.17.1.1';      // dot1dBaseBridgeAddress: the base MAC
+    const OID_IFPHYSADDRESS = '.1.3.6.1.2.1.2.2.1.6';      // ifPhysAddress: the MAC of each interface, SVIs too
     const OID_ENT_CLASS = '.1.3.6.1.2.1.47.1.1.1.1.5';     // entPhysicalClass: chassis(3), module(9)
     const OID_ENT_HW_REV = '.1.3.6.1.2.1.47.1.1.1.1.8';    // entPhysicalHardwareRev
     const OID_ENT_SERIAL = '.1.3.6.1.2.1.47.1.1.1.1.11';   // entPhysicalSerialNum
@@ -48,7 +50,7 @@ class SwitchSnapshot
         $this->id = $id;
     }
 
-    /* The switch of these settings (SwitchPortFinder::config()), named by its address */
+    /* The switch of these settings (EthernetSwitch::config()), named by its address */
     public static function forConfig(array $config): self
     {
         $snmp = app(SnmpClient::class, ['config' => $config]);
@@ -132,12 +134,40 @@ class SwitchSnapshot
             'id' => $this->id,
             'model' => $identity['model'],
             'identity' => ['revision' => $identity['revision'], 'serial' => $identity['serial'], 'name' => $identity['name'], 'mac' => $identity['mac']],
+            'own_macs' => $this->ownMacs($identity['mac']),
             'taken_at' => Carbon::now()->getTimestamp(),
             'duration' => round(microtime(true) - $started, 3),
             'mac_method' => $table['method'],
             'poe' => (bool) $poe,
             'ports' => $ports,
         ];
+    }
+
+    /* The addresses the switch itself answers from: base MAC, its interfaces' (SVI and ports) and the ARP entry of its
+       address. A neighbour's port towards it shows one of them, while the switch never lists them on its own ports */
+    protected function ownMacs(?string $base): array
+    {
+        $macs = $base ? [$base] : [];
+        foreach ($this->column(self::OID_IFPHYSADDRESS) as $value)
+            if (is_string($value) && strlen($value) === 6 && trim($value, "\0") !== '')
+                $macs[] = implode(':', str_split(bin2hex($value), 2));
+        $arp = ArpTable::macOf($this->id);
+        if ($arp)
+            $macs[] = $arp;
+        return array_values(array_unique($macs));
+    }
+
+    /** What the switch calls itself (sysName) and its base MAC, for the settings page; null for what it does not say.
+        A silent switch throws */
+    public function nameAndMac(): array
+    {
+        return ['name' => $this->value(self::OID_SYSNAME.'.0'), 'mac' => self::mac($this->value(self::OID_BRIDGE_ADDRESS.'.0', false))];
+    }
+
+    /* Six octets as php-snmp gives them, as "00:57:d2:97:a1:80"; null for zeros or anything else */
+    protected static function mac($octets): ?string
+    {
+        return is_string($octets) && strlen($octets) === 6 && trim($octets, "\0") !== '' ? implode(':', str_split(bin2hex($octets), 2)) : null;
     }
 
     /* [index => value] of a one-index column; [] when the switch does not have it; a silent switch throws */
@@ -223,7 +253,7 @@ class SwitchSnapshot
             'revision' => $revision,
             'serial' => $serial,
             'name' => $this->value(self::OID_SYSNAME.'.0'),
-            'mac' => is_string($mac) && strlen($mac) === 6 && trim($mac, "\0") !== '' ? implode(':', str_split(bin2hex($mac), 2)) : null,
+            'mac' => self::mac($mac),
         ];
     }
 
