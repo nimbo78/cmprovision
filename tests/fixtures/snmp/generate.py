@@ -151,6 +151,25 @@ FILES['chainb'] = [
     (f'{HWFDB}.{MODULE_B}.10.0', 2, 3),
 ] + ports({1: ('Gi0/1', 6, 1, 2, 1000), 3: ('Gi0/3', 6, 1, 1, 1000), 100: ('Vlan1', 136, 2, 1, 1000)})
 
+# The 2.5 load rehearsal (tests/load): two 24-port Huawei with PoE and a module on every GE port
+# (e4:5f:01:64:00:01..30); stand48a's XGE0/0/1 leads to stand48b, so stand48b's Vlanif1 MAC and its modules show there
+STAND48 = {i: (f'GE0/0/{i}', 6, 1, 1, 1000) for i in range(1, 25)}
+STAND48[25] = ('XGE0/0/1', 6, 1, 1, 10000)
+STAND48[50] = ('Vlanif1', 136, 2, 1, 1000)
+SVI_48B = '0.87.210.151.162.2'      # 00:57:d2:97:a2:02, stand48b's Vlanif1
+
+def stand48_module(n):
+    return f'228.95.1.100.{n // 256}.{n % 256}'
+
+for name, first in (('stand48a', 1), ('stand48b', 25)):
+    FILES[name] = [(SYSDESCR, 4, f'bench {name} S5735-L24P4X'), (SYSNAME, 4, name)] \
+        + [(f'{HWFDB}.{stand48_module(first + i - 1)}.10.0', 2, i) for i in range(1, 25)] \
+        + [(f'{HW_POE_STATUS}.{i}', 4, 'Powered') for i in range(1, 25)] \
+        + [(f'{HW_POE_POWER}.{i}', 2, 6500) for i in range(1, 25)] + ports(STAND48)
+FILES['stand48a'] += [(f'{HWFDB}.{stand48_module(n)}.10.0', 2, 25) for n in range(25, 49)] \
+    + [(f'{HWFDB}.{SVI_48B}.1.0', 2, 25)]
+FILES['stand48b'] += [(f'{IFPHYS}.50', '4x', '0057d297a202')]
+
 # Writable PoE objects for the PoE restart tests (snmpsim's writecache variation module): hwPoePortEnable in s5731,
 # pethPsePortAdminEnable in c9200 and cbs350, one per port the PoE status rows name, on (1) at the start
 WRITABLE = [('s5731', HW_POE_STATUS, '1.3.6.1.4.1.2011.5.25.195.3.1.3'),

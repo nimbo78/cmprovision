@@ -1,3 +1,16 @@
+cmprovision4 (2.5.0~dev1) unstable; urgency=medium
+
+  * 48 modules at once: a php-fpm pool of its own, SQLite in WAL, a second
+    queue worker for image checksums.
+  * A module's board is looked up in the background: its start answers at
+    once, and one poll of the stand serves a wave of modules.
+  * Notifications go out in packs through the queue, within chat limits; the
+    batch summary is edited with fresh numbers after each pack.
+  * One batch for a wave; a PoE restart asks the database whether a module
+    writes its EEPROM right before each port goes off.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Wed, 14 Oct 2026 17:27:03 +0300
+
 cmprovision4 (2.4.1) unstable; urgency=medium
 
   * The user menu names the version and commit the server runs

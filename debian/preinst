@@ -1,6 +1,7 @@
 #!/bin/sh
-# Before an upgrade from a version older than 2.4 keep a snapshot of the data (2.0: Laravel 13 and new database
-# columns; 2.4: the switches in a table of their own): cmprovision-restore <snapshot> puts the old version back.
+# Before an upgrade from a version older than 2.5 keep a snapshot of the data (2.0: Laravel 13 and new database
+# columns; 2.4: the switches in a table of their own; 2.5: new services, the database in WAL, notifications through
+# the queue): cmprovision-restore <snapshot> puts the old version back.
 # Uploaded images are not in it: the upgrade leaves them alone.
 set -e
 
@@ -54,7 +55,7 @@ take_snapshot() {
     return 1
 }
 
-if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.4.0~"; then
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.5.0~"; then
     if [ -n "${CMPROVISION_NO_SNAPSHOT:-}" ]; then
         echo "cmprovision: CMPROVISION_NO_SNAPSHOT is set: upgrading from $2 without a snapshot" >&2
     elif [ ! -x /usr/sbin/cmprovision-backup ]; then
