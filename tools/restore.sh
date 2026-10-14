@@ -39,7 +39,9 @@ if [ "$DATA_ONLY" = 1 ] && ! dpkg-query -W -f='${Status}' cmprovision4 2>/dev/nu
     echo "--data-only: install cmprovision4 first" >&2; exit 1
 fi
 
-systemctl stop cmprovision-queue cmprovision-queue-images cmprovision-dnsmasq 2>/dev/null || true
+# The web server too: in WAL every connection opens -wal and -shm by name, and one left open across the swap would mix
+# the old files into the restored database. Everything is started again at the end.
+systemctl stop nginx 'php*-fpm' cmprovision-queue cmprovision-queue-images cmprovision-dnsmasq 2>/dev/null || true
 
 if [ "$DATA_ONLY" = 1 ]; then
     echo "restoring the data into $APP"
@@ -86,6 +88,8 @@ fi
 
 runuser -u www-data -- "$APP/artisan" config:clear >/dev/null
 runuser -u www-data -- "$APP/artisan" view:clear >/dev/null
+# the cache holds the queue's locks of jobs the restored table no longer has: they would hold new jobs back for minutes
+runuser -u www-data -- "$APP/artisan" cache:clear >/dev/null
 systemctl restart 'php*-fpm' nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot \
     || echo "not every service restarted, see their states:"
 # 2.5 and later: the image checksum worker (a snapshot's older package has none)

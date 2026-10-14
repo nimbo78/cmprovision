@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Models\Cm;
 use App\Models\Cmlog;
-use App\Services\LabelPrinter;
 use App\Services\Switch\PortLookup;
 use App\Services\Switch\Stand;
 use Illuminate\Bus\Queueable;
@@ -18,15 +17,17 @@ use Illuminate\Queue\Jobs\SyncJob;
    them, the 2.4 rules for each MAC (PortLookup::resolve). A module not on the map yet is looked up again
    RETRY_SECONDS later; after GIVE_UP_SECONDS it gets no board and the warning. Unique until a worker takes it: a
    start during a run queues the next run, and one run at a time waits in the queue. Runs may overlap (both workers
-   take boards): settle() records each module once, and whoever records it prints the preinstall label */
+   take boards): settle() records each module once, and whoever records it queues the preinstall label */
 class ResolveBoards implements ShouldQueue, ShouldBeUniqueUntilProcessing
 {
     use Dispatchable, InteractsWithQueue, Queueable;
 
     const RETRY_SECONDS = 3;
     const GIVE_UP_SECONDS = 60;
+    const STALE_MINUTES = 10;
 
     public $uniqueFor = 120;
+    public $timeout = 80;   // under the database queue's retry_after (90 s): never run twice at once
 
     public function __construct()
     {
@@ -35,6 +36,7 @@ class ResolveBoards implements ShouldQueue, ShouldBeUniqueUntilProcessing
 
     public function handle(): void
     {
+        $this->dropStale();
         $pending = Cm::whereNotNull('board_pending_since')->orderBy('board_pending_since')->get();
         if ($pending->isEmpty())
             return;
@@ -54,19 +56,35 @@ class ResolveBoards implements ShouldQueue, ShouldBeUniqueUntilProcessing
         $waiting = false;
         foreach ($pending as $cm)
         {
-            $found = $stand ? PortLookup::resolve($stand, $cm->mac)
-                            : ['switch' => null, 'port' => null, 'board' => null, 'warning' => $trouble];
-            $late = now()->getTimestamp() - $cm->board_pending_since->getTimestamp() >= self::GIVE_UP_SECONDS;
-            // no switch left since the start: nothing to wait for
-            if ($found['board'] === null && ($stand || $trouble) && !$late)
+            // one module the database will not take must not leave the rest of the wave without boards
+            try
             {
-                $waiting = true;
-                continue;
+                $found = $stand ? PortLookup::resolve($stand, $cm->mac)
+                                : ['switch' => null, 'port' => null, 'board' => null, 'warning' => $trouble];
+                $late = now()->getTimestamp() - $cm->board_pending_since->getTimestamp() >= self::GIVE_UP_SECONDS;
+                // no switch left since the start: nothing to wait for
+                if ($found['board'] === null && ($stand || $trouble) && !$late)
+                {
+                    $waiting = true;
+                    continue;
+                }
+                self::settle($cm, $found);
             }
-            self::settle($cm, $found);
+            catch (\Throwable $e)
+            {
+                report($e);
+                $waiting = true;
+            }
         }
         // the sync queue of the tests runs a dispatch at once: no next run there
         if ($waiting && !$this->job instanceof SyncJob)
+            self::dispatch()->delay(now()->addSeconds(self::RETRY_SECONDS));
+    }
+
+    /* The run failed or ran out of time: nothing else would look the waiting modules up before the next start */
+    public function failed(\Throwable $e): void
+    {
+        if (Cm::whereNotNull('board_pending_since')->exists())
             self::dispatch()->delay(now()->addSeconds(self::RETRY_SECONDS));
     }
 
@@ -86,8 +104,20 @@ class ResolveBoards implements ShouldQueue, ShouldBeUniqueUntilProcessing
         $cm->refresh();
         if ($found['warning'])
             Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => 'warning', 'msg' => $found['warning']]);
+        // a job of its own: a slow or silent printer never holds up the boards of the wave
         if ($cm->phase !== 'failed' && $cm->project && $cm->project->label_moment === 'preinstall' && $cm->project->label)
-            LabelPrinter::print($cm);
+            PrintLabel::dispatch($cm->id);
         return true;
+    }
+
+    /* A start whose lookup never ran (the workers were down, or the package went back and forth): too late for its
+       board and its label now, the module may be long gone */
+    protected function dropStale(): void
+    {
+        $stale = Cm::whereNotNull('board_pending_since')->where('board_pending_since', '<', now()->subMinutes(self::STALE_MINUTES))->get();
+        foreach ($stale as $cm)
+            if (Cm::whereKey($cm->id)->where('board_pending_since', $cm->board_pending_since)->update(['board_pending_since' => null]))
+                Cmlog::create(['cm' => $cm->serial, 'board' => null, 'loglevel' => 'warning',
+                               'msg' => 'Switch port unknown: the lookup did not run within '.self::STALE_MINUTES.' minutes of the start']);
     }
 }

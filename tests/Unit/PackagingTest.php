@@ -30,6 +30,17 @@ class PackagingTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('#^\s*"\$APP/artisan"#m', $restore);
     }
 
+    public function test_restore_stops_the_web_server_before_it_replaces_the_database()
+    {
+        // in WAL every connection opens -wal and -shm by name: one left open across the swap would mix the old files
+        // into the restored database; the cache holds queue locks of jobs the restored table no longer has
+        $restore = $this->file('tools/restore.sh');
+        $stop = strpos($restore, "systemctl stop nginx 'php*-fpm' cmprovision-queue cmprovision-queue-images cmprovision-dnsmasq");
+        $this->assertNotFalse($stop);
+        $this->assertLessThan(strpos($restore, 'install -o www-data -g www-data -m 600 "$SRC/database.sqlite"'), $stop);
+        $this->assertStringContainsString('runuser -u www-data -- "$APP/artisan" cache:clear', $restore);
+    }
+
     public function test_the_backup_never_opens_a_file_of_the_web_user_as_root()
     {
         // a root sqlite3 would open the -wal and -shm files in the web user's directory, where a planted symlink makes

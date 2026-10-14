@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Livewire\ProvisioningStatus;
+use App\Jobs\PrintLabel;
 use App\Jobs\ResolveBoards;
 use App\Models\Cm;
 use App\Models\Cmlog;
@@ -13,6 +14,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Switch\MacTable;
 use App\Services\Switch\Stand;
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -161,7 +163,7 @@ class ResolveBoardsTest extends TestCase
         $this->stand();
         $this->project('preinstall');
 
-        // no storagesize: refused; the sync queue of the tests looks the board up once the start has answered
+        // no storagesize: refused; the sync queue of the tests looks the board up once the refusal is recorded
         $this->get('/scriptexecute?model=CM4&serial=10000000e611110c&mac=e4:5f:01:62:9f:d3')->assertOk()
             ->assertSee('Missing eMMC/SD card.');
 
@@ -199,6 +201,80 @@ class ResolveBoardsTest extends TestCase
 
         $this->assertSame('sw01 GE0/0/3', Cm::where('serial', '10000000e611110c')->value('provisioning_board'));
         $this->assertSame(1, DB::table('jobs')->where('queue', 'boards')->count(), 'the start during the run queued the next run');
+    }
+
+    public function test_a_module_whose_board_cannot_be_recorded_does_not_strand_the_others()
+    {
+        Queue::fake();
+        $this->stand();
+        $this->secondSwitch();
+        $this->pending('10000000e611110c', 'e4:5f:01:62:9f:d3');
+        $two = $this->pending('10000000e611110e', 'e4:5f:01:62:9f:d5');
+        DB::statement("create trigger refuse_one before update on cms when old.serial = '10000000e611110c' "
+            ."begin select raise(abort, 'disk I/O error'); end");
+
+        (new ResolveBoards)->handle();
+
+        $this->assertSame('sw02 GE0/0/3', $two->fresh()->provisioning_board);
+        Queue::assertPushed(ResolveBoards::class);                   // the first one is tried again
+    }
+
+    public function test_a_run_that_failed_queues_the_next_while_boards_are_pending()
+    {
+        Queue::fake();
+        (new ResolveBoards)->failed(new \RuntimeException('database is locked'));
+        Queue::assertNothingPushed();
+
+        $this->pending('10000000e611110c', 'e4:5f:01:62:9f:d3');
+        (new ResolveBoards)->failed(new \RuntimeException('database is locked'));
+        Queue::assertPushed(ResolveBoards::class,
+            fn ($job) => (int) now()->diffInSeconds($job->delay, true) === ResolveBoards::RETRY_SECONDS);
+    }
+
+    public function test_a_lookup_left_for_minutes_is_dropped_without_a_board_or_a_label()
+    {
+        if (!is_executable('/bin/sh'))
+            $this->markTestSkipped('the print command runs in a POSIX shell');
+        $this->stand();
+        $project = $this->project('preinstall');
+        $cm = $this->pending('10000000e611110c', 'e4:5f:01:62:9f:d3');
+        $cm->update(['project_id' => $project->id, 'board_pending_since' => now()->subMinutes(ResolveBoards::STALE_MINUTES + 1)]);
+
+        (new ResolveBoards)->handle();
+
+        $this->assertSame([null, null], [$cm->fresh()->provisioning_board, $cm->fresh()->board_pending_since]);
+        $this->assertSame(0, Cmlog::where('msg', 'like', 'Label command output:%')->count());
+        $this->assertSame(1, Cmlog::where('cm', '10000000e611110c')->where('loglevel', 'warning')->count());
+    }
+
+    public function test_the_boards_of_a_wave_are_written_before_any_label_is_printed()
+    {
+        Queue::fake();
+        $this->stand();
+        $this->secondSwitch();
+        $project = $this->project('preinstall');
+        $one = $this->pending('10000000e611110c', 'e4:5f:01:62:9f:d3');
+        $two = $this->pending('10000000e611110e', 'e4:5f:01:62:9f:d5');
+        Cm::whereKey([$one->id, $two->id])->update(['project_id' => $project->id]);
+
+        (new ResolveBoards)->handle();
+
+        $this->assertSame(['sw01 GE0/0/3', 'sw02 GE0/0/3'], [$one->fresh()->provisioning_board, $two->fresh()->provisioning_board]);
+        Queue::assertPushed(PrintLabel::class, 2);                   // each in a job of its own, after the boards
+        $this->assertSame(0, Cmlog::where('msg', 'like', 'Label command output:%')->count());
+    }
+
+    public function test_a_board_lookup_that_cannot_be_queued_does_not_fail_the_start()
+    {
+        $this->stand();
+        $this->project();
+        $this->mock(Dispatcher::class, function ($mock) {
+            $mock->shouldReceive('dispatch')->andThrow(new \RuntimeException('database is locked'));
+        });
+
+        $this->get(self::START.'10000000e611110c&mac=e4:5f:01:62:9f:d3')->assertOk()->assertSee('Writing image from');
+
+        $this->assertSame('write', Cm::where('serial', '10000000e611110c')->value('phase'));
     }
 
     public function test_the_dashboard_and_the_card_say_the_board_is_being_looked_up()

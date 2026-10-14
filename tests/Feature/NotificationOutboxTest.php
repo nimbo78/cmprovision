@@ -201,6 +201,38 @@ class NotificationOutboxTest extends TestCase
         $this->assertSame(0, NotificationOutbox::whereNull('sent_at')->count());
     }
 
+    public function test_a_summary_that_cannot_be_edited_does_not_hold_the_replies_back()
+    {
+        Http::fake([
+            'tg.example/bot123:abc/sendMessage' => Http::response(['ok' => true, 'result' => ['message_id' => 50]]),
+            'tg.example/bot123:abc/editMessageText' => Http::response(['ok' => false, 'error_code' => 400,
+                'description' => 'Bad Request: message to edit not found'], 400),
+        ]);
+        config(['cmprovision.telegram_api' => 'https://tg.example']);
+        $channel = $this->channel('telegram', ['bot_token' => '123:abc', 'chat_id' => '-100']);
+        NotificationThread::create(['batch_id' => $this->batch->id, 'channel_id' => $channel->id, 'external_id' => '42']);
+        app(Notifier::class)->notify($this->module(1, 'done'), 'completed');
+
+        $this->flush();                                             // someone deleted the summary in the chat
+
+        $this->assertSame(1, collect(Http::recorded())->filter(fn ($pair) => Str::endsWith($pair[0]->url(), '/sendMessage'))->count());
+        $this->assertSame(0, NotificationOutbox::whereNull('sent_at')->count());
+        $this->assertStringContainsString('message to edit not found', $channel->fresh()->last_error);
+    }
+
+    public function test_a_run_that_failed_queues_the_next_while_events_wait()
+    {
+        Http::fake();
+        $this->channel('webhook', ['url' => 'https://hooks.example.org/cm']);
+        app(Notifier::class)->notify($this->module(1, 'done'), 'completed');
+        $job = new FlushNotifications;
+        (new UniqueLock(app(Repository::class)))->release($job);     // the worker took it
+
+        $job->failed(new \RuntimeException('database is locked'));
+
+        Queue::assertPushed(FlushNotifications::class, fn ($job) => (int) now()->diffInSeconds($job->delay, true) === Notifier::RETRY_SECONDS);
+    }
+
     public function test_after_five_failures_an_event_is_given_up()
     {
         Http::fake(['hooks.example.org/*' => Http::response('down', 500)]);

@@ -33,6 +33,8 @@ class Notifier
     const BLOCKED = 'notify-blocked:';  // cache: until when a chat asked to be left alone
     const LAST_CALL = 'notify-last-call:';
 
+    protected $editError = null;   // a summary that could not be edited while the pack went out
+
     /* A provisioning event: a row for each channel that is on now; FlushNotifications sends them in packs */
     public function notify(Cm $cm, $event)
     {
@@ -60,6 +62,7 @@ class Notifier
         if ($blocked > 0)
             return $blocked;
 
+        $this->editError = null;
         try
         {
             $sent = false;
@@ -80,7 +83,8 @@ class Notifier
                     NotificationOutbox::whereKey($group->modelKeys())->update(['sent_at' => now()]);
                 }
             if ($sent)
-                $channel->update(['last_sent_at' => now(), 'last_error' => null]);
+                $channel->update(['last_sent_at' => now(),
+                    'last_error' => $this->editError ? now()->local()->format('Y-m-d H:i').' '.$this->editError : null]);
             return null;
         }
         catch (\Throwable $e)
@@ -128,7 +132,17 @@ class Notifier
             $created = false;
             $root = $this->thread($channel, $batch, $created);
             if (!$created)
-                $this->edit($channel, $root, $this->summary($batch));
+                try
+                {
+                    $this->edit($channel, $root, $this->summary($batch));
+                }
+                catch (\Throwable $e)
+                {
+                    // a summary someone deleted must not hold the replies back; a rate limit waits for all of them
+                    if (self::retryAfter($e) !== null)
+                        throw $e;
+                    $this->editError = self::errorText($e, $channel);
+                }
         }
 
         $first = $rows->first(fn ($row) => $row->cm);

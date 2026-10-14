@@ -572,11 +572,19 @@ exit 1
         LabelPrinter::print($this->cm, request()->ip());
     }
 
-    /* The module's board, when its start waits for one: looked up by the queue once the start has answered, so a
-       refused module is known as one by then */
+    /* The module's board, when its start waits for one: queued once the start is decided, refused or not, so the job
+       knows a refused module as one. A queueing error must not fail the start: the next run finds the module anyway */
     protected function lookUpBoardLater()
     {
-        if ($this->cm && $this->cm->board_pending_since)
+        if (!$this->cm || !$this->cm->board_pending_since)
+            return;
+        try
+        {
             ResolveBoards::dispatch();
+        }
+        catch (\Throwable $e)
+        {
+            report($e);
+        }
     }
 }

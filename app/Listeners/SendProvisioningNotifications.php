@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Events\CmProvisioningComplete;
 use App\Events\CmProvisioningFailed;
 use App\Events\CmProvisioningStarted;
+use App\Models\Cm;
 use App\Services\Notifier;
 
 /* Records each provisioning event for the notification channels (notification_outbox); FlushNotifications sends
@@ -14,16 +15,30 @@ class SendProvisioningNotifications
 {
     public function handleStarted(CmProvisioningStarted $event)
     {
-        app(Notifier::class)->notify($event->cm, 'started');
+        $this->record($event->cm, 'started');
     }
 
     public function handleCompleted(CmProvisioningComplete $event)
     {
-        app(Notifier::class)->notify($event->cm, 'completed');
+        $this->record($event->cm, 'completed');
     }
 
     public function handleFailed(CmProvisioningFailed $event)
     {
-        app(Notifier::class)->notify($event->cm, 'failed');
+        $this->record($event->cm, 'failed');
+    }
+
+    /* Runs in the module's request: an error here must never reach it, or a module that flashed fine would be marked
+       failed */
+    protected function record(Cm $cm, $what)
+    {
+        try
+        {
+            app(Notifier::class)->notify($cm, $what);
+        }
+        catch (\Throwable $e)
+        {
+            report($e);
+        }
     }
 }

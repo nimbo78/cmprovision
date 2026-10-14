@@ -21,6 +21,7 @@ class FlushNotifications implements ShouldQueue, ShouldBeUniqueUntilProcessing
     const WINDOW = 10;
 
     public $uniqueFor = 600;
+    public $timeout = 80;   // under the database queue's retry_after (90 s): never run twice at once
 
     public function __construct()
     {
@@ -47,5 +48,12 @@ class FlushNotifications implements ShouldQueue, ShouldBeUniqueUntilProcessing
         // tests runs a dispatch at once, so no next run there
         if ($wait !== null && !$this->job instanceof SyncJob)
             self::dispatch()->delay(now()->addSeconds($wait));
+    }
+
+    /* The run failed or ran out of time: nothing else would send what waits before the next event */
+    public function failed(\Throwable $e): void
+    {
+        if (NotificationOutbox::whereNull('sent_at')->exists())
+            self::dispatch()->delay(now()->addSeconds(Notifier::RETRY_SECONDS));
     }
 }
