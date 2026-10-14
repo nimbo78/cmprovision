@@ -1,4 +1,4 @@
-cmprovision4 (2.4.0~dev1) unstable; urgency=medium
+cmprovision4 (2.4.0) unstable; urgency=medium
 
   * Several switches on the stand. Settings → Ethernet switches lists them,
     each with its own address and SNMP read and write access; Add switch
@@ -28,11 +28,15 @@ cmprovision4 (2.4.0~dev1) unstable; urgency=medium
     on goes through the switch of the outage. The dashboard offers Restart
     by the module's switch and lists up to 100 modules.
   * A switch that did not answer is asked again after 30 seconds, not on
-    every page refresh and module start.
+    every page refresh and module start. A module start gets no board from
+    the last snapshot of a switch that does not answer now: the module may
+    be elsewhere, and the log says where and when it was last seen.
+  * One switch added under two addresses (its IP and its name) is drawn
+    once; the Ports page and Settings say to delete one of them.
   * The upgrade from a version before 2.4 takes a snapshot first, as the
     upgrade to 2.0 does: cmprovision-restore goes back to 2.3.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Wed, 14 Oct 2026 11:16:08 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Wed, 14 Oct 2026 12:00:43 +0300
 
 cmprovision4 (2.3.3) unstable; urgency=medium
 
