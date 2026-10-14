@@ -47,7 +47,7 @@ This process requires a Raspberry Pi 4 which will be used solely to mass program
 1. Set a web application username and password with:  
 
     ```
-    sudo /var/lib/cmprovision/artisan auth:create-user  
+    sudo -u www-data /var/lib/cmprovision/artisan auth:create-user  
     ```
 
 You can now access the web interface with a web browser on the wireless LAN IP address.
@@ -76,7 +76,7 @@ When provisioning Compute Module 3 and 3+ modules, Ethernet is not used: instead
 1. Set a web application username and password with:  
 
     ```
-    sudo /var/lib/cmprovision/artisan auth:create-user  
+    sudo -u www-data /var/lib/cmprovision/artisan auth:create-user  
     ```
 
 You can now access the web interface with a web browser on the wireless LAN IP address.
@@ -108,7 +108,9 @@ Write access is optional, set for each switch, and only used to restart modules 
 
 Install the new package over the old one with `sudo apt install ./cmprovision4_*.deb`; never `apt remove` it first, the package's removal step deletes the database and storage.
 
-Upgrading from a version older than 2.4 (1.x, or 2.0 to 2.3) takes a snapshot by itself first: `/var/backups/cmprovision/<timestamp>-<old version>/`, with the old package inside, and `sudo cmprovision-restore <that directory>` goes back to the old version with its data. If no snapshot can be taken (three tries), the upgrade stops and the old version stays installed: try again while no module is on the stand, or upgrade without a way back with `sudo CMPROVISION_NO_SNAPSHOT=1 apt install ./cmprovision4_*.deb`. Reload browser tabs that were open during the upgrade.
+Upgrading from a version older than 2.5 (1.x, or 2.0 to 2.4) takes a snapshot by itself first: `/var/backups/cmprovision/<timestamp>-<old version>/`, with the old package inside, and `sudo cmprovision-restore <that directory>` goes back to the old version with its data. If no snapshot can be taken (three tries), the upgrade stops and the old version stays installed: try again while no module is on the stand, or upgrade without a way back with `sudo CMPROVISION_NO_SNAPSHOT=1 apt install ./cmprovision4_*.deb`. Reload browser tabs that were open during the upgrade.
+
+2.5 is built for 40-48 modules starting at once. The web interface runs in a php-fpm pool of its own (`/etc/php/<version>/fpm/pool.d/cmprovision.conf`, socket `/run/php/cmprovision-fpm.sock`); after a new PHP version comes with a system upgrade, run `sudo dpkg-reconfigure cmprovision4` to give it the pool. Two queue workers run next to it: `cmprovision-queue` finds the modules' switch ports and sends the notifications, `cmprovision-queue-images` computes image checksums (and finds ports when the first one is busy); Settings → Service status shows both with their logs. A module gets its script at once and its board a few seconds later; notifications go out in packs, one message per channel every 10 seconds. The database runs in WAL mode: run `artisan` and `sqlite3` by hand as the web user, `sudo -u www-data /var/lib/cmprovision/artisan …`.
 
 2.4 keeps the switches in a list of their own and makes the 2.3 switch settings its first entry; the 2.3 settings stay for going back. Going back with `cmprovision-restore` puts back the 2.3 database, so the next upgrade makes the list again from the 2.3 settings; after installing the 2.3 package over 2.4 without a restore, the list stays as 2.4 left it. Check Settings → Ethernet switches after either.
 
