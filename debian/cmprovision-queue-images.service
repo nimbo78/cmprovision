@@ -1,0 +1,11 @@
+[Unit]
+Description=CMProvision queue worker (image checksums; switch ports when the other worker is busy)
+
+[Service]
+User=www-data
+Group=www-data
+Restart=always
+ExecStart=/var/lib/cmprovision/artisan queue:work --queue=boards,images,default
+
+[Install]
+WantedBy=multi-user.target

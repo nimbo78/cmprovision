@@ -30,4 +30,13 @@ class PackagingTest extends TestCase
         $this->assertStringContainsString('runuser -u www-data -- "$APP/artisan" migrate --force', $restore);
         $this->assertDoesNotMatchRegularExpression('#^\s*"\$APP/artisan"#m', $restore);
     }
+
+    public function test_two_queue_workers()
+    {
+        $this->assertStringContainsString('queue:work --queue=boards,notifications', $this->file('debian/cmprovision-queue.service'));
+        // boards first in both: a slow chat server never holds up a module's board; default: jobs left by 2.4
+        $this->assertStringContainsString('queue:work --queue=boards,images,default', $this->file('debian/cmprovision-queue-images.service'));
+        $this->assertStringContainsString('debian/cmprovision-queue-images.service lib/systemd/system', $this->file('debian/install'));
+        $this->assertStringContainsString('cmprovision-queue-images', $this->file('tools/restore.sh'));
+    }
 }

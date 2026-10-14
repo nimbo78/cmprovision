@@ -39,7 +39,7 @@ if [ "$DATA_ONLY" = 1 ] && ! dpkg-query -W -f='${Status}' cmprovision4 2>/dev/nu
     echo "--data-only: install cmprovision4 first" >&2; exit 1
 fi
 
-systemctl stop cmprovision-queue cmprovision-dnsmasq 2>/dev/null || true
+systemctl stop cmprovision-queue cmprovision-queue-images cmprovision-dnsmasq 2>/dev/null || true
 
 if [ "$DATA_ONLY" = 1 ]; then
     echo "restoring the data into $APP"
@@ -88,5 +88,7 @@ runuser -u www-data -- "$APP/artisan" config:clear >/dev/null
 runuser -u www-data -- "$APP/artisan" view:clear >/dev/null
 systemctl restart 'php*-fpm' nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot \
     || echo "not every service restarted, see their states:"
-systemctl is-active nginx cmprovision-dnsmasq cmprovision-queue cmprovision-rpiboot | tr '\n' ' '; echo
+# 2.5 and later: the image checksum worker (a snapshot's older package has none)
+systemctl restart cmprovision-queue-images 2>/dev/null || true
+systemctl is-active nginx cmprovision-dnsmasq cmprovision-queue cmprovision-queue-images cmprovision-rpiboot | tr '\n' ' '; echo
 echo "restored from $SRC; installed package: $(dpkg-query -W -f='${Version}' cmprovision4)"

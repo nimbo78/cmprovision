@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Validator;
 #[Title('Settings')]
 class Settings extends Component
 {
-    public $dnsmasqRunning, $rpibootRunning, $logOutput, $logTitle;
+    public $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $logOutput, $logTitle;
     public $ip, $mac, $detectedMacs;
     public $hosts;
     public $logModalOpen = false, $staticModalOpen = false;
@@ -20,6 +20,8 @@ class Settings extends Component
     {
         $this->dnsmasqRunning = $this->isActive('cmprovision-dnsmasq');
         $this->rpibootRunning = $this->isActive('cmprovision-rpiboot');
+        $this->queueRunning = $this->isActive('cmprovision-queue');
+        $this->imagesQueueRunning = $this->isActive('cmprovision-queue-images');
         $this->hosts = Host::orderBy('ip')->get();
 
         return view('livewire.settings');
@@ -57,6 +59,20 @@ class Settings extends Component
     {
         $this->logTitle = "Rpiboot log since boot";
         $this->logOutput = $this->getLog('cmprovision-rpiboot');
+        $this->logModalOpen = true;
+    }
+
+    public function viewLogQueue()
+    {
+        $this->logTitle = "Queue worker log since boot";
+        $this->logOutput = $this->getLog('cmprovision-queue');
+        $this->logModalOpen = true;
+    }
+
+    public function viewLogImagesQueue()
+    {
+        $this->logTitle = "Image checksum worker log since boot";
+        $this->logOutput = $this->getLog('cmprovision-queue-images');
         $this->logModalOpen = true;
     }
 
