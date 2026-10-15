@@ -16,7 +16,7 @@ class Scripts extends Component
 
     protected $rules = [
         'name' => 'required|max:255',
-        'script_type' => 'in:preinstall,postinstall',
+        'script_type' => 'required|in:preinstall,postinstall,firstboot',
         'bg' => 'required|boolean',
         'priority' => 'required|numeric',
         'script' => 'required'
@@ -103,7 +103,8 @@ class Scripts extends Component
         Script::updateOrCreate(['id' => $this->scriptid], [
             'name' => $this->name,
             'script_type' => $this->script_type,
-            'bg' => $this->bg,
+            // a first-boot script runs in the new system's service, one after the other
+            'bg' => $this->script_type === 'firstboot' ? false : $this->bg,
             'priority' => $this->priority,
             'script' => str_replace("\r", "", $this->script)
         ]);

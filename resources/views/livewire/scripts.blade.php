@@ -30,7 +30,7 @@
                     @forelse($scripts as $s)
                     <tr>
                         <td>{{ $s->name }}</td>
-                        <td>{{ $s->script_type }}</td>
+                        <td>{{ $s->script_type === 'firstboot' ? 'first boot' : $s->script_type }}</td>
                         <td>{{ $s->priority }}</td>
                         <td>
                             <button wire:click="edit({{ $s->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
