@@ -55,6 +55,9 @@
                                 <button wire:click="identify" class="ml-2 cmp-btn cmp-btn-secondary cmp-btn-small">Identify</button>
                                 <span class="ml-2 text-xs text-fg-muted">ACT and PWR alternate fast for {{ \App\Models\Cm::IDENTIFY_SECONDS }} s, or until Stop</span>
                             @endif
+                        @elseif ($cm->os_checked_at)
+                            {{-- the OS check reported from the written system, which does not ask the server --}}
+                            <span class="text-fg-muted">in its new system{{ $cm->hostname ? ' '.$cm->hostname : '' }}, reported at {{ $cm->os_checked_at->local()->format('d.m.Y H:i:s') }}: from there the module does not ask the server, so there is no Identify</span>
                         @else
                             <span class="text-fg-muted">not known: the module does not ask the server (switched off, started its own OS, or provisioned by a version before 1.6.9)</span>
                         @endif

@@ -56,6 +56,21 @@ class OsCheckPagesTest extends TestCase
             ->assertSee("=== first boot script 'services'");
     }
 
+    public function test_the_bench_row_names_the_new_system_the_module_reported_from()
+    {
+        // the new system does not ask the server, so there is no Identify; the card still knows where the module went
+        $text = 'in its new system wlanpi-a1b, reported at 16.10.2026 13:00:00: from there the module does not ask the server, so there is no Identify';
+        $cm = $this->module(['phase' => 'done', 'os_check' => 'passed', 'hostname' => 'wlanpi-a1b', 'os_checked_at' => now(),
+            'provisioning_complete_at' => now()]);
+        Livewire::test(CmCard::class, ['serial' => $cm->serial])->assertSee($text)->assertDontSee('not known: the module does not ask');
+
+        $cm->update(['phase' => 'failed', 'os_check' => 'failed', 'phase_detail' => "OS check failed: first boot script 'services' exited 3"]);
+        Livewire::test(CmCard::class, ['serial' => $cm->serial])->assertSee($text);
+
+        $cm->update(['os_check' => null, 'os_checked_at' => null, 'hostname' => null]);
+        Livewire::test(CmCard::class, ['serial' => $cm->serial])->assertSee('not known: the module does not ask the server');
+    }
+
     public function test_the_card_says_a_module_waits_for_its_new_system_or_was_not_checked()
     {
         $cm = $this->module(['phase' => 'firstboot', 'os_check' => 'waiting', 'phase_started_at' => now(), 'progress_updated_at' => now()]);
