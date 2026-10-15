@@ -377,6 +377,8 @@ class Notifier
     public function moduleText(Cm $cm, $event)
     {
         $parts = [$cm->serial, $cm->mac];
+        if ($cm->hostname)
+            $parts[] = $cm->hostname;   // the new system's own name, after the OS check
         if ($cm->provisioning_board)
             $parts[] = 'board '.$cm->provisioning_board;
         if ($event === 'completed' && $cm->provisioning_started_at && $cm->provisioning_complete_at)
@@ -417,6 +419,8 @@ class Notifier
             'text' => $this->projectPrefix($cm).$line,
             'serial' => $cm->serial,
             'mac' => $cm->mac,
+            'hostname' => $cm->hostname,
+            'os_state' => $cm->os_state,
             'board' => $cm->provisioning_board,
             // the board's two halves, for a collector that sorts by switch: null without a switch
             'switch' => $cm->switch_name,

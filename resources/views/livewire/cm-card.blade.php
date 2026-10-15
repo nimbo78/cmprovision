@@ -103,6 +103,26 @@
                         @endif
                     </td>
                 </tr>
+                @if ($cm->os_check)
+                <tr>
+                    <td class="text-fg-muted">OS check</td>
+                    <td>
+                        @if ($cm->os_check === 'pending')
+                            after the image is written
+                        @elseif ($cm->os_check === 'waiting')
+                            waiting for the new system since {{ $cm->phase_started_at ? $cm->phase_started_at->local()->format('H:i:s') : '' }}
+                        @elseif ($cm->os_check === 'skipped')
+                            skipped: the module booted over USB
+                        @else
+                            {{ $cm->os_check }}
+                            @if ($cm->hostname) &middot; <span class="font-mono">{{ $cm->hostname }}</span> @endif
+                            @if ($cm->os_state) &middot; systemd {{ $cm->os_state }} @endif
+                            @if ($cm->os_failed_units) &middot; failed units: <span class="font-mono">{{ $cm->os_failed_units }}</span> @endif
+                            @if ($cm->os_checked_at) &middot; {{ $cm->os_checked_at->local()->format('H:i:s') }} @endif
+                        @endif
+                    </td>
+                </tr>
+                @endif
                 <tr>
                     <td class="text-fg-muted">Memory, storage</td>
                     <td>{{ $cm->memory_in_gb }} GiB &middot; {{ $cm->storage ? round($cm->storage / 1000 / 1000 / 1000).' GB' : 'no storage' }}</td>
@@ -192,7 +212,9 @@
 
         <div class="cmp-card px-4 py-3">
             <div class="font-bold mb-2">Logs of the last run</div>
-            @foreach (['Pre-install scripts' => $cm->pre_script_output, 'Post-install scripts' => $cm->post_script_output] as $title => $text)
+            @foreach (array_filter(['Pre-install scripts' => $cm->pre_script_output, 'Post-install scripts' => $cm->post_script_output,
+                                    'First boot (OS check)' => $cm->os_check && $cm->os_check !== 'skipped' ? $cm->os_check_output : false],
+                                   function ($text) { return $text !== false; }) as $title => $text)
                 <details class="mb-2" @if ($text && $cm->phase === 'failed') open @endif>
                     <summary class="cursor-pointer text-sm font-semibold">{{ $title }}@if (!$text) <span class="font-normal text-fg-muted">(none)</span>@endif</summary>
                     @if ($text)
