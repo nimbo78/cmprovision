@@ -196,4 +196,18 @@ class UplinkSummaryTest extends TestCase
         $this->assertSame('Preferred connection uplink-m2 is not connected since 09:41, the backup carries the traffic.', $v['warning']);
         $this->assertSame([['Modules network: Ethernet (eth0)', '1 Gbit/s full duplex, 172.20.0.1/16']], $v['sections']);
     }
+
+    public function test_on_the_cold_spare_with_one_profile_for_both_cards_the_card_is_named_down()
+    {
+        // 2.5.3: the profile of the network is active on the built-in Wi-Fi, so no preferred profile is down
+        $lost = Carbon::parse('2026-10-15 06:41:00', 'UTC')->getTimestamp();   // 09:41 in Moscow
+        $v = UplinkSummary::from(self::snapshot([
+            'uplink' => self::onboard(), 'backups' => [], 'preferred_down' => null,
+            'spare' => ['state' => 'active', 'since' => $lost + 36, 'device' => 'wlan0', 'lost_since' => $lost],
+        ]));
+
+        $this->assertSame('warn', $v['tone']);
+        $this->assertSame('The Wi-Fi card is not connected since 09:41, the built-in Wi-Fi carries the traffic.', $v['warning']);
+        $this->assertSame('Internet via Wi-Fi, excellent signal, 24 Mbit/s. The Wi-Fi card is not connected', $v['label']);
+    }
 }
