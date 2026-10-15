@@ -1,0 +1,215 @@
+#!/bin/sh
+# The provisioner's Wi-Fi networks from the web UI (cmprovision 2.5.3, docs/superpowers/specs/2026-10-15-wifi-networks-design.md).
+# www-data runs it through sudo (debian/010_cmprovision: the command and no arguments); the rest comes on stdin as
+# key=value lines and is checked here, whatever the web app checked before.
+#   wifi-networks save     ssid security hidden password by   ->  uuid=<uuid>
+# A managed profile is a Wi-Fi profile in infrastructure mode with WPA2/WPA3-Personal whose keyfile lies in $KEYFILES;
+# a network is every managed profile with one SSID. A password never becomes an argument of a process, a journal line
+# or output: it goes straight into the root-only keyfile.
+# Exit codes: 0 done, 1 refused or failed (error=<the reason for the operator>), 2 a wrong call.
+# Tests point it elsewhere with WIFI_NETWORKS_KEYFILES, WIFI_NETWORKS_RUN, WIFI_NETWORKS_SYS and WIFI_NETWORKS_SPARE.
+
+KEYFILES=${WIFI_NETWORKS_KEYFILES:-/etc/NetworkManager/system-connections}
+RUN=${WIFI_NETWORKS_RUN:-/run/cmprovision}
+SYS=${WIFI_NETWORKS_SYS:-/sys/class/net}
+SPARE=${WIFI_NETWORKS_SPARE:-/usr/lib/cmprovision/uplink-spare}
+# nmcli untranslated, text tools on UTF-8
+LC_ALL=C.UTF-8
+export LC_ALL
+umask 077
+
+command=${1:-}
+by=unknown
+order=
+
+log() {
+    logger -t cmprovision-wifi "$1" 2>/dev/null || true
+}
+
+# a refusal: the reason to the journal and to the web app
+fail() {
+    log "$by: $command refused: $1"
+    printf 'error=%s\n' "$1"
+    exit 1
+}
+
+usage() {
+    echo "usage: wifi-networks save, the input on stdin" >&2
+    exit 2
+}
+
+# the input: key=value lines with the keys the command takes, each once (order takes uuid once per network), as in_<key>
+read_input() {
+    allowed=" $* "
+    while IFS= read -r line || [ -n "$line" ]; do
+        key=${line%%=*}
+        [ "$key" != "$line" ] || fail "a line of the input has no '='"
+        case "$allowed" in *" $key "*) ;; *) fail "unknown input: $key" ;; esac
+        if [ "$key" = uuid ] && [ "$command" = order ]; then
+            order="$order ${line#*=}"
+            continue
+        fi
+        eval "[ -z \"\${seen_$key:-}\" ]" || fail "$key given twice"
+        eval "seen_$key=1 in_$key=\${line#*=}"
+    done
+}
+
+# the user named in the journal: control characters dropped, at most 64 bytes
+user() {
+    by=$(printf %s "${in_by:-}" | tr -d '\000-\037\177' | head -c 64)
+    [ -n "$by" ] || by=unknown
+}
+
+is_uuid() {
+    printf %s "$1" | grep -Eqx '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+}
+
+# 1-32 bytes of UTF-8 without control characters
+valid_ssid() {
+    n=$(printf %s "$1" | wc -c)
+    [ "$n" -ge 1 ] && [ "$n" -le 32 ] || return 1
+    printf %s "$1" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 || return 1
+    ! printf %s "$1" | LC_ALL=C grep -q '[[:cntrl:]]'
+}
+
+# 8-63 printable ASCII characters, or 64 hexadecimal digits (a ready key) but for WPA3
+valid_password() {   # password security
+    case "$1" in
+        *[!0-9a-fA-F]*) ;;
+        *) if [ ${#1} -eq 64 ]; then [ "$2" != wpa3 ]; return; fi ;;
+    esac
+    [ ${#1} -ge 8 ] && [ ${#1} -le 63 ] || return 1
+    ! printf %s "$1" | LC_ALL=C grep -q '[^ -~]'
+}
+
+key_mgmt() { case "$1" in wpa3) echo sae ;; *) echo wpa-psk ;; esac; }
+pmf() { case "$1" in wpa2) echo 1 ;; mixed) echo 2 ;; *) echo 3 ;; esac; }
+label() { case "$1" in wpa2) echo WPA2 ;; mixed) echo WPA2/WPA3 ;; *) echo WPA3 ;; esac; }
+
+# "WPA2/WPA3, hidden" for the journal
+described() {   # security hidden
+    printf %s "$(label "$1")"
+    [ "$2" = no ] || printf ', hidden'
+}
+
+# a property of a profile from nmcli's terse detail view (name:value, not escaped); $3 is -s for a secret
+prop() {   # uuid property [-s]
+    nmcli $3 -t -f "$2" connection show "$1" 2>/dev/null | sed -n "s/^$2://p" | head -n 1
+}
+
+# nmcli's terse lists escape ':' and '\' with a backslash
+unescape() {
+    awk '{ out = ""; n = length($0)
+           for (i = 1; i <= n; i++) { c = substr($0, i, 1); if (c == "\\" && i < n) { i++; c = substr($0, i, 1) } out = out c }
+           print out }'
+}
+
+# the managed profiles as "uuid<TAB>ssid" lines; nmcli lists a profile active on two devices twice
+managed() {
+    nmcli -t -f UUID,TYPE,FILENAME connection show 2>/dev/null | while IFS= read -r line; do
+        uuid=${line%%:*}
+        rest=${line#*:}
+        [ "${rest%%:*}" = 802-11-wireless ] || continue
+        file=$(printf '%s\n' "${rest#*:}" | unescape)
+        case "$file" in "$KEYFILES"/*) ;; *) continue ;; esac
+        case "$(prop "$uuid" 802-11-wireless.mode)" in ''|infrastructure) ;; *) continue ;; esac
+        case "$(prop "$uuid" 802-11-wireless-security.key-mgmt)" in wpa-psk|sae) ;; *) continue ;; esac
+        ssid=$(prop "$uuid" 802-11-wireless.ssid)
+        valid_ssid "$ssid" && printf '%s\t%s\n' "$uuid" "$ssid"
+    done | awk -F '\t' '!seen[$1]++'
+}
+
+# true when a managed profile of $TMP/managed has this SSID
+listed() {   # ssid
+    S=$1 awk -F '\t' '$2 == ENVIRON["S"] { found = 1 } END { exit !found }' "$TMP/managed"
+}
+
+# the keyfile of a profile
+keyfile() {   # uuid
+    nmcli -t -f UUID,FILENAME connection show 2>/dev/null | sed -n "s/^$1://p" | head -n 1 | unescape
+}
+
+# the password into the profile's keyfile (root, 0600), which NetworkManager then reads again; read back, it must be
+# the same, or the keyfile goes back as it was. GKeyFile escapes a backslash, and a space at either end as \s
+set_password() {   # uuid password
+    file=$(keyfile "$1")
+    [ -n "$file" ] && [ -f "$file" ] || return 1
+    cp -p "$file" "$TMP/keyfile" || return 1
+    PSK=$2 awk '
+        function esc(s,   n, lead, trail, i, c, r) {
+            n = length(s)
+            lead = 0; while (lead < n && substr(s, lead + 1, 1) == " ") lead++
+            trail = 0; while (trail < n - lead && substr(s, n - trail, 1) == " ") trail++
+            r = ""
+            for (i = 1; i <= n; i++) {
+                c = substr(s, i, 1)
+                if (c == "\\") r = r "\\\\"
+                else if (c == " " && (i <= lead || i > n - trail)) r = r "\\s"
+                else r = r c
+            }
+            return r
+        }
+        BEGIN { psk = "psk=" esc(ENVIRON["PSK"]) }
+        /^\[/ { if (section && !done) { print psk; done = 1 } section = ($0 == "[wifi-security]") }
+        section && /^psk=/ { if (!done) { print psk; done = 1 } next }
+        { print }
+        END { if (!done) { if (!section) { print ""; print "[wifi-security]" } print psk } }
+    ' "$TMP/keyfile" > "$file.new" && mv -f "$file.new" "$file" || return 1
+    nmcli connection load "$file" >/dev/null 2>&1
+    [ "$(prop "$1" 802-11-wireless-security.psk -s)" = "$2" ] && return 0
+    cp -p "$TMP/keyfile" "$file"
+    nmcli connection load "$file" >/dev/null 2>&1
+    return 1
+}
+
+save_new() {
+    managed > "$TMP/managed"
+    ! listed "$in_ssid" || fail "'$in_ssid' is already in the list: edit it"
+    [ -n "$password" ] || fail "enter the password of the new network"
+    uuid=$(cat /proc/sys/kernel/random/uuid)
+    lowest=$(cut -f 1 "$TMP/managed" | while IFS= read -r u; do prop "$u" connection.autoconnect-priority; done | sort -n | head -n 1)
+    priority=$((${lowest:-101} - 1))
+    [ "$priority" -ge -999 ] || priority=-999
+    nmcli connection add type wifi connection.uuid "$uuid" con-name "$in_ssid" ssid "$in_ssid" \
+        802-11-wireless.mode infrastructure 802-11-wireless.hidden "$hidden" \
+        wifi-sec.key-mgmt "$(key_mgmt "$in_security")" wifi-sec.pmf "$(pmf "$in_security")" wifi-sec.psk-flags 0 \
+        connection.multi-connect multiple connection.autoconnect-priority "$priority" \
+        ipv4.route-metric -1 ipv6.route-metric -1 >/dev/null 2>"$TMP/err" \
+        || fail "NetworkManager did not add the network: $(head -n 1 "$TMP/err")"
+    if ! set_password "$uuid" "$password"; then
+        nmcli connection delete "$uuid" >/dev/null 2>&1
+        fail "the password could not be stored: nothing was added"
+    fi
+    log "$by added '$in_ssid' ($(described "$in_security" "$hidden"))"
+    printf 'uuid=%s\n' "$uuid"
+}
+
+cmd_save() {
+    read_input ssid security hidden password by
+    user
+    valid_ssid "${in_ssid:-}" || fail "the network name (SSID) must be 1 to 32 bytes of text without control characters"
+    case "${in_security:-}" in wpa2|mixed|wpa3) ;; *) fail "security must be wpa2, mixed or wpa3" ;; esac
+    hidden=${in_hidden:-no}
+    case "$hidden" in yes|no) ;; *) fail "hidden must be yes or no" ;; esac
+    password=${in_password:-}
+    if [ -n "$password" ] && ! valid_password "$password" "$in_security"; then
+        [ "$in_security" != wpa3 ] || fail "the password must be 8 to 63 printable ASCII characters"
+        fail "the password must be 8 to 63 printable ASCII characters or 64 hexadecimal digits"
+    fi
+    save_new
+}
+
+# the command
+case "$command" in
+    save) ;;
+    *) usage ;;
+esac
+[ $# -eq 1 ] || usage
+nmcli -t -f RUNNING general 2>/dev/null | grep -qx running || fail "NetworkManager does not answer"
+[ -d "$RUN" ] || (umask 022; mkdir -p "$RUN")
+TMP=$(mktemp -d "$RUN/wifi-networks.XXXXXX") || fail "no room for a temporary file in $RUN"
+trap 'rm -rf "$TMP"' EXIT
+exec 9>"$RUN/wifi-networks.lock"
+flock -w 10 9 || fail "another Wi-Fi change is running: try again"
+"cmd_$command"
+exit 0
