@@ -155,4 +155,31 @@ class PackagingTest extends TestCase
         $this->assertStringNotContainsString('deb-systemd-helper disable cmprovision-uplink.timer', $prerm);
         $this->assertStringNotContainsString('deb-systemd-helper enable cmprovision-uplink.timer', $this->file('debian/postinst'));
     }
+
+    public function test_the_wifi_helper_is_installed_and_sudo_allows_exactly_its_commands()
+    {
+        $this->assertStringContainsString("\tinstall -D -m 755 tools/wifi-networks debian/cmprovision4/usr/lib/cmprovision/wifi-networks\n",
+            $this->file('debian/rules'));
+        $sudoers = $this->file('debian/010_cmprovision');
+        foreach (['save', 'delete', 'order', 'check', 'scan'] as $command)
+            $this->assertStringContainsString("www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/wifi-networks $command\n", $sudoers);
+        // the command alone: the input comes on stdin, and a wildcard would let anything through
+        $this->assertStringNotContainsString('*', $sudoers);
+        $this->assertSame(6, substr_count($sudoers, 'NOPASSWD'), 'the dnsmasq restart and the five Wi-Fi commands');
+        $this->assertStringEndsWith("\n", $sudoers);
+    }
+
+    public function test_networkmanager_gets_the_metrics_by_device()
+    {
+        $conf = $this->file('tools/90-cmprovision-uplink.conf');
+        $this->assertStringContainsString("[connection-cmprovision-builtin-wifi]\nmatch-device=driver:brcmfmac\nipv4.route-metric=600\nipv6.route-metric=600\n", $conf);
+        $this->assertStringContainsString("[connection-cmprovision-wifi]\nmatch-device=type:wifi\nipv4.route-metric=100\nipv6.route-metric=100\n", $conf);
+        $this->assertLessThan(strpos($conf, '[connection-cmprovision-wifi]'), strpos($conf, '[connection-cmprovision-builtin-wifi]'),
+            'the first section that matches a device wins: the built-in Wi-Fi before any Wi-Fi');
+        $this->assertStringContainsString("\tinstall -D -m 644 tools/90-cmprovision-uplink.conf debian/cmprovision4/usr/lib/NetworkManager/conf.d/90-cmprovision-uplink.conf\n",
+            $this->file('debian/rules'));
+        $postinst = $this->file('debian/postinst');
+        $this->assertStringContainsString('nmcli general reload conf >/dev/null 2>&1 || true', $postinst);
+        $this->assertLessThan(strpos($postinst, '#DEBHELPER#'), strpos($postinst, 'nmcli general reload conf'));
+    }
 }

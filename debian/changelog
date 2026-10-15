@@ -1,3 +1,15 @@
+cmprovision4 (2.5.3~dev1) unstable; urgency=medium
+
+  * The provisioner's Wi-Fi networks in Settings: add, edit, delete and
+    order networks (WPA2, WPA3 or mixed, hidden ones too), check one on
+    the idle built-in Wi-Fi while the card keeps working, and find the
+    networks in reach. A root helper behind five exact sudo lines
+    changes NetworkManager's profiles, one per network for both cards;
+    a password goes only into the root-only keyfile.
+  * The uplink icon warns when the built-in Wi-Fi carries the traffic.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 15 Oct 2026 16:03:06 +0300
+
 cmprovision4 (2.5.2) unstable; urgency=medium
 
   * The built-in Wi-Fi as a cold spare: while another device carries the

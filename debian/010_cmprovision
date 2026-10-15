@@ -1,1 +1,7 @@
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart cmprovision-dnsmasq 
+# the Wi-Fi networks of the provisioner (2.5.3): the command alone, the input comes on stdin
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/wifi-networks save
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/wifi-networks delete
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/wifi-networks order
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/wifi-networks check
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/wifi-networks scan
