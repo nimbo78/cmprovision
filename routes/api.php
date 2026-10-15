@@ -118,6 +118,10 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
     $check = array_key_exists('os_check', $data) ? (bool) $data['os_check'] : (bool) $project->os_check;
     if ($moment === 'firstboot' && !$check)
         return response()->json(['message' => 'label_moment firstboot needs os_check'], 422);
+    // first-boot scripts run in the OS check: without it they would sit in the project unused
+    $scriptIds = array_key_exists('scripts', $data) ? $data['scripts'] : $project->scripts()->pluck('scripts.id')->all();
+    if (!$check && Script::whereIn('id', $scriptIds)->where('script_type', 'firstboot')->exists())
+        return response()->json(['message' => 'firstboot scripts need os_check'], 422);
     $project->update(collect($data)->except('scripts')->all());
     if (array_key_exists('scripts', $data))
     {

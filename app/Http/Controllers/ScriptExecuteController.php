@@ -140,13 +140,23 @@ exit 1
     public function startProvisoning(Request $req)
     {
         /* The OS check (2.6.0): a module that comes back to network boot while its new system should be starting did not
-           start it. That run fails and the module waits (no second write); its start after that is a new run. */
+           start it. That run fails and the module waits (no second write); its start after that is a new run. A USB boot
+           is the operator re-flashing it, and a start long after the reboot finds a run whose timeout was lost: both close
+           the waiting run and go on as a new run. */
         $previous = Cm::where('serial', $this->serial)->first();
         if ($previous && $previous->phase === 'firstboot')
         {
             $this->cm = $previous;
-            $this->cm->os_check = 'failed';
-            return $this->refuse('The new system did not start: the module came back to network boot.');
+            $waited = now()->getTimestamp() - ($previous->phase_started_at ? $previous->phase_started_at->getTimestamp() : 0);
+            if ($req->query('bootmode') == 3)
+                $this->closeTheCheck('Interrupted: the module was booted over USB.');
+            elseif ($waited > Cm::FIRSTBOOT_SECONDS)
+                $this->closeTheCheck(Cm::OS_NO_REPORT);
+            else
+            {
+                $this->cm->os_check = 'failed';
+                return $this->refuse('The new system did not start: the module came back to network boot.');
+            }
         }
 
         $project = Project::getActive();
@@ -387,6 +397,8 @@ exit 1
         $project = $this->cm->project;
         if ($this->cm->os_check === 'pending')
             return $this->rebootIntoTheNewSystem($req, $project);
+        if ($this->cm->os_check === 'waiting')
+            return '';   // report() sent "written" again: the run waits for the new system all the same
         $this->cm->provisioning_complete_at = now();
         $this->cm->temp2 = $req->query('temp');
         $this->cm->setPhase('done');
@@ -502,6 +514,15 @@ exit 1
         $this->cm->markFailed($msg)->save();
         $this->failed();
         return '';
+    }
+
+    /* The waiting run of the OS check ends without a report: failed with $reason, the notification goes out */
+    protected function closeTheCheck($reason)
+    {
+        $this->cm->os_check = 'failed';
+        $this->logInfo($reason, 'error');
+        $this->cm->markFailed($reason)->save();
+        $this->failed();
     }
 
     /* " on wlanpi-a1b (systemd: degraded; failed: firefox-setup.service)" for the log */
@@ -631,6 +652,8 @@ exit 1
         $this->cm = Cm::where('serial', $this->serial)->first();
         if (!$this->cm || !$this->cm->isActive())
             return '';   // unknown module, or a late report after completion or failure
+        if ($this->cm->phase === 'firstboot')
+            return '';   // a late mark of the utility OS: the module reboots into its new system
 
         $this->cm->setPhase($phase, $req->query('detail'));
         $sectors = $req->query('sectors');

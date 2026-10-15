@@ -57,10 +57,13 @@ class FirstBootServiceTest extends TestCase
             '        if [ "$left" -gt 0 ]; then echo $((left - 1)) > "$FAKE/refusals"; exit 22; fi',
             '        printf "%s\n" "$@" > "$FAKE/report"',
             '        cp "$log" "$FAKE/report.log" ;;',
-            '    *) f="$FAKE/www/${url##*/}"; [ -f "$f" ] || exit 22; cp "$f" "$out" ;;',
+            '    *) if [ "${url##*/}" = "${FAKE_PARTIAL:-}" ]; then printf part > "$out"; exit 18; fi',
+            '       f="$FAKE/www/${url##*/}"; [ -f "$f" ] || exit 22; cp "$f" "$out" ;;',
             'esac',
         ]));
+        $this->stub('dpkg', 'echo "dpkg $*" >> "$FAKE/calls"');
         $this->stub('apt-get', implode("\n", [
+            'echo "apt-get $*" >> "$FAKE/calls"',
             'echo "$*" >> "$FAKE/apt.log"',
             'for f in "$@"; do case "$f" in *.deb) cat "$f" >> "$FAKE/apt-content" ;; esac; done',
             'exit ${FAKE_APT:-0}',
@@ -118,6 +121,7 @@ class FirstBootServiceTest extends TestCase
             'FIRSTBOOT_WANTS' => $this->dir.'/systemd/multi-user.target.wants/cmprovision-firstboot.service',
             'FIRSTBOOT_LOG' => $this->dir.'/firstboot.log', 'FIRSTBOOT_HOSTNAME' => $this->dir.'/hostname',
             'FIRSTBOOT_SETTLE' => '5', 'FIRSTBOOT_SCRIPT_SECONDS' => '5', 'FIRSTBOOT_TRIES' => '3',
+            'FIRSTBOOT_DOWNLOAD_TRIES' => '3', 'FIRSTBOOT_KILL_AFTER' => '1',
             'FIRSTBOOT_PAUSE' => '0', 'FIRSTBOOT_GRACE' => '0',
         ], $env);
         $prefix = '';
@@ -286,6 +290,48 @@ class FirstBootServiceTest extends TestCase
         $this->assertSame(['none', '0', 'heartbeat'], [
             trim(file_get_contents($this->dir.'/leds/ACT/trigger')), trim(file_get_contents($this->dir.'/leds/ACT/brightness')),
             trim(file_get_contents($this->dir.'/leds/PWR/trigger'))]);
+    }
+
+    public function test_the_log_is_for_root_alone()
+    {
+        // the scripts run under sh -v: their text, a password too, goes into the log that stays on the device
+        $this->firstBoot([$this->script(1, 'keys', "#!/bin/sh\ntrue\n")]);
+
+        $this->assertSame('0600', substr(sprintf('%o', fileperms($this->dir.'/firstboot.log')), -4));
+    }
+
+    public function test_packages_get_their_own_tries_however_long_the_report_retries()
+    {
+        $this->firstBoot([], [$this->package('gone_1.0_arm64.deb', 'ggg', false)],
+                         ['FIRSTBOOT_TRIES' => '5', 'FIRSTBOOT_DOWNLOAD_TRIES' => '2']);
+
+        $this->assertSame(2, substr_count(file_get_contents($this->dir.'/curl.log'), 'gone_1.0_arm64.deb-on-server.deb'));
+    }
+
+    public function test_a_download_cut_short_says_so()
+    {
+        // curl leaves what it got: a partial file is no package with a wrong checksum
+        $this->firstBoot([], [$this->package('cut_1.0_arm64.deb', 'ccc', false)], ['FAKE_PARTIAL' => 'cut_1.0_arm64.deb-on-server.deb']);
+
+        $this->assertSame('package cut_1.0_arm64.deb: download failed', $this->reportFields()['reason']);
+    }
+
+    public function test_a_script_that_ignores_the_end_of_its_time_is_killed()
+    {
+        $started = microtime(true);
+        $this->firstBoot([$this->script(1, 'stubborn', "#!/bin/sh\ntrap '' TERM\nsleep 20\n")], [], ['FIRSTBOOT_SCRIPT_SECONDS' => '1']);
+
+        $this->assertSame("first boot script 'stubborn' timed out after 1 s", $this->reportFields()['reason']);
+        $this->assertLessThan(10, microtime(true) - $started);
+    }
+
+    public function test_an_install_cut_short_by_a_reboot_is_finished_first()
+    {
+        $this->firstBoot([], [$this->package('a_1.0_arm64.deb', 'aaa')]);
+
+        $calls = file($this->dir.'/calls', FILE_IGNORE_NEW_LINES);
+        $this->assertSame('dpkg --configure -a', $calls[0]);
+        $this->assertStringStartsWith('apt-get install -y --no-download', $calls[1]);
     }
 
     public function test_a_helper_that_cannot_drive_the_leds_leaves_them_to_the_kernel()

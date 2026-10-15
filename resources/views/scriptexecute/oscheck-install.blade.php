@@ -11,6 +11,7 @@ mount -t ext4 "$PART2" "$ROOT"
 trap 'umount "$ROOT"' EXIT
 LIB=$ROOT/usr/local/lib/cmprovision-firstboot
 mkdir -p "$LIB/scripts" "$ROOT/etc/systemd/system/multi-user.target.wants"
+chmod 700 "$LIB"   # the first-boot scripts may hold secrets
 cp "$SRC/run" "$LIB/run"
 for f in "$SRC"/scripts/*.sh; do
     if [ -e "$f" ]; then cp "$f" "$LIB/scripts/"; fi

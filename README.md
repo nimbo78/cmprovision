@@ -68,12 +68,12 @@ A project with **Check the OS after the first boot** does not stop when the imag
 1. After the post-install scripts the utility OS mounts the written root partition (the image's second partition, ext4) and adds the service `cmprovision-firstboot`, with the project's first-boot scripts and packages.
 1. The module reboots. Its bootloader must try eMMC before the network (`BOOT_ORDER`, e.g. `0xf21`); otherwise the module comes back to network boot and the run fails with "the new system did not start".
 1. The new system gets its address from the stand's DHCP and waits for its boot to finish (at most 5 minutes). Then it installs the project's packages with one `apt-get` and runs the first-boot scripts, 2 minutes each; a non-zero exit fails the check.
-1. It reports its host name, the systemd state and the failed units. The service then removes itself; its log stays in `/var/log/cmprovision-firstboot.log`.
+1. It reports its host name, the systemd state and the failed units. The service then removes itself; its log stays in `/var/log/cmprovision-firstboot.log`, readable by root alone: it keeps the text of the first-boot scripts.
 1. Only now is the run done. The label can print `$hostname` (label moment "After the OS check"), and the notifications go out. Without a report in 15 minutes the run fails.
 1. The module keeps running and shows the result on its LEDs: ACT and PWR fade in and out together when the check passed, the error pattern when it failed.
 
 - **First-boot scripts** are a script type of their own (Scripts → first boot): they run as root in the new system, with `$SERVER` set.
-- **Packages** (Scripts → Packages) are `.deb` files uploaded to the server. The stand has no internet, so apt downloads nothing: whatever a package depends on must be in the image or be uploaded too.
+- **Packages** (Scripts → Packages) are `.deb` files uploaded to the server. The stand has no internet, so apt downloads nothing: whatever a package depends on must be in the image or be uploaded too. The list shows each package's architecture: it must be the image's (`arm64` for a 64-bit image, `armhf` for a 32-bit one) or `all`.
 - Anyone who reaches the provisioner's web server can download the files under `/uploads`, the images included: keep secrets out of packages.
 - The new system needs systemd and curl. A module booted over USB (rpiboot) is not checked: a reboot would bring it back to USB boot.
 

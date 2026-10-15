@@ -15,11 +15,15 @@ LEDS=${LEDS:-/sys/class/leds}
 SETTLE=${FIRSTBOOT_SETTLE:-300}
 SCRIPT_SECONDS=${FIRSTBOOT_SCRIPT_SECONDS:-120}
 TRIES=${FIRSTBOOT_TRIES:-60}
+DOWNLOAD_TRIES=${FIRSTBOOT_DOWNLOAD_TRIES:-30}
 PAUSE=${FIRSTBOOT_PAUSE:-10}
+KILL_AFTER=${FIRSTBOOT_KILL_AFTER:-10}
 GRACE=${FIRSTBOOT_GRACE:-1}
 export SERVER
 
+# the log keeps the first-boot scripts' text (sh -v), a password too: for root alone
 : > "$LOG"
+chmod 600 "$LOG"
 log() { printf '%s\n' "$*" >> "$LOG"; }   # printf: dash's echo would turn \\ into \
 RESULT=0
 REASON=
@@ -38,15 +42,21 @@ STATE=$(systemctl is-system-running 2>/dev/null)
 log "systemd: ${STATE:-unknown}"
 
 # 2. The project's packages from the server: checked, then installed with one apt-get. The stand has no internet, so
-#    apt downloads nothing: what they depend on is in the image or among them
+#    apt downloads nothing: what they depend on is in the image or among them. A download is retried while the network
+#    comes up, at most DOWNLOAD_TRIES times (5 minutes); what a failed try left is no package
 get_package() {   # get_package <name> <url> <sha256> <file>
     i=0
-    while [ "$i" -lt "$TRIES" ]; do
-        curl -fsS --connect-timeout 10 --max-time 600 -o "$4" "$2" >> "$LOG" 2>&1 && break
+    got=no
+    while [ "$i" -lt "$DOWNLOAD_TRIES" ]; do
+        rm -f "$4"
+        if curl -fsS --connect-timeout 10 --max-time 600 -o "$4" "$2" >> "$LOG" 2>&1; then
+            got=yes
+            break
+        fi
         i=$((i + 1))
         sleep "$PAUSE"
     done
-    if [ ! -s "$4" ]; then
+    if [ "$got" = no ]; then
         fail "package $1: download failed"
         return 1
     fi
@@ -59,6 +69,8 @@ mkdir -p "$DIR/packages"
 [ "$RESULT" -ne 0 ] || get_package {!! escapeshellarg($package->filename) !!} {!! escapeshellarg('http://'.$server.'/uploads/packages/'.$package->filename_on_server) !!} {!! escapeshellarg($package->sha256) !!} "$DIR/packages/{{ $loop->iteration }}.deb"
 @endforeach
 if [ "$RESULT" -eq 0 ]; then
+    # an install that a reboot of the system's own cut short is finished first
+    DEBIAN_FRONTEND=noninteractive dpkg --configure -a >> "$LOG" 2>&1 || true
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-download -o DPkg::Lock::Timeout=120 "$DIR"/packages/*.deb >> "$LOG" 2>&1
     rc=$?
     [ "$rc" -eq 0 ] || fail "package install failed: apt-get exited $rc"
@@ -69,9 +81,10 @@ fi
 run_script() {   # run_script <file> <name>
     [ "$RESULT" -eq 0 ] || return 0
     log "=== first boot script '$2'"
-    timeout "$SCRIPT_SECONDS" sh -v "$1" >> "$LOG" 2>&1
+    # a script that ignores TERM gets KILL a little later (timeout then answers 137 instead of 124)
+    timeout -k "$KILL_AFTER" "$SCRIPT_SECONDS" sh -v "$1" >> "$LOG" 2>&1
     rc=$?
-    if [ "$rc" -eq 124 ]; then
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
         fail "first boot script '$2' timed out after $SCRIPT_SECONDS s"
     elif [ "$rc" -ne 0 ]; then
         fail "first boot script '$2' exited $rc"

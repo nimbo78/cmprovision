@@ -14,8 +14,10 @@ class AddPackageController extends Controller
     public function store(Request $req, DebPackage $deb)
     {
         @set_time_limit(3600);
-        $req->validate(['package' => 'required|file']);
         $file = $req->file('package');
+        // PHP drops a file over upload_max_filesize or post_max_size: the form arrives without it
+        if (!$file || !$file->isValid())
+            return $this->back('No package arrived: choose a .deb file; a file over the upload limit does not arrive either.');
         $name = $file->getClientOriginalName();
         if (strtolower($file->getClientOriginalExtension()) !== 'deb')
             return $this->back('Only .deb packages can be uploaded.');

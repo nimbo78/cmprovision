@@ -110,6 +110,8 @@ class PoeRestart
             return 'Restart the Raspberry Pi'.$on.'? PoE goes off for '.self::OFF_SECONDS.' s.';
         if ($cm->phase === 'done')
             $then = 'the module boots the system it was flashed with.';
+        elseif ($cm->phase === 'firstboot' || ($cm->os_check === 'failed' && $cm->phase_detail === Cm::OS_NO_REPORT))
+            $then = 'the module boots its new system again.';   // the OS check: eMMC comes before the network
         elseif ($cm->isRunning() && $cm->silentFor() === null)
             $then = 'its run stops and starts over.';
         else

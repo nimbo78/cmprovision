@@ -52,17 +52,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - службу `cmprovision-firstboot` (`resources/views/scriptexecute/firstboot.blade.php`, POSIX sh; сервер рендерит её под модуль);
   - скрипты первой загрузки (`script_type = firstboot`);
   - шаг установки (`scriptexecute/oscheck-install.blade.php`). Это последний шаг пост-установки, «Installing the OS check»: он монтирует `$PART2` (ext4) и кладёт службу в `/etc/systemd/system/` и `/usr/local/lib/cmprovision-firstboot/`.
-- **После `alldone`** модуль перезагружается (`reboot -f`). Сервер держит прогон в фазе `firstboot` («Checking the OS», `os_check = waiting`) и ставит задачу `FirstBootTimeout` через `Cm::FIRSTBOOT_SECONDS` (15 минут).
+- **После `alldone`** модуль перезагружается (`reboot -f`). Сервер держит прогон в фазе `firstboot` («Checking the OS», `os_check = waiting`) и ставит задачу `FirstBootTimeout` (очередь `boards`) через `Cm::FIRSTBOOT_SECONDS` (15 минут); упавшая задача (`failed()`) ставит следующую через 30 с, пока модуль ждёт этого прогона. Повторный `alldone` (его шлёт `report()`, если ответ задержался) и поздние `?progress=` утилитарной ОС фазу не трогают.
 - **Служба** живёт одну загрузку:
   - ждёт конца загрузки;
-  - ставит пакеты проекта одним `apt-get --no-download` (в сети стенда нет интернета);
-  - выполняет скрипты, каждому по 2 минуты;
+  - качает пакеты проекта (до 30 попыток на пакет: сеть ещё поднимается), сверяет SHA256, доделывает установку, прерванную перезагрузкой (`dpkg --configure -a`), и ставит их одним `apt-get --no-download` (в сети стенда нет интернета);
+  - выполняет скрипты, каждому по 2 минуты (`timeout -k`: скрипт, не услышавший TERM, получает KILL через 10 с);
   - шлёт один отчёт `POST ?firstboot=1&retcode=` с именем хоста, состоянием systemd, упавшими юнитами и журналом;
   - удаляет себя и включает светодиоды: `ledpattern ready` или `fail`.
+  Журнал `/var/log/cmprovision-firstboot.log` (`chmod 600`) и каталог службы (`chmod 700`) — только для root: `sh -v` пишет в журнал текст скриптов вместе с паролями, если они там есть.
 - **Отчёт** (`registerFirstBoot()`) завершает прогон. Удачный — фаза `done`, событие `CmProvisioningComplete` и этикетка момента `firstboot` с `$hostname` (её печатает задача `PrintLabel`). Неудачный — фаза `failed` с причиной «OS check failed: …».
-- **Модуль снова стартует, пока прогон в фазе `firstboot`** — значит, новая система не запустилась: провал «The new system did not start…» без повторной записи.
+- **Модуль снова стартует, пока прогон в фазе `firstboot`** — значит, новая система не запустилась: провал «The new system did not start…» без повторной записи. Исключения закрывают ждущий прогон (`closeTheCheck()`, уведомление о провале) и начинают новый: загрузка по USB (`bootmode=3`, оператор перешивает модуль) — «Interrupted: the module was booted over USB.»; старт позже `FIRSTBOOT_SECONDS` (таймаут потерялся) — `Cm::OS_NO_REPORT`.
 - **Отчёт после таймаута** тоже засчитывается (`Cm::awaitsOsReport()`).
-- **Перезапуск по PoE** не предлагается модулю, провалившему проверку собственным отчётом (`Cm::failedInItsSystem()`): питание загрузило бы ту же систему.
+- **Перезапуск по PoE** не предлагается модулю, провалившему проверку собственным отчётом (`Cm::failedInItsSystem()`), и «Restart failed» дашборда его пропускает: питание загрузило бы ту же систему. Модулю в фазе `firstboot` или без отчёта окно подтверждения говорит, что он снова загрузит новую систему.
+- **Галка проекта**: снятая, она сбрасывает момент этикетки `firstboot` на `postinstall`, пакеты и скрипты первой загрузки (`Projects::updatedOsCheck()`); API отвечает 422 на скрипты первой загрузки или момент `firstboot` без проверки.
 
 Параллельно скрипт сообщает живой статус: `progress_mark` перед каждым скриптом и записью, а `progress_start`/`progress_stop` на время записи образа и сверки раз в 5 секунд шлют число секторов из `/sys/block/<dev>/stat` (поле 7 — записано, 3 — прочитано). Это `GET ?progress=<фаза>&detail=&sectors=` без повторов и с таймаутом 4 секунды: статус необязателен и не должен тормозить прошивку. Сервер хранит фазу (`preinstall`, `write`, `verify`, `postinstall`, `done`, `failed`), её начало и байты в колонках `cms` (`Cm::setPhase()`), в лог такие запросы не пишутся. Дашборд показывает модули компонентом `ProvisioningStatus`: процент, скорость, остаток и «нет связи», если модуль молчит дольше `Cm::STALE_AFTER_*`.
 

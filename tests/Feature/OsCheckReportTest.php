@@ -12,10 +12,13 @@ use App\Models\Image;
 use App\Models\Label;
 use App\Models\Project;
 use App\Models\Setting;
+use App\Services\Switch\PoeRestart;
 use App\Support\StandMap;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -284,6 +287,119 @@ class OsCheckReportTest extends TestCase
         $this->assertNull($this->cm()->silentFor());
         Carbon::setTestNow(now()->addMinutes(2));
         $this->assertNotNull($this->cm()->silentFor());
+    }
+
+    public function test_a_repeated_written_report_changes_nothing()
+    {
+        Event::fake([CmProvisioningComplete::class]);
+        $this->project();
+        $this->written();
+
+        // report() sends it again when the first answer takes long (a slow label printer)
+        $this->get('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50.0&verify=0')->assertOk();
+
+        $cm = $this->cm();
+        $this->assertSame(['firstboot', 'waiting', null], [$cm->phase, $cm->os_check, $cm->provisioning_complete_at]);
+        Event::assertNotDispatched(CmProvisioningComplete::class);
+        $this->assertSame(1, Cmlog::where('msg', 'like', 'Image written.%')->count());
+    }
+
+    public function test_a_failed_timeout_job_queues_another()
+    {
+        $this->project();
+        $this->written();
+        $cm = $this->cm();
+        Queue::fake();
+
+        (new FirstBootTimeout($cm->id, $cm->provisioning_started_at->getTimestamp()))->failed(new \RuntimeException('database is locked'));
+
+        Queue::assertPushed(FirstBootTimeout::class, function ($job) use ($cm) {
+            return $job->cmId === $cm->id && $job->runStartedAt === $cm->provisioning_started_at->getTimestamp() && $job->delay !== null;
+        });
+    }
+
+    public function test_a_failed_timeout_job_of_a_finished_run_queues_nothing()
+    {
+        $this->project();
+        $this->written();
+        $this->osReport(0);
+        $cm = $this->cm();
+        Queue::fake();
+
+        (new FirstBootTimeout($cm->id, $cm->provisioning_started_at->getTimestamp()))->failed(new \RuntimeException('database is locked'));
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_a_start_long_after_the_reboot_closes_the_old_run_and_starts_anew()
+    {
+        Event::fake([CmProvisioningFailed::class]);
+        $this->project();
+        $this->written();
+        Carbon::setTestNow(now()->addSeconds(Cm::FIRSTBOOT_SECONDS + 60));   // its timeout job was lost
+
+        $script = $this->get(self::START)->assertOk()->getContent();
+
+        $this->assertStringContainsString('dd of=$STORAGE', $script, 'a new run');
+        $this->assertSame('write', $this->cm()->phase);
+        Event::assertDispatched(CmProvisioningFailed::class);
+        $this->assertSame(1, Cmlog::where('msg', 'like', Cm::OS_NO_REPORT.'%')->count());
+    }
+
+    public function test_a_usb_boot_during_the_check_is_a_new_run()
+    {
+        Event::fake([CmProvisioningFailed::class]);
+        $this->project();
+        $this->written();
+
+        $script = $this->get(self::START.'&bootmode=3')->assertOk()->getContent();
+
+        $this->assertStringContainsString('dd of=$STORAGE', $script, 'the operator re-flashes it over USB');
+        $this->assertSame('skipped', $this->cm()->os_check);
+        $this->assertSame(1, Cmlog::where('msg', 'Interrupted: the module was booted over USB.')->count());
+        Event::assertDispatched(CmProvisioningFailed::class);
+    }
+
+    public function test_progress_while_the_module_reboots_keeps_the_check()
+    {
+        $this->project();
+        $this->written();
+
+        $this->get('/scriptexecute?serial='.self::SERIAL.'&progress=postinstall&detail=late')->assertOk();
+
+        $this->assertSame('firstboot', $this->cm()->phase);
+    }
+
+    public function test_a_restart_during_the_check_says_what_happens()
+    {
+        $cm = new Cm(['serial' => self::SERIAL, 'mac' => 'e4:5f:01:62:9f:d3', 'phase' => 'firstboot', 'os_check' => 'waiting',
+            'provisioning_started_at' => now(), 'progress_updated_at' => now()]);
+        $text = 'Restart '.self::SERIAL.' on sw01 Gi0/1? PoE goes off for 5 s; the module boots its new system again.';
+        $this->assertSame($text, PoeRestart::confirm($cm, 'sw01 Gi0/1'));
+
+        $cm->phase = 'failed';
+        $cm->phase_detail = Cm::OS_NO_REPORT;
+        $cm->os_check = 'failed';
+        $this->assertSame($text, PoeRestart::confirm($cm, 'sw01 Gi0/1'));
+    }
+
+    public function test_the_timeout_waits_in_the_boards_queue_and_fails_the_run_when_due()
+    {
+        config(['queue.default' => 'database']);
+        Event::fake([CmProvisioningFailed::class]);
+        $this->project();
+        $this->written();
+        $job = DB::table('jobs')->where('queue', 'boards')->first();
+        $this->assertNotNull($job, 'the timeout waits in the boards queue');
+        $this->assertSame(now()->getTimestamp() + Cm::FIRSTBOOT_SECONDS, (int) $job->available_at);
+
+        Artisan::call('queue:work', ['connection' => 'database', '--queue' => 'boards', '--once' => true, '--sleep' => 0]);
+        $this->assertSame('firstboot', $this->cm()->phase, 'not due yet: no worker takes it');
+
+        Carbon::setTestNow(now()->addSeconds(Cm::FIRSTBOOT_SECONDS));
+        Artisan::call('queue:work', ['connection' => 'database', '--queue' => 'boards', '--once' => true, '--sleep' => 0]);
+        $this->assertSame(['failed', Cm::OS_NO_REPORT], [$this->cm()->phase, $this->cm()->phase_detail]);
+        Event::assertDispatched(CmProvisioningFailed::class);
     }
 
     public function test_a_module_that_failed_in_its_own_system_is_not_restarted()

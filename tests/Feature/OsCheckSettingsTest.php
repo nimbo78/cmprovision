@@ -84,6 +84,34 @@ class OsCheckSettingsTest extends TestCase
         $this->assertSame(0, Project::count());
     }
 
+    public function test_unticking_the_check_drops_what_only_it_uses()
+    {
+        $package = $this->package();
+        $firstBoot = $this->firstBootScript();
+        $post = Script::create(['name' => 'hostname', 'script_type' => 'postinstall', 'bg' => false, 'priority' => 10, 'script' => 'true']);
+
+        Livewire::test(Projects::class)->call('create')->set('name', '78')->set('active', false)
+            ->set('os_check', true)->set('label_moment', 'firstboot')->set('selectedPackages', [(string) $package->id])
+            ->set('selectedScripts', [(string) $firstBoot->id, (string) $post->id])
+            ->set('os_check', false)
+            ->assertSet('label_moment', 'postinstall')->assertSet('selectedPackages', [])->assertSet('selectedScripts', [(string) $post->id])
+            ->call('store')->assertHasNoErrors();
+
+        $this->assertSame([false, 'postinstall'], [Project::firstOrFail()->os_check, Project::firstOrFail()->label_moment]);
+    }
+
+    public function test_the_api_attaches_first_boot_scripts_only_with_the_check()
+    {
+        Sanctum::actingAs(User::factory()->create(), ['update']);
+        $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'label_moment' => 'never', 'verify' => false]);
+        $script = $this->firstBootScript();
+
+        $this->patchJson('/api/projects/'.$project->id, ['scripts' => [$script->id]])->assertStatus(422);
+        $this->assertSame(0, $project->scripts()->count());
+        $this->patchJson('/api/projects/'.$project->id, ['os_check' => true, 'scripts' => [$script->id]])->assertOk();
+        $this->assertSame([$script->id], $project->scripts()->pluck('scripts.id')->all());
+    }
+
     public function test_the_api_takes_the_os_check_and_its_label_moment()
     {
         Sanctum::actingAs(User::factory()->create(), ['create', 'update']);

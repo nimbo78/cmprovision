@@ -46,4 +46,14 @@ class FirstBootTimeout implements ShouldQueue
             NotificationBatch::whereKey($cm->notification_batch_id)->update(['last_event_at' => now()]);
         CmProvisioningFailed::dispatch($cm);
     }
+
+    /* The only timeout of the run failed (a locked database, a worker killed): another one comes later, while the module
+       still waits for this run */
+    public function failed(?\Throwable $e = null): void
+    {
+        $cm = Cm::find($this->cmId);
+        if ($cm && $cm->phase === 'firstboot' && $cm->provisioning_started_at
+            && $cm->provisioning_started_at->getTimestamp() === $this->runStartedAt)
+            self::dispatch($this->cmId, $this->runStartedAt)->delay(now()->addSeconds(30));
+    }
 }

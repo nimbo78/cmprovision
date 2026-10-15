@@ -184,6 +184,7 @@ class OsCheckModuleScriptTest extends TestCase
         $root = $this->dir.'/root';
         $lib = $root.'/usr/local/lib/cmprovision-firstboot';
         $this->assertFileEquals($this->dir.'/src/run', $lib.'/run');
+        $this->assertSame('0700', substr(sprintf('%o', fileperms($lib)), -4), 'the first-boot scripts may hold secrets');
         $this->assertSame("#!/bin/sh\nsystemctl is-active ssh\n\n", file_get_contents($lib.'/scripts/'.$services->id.'.sh'));
         $this->assertSame('helper', file_get_contents($lib.'/ledpattern'));
         $this->assertStringContainsString('ExecStart=/bin/sh /usr/local/lib/cmprovision-firstboot/run',

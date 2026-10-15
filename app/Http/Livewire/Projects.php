@@ -160,6 +160,18 @@ class Projects extends Component
         $this->openModal();
     }
 
+    /* Unticking the OS check drops what only it uses: its label moment, its packages and the first-boot scripts */
+    public function updatedOsCheck($value)
+    {
+        if ($value)
+            return;
+        if ($this->label_moment === 'firstboot')
+            $this->label_moment = 'postinstall';
+        $this->selectedPackages = [];
+        $firstBoot = Script::where('script_type', 'firstboot')->pluck('id')->map(function ($id) { return strval($id); })->all();
+        $this->selectedScripts = array_values(array_diff($this->selectedScripts ?: [], $firstBoot));
+    }
+
     public function store()
     {
         $this->validate();

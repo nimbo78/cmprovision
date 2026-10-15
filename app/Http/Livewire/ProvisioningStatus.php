@@ -49,11 +49,14 @@ class ProvisioningStatus extends Component
             $this->report(PoeRestart::modules([$cm], auth()->user()->name ?? null));
     }
 
-    /* The failed and silent modules of the open batch */
+    /* The failed and silent modules of the open batch, but for one that failed its OS check in its new system: a power
+       cycle boots that system again */
     public function restartFailed()
     {
         $summary = BatchSummary::current();
-        $cms = $summary ? $summary->modules->filter(function ($cm) { return $cm->phase === 'failed' || $cm->silentFor() !== null; }) : [];
+        $cms = $summary ? $summary->modules->filter(function ($cm) {
+            return ($cm->phase === 'failed' || $cm->silentFor() !== null) && !$cm->failedInItsSystem();
+        }) : [];
         $this->report(PoeRestart::modules($cms, auth()->user()->name ?? null));
     }
 

@@ -116,6 +116,15 @@ class PackagesTest extends TestCase
         $this->assertFileExists($package->path());
     }
 
+    public function test_an_upload_without_a_file_says_so()
+    {
+        $this->actingAs(User::factory()->create());
+
+        // the form sends nothing when the file is over PHP's upload limit either
+        $this->post('/addPackage', [])->assertRedirect(route('scripts'))
+            ->assertSessionHas('message', 'No package arrived: choose a .deb file; a file over the upload limit does not arrive either.');
+    }
+
     public function test_only_a_signed_in_user_uploads()
     {
         $this->upload('wlanpi-extra_1.2.3_arm64.deb', 'deb bytes')->assertRedirect(route('login'));
