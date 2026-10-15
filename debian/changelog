@@ -1,4 +1,4 @@
-cmprovision4 (2.5.3~dev1) unstable; urgency=medium
+cmprovision4 (2.5.3~dev2) unstable; urgency=medium
 
   * The provisioner's Wi-Fi networks in Settings: add, edit, delete and
     order networks (WPA2, WPA3 or mixed, hidden ones too), check one on
@@ -8,7 +8,7 @@ cmprovision4 (2.5.3~dev1) unstable; urgency=medium
     a password goes only into the root-only keyfile.
   * The uplink icon warns when the built-in Wi-Fi carries the traffic.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Thu, 15 Oct 2026 16:03:06 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 15 Oct 2026 16:51:27 +0300
 
 cmprovision4 (2.5.2) unstable; urgency=medium
 

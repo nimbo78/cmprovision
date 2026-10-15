@@ -46,7 +46,7 @@
 | WPA2/WPA3 (mixed) | `wpa-psk` | 2 (optional): NetworkManager добавляет SAE, если его умеют карта и точка |
 | WPA3-Personal | `sae` | 3 (required) |
 
-Как NetworkManager 1.52 передаёт смешанный режим в wpa_supplicant и умеет ли SAE встроенный `brcmfmac` CM4 — проверяется на wlanpi-da2 (раздел «Проверка»).
+`pmf` по умолчанию (0) — это поведение NetworkManager «optional»: раздел показывает такой профиль как WPA2/WPA3 (mixed), иначе сохранение без правки выключило бы PMF. Как NetworkManager 1.52 передаёт смешанный режим в wpa_supplicant и умеет ли SAE встроенный `brcmfmac` CM4 — проверяется на wlanpi-da2 (раздел «Проверка»).
 
 Правила ввода (их проверяют и приложение, и помощник):
 
@@ -136,14 +136,14 @@ www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/wifi-networks scan
 - **`order`** — список должен совпасть с набором управляемых сетей (по одному UUID на сеть); приоритеты 100, 99, … получают все профили каждой сети.
 - **`scan`** — `nmcli device wifi rescan` на всех Wi-Fi-устройствах (пересканирование NetworkManager разрешает только root), затем список без пересканирования. Сети без SSID в список не идут.
 - **`check`**:
-  1. Встроенный Wi-Fi есть и простаивает: файл состояния холодного запаса — `state=standby`, `spare` — встроенный, `uplink` не пустой. Иначе `result=busy` с причиной: «the built-in Wi-Fi carries the traffic» (`active`), «the cold spare is switching» (`waiting`), «the cold spare is off (SPARE=no)» (`off`), «no built-in Wi-Fi».
-  2. Профиль сети, который может подняться на встроенном: без привязки или привязанный к встроенному (у пары «78» до перехода это `uplink-onboard`). Нет такого — отказ «'…' is bound to the card: save it once to manage it here».
-  3. Замок холодного запаса.
-  4. `nmcli -w 30 connection up <uuid> ifname <встроенный>`; при успехе — адрес `nmcli -g IP4.ADDRESS device show <встроенный>`.
+  1. Встроенный Wi-Fi есть и простаивает: файл состояния холодного запаса — `state=standby`, `spare` — встроенный, `uplink` не пустой. Иначе `result=busy` с причиной: «the built-in Wi-Fi carries the traffic» (`active`), «the cold spare is switching» (`waiting`), «the cold spare is off (SPARE=no)» (`off`), «the cold spare has not reported yet» (встроенный есть, файла состояния ещё нет: его пишет первое событие NetworkManager или таймер через 2 минуты после загрузки), «no built-in Wi-Fi».
+  2. Замок холодного запаса.
+  3. Копия профиля, который остаётся у сети (правило перехода), в памяти NetworkManager: keyfile копируется в `/run/NetworkManager/system-connections` с именем `cmprovision-check`, новым UUID, `interface-name` встроенного, `autoconnect=false` и без `mac-address`, затем `nmcli connection load`; копии прерванных проверок удаляются раньше. Так блок автоподключения, который NetworkManager ставит профилю после отказа «нет секретов» (неверный пароль), достаётся копии, а профиль без `multi-connect`, работающий на карте, с неё не уходит (решение финального ревью; сначала поднимался сам профиль).
+  4. `nmcli -w 30 connection up <копия> ifname <встроенный>`; при успехе — адрес `nmcli -g IP4.ADDRESS device show <встроенный>`.
   5. Итог: `connected` (подключился и получил IPv4-адрес); `wrong-password` (NetworkManager: «Secrets were required, but not provided» или обрыв рукопожатия); `not-found` («The Wi-Fi network could not be found»); `no-address` (подключился, адреса нет); `timeout`; `failed` (иное, текст NetworkManager в `detail`).
-  6. `nmcli -w 20 device disconnect <встроенный>`, снять замок, `uplink-spare check wifi-check` — тот записывает `standby`.
+  6. `nmcli -w 20 device disconnect <встроенный>`, удалить копию, снять замок, `uplink-spare check wifi-check` — тот записывает `standby`. Прерванный запуск (сигнал, таймаут приложения) копию и свой каталог всё равно удаляет.
 
-  Всё укладывается в 45 с.
+  Всё укладывается в 75 с; приложение ждёт 90 с.
 
 ### Журнал
 
@@ -236,5 +236,5 @@ Save, Save and check, Delete, смена порядка и Check now идут ч
 - SAE на встроенном `brcmfmac` CM4 зависит от прошивки; без него Check now сети WPA3 даст `failed`, хотя карта подключится.
 - `multi-connect=multiple` для Wi-Fi проверен только офлайн (`nmcli --offline` принимает); вживую — на wlanpi-da2.
 - Check now проверяет сеть встроенным радио: сеть только в 6 ГГц или вне его досягаемости даст `not-found`, хотя карта подключится. Сохранить такую сеть можно.
-- Синхронный запрос Check now — до 45 с; у nginx `fastcgi_read_timeout` по умолчанию 60 с.
+- Синхронный запрос Check now — до 75 с (приложение ждёт 90 с; у сайта пакета `fastcgi_read_timeout` 86400 с).
 - Правленный вручную `/etc/sudoers.d/010_cmprovision` остановит обновление вопросом dpkg.
