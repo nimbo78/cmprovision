@@ -143,4 +143,14 @@ class PackagingTest extends TestCase
         $this->assertLessThan(strpos($prerm, '#DEBHELPER#'), strpos($prerm, 'uplink-spare release'));
         $this->assertStringContainsString('rm -f /etc/default/cmprovision-uplink', $this->file('debian/postrm'));
     }
+
+    public function test_coming_from_below_2_5_2_enables_the_cold_spare_timer()
+    {
+        // prerm disables the timer when going back below 2.5.2, and debhelper enables again only a unit that was enabled:
+        // without this an upgrade after a downgrade would leave the 5-minute check off
+        $postinst = $this->file('debian/postinst');
+        $this->assertStringContainsString('if [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.5.2~"; then', $postinst);
+        $this->assertStringContainsString('deb-systemd-helper enable cmprovision-uplink.timer', $postinst);
+        $this->assertLessThan(strpos($postinst, '#DEBHELPER#'), strpos($postinst, 'deb-systemd-helper enable cmprovision-uplink.timer'));
+    }
 }

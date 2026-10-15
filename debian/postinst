@@ -185,6 +185,11 @@ SPARE=yes
 EOF
     fi
     /usr/lib/cmprovision/uplink-spare check postinst || true
+    # prerm disables the timer when the package goes back below 2.5.2, and debhelper enables again only a unit that was
+    # enabled: coming from below 2.5.2 the timer is enabled here, before debhelper starts it
+    if [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.5.2~"; then
+        deb-systemd-helper enable cmprovision-uplink.timer >/dev/null || true
+    fi
 
   ;;
 esac
