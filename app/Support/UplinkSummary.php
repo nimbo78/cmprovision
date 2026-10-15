@@ -29,12 +29,21 @@ class UplinkSummary
             $view['warning'] = null;
             if ($status['preferred_down'] !== null) {
                 $view['tone'] = 'warn';
-                $view['warning'] = 'Preferred connection '.$status['preferred_down'].' is not connected, the backup carries the traffic.';
+                $view['warning'] = 'Preferred connection '.$status['preferred_down'].' is not connected'.self::spareLost($status)
+                    .', the backup carries the traffic.';
                 $view['label'] .= '. Preferred connection '.$status['preferred_down'].' is not connected';
             }
         }
         foreach ($status['backups'] as $backup) {
             $view['sections'][] = ['Backup: '.self::adapterPhrase($backup).' ('.$backup['name'].')', self::backupLine($backup)];
+        }
+        // a snapshot cached by a version before 2.5.2 has no spare
+        $spare = $status['spare'] ?? null;
+        if ($spare !== null && $spare['state'] === 'standby' && $spare['device'] !== null) {
+            // "30 s" is LOST_SECONDS of tools/uplink-spare
+            $view['sections'][] = ['Cold spare: built-in Wi-Fi ('.$spare['device'].')',
+                'off while '.($uplink !== null ? 'the '.self::adapterPhrase($uplink) : 'another uplink')
+                .' carries the traffic; connects after 30 s without it'];
         }
         if ($status['modules'] !== null) {
             $modules = $status['modules'];
@@ -42,6 +51,17 @@ class UplinkSummary
         }
 
         return $view;
+    }
+
+    /** " since 09:41" when the built-in Wi-Fi carries the traffic as the cold spare: the uplink was lost then */
+    private static function spareLost(array $status): string
+    {
+        $spare = $status['spare'] ?? null;
+        if ($spare === null || $spare['state'] !== 'active' || $spare['lost_since'] === null) {
+            return '';
+        }
+
+        return ' since '.Carbon::createFromTimestamp($spare['lost_since'])->local()->format('H:i');
     }
 
     private static function wifi(array $uplink): array

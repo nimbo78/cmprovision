@@ -30,16 +30,20 @@ class NetworkStatus
     private $routes;
     private $run;
     private $addresses;
+    private $spare;
 
     /**
      * @param callable|null $run       runs a shell command, returns its output or null when it failed
      * @param callable|null $addresses returns the interfaces with their addresses, as net_get_interfaces() does
+     * @param string        $spare     the state file of the built-in Wi-Fi's cold spare (tools/uplink-spare)
      */
     public function __construct(string $net = '/sys/class/net', string $routes = '/proc/net/route',
-                                ?callable $run = null, ?callable $addresses = null)
+                                ?callable $run = null, ?callable $addresses = null,
+                                string $spare = '/run/cmprovision/uplink-spare')
     {
         $this->net = $net;
         $this->routes = $routes;
+        $this->spare = $spare;
         $this->run = $run ?: function ($command) {
             $output = [];
             $code = 1;
@@ -68,8 +72,9 @@ class NetworkStatus
     /**
      * @return array|null uplink (the default route with the lowest metric), backups (the other default routes),
      *                    modules (the interface holding the server address), preferred_down (the name of a
-     *                    NetworkManager profile that should carry the traffic but is not connected), checked_at;
-     *                    null off Linux
+     *                    NetworkManager profile that should carry the traffic but is not connected), spare (the
+     *                    built-in Wi-Fi's cold spare: state, since, device, lost_since; null without its state
+     *                    file), checked_at; null off Linux
      */
     public function read(): ?array
     {
@@ -99,6 +104,7 @@ class NetworkStatus
             'backups' => $uplinks,
             'modules' => $modules,
             'preferred_down' => $uplink === null ? null : $this->preferredDown($uplink['metric']),
+            'spare' => $this->spare(),
         ];
     }
 
@@ -116,6 +122,34 @@ class NetworkStatus
         }
 
         return null;
+    }
+
+    /** the built-in Wi-Fi as a cold spare (tools/uplink-spare writes the file as root): null without a file it can read */
+    private function spare(): ?array
+    {
+        if (!is_readable($this->spare)) {
+            return null;
+        }
+        $values = [];
+        foreach (file($this->spare, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+            $pair = explode('=', $line, 2);
+            if (count($pair) === 2) {
+                $values[$pair[0]] = $pair[1];
+            }
+        }
+        if (!in_array($values['state'] ?? '', ['standby', 'active', 'waiting', 'off'], true)) {
+            return null;
+        }
+        $time = function ($key) use ($values) {
+            return ctype_digit($values[$key] ?? '') ? (int) $values[$key] : null;
+        };
+
+        return [
+            'state' => $values['state'],
+            'since' => $time('since'),
+            'device' => ($values['spare'] ?? '') !== '' ? $values['spare'] : null,
+            'lost_since' => $time('lost_since'),
+        ];
     }
 
     /** interface => metric of its default route, best first; null when the routing table cannot be read */

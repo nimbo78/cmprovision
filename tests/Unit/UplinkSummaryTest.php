@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Support\UplinkSummary;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 /** What the uplink icon and its tooltip say for each situation of the provisioner's network. */
@@ -168,5 +169,31 @@ class UplinkSummaryTest extends TestCase
         $this->assertSame(2, $v['bars']);
         $this->assertContains(['Signal', 'Fair, −72 dBm'], $v['rows']);
         $this->assertSame('Internet via Wi-Fi 6, fair signal, 1.2 Gbit/s', $v['label']);
+    }
+
+    public function test_the_built_in_wifi_as_a_cold_spare_is_a_section_of_its_own()
+    {
+        $v = UplinkSummary::from(self::snapshot([
+            'backups' => [],
+            'spare' => ['state' => 'standby', 'since' => 1790000060, 'device' => 'wlan0', 'lost_since' => null],
+        ]));
+
+        $this->assertSame('normal', $v['tone']);
+        $this->assertSame([
+            ['Cold spare: built-in Wi-Fi (wlan0)', 'off while the M.2 Wi-Fi card carries the traffic; connects after 30 s without it'],
+            ['Modules network: Ethernet (eth0)', '1 Gbit/s full duplex, 172.20.0.1/16'],
+        ], $v['sections']);
+    }
+
+    public function test_running_on_the_cold_spare_says_since_when()
+    {
+        $lost = Carbon::parse('2026-10-15 06:41:00', 'UTC')->getTimestamp();   // 09:41 in Moscow
+        $v = UplinkSummary::from(self::snapshot([
+            'uplink' => self::onboard(), 'backups' => [], 'preferred_down' => 'uplink-m2',
+            'spare' => ['state' => 'active', 'since' => $lost + 30, 'device' => 'wlan0', 'lost_since' => $lost],
+        ]));
+
+        $this->assertSame('Preferred connection uplink-m2 is not connected since 09:41, the backup carries the traffic.', $v['warning']);
+        $this->assertSame([['Modules network: Ethernet (eth0)', '1 Gbit/s full duplex, 172.20.0.1/16']], $v['sections']);
     }
 }

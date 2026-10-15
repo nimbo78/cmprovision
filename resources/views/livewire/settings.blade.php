@@ -146,6 +146,18 @@
                 <tr>
                     <td>
                         <ul class="list-outside list-disc ml-6">
+                            <li @if ($uplinkSpareRunning) class="text-pos" @else class="text-neg" @endif>
+                                <span class="text-fg"> uplink cold spare (built-in Wi-Fi)</span>
+                            </li>
+                        </ul>
+                    </td>
+                    <td>
+                        <button wire:click="viewLogUplinkSpare()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <ul class="list-outside list-disc ml-6">
                             <li class="text-pos">
                                 <span class="text-fg"> web interface</span>
                             </li>
