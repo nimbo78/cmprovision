@@ -214,9 +214,12 @@ class UplinkSpareTest extends TestCase
         $this->world(['wlan0' => 'disconnected', 'wlan1' => 'connected'], self::CARD, $line);
 
         $this->runAt(self::T);
+        $this->assertSame('connected', $this->device('wlan0'));
         $this->runAt(self::T + 120);
 
-        $this->assertSame(['nmcli device set wlan0 autoconnect yes', 'nmcli device set wlan0 autoconnect yes'], $this->actions());
+        // a device NetworkManager disconnected on request stays blocked from autoconnecting its profile, autoconnect yes
+        // or not (seen on the provisioner, NetworkManager 1.52): only a connect gives it back; once, then hands off
+        $this->assertSame(['nmcli device set wlan0 autoconnect yes', 'nmcli -w 20 device connect wlan0'], $this->actions());
         $this->assertSame('off', $this->state()['state']);
         $this->assertSame("-t cmprovision-uplink cold spare off (SPARE=no): wlan0 connects on its own\n", $this->journal(), 'said once');
     }
@@ -285,9 +288,45 @@ class UplinkSpareTest extends TestCase
         $this->forget();
 
         $this->assertSame(0, $this->runAt(self::T + 1, ['release']));
-        $this->assertSame(['nmcli device set wlan0 autoconnect yes'], $this->actions());
+        $this->assertSame('connected', $this->device('wlan0'), 'autoconnect yes alone leaves it disconnected');
+        $this->assertSame(['nmcli device set wlan0 autoconnect yes', 'nmcli -w 20 device connect wlan0'], $this->actions());
         $this->assertSame([], $this->state(), 'no state left behind');
         $this->assertSame("-t cmprovision-uplink cold spare released: wlan0 connects on its own\n", $this->journal());
+    }
+
+    public function test_a_release_that_cannot_connect_says_so()
+    {
+        $this->world(['wlan0' => 'disconnected', 'wlan1' => 'connected'], self::CARD);
+        $this->runAt(self::T);
+        touch($this->dir.'/nm-fails');
+        $this->forget();
+
+        $this->assertSame(0, $this->runAt(self::T + 1, ['release']));
+        $this->assertSame('disconnected', $this->device('wlan0'));
+        $this->assertSame([], $this->state());
+        $this->assertSame("-t cmprovision-uplink cold spare released: wlan0 connects on its own\n"
+            ."-t cmprovision-uplink built-in Wi-Fi wlan0: nmcli device connect failed\n", $this->journal());
+    }
+
+    public static function notDisconnected(): array
+    {
+        return [
+            'connected' => ['connected'],
+            'still connecting' => ['connecting (getting IP configuration)'],
+            'no network to join' => ['unavailable'],
+        ];
+    }
+
+    #[DataProvider('notDisconnected')]
+    public function test_giving_the_built_in_wifi_back_connects_only_a_disconnected_one($state)
+    {
+        $this->world(['wlan0' => $state, 'wlan1' => 'connected'], self::CARD, 'SPARE=no');
+
+        $this->runAt(self::T);
+        $this->runAt(self::T + 1, ['release']);
+
+        $this->assertSame(['nmcli device set wlan0 autoconnect yes', 'nmcli device set wlan0 autoconnect yes'], $this->actions());
+        $this->assertSame($state, $this->device('wlan0'));
     }
 
     public function test_the_state_file_is_readable_by_the_web_server()

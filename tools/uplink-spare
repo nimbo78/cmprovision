@@ -5,7 +5,7 @@
 # for STABLE_SECONDS. Every run decides from the state of the system, not from what started it: NetworkManager's
 # dispatcher (90-cmprovision-uplink), a deferred check, or cmprovision-uplink.timer every 5 minutes.
 #   uplink-spare check [event] [device]    decide now
-#   uplink-spare release                   let the built-in Wi-Fi connect on its own again (prerm)
+#   uplink-spare release                   give the built-in Wi-Fi back to NetworkManager (prerm)
 # Only the device is disconnected, never a NetworkManager profile: after a reboot both radios connect as before.
 # Tests point it elsewhere with UPLINK_SPARE_SYS, UPLINK_SPARE_RUN, UPLINK_SPARE_CONF and UPLINK_SPARE_NOW.
 
@@ -80,6 +80,14 @@ later() {
         --on-active="$1s" "$SELF" check later >/dev/null 2>&1 || true
 }
 
+# give the built-in Wi-Fi back to NetworkManager: a device it disconnected on request stays blocked from autoconnecting its
+# profile, autoconnect yes or not (seen on the provisioner, NetworkManager 1.52), so a disconnected one is connected here
+give_back() {
+    nmcli device set "$spare" autoconnect yes >/dev/null 2>&1
+    [ "$(device_state "$spare")" = disconnected ] || return 0
+    nmcli -w 20 device connect "$spare" >/dev/null 2>&1 || log "built-in Wi-Fi $spare: nmcli device connect failed"
+}
+
 # a count of the state file, or now when it is missing, not a number, or ahead of the clock (the clock stepped back)
 count() {
     value=$(get "$1")
@@ -93,8 +101,10 @@ check() {
     state=$(device_state "$spare")
     case "$state" in ""|unmanaged) return 0 ;; esac         # NetworkManager does not answer or is not in charge of it
     if switched_off; then
-        [ "$(get state)" = off ] || log "cold spare off (SPARE=no): $spare connects on its own"
-        nmcli device set "$spare" autoconnect yes >/dev/null 2>&1
+        if [ "$(get state)" != off ]; then                   # once, on the switch; then NetworkManager's alone
+            log "cold spare off (SPARE=no): $spare connects on its own"
+            give_back
+        fi
         record off "" "" ""
         return 0
     fi
@@ -134,9 +144,9 @@ check() {
 
 release() {
     spare=$(builtin_wifi) || return 0
-    nmcli device set "$spare" autoconnect yes >/dev/null 2>&1
     rm -f "$STATE"
     log "cold spare released: $spare connects on its own"
+    give_back
 }
 
 case "${1:-}" in
