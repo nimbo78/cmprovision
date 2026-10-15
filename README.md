@@ -61,6 +61,15 @@ However that requires that network boot is enabled first in the EEPROM settings 
 
 You can create a SD card that enables that with [Imager](https://www.raspberrypi.com/software/), by going to: "Choose OS" -> "Misc utility images" -> "Bootloader" -> "Network boot"
 
+## The built-in Wi-Fi as a cold spare ##
+
+A provisioner with a better Wi-Fi card (an M.2 card, a USB adapter) keeps its built-in Wi-Fi off the network: while another device carries the default route, the built-in Wi-Fi stays disconnected. When there has been no other default route for 30 seconds (the card was removed, its driver failed, it cannot connect), the built-in Wi-Fi connects on its own, and once the card has carried the default route again for a minute, it leaves. Only the device is disconnected, never a NetworkManager profile: after a reboot both radios connect, and the built-in Wi-Fi leaves a minute later.
+
+- The provisioner's address changes with the radio that carries the traffic; `<hostname>.local` (avahi) follows it.
+- Every switch goes to the journal: `journalctl -t cmprovision-uplink`, or Settings → Service status → uplink cold spare.
+- `SPARE=no` in `/etc/default/cmprovision-uplink` keeps the built-in Wi-Fi connected all the time.
+- It works where NetworkManager runs the Wi-Fi (Raspberry Pi OS); on WLAN Pi OS, where it does not, nothing changes.
+
 ## Switches: port lookup, the Ports page and PoE restart ##
 
 Settings → Ethernet switches lists the switches of the stand; **Add switch** takes a switch's address and SNMP read access (a community for v2c, a user for v3). With them a module gets its switch and port as its board, `sw01 Gi0/3` (the switch's sysName before the first dot, then the port's description or name), and the Ports page shows each switch's front panel port by port. A port that leads to another switch of the list is a link, never a module's port: it shows that switch's own MAC (its base MAC, the MAC of its VLAN interface, or the MAC of its address in the provisioner's ARP cache). The same switch cannot be added twice under two addresses. Two switches with the same sysName give boards that look the same: Settings and the Ports page warn about it, rename one on the switch.
