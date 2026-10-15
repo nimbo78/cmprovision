@@ -1,9 +1,13 @@
-cmprovision4 (2.6.0~dev1) unstable; urgency=medium
+cmprovision4 (2.6.0) unstable; urgency=medium
 
-  * Work in progress: the OS check after the first boot
-    (docs/superpowers/specs/2026-10-15-os-check-design.md).
+  * The OS check after the first boot: a project can have each module
+    boot its written system on the stand, where a one-shot service
+    installs the project's .deb packages, runs its first-boot scripts
+    and reports the host name and the result; the run is done only
+    then, and the label can print $hostname.
+  * Packages and first-boot scripts on the Scripts page.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Thu, 15 Oct 2026 21:06:46 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 15 Oct 2026 23:02:21 +0300
 
 cmprovision4 (2.5.3) unstable; urgency=medium
 
