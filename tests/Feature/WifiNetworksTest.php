@@ -316,4 +316,171 @@ class WifiNetworksTest extends TestCase
         $this->assertStringContainsString('usage: wifi-networks', $this->output);
         $this->assertSame(2, $this->runHelper('save extra'), 'sudo gives the command alone: anything more is a wrong call');
     }
+
+    /** a new network through the helper, its UUID; the calls and journal lines of adding it are forgotten */
+    protected function network(string $ssid = 'office'): string
+    {
+        $this->runHelper('save', ["ssid=$ssid", 'security=mixed', 'hidden=no', 'password=office-pass', 'by=anna']);
+        $uuid = $this->answer()['uuid'];
+        $this->forget();
+
+        return $uuid;
+    }
+
+    public function test_saving_the_78_pair_takes_it_over_without_touching_the_card()
+    {
+        $this->pair();
+
+        $this->assertSame(0, $this->runHelper('save', ['uuid='.self::ONBOARD, 'ssid=78', 'security=mixed', 'hidden=no', 'by=anna']), $this->output);
+
+        $this->assertSame(['uuid' => self::M2], $this->answer(), 'the profile the card is using stays');
+        $k = $this->keyfile(self::M2);
+        $this->assertSame('78', $k['connection']['id']);
+        $this->assertArrayNotHasKey('mac-address', $k['wifi']);
+        $this->assertSame('3', $k['connection']['multi-connect']);
+        $this->assertArrayNotHasKey('route-metric', $k['ipv4']);
+        $this->assertSame(['wpa-psk', '2', self::SECRET], [$k['wifi-security']['key-mgmt'], $k['wifi-security']['pmf'], $k['wifi-security']['psk']]);
+        $this->assertSame('20', $k['connection']['autoconnect-priority'], 'only order changes the order');
+        $this->assertNull($this->keyfile(self::ONBOARD), 'the idle duplicate is gone');
+        foreach ($this->changes() as $call)
+            $this->assertDoesNotMatchRegularExpression('/connection (up|down)|device disconnect/', $call, 'the card stays connected');
+        $this->assertSame("-t cmprovision-wifi anna took over '78' (2 profiles into 1)\n-t cmprovision-wifi anna saved '78' (WPA2/WPA3)\n", $this->journal());
+    }
+
+    public function test_a_new_password_replaces_the_stored_one()
+    {
+        $this->pair();
+
+        $this->runHelper('save', ['uuid='.self::M2, 'ssid=78', 'security=wpa2', 'hidden=no', 'password=new-secret-78', 'by=anna']);
+
+        $this->assertSame('new-secret-78', $this->keyfile(self::M2)['wifi-security']['psk']);
+        $this->assertStringContainsString("anna saved '78' (WPA2, new password)", $this->journal());
+    }
+
+    public function test_an_empty_password_keeps_the_stored_one_but_there_must_be_one()
+    {
+        $this->profile('0b1c2d3e-0000-4000-8000-000000000001', 'bare', ['wifi-security' => ['psk' => null]]);
+
+        $this->assertSame(1, $this->runHelper('save', ['uuid=0b1c2d3e-0000-4000-8000-000000000001', 'ssid=bare', 'security=wpa2', 'by=anna']));
+
+        $this->assertStringContainsString("enter the password: 'bare' has none stored", $this->output);
+        $this->assertSame([], $this->changes());
+    }
+
+    public function test_wpa3_does_not_take_a_stored_64_digit_key()
+    {
+        $this->profile('0b1c2d3e-0000-4000-8000-000000000002', 'keyed', ['wifi-security' => ['psk' => str_repeat('ab', 32)]]);
+
+        $this->assertSame(1, $this->runHelper('save', ['uuid=0b1c2d3e-0000-4000-8000-000000000002', 'ssid=keyed', 'security=wpa3', 'by=anna']));
+
+        $this->assertStringContainsString('enter a password: WPA3 does not take a 64-digit key', $this->output);
+        $this->assertSame([], $this->changes());
+    }
+
+    public function test_renaming_onto_a_listed_ssid_is_refused()
+    {
+        $this->pair();
+        $phone = $this->network('phone');
+
+        $this->assertSame(1, $this->runHelper('save', ["uuid=$phone", 'ssid=78', 'security=wpa2', 'by=anna']));
+
+        $this->assertStringContainsString("'78' is already in the list: edit it", $this->output);
+        $this->assertSame([], $this->changes());
+    }
+
+    public function test_the_network_in_use_cannot_be_deleted()
+    {
+        $this->pair();
+
+        $this->assertSame(1, $this->runHelper('delete', ['uuid='.self::ONBOARD, 'by=anna']));
+
+        $this->assertStringContainsString("'78' is in use: connect another network first", $this->output);
+        $this->assertNotNull($this->keyfile(self::ONBOARD));
+        $this->assertStringContainsString("anna: delete refused: '78' is in use", $this->journal());
+    }
+
+    public function test_deleting_a_network_removes_all_its_profiles()
+    {
+        $this->pair();
+        file_put_contents($this->dir.'/active', '');
+        file_put_contents($this->dir.'/routes', "default via 10.0.0.1 dev eth1 metric 50\n");
+
+        $this->assertSame(0, $this->runHelper('delete', ['uuid='.self::M2, 'by=anna']), $this->output);
+
+        $this->assertNull($this->keyfile(self::M2));
+        $this->assertNull($this->keyfile(self::ONBOARD));
+        $this->assertSame("-t cmprovision-wifi anna deleted '78'\n", $this->journal());
+    }
+
+    public function test_order_gives_every_profile_of_a_network_its_priority()
+    {
+        $this->pair();
+        $phone = $this->network('phone');
+
+        $this->assertSame(0, $this->runHelper('order', ["uuid=$phone", 'uuid='.self::M2, 'by=anna']), $this->output);
+
+        $this->assertSame('100', $this->keyfile($phone)['connection']['autoconnect-priority']);
+        $this->assertSame('99', $this->keyfile(self::M2)['connection']['autoconnect-priority']);
+        $this->assertSame('99', $this->keyfile(self::ONBOARD)['connection']['autoconnect-priority'], 'the pair moves as one network');
+        $this->assertSame("-t cmprovision-wifi anna ordered 'phone', '78'\n", $this->journal());
+    }
+
+    public static function staleOrders(): array
+    {
+        return [
+            'a network missing' => [['uuid=PHONE'], 'the networks changed: reload the page'],
+            'a network twice' => [['uuid=PHONE', 'uuid='.self::M2, 'uuid='.self::ONBOARD], 'a network is in the order twice'],
+            'an unknown profile' => [['uuid=PHONE', 'uuid=0b1c2d3e-0000-4000-8000-00000000dead'], 'the networks changed: reload the page'],
+        ];
+    }
+
+    #[DataProvider('staleOrders')]
+    public function test_an_order_from_a_stale_page_is_refused($lines, $reason)
+    {
+        $this->pair();
+        $phone = $this->network('phone');
+        $lines = array_map(function ($line) use ($phone) { return str_replace('PHONE', $phone, $line); }, $lines);
+
+        $this->assertSame(1, $this->runHelper('order', array_merge($lines, ['by=anna'])));
+
+        $this->assertStringContainsString($reason, $this->output);
+        $this->assertSame([], $this->changes());
+    }
+
+    public static function foreign(): array
+    {
+        return [
+            "netplan's profile in /run" => ['elsewhere', []],
+            'WPA2-Enterprise' => ['keyfiles', ['wifi-security' => ['key-mgmt' => 'wpa-eap', 'psk' => null]]],
+            'an open network' => ['keyfiles', ['wifi-security' => ['key-mgmt' => null, 'psk' => null]]],
+            'Ethernet' => ['keyfiles', ['connection' => ['type' => 'ethernet']]],
+        ];
+    }
+
+    #[DataProvider('foreign')]
+    public function test_profiles_not_managed_here_are_left_alone($where, $values)
+    {
+        $this->profile('0b1c2d3e-0000-4000-8000-000000000003', 'foreign', $values, $where);
+
+        $this->assertSame(1, $this->runHelper('save', ['uuid=0b1c2d3e-0000-4000-8000-000000000003', 'ssid=foreign', 'security=wpa2', 'password=foreign-pass', 'by=anna']));
+        $this->assertStringContainsString('this is not a network managed here', $this->output);
+        $this->assertSame(1, $this->runHelper('delete', ['uuid=0b1c2d3e-0000-4000-8000-000000000003', 'by=anna']));
+        $this->assertStringContainsString('this is not a network managed here', $this->output);
+        $this->assertSame([], $this->changes());
+        $this->assertNotNull($this->keyfile('0b1c2d3e-0000-4000-8000-000000000003'));
+    }
+
+    public function test_a_profile_active_on_both_radios_is_one_network()
+    {
+        $this->pair();
+        $this->runHelper('save', ['uuid='.self::M2, 'ssid=78', 'security=wpa2', 'hidden=no', 'by=anna']);
+        file_put_contents($this->dir.'/active', self::M2.":wlan1\n".self::M2.":wlan0\n");   // the minute both radios are up
+        $this->forget();
+
+        $this->assertSame(0, $this->runHelper('save', ['uuid='.self::M2, 'ssid=78', 'security=mixed', 'hidden=no', 'by=anna']), $this->output);
+
+        $this->assertStringNotContainsString('took over', $this->journal(), 'nmcli lists it twice, it is one profile');
+        $this->assertSame(1, $this->runHelper('delete', ['uuid='.self::M2, 'by=anna']));
+        $this->assertStringContainsString('is in use', $this->output);
+    }
 }
