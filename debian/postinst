@@ -175,6 +175,17 @@ POOLCONF
     # Ownership again (fix_ownership above): what the steps run as root created
     fix_ownership || echo "Could not adjust file ownership in /var/lib/cmprovision"
 
+    # The built-in Wi-Fi as a cold spare (2.5.2): the switch is written once and then left to the operator, and one check
+    # runs now (the built-in Wi-Fi leaves a minute after the install if the card holds); it never fails the configure
+    if [ ! -e /etc/default/cmprovision-uplink ]; then
+        cat > /etc/default/cmprovision-uplink <<'EOF'
+# The built-in Wi-Fi as a cold spare (cmprovision): disconnected while another uplink carries the default route,
+# connected when there has been none for 30 seconds. SPARE=no keeps it connected all the time.
+SPARE=yes
+EOF
+    fi
+    /usr/lib/cmprovision/uplink-spare check postinst || true
+
   ;;
 esac
 

@@ -10,6 +10,9 @@ fi
 if [ "$1" = "purge" ]; then
     # the php-fpm pool postinst wrote for each PHP version it ran with
     rm -f /etc/php/*/fpm/pool.d/cmprovision.conf
+    # the cold spare's switch and state (2.5.2)
+    rm -f /etc/default/cmprovision-uplink /run/cmprovision/uplink-spare /run/cmprovision/uplink-spare.lock
+    rmdir /run/cmprovision 2>/dev/null || true
 fi
 
 #DEBHELPER#
