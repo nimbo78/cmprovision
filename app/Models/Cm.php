@@ -40,6 +40,7 @@ class Cm extends Model
         'notification_batch_id', 'eeprom_before', 'eeprom_config_before', 'eeprom_config_after', 'eeprom_result',
         'switch_id', 'switch_name', 'switch_port', 'board_pending_since',
         'timeline', 'polled_at', 'identify_until',
+        'os_check', 'hostname', 'os_state', 'os_failed_units', 'os_checked_at', 'os_check_output',
     ];
 
     protected $casts = [
@@ -53,6 +54,7 @@ class Cm extends Model
         'polled_at' => 'datetime',
         'identify_until' => 'datetime',
         'board_pending_since' => 'datetime',
+        'os_checked_at' => 'datetime',
     ];
 
     /* A module that finished and still asks the server whether to blink, i.e. is still on the bench */

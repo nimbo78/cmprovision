@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 class Project extends Model
 {
     use HasFactory;
-    protected $fillable = ['name','device','storage','image_id','label_id','label_moment','eeprom_firmware','eeprom_settings','verify'];
-    protected $casts = ['verify' => 'boolean'];
+    protected $fillable = ['name','device','storage','image_id','label_id','label_moment','eeprom_firmware','eeprom_settings','verify','os_check'];
+    protected $casts = ['verify' => 'boolean', 'os_check' => 'boolean'];
 
     function image()
     {
@@ -24,6 +24,12 @@ class Project extends Model
     function scripts()
     {
         return $this->belongsToMany(Script::class);
+    }
+
+    /* the .deb packages its OS check installs on the first boot (2.6.0) */
+    function packages()
+    {
+        return $this->belongsToMany(Package::class);
     }
 
     function cms()
