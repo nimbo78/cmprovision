@@ -185,6 +185,8 @@ SPARE=yes
 EOF
     fi
     /usr/lib/cmprovision/uplink-spare check postinst || true
+    # the metrics by device (2.5.3): NetworkManager reads its conf.d again, connections take them when they connect
+    nmcli general reload conf >/dev/null 2>&1 || true
 
   ;;
 esac

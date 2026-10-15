@@ -109,4 +109,11 @@ class UplinkIndicatorTest extends TestCase
             ->assertOk()
             ->assertSeeLivewire('uplink-indicator');
     }
+
+    public function test_the_tooltip_leads_to_the_wifi_networks()
+    {
+        Livewire::test(UplinkIndicator::class)
+            ->assertSeeHtml('href="'.route('settings').'#wifi"')
+            ->assertSee('Settings → Wi-Fi networks');
+    }
 }

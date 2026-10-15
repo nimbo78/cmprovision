@@ -32,6 +32,10 @@ class UplinkSummary
                 $view['warning'] = 'Preferred connection '.$status['preferred_down'].' is not connected'.self::spareLost($status)
                     .', the backup carries the traffic.';
                 $view['label'] .= '. Preferred connection '.$status['preferred_down'].' is not connected';
+            } elseif (self::onSpare($status, $uplink)) {
+                $view['tone'] = 'warn';
+                $view['warning'] = 'The Wi-Fi card is not connected'.self::spareLost($status).', the built-in Wi-Fi carries the traffic.';
+                $view['label'] .= '. The Wi-Fi card is not connected';
             }
         }
         foreach ($status['backups'] as $backup) {
@@ -62,6 +66,17 @@ class UplinkSummary
         }
 
         return ' since '.Carbon::createFromTimestamp($spare['lost_since'])->local()->format('H:i');
+    }
+
+    /**
+     * The built-in Wi-Fi carries the traffic as the cold spare. With one profile per network for both cards (2.5.3) no
+     * preferred profile is down then: the profile runs on the built-in Wi-Fi.
+     */
+    private static function onSpare(array $status, array $uplink): bool
+    {
+        $spare = $status['spare'] ?? null;
+
+        return $spare !== null && $spare['state'] === 'active' && $spare['device'] === $uplink['name'];
     }
 
     private static function wifi(array $uplink): array
