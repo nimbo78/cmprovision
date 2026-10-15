@@ -112,6 +112,19 @@ class OsCheckSettingsTest extends TestCase
         $this->assertSame([$script->id], $project->scripts()->pluck('scripts.id')->all());
     }
 
+    public function test_the_api_turns_the_check_off_only_with_its_scripts_gone()
+    {
+        Sanctum::actingAs(User::factory()->create(), ['update']);
+        $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'label_moment' => 'never',
+            'verify' => false, 'os_check' => true]);
+        $project->scripts()->sync([$this->firstBootScript()->id]);
+
+        $this->patchJson('/api/projects/'.$project->id, ['os_check' => false])->assertStatus(422);
+        $this->assertTrue($project->fresh()->os_check);
+        $this->patchJson('/api/projects/'.$project->id, ['os_check' => false, 'scripts' => []])->assertOk();
+        $this->assertFalse($project->fresh()->os_check);
+    }
+
     public function test_the_api_takes_the_os_check_and_its_label_moment()
     {
         Sanctum::actingAs(User::factory()->create(), ['create', 'update']);
