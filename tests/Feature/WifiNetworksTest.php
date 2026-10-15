@@ -34,7 +34,8 @@ class WifiNetworksTest extends TestCase
         file_put_contents($this->dir.'/sys/wlan0/address', "2c:cf:67:30:7d:a3\n");
         $this->stub('nmcli', 'exec php '.escapeshellarg(base_path('tests/Support/fake-nmcli.php')).' "$@"');
         $this->stub('ip', 'cat "$FAKE/routes" 2>/dev/null; exit 0');
-        $this->stub('logger', 'echo "$*" >> "$FAKE/journal"');
+        // logger as util-linux parses it: -t TAG, -- ends the options, and any other leading dash is an option it refuses
+        $this->stub('logger', 'tag=; while [ $# -gt 0 ]; do case "$1" in -t) tag=$2; shift 2 ;; --) shift; break ;; -*) exit 1 ;; *) break ;; esac; done; echo "-t $tag $*" >> "$FAKE/journal"');
         $this->stub('uplink-spare', 'echo "uplink-spare $*" >> "$FAKE/calls"');
         file_put_contents($this->dir.'/routes', self::CARD);
         $this->spare('standby');
@@ -586,5 +587,13 @@ class WifiNetworksTest extends TestCase
 
         $this->assertSame("78:100:WPA2:2422 MHz\nService PSK:80:WPA2 WPA3:2437 MHz\nlab\\:2:55:WPA3:5180 MHz\n", $this->output);
         $this->assertStringContainsString('nmcli -t -f SSID,SIGNAL,SECURITY,FREQ device wifi list --rescan yes', $this->calls());
+    }
+
+    public function test_a_user_name_that_looks_like_an_option_is_logged_as_text()
+    {
+        // root runs logger: a message starting with a dash would be read as an option unless -- ends them
+        $this->assertSame(0, $this->runHelper('save', ['ssid=office', 'security=wpa2', 'hidden=no', 'password=office-pass', 'by=-f/etc/shadow']));
+
+        $this->assertSame("-t cmprovision-wifi -f/etc/shadow added 'office' (WPA2)\n", $this->journal());
     }
 }

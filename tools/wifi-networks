@@ -26,8 +26,9 @@ command=${1:-}
 by=unknown
 order=
 
+# the journal line; -- ends the options of logger (root runs it): a user name may start with a dash
 log() {
-    logger -t cmprovision-wifi "$1" 2>/dev/null || true
+    logger -t cmprovision-wifi -- "$1" 2>/dev/null || true
 }
 
 # a refusal: the reason to the journal and to the web app
