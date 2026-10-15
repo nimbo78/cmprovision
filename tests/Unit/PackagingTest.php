@@ -182,4 +182,11 @@ class PackagingTest extends TestCase
         $this->assertStringContainsString('nmcli general reload conf >/dev/null 2>&1 || true', $postinst);
         $this->assertLessThan(strpos($postinst, '#DEBHELPER#'), strpos($postinst, 'nmcli general reload conf'));
     }
+
+    public function test_the_led_helper_knows_the_ready_pattern()
+    {
+        // the OS check shows its pass with it (2.6.0); the static binary keeps its usage text
+        $this->assertStringContainsString("case 'r':", $this->file('tools/ledpattern/ledpattern.c'));
+        $this->assertStringContainsString('usage: ledpattern done|ready|fail|identify|check', $this->file('public/tools/ledpattern'));
+    }
 }
