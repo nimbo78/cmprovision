@@ -372,4 +372,23 @@ class UplinkSpareTest extends TestCase
         $this->assertSame(2, $this->runAt(self::T, ['bogus']));
         $this->assertStringContainsString('usage: uplink-spare check [event] [device] | release', $this->output);
     }
+
+    public static function dispatcherActions(): array
+    {
+        return [
+            'up' => ['up', true], 'down' => ['down', true], 'dhcp4-change' => ['dhcp4-change', true],
+            'connectivity-change' => ['connectivity-change', true],
+            'pre-up' => ['pre-up', false], 'hostname' => ['hostname', false], 'vpn-up' => ['vpn-up', false],
+        ];
+    }
+
+    #[DataProvider('dispatcherActions')]
+    public function test_the_dispatcher_checks_on_route_events_only($action, $checks)
+    {
+        $this->world(['wlan0' => 'connected', 'wlan1' => 'connected'], self::CARD.self::ONBOARD);
+
+        $this->assertSame(0, $this->runAt(self::T, ['wlan1', $action], 'tools/90-cmprovision-uplink'));
+
+        $this->assertSame($checks, $this->state() !== [], $action);
+    }
 }
