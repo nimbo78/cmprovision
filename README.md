@@ -70,6 +70,17 @@ A provisioner with a better Wi-Fi card (an M.2 card, a USB adapter) keeps its bu
 - `SPARE=no` in `/etc/default/cmprovision-uplink` keeps the built-in Wi-Fi connected all the time.
 - It works where NetworkManager runs the Wi-Fi (Raspberry Pi OS); on WLAN Pi OS, where it does not, nothing changes.
 
+## The provisioner's Wi-Fi networks ##
+
+Settings → Wi-Fi networks lists the networks the provisioner connects to, the preferred first, and the Wi-Fi profiles it leaves to other tools (greyed). Each network is one NetworkManager profile that serves both radios: the card carries the traffic, the built-in Wi-Fi stands by as the cold spare.
+
+- **Add network** takes the name (SSID; **Find networks** lists the networks in reach), the security (WPA2-Personal, WPA2/WPA3 mixed or WPA3-Personal), the password, and whether the network is hidden. Every change asks for your account password first.
+- The password is stored on the server and never shown again; left empty when editing, it keeps the stored one. A new password of the network in use takes effect at its next connection, so it can be entered before the router changes.
+- **Check now** tries a network on the idle built-in Wi-Fi while the card keeps working: connected, wrong password, not found, no address. A network only the card can reach (6 GHz, say) shows as not found and can be saved all the same.
+- The order (↑ ↓) decides which network the provisioner joins when it connects; it does not leave a working network for a higher one. The network in use cannot be deleted. **Changes log** shows every change (`journalctl -t cmprovision-wifi`).
+- A provisioner set up with Raspberry Pi Imager keeps its Wi-Fi in a netplan profile, shown greyed: add the same network here, check it, then remove the old profile with `sudo nmcli connection delete <name>`.
+- It works where NetworkManager runs the Wi-Fi (Raspberry Pi OS); on WLAN Pi OS the section says it is not available.
+
 ## Switches: port lookup, the Ports page and PoE restart ##
 
 Settings → Ethernet switches lists the switches of the stand; **Add switch** takes a switch's address and SNMP read access (a community for v2c, a user for v3). With them a module gets its switch and port as its board, `sw01 Gi0/3` (the switch's sysName before the first dot, then the port's description or name), and the Ports page shows each switch's front panel port by port. A port that leads to another switch of the list is a link, never a module's port: it shows that switch's own MAC (its base MAC, the MAC of its VLAN interface, or the MAC of its address in the provisioner's ARP cache). The same switch cannot be added twice under two addresses. Two switches with the same sysName give boards that look the same: Settings and the Ports page warn about it, rename one on the switch.
