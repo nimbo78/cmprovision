@@ -1,4 +1,4 @@
-cmprovision4 (2.5.2~dev2) unstable; urgency=medium
+cmprovision4 (2.5.2~dev3) unstable; urgency=medium
 
   * The built-in Wi-Fi as a cold spare: while another device carries the
     default route it stays disconnected; it connects when there has been
