@@ -204,6 +204,14 @@ exit 1
             'eeprom_config_before' => null,
             'eeprom_config_after' => $project && $project->eeprom_firmware ? EepromImage::normalizeConfig($project->eeprom_settings) : null,
             'eeprom_result' => null,
+            /* the OS check (2.6.0): pending until the image is written; a module booted over USB would only boot over
+               USB again, it is not checked */
+            'os_check' => $project && $project->os_check ? ($bootmode == 3 ? 'skipped' : 'pending') : null,
+            'hostname' => null,
+            'os_state' => null,
+            'os_failed_units' => null,
+            'os_checked_at' => null,
+            'os_check_output' => null,
         ]);
 
         if (!$project)
@@ -241,6 +249,10 @@ exit 1
 
         $preinstall_scripts = $project->scripts()->where('script_type','preinstall')->orderBy('priority')->orderBy('id')->get();
         $postinstall_scripts = $project->scripts()->where('script_type','postinstall')->orderBy('priority')->orderBy('id')->get();
+        /* The OS check: its first-boot scripts and packages go into the written system with its service */
+        $osCheck = $this->cm->os_check === 'pending';
+        $firstboot_scripts = $osCheck ? $project->scripts()->where('script_type','firstboot')->orderBy('priority')->orderBy('id')->get() : collect();
+        $packages = $osCheck ? $project->packages()->orderBy('packages.id')->get() : collect();
 
         $server = $this->moduleServer($req);
 
@@ -293,6 +305,8 @@ exit 1
         CmProvisioningStarted::dispatch($this->cm);
 
         $msg = "Provisioning started.";
+        if ($this->cm->os_check === 'skipped')
+            $msg .= " OS check skipped: the module booted over USB.";
         if ($project->label_moment == 'preinstall' && $project->label)
         {
             $msg .= $this->cm->board_pending_since ? " Printing label once the switch port is known." : " Printing label.";
@@ -342,7 +356,12 @@ exit 1
             'decompress' => $image ? self::DECOMPRESSORS[$image->filename_extension] : null,
             'bootmode' => $bootmode,
             'preinstall_scripts' => $preinstall_scripts,
-            'postinstall_scripts' => $postinstall_scripts
+            'postinstall_scripts' => $postinstall_scripts,
+            'os_check' => $osCheck,
+            'firstboot_scripts' => $firstboot_scripts,
+            'firstboot_run' => $osCheck ? view('scriptexecute.firstboot', ['server' => $server, 'serial' => $this->cm->serial,
+                'scripts' => $firstboot_scripts, 'packages' => $packages])->render() : null,
+            'oscheck_install' => $osCheck ? view('scriptexecute.oscheck-install')->render() : null,
         ])->header('Content-Type', 'text/plain');
     }
 
