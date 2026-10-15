@@ -60,6 +60,35 @@ cat >/tmp/post-{{$script->id}}.sh << "CMPROVISIONINGEOF"
 {!! $script->script !!}
 CMPROVISIONINGEOF
 @endforeach
+@if ($os_check)
+# The OS check (Check the OS after the first boot): its service, what it runs, and the step that puts them into the
+# written system, last of the post-install steps
+mkdir -p /tmp/oscheck/scripts
+cat >/tmp/oscheck/run << "CMPROVISIONINGEOF"
+{!! $firstboot_run !!}
+CMPROVISIONINGEOF
+cat >/tmp/oscheck/cmprovision-firstboot.service << "CMPROVISIONINGEOF"
+[Unit]
+Description=cmprovision: check this system on its first boot and report to the provisioning server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sh /usr/local/lib/cmprovision-firstboot/run
+
+[Install]
+WantedBy=multi-user.target
+CMPROVISIONINGEOF
+@foreach ($firstboot_scripts as $script)
+cat >/tmp/oscheck/scripts/{{ $script->id }}.sh << "CMPROVISIONINGEOF"
+{!! $script->script !!}
+CMPROVISIONINGEOF
+@endforeach
+cat >/tmp/oscheck-install.sh << "CMPROVISIONINGEOF"
+{!! $oscheck_install !!}
+CMPROVISIONINGEOF
+@endif
 
 # The bootloader as it is before provisioning: the EEPROM flash, if the project has one, is the first
 # pre-install script. Booted by rpiboot (boot mode 3) the module runs the bootloader sent over USB, so
@@ -128,7 +157,7 @@ partprobe $STORAGE
 sleep 0.1
 @endif
 
-@if ( count($postinstall_scripts) )
+@if ( count($postinstall_scripts) || $os_check )
 echo "Running post-install scripts"
 @foreach ( $postinstall_scripts as $script )
 @if ($script->progress == 'verify')
@@ -150,12 +179,35 @@ if [ $RETCODE -ne 0 ]; then
     finish fail
 fi
 @endforeach
+@if ($os_check)
+progress_mark postinstall 'Installing the OS check'
+echo "===" >> /tmp/post.log
+echo "Running post-installation script 'Installing the OS check'" >> /tmp/post.log
+echo "===" >> /tmp/post.log
+sh -v /tmp/oscheck-install.sh >>/tmp/post.log 2>&1
+RETCODE=$?
+if [ $RETCODE -ne 0 ]; then
+    echo "Installing the OS check failed."
+    report -F 'log=@/tmp/post.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=postinstall"
+    finish fail
+fi
+@endif
 report -F 'log=@/tmp/post.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=0&phase=postinstall"
 @endif
 
 TEMP=`vcgencmd measure_temp`
 report "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&alldone=1&temp=${TEMP:5}&verify={{ $project->verify }}"
 
+@if ($os_check)
+echo ""
+echo "====="
+echo "Image written: rebooting into the new system to check it"
+sync
+reboot -f
+# still here a minute later: show it
+sleep 60
+finish fail
+@else
 echo ""
 echo "====="
 echo "Provisioning completed successfully!"
@@ -166,3 +218,4 @@ if [ -f /sys/kernel/config/usb_gadget/g1/UDC ]; then
 fi
 
 finish done
+@endif

@@ -6,6 +6,7 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 use App\Models\Image;
 use App\Models\Label;
+use App\Models\Package;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
@@ -23,8 +24,8 @@ class Projects extends Component
     public $active = true;
     public $projects, $activeProject;
     public $projectid, $name, $device, $storage, $image_id, $label_id, $label_moment, $selectedScripts, $offerSettingsReset;
-    public $firmware, $eeprom_settings, $verify;
-    public $images, $labels, $scripts;
+    public $firmware, $eeprom_settings, $verify, $os_check, $selectedPackages;
+    public $images, $labels, $scripts, $packages;
 
     protected function rules()
     {
@@ -37,9 +38,11 @@ class Projects extends Component
             // a file of the firmware store only: the name comes from the browser
             'firmware' => ['nullable', 'max:255', Rule::in($this->firmwarePaths())],
             'eeprom_settings' => 'nullable|max:2024',
-            'label_moment' => 'required|in:never,preinstall,postinstall',
+            'label_moment' => 'required|in:never,preinstall,postinstall,firstboot',
             'selectedScripts' => 'array',
+            'selectedPackages' => 'array',
             'verify' => 'required|boolean',
+            'os_check' => 'required|boolean',
         ];
     }
 
@@ -50,6 +53,7 @@ class Projects extends Component
         $this->images = Image::orderBy('filename')->orderBy('id')->get();
         $this->labels = Label::orderBy('name')->get();
         $this->scripts = Script::orderBy('name')->get();
+        $this->packages = Package::orderBy('deb_package')->orderBy('id')->get();
         $firmwareChannels = [];
         foreach (Firmware::channels() as $channel)
         {
@@ -122,6 +126,8 @@ class Projects extends Component
         $this->image_id = Image::max('id');
         $this->active = true;
         $this->verify = false;
+        $this->os_check = false;
+        $this->selectedPackages = [];
         $this->eeprom_settings = '';
         $this->firmware = '';
         $this->offerSettingsReset = false;
@@ -140,6 +146,8 @@ class Projects extends Component
         $this->image_id = $p->image_id;
         $this->label_id = $p->label_id;
         $this->verify = $p->verify;
+        $this->os_check = $p->os_check;
+        $this->selectedPackages = $p->packages->map(function ($package) { return strval($package->id); })->all();
         $this->active = $p->isActive();
         $this->selectedScripts = [];
         foreach ($p->scripts as $script)
@@ -152,9 +160,37 @@ class Projects extends Component
         $this->openModal();
     }
 
+    /* Unticking the OS check drops what only it uses: its label moment, its packages and the first-boot scripts */
+    public function updatedOsCheck($value)
+    {
+        if ($value)
+            return;
+        if ($this->label_moment === 'firstboot')
+            $this->label_moment = 'postinstall';
+        $this->selectedPackages = [];
+        $firstBoot = Script::where('script_type', 'firstboot')->pluck('id')->map(function ($id) { return strval($id); })->all();
+        $this->selectedScripts = array_values(array_diff($this->selectedScripts ?: [], $firstBoot));
+    }
+
     public function store()
     {
         $this->validate();
+
+        // what runs in the new system belongs to the OS check
+        if (!$this->os_check)
+        {
+            $errors = [];
+            if ($this->label_moment === 'firstboot')
+                $errors['label_moment'] = 'Printing after the OS check needs the OS check.';
+            if ($this->selectedPackages)
+                $errors['selectedPackages'] = 'Packages are installed by the OS check: turn it on or clear them.';
+            if (Script::whereIn('id', $this->selectedScripts ?: [])->where('script_type', 'firstboot')->exists())
+                $errors['selectedScripts'] = 'First-boot scripts run in the OS check: turn it on or clear them.';
+            foreach ($errors as $field => $message)
+                $this->addError($field, $message);
+            if ($errors)
+                return;
+        }
 
         $project = Project::updateOrCreate(['id' => $this->projectid], [
             'name' => $this->name,
@@ -165,9 +201,11 @@ class Projects extends Component
             'label_id' => $this->label_id ? $this->label_id : null,
             'eeprom_firmware' => $this->firmware ? $this->firmware : null,
             'eeprom_settings' => $this->eeprom_settings ? str_replace("\r", "", $this->eeprom_settings) : null,
-            'verify' => $this->verify
+            'verify' => $this->verify,
+            'os_check' => (bool) $this->os_check,
         ]);
         $project->scripts()->sync($this->selectedScripts);
+        $project->packages()->sync($this->selectedPackages ?: []);
 
         if ($this->active)
         {

@@ -6,12 +6,14 @@
  * Runs until it is killed. The patterns were chosen with an operator on a WLAN Pi M4+.
  *
  *   ledpattern done       ACT and PWR take turns, each fading in and out, dark gap between
+ *   ledpattern ready      ACT and PWR fade in and out together (the OS check passed, in the new system)
  *   ledpattern fail       ACT dim; PWR flashes twice within a second, then a second dark
  *   ledpattern identify   ACT and PWR alternate sharply every 0.15 s
  *   ledpattern check      exit status 0 when both LEDs can be written
  *
  * Built static for the 32-bit utility OS by build.sh; the module downloads it from the server
- * (public/tools/ledpattern). Without it the script shows the same states with kernel triggers.
+ * (public/tools/ledpattern), and the OS check copies it into the written system, whose 64-bit
+ * kernel runs it in compat mode. Without it the script shows the same states with kernel triggers.
  */
 #include <fcntl.h>
 #include <math.h>
@@ -94,6 +96,9 @@ static void duties(char mode, double t, double *act, double *pwr)
         *act = bump(t / DONE_CYCLE);
         *pwr = bump(t / DONE_CYCLE + 0.5);
         break;
+    case 'r':
+        *act = *pwr = bump(t / DONE_CYCLE);
+        break;
     case 'f':
         p = fmod(t, FAIL_CYCLE);
         *act = FAIL_ACT_DUTY;
@@ -109,8 +114,8 @@ static void duties(char mode, double t, double *act, double *pwr)
 int main(int argc, char **argv)
 {
     const char *mode = argc > 1 ? argv[1] : "";
-    if (strcmp(mode, "done") && strcmp(mode, "fail") && strcmp(mode, "identify") && strcmp(mode, "check")) {
-        fprintf(stderr, "usage: ledpattern done|fail|identify|check\n");
+    if (strcmp(mode, "done") && strcmp(mode, "ready") && strcmp(mode, "fail") && strcmp(mode, "identify") && strcmp(mode, "check")) {
+        fprintf(stderr, "usage: ledpattern done|ready|fail|identify|check\n");
         return 2;
     }
     struct led act, pwr;

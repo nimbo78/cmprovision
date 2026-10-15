@@ -8,7 +8,7 @@
                 <option value="{{ $project->id }}">{{ $project->name }} ({{ $project->cms_count }})</option>
             @endforeach
         </select>
-        <input type="search" wire:model.live.debounce.300ms="search" class="cmp-field w-60" placeholder="Serial or MAC" aria-label="Search by serial or MAC">
+        <input type="search" wire:model.live.debounce.300ms="search" class="cmp-field w-60" placeholder="Serial, MAC or host name" aria-label="Search by serial, MAC or host name">
         <button type="button" wire:click="exportCSV()" class="cmp-btn cmp-btn-secondary ml-auto">Export CSV</button>
     </div>
 
@@ -19,13 +19,14 @@
     <div class="cmp-card cmp-card-scroll">
         <table class="cmp-table">
             <thead>
-                <tr><th>Serial</th><th>MAC</th><th>Model</th><th>Project</th><th>Board</th><th>Result</th><th>Finished</th><th></th></tr>
+                <tr><th>Serial</th><th>MAC</th><th>Host name</th><th>Model</th><th>Project</th><th>Board</th><th>Result</th><th>Finished</th><th></th></tr>
             </thead>
             <tbody>
                 @forelse ($CMs as $c)
                     <tr wire:key="cm-{{ $c->id }}">
                         <td class="mono"><a href="{{ route('cm', $c->serial) }}" class="text-link hover:underline">{{ $c->serial }}</a></td>
                         <td class="mono text-fg-muted">{{ $c->mac }}</td>
+                        <td class="mono text-fg-muted">{{ $c->hostname }}</td>
                         <td>{{ $c->model }}</td>
                         <td>{{ $c->project?->name }}</td>
                         <td class="text-fg-muted whitespace-nowrap">{{ $c->provisioning_board }}</td>
@@ -45,7 +46,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="8" class="text-fg-muted">No entries</td></tr>
+                    <tr><td colspan="9" class="text-fg-muted">No entries</td></tr>
                 @endforelse
             </tbody>
         </table>

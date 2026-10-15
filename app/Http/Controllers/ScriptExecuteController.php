@@ -7,6 +7,8 @@ use Illuminate\Support\Str;
 use App\Events\CmProvisioningComplete;
 use App\Events\CmProvisioningFailed;
 use App\Events\CmProvisioningStarted;
+use App\Jobs\FirstBootTimeout;
+use App\Jobs\PrintLabel;
 use App\Jobs\ResolveBoards;
 use App\Models\Cm;
 use App\Models\Cmlog;
@@ -61,6 +63,10 @@ class ScriptExecuteController extends Controller
             else if ($req->query("alldone"))
             {
                 return $this->provisioningComplete($req);
+            }
+            else if ($req->query("firstboot"))
+            {
+                return $this->registerFirstBoot($req);
             }
             else if ($req->hasFile("log"))
             {
@@ -133,6 +139,26 @@ exit 1
 
     public function startProvisoning(Request $req)
     {
+        /* The OS check (2.6.0): a module that comes back to network boot while its new system should be starting did not
+           start it. That run fails and the module waits (no second write); its start after that is a new run. A USB boot
+           is the operator re-flashing it, and a start long after the reboot finds a run whose timeout was lost: both close
+           the waiting run and go on as a new run. */
+        $previous = Cm::where('serial', $this->serial)->first();
+        if ($previous && $previous->phase === 'firstboot')
+        {
+            $this->cm = $previous;
+            $waited = now()->getTimestamp() - ($previous->phase_started_at ? $previous->phase_started_at->getTimestamp() : 0);
+            if ($req->query('bootmode') == 3)
+                $this->closeTheCheck('Interrupted: the module was booted over USB.');
+            elseif ($waited > Cm::FIRSTBOOT_SECONDS)
+                $this->closeTheCheck(Cm::OS_NO_REPORT);
+            else
+            {
+                $this->cm->os_check = 'failed';
+                return $this->refuse('The new system did not start: the module came back to network boot.');
+            }
+        }
+
         $project = Project::getActive();
         $image   = $project ? $project->image : null;
         $bootmode = $req->query('bootmode');
@@ -204,6 +230,14 @@ exit 1
             'eeprom_config_before' => null,
             'eeprom_config_after' => $project && $project->eeprom_firmware ? EepromImage::normalizeConfig($project->eeprom_settings) : null,
             'eeprom_result' => null,
+            /* the OS check (2.6.0): pending until the image is written; a module booted over USB would only boot over
+               USB again, it is not checked */
+            'os_check' => $project && $project->os_check ? ($bootmode == 3 ? 'skipped' : 'pending') : null,
+            'hostname' => null,
+            'os_state' => null,
+            'os_failed_units' => null,
+            'os_checked_at' => null,
+            'os_check_output' => null,
         ]);
 
         if (!$project)
@@ -241,6 +275,10 @@ exit 1
 
         $preinstall_scripts = $project->scripts()->where('script_type','preinstall')->orderBy('priority')->orderBy('id')->get();
         $postinstall_scripts = $project->scripts()->where('script_type','postinstall')->orderBy('priority')->orderBy('id')->get();
+        /* The OS check: its first-boot scripts and packages go into the written system with its service */
+        $osCheck = $this->cm->os_check === 'pending';
+        $firstboot_scripts = $osCheck ? $project->scripts()->where('script_type','firstboot')->orderBy('priority')->orderBy('id')->get() : collect();
+        $packages = $osCheck ? $project->packages()->orderBy('packages.id')->get() : collect();
 
         $server = $this->moduleServer($req);
 
@@ -293,6 +331,8 @@ exit 1
         CmProvisioningStarted::dispatch($this->cm);
 
         $msg = "Provisioning started.";
+        if ($this->cm->os_check === 'skipped')
+            $msg .= " OS check skipped: the module booted over USB.";
         if ($project->label_moment == 'preinstall' && $project->label)
         {
             $msg .= $this->cm->board_pending_since ? " Printing label once the switch port is known." : " Printing label.";
@@ -342,7 +382,12 @@ exit 1
             'decompress' => $image ? self::DECOMPRESSORS[$image->filename_extension] : null,
             'bootmode' => $bootmode,
             'preinstall_scripts' => $preinstall_scripts,
-            'postinstall_scripts' => $postinstall_scripts
+            'postinstall_scripts' => $postinstall_scripts,
+            'os_check' => $osCheck,
+            'firstboot_scripts' => $firstboot_scripts,
+            'firstboot_run' => $osCheck ? view('scriptexecute.firstboot', ['server' => $server, 'serial' => $this->cm->serial,
+                'scripts' => $firstboot_scripts, 'packages' => $packages])->render() : null,
+            'oscheck_install' => $osCheck ? view('scriptexecute.oscheck-install')->render() : null,
         ])->header('Content-Type', 'text/plain');
     }
 
@@ -350,6 +395,10 @@ exit 1
     {
         $this->cm = Cm::where('serial', $this->serial)->firstOrFail();
         $project = $this->cm->project;
+        if ($this->cm->os_check === 'pending')
+            return $this->rebootIntoTheNewSystem($req, $project);
+        if ($this->cm->os_check === 'waiting')
+            return '';   // report() sent "written" again: the run waits for the new system all the same
         $this->cm->provisioning_complete_at = now();
         $this->cm->temp2 = $req->query('temp');
         $this->cm->setPhase('done');
@@ -378,6 +427,114 @@ exit 1
         CmProvisioningComplete::dispatch($this->cm);
 
         return "";
+    }
+
+    /* The image is written and the OS check is due: the module reboots into its new system, whose service reports
+       (registerFirstBoot()); FirstBootTimeout fails the run when nothing comes. A label "after writing" prints now. */
+    protected function rebootIntoTheNewSystem(Request $req, $project)
+    {
+        $this->cm->temp2 = $req->query('temp');
+        $this->cm->os_check = 'waiting';
+        $this->cm->setPhase('firstboot');
+        $this->cm->save();
+        $this->touchBatch();
+
+        $msg = 'Image written.';
+        if ($req->query('verify'))
+            $msg .= ' Verification successful.';
+        $printLabel = $project && $project->label_moment == 'postinstall' && $project->label;
+        if ($printLabel)
+            $msg .= ' Printing label.';
+        $this->logInfo($msg.' Rebooting into the new system to check it.');
+        if ($printLabel)
+            $this->printLabel();
+
+        try
+        {
+            FirstBootTimeout::dispatch($this->cm->id, $this->cm->provisioning_started_at->getTimestamp())
+                ->delay(now()->addSeconds(Cm::FIRSTBOOT_SECONDS));
+        }
+        catch (\Throwable $e)
+        {
+            report($e);   // the run waits until the module reports or comes back
+        }
+        return '';
+    }
+
+    /* ?firstboot=1: the OS check's report from the new system (resources/views/scriptexecute/firstboot.blade.php) with
+       its log, host name, systemd state and failed units; retcode 0 passes the check. A report nobody waits for (the
+       service ran again after a reboot of its own) changes nothing. */
+    public function registerFirstBoot(Request $req)
+    {
+        $this->cm = Cm::where('serial', $this->serial)->first();
+        if (!$this->cm || !$this->cm->awaitsOsReport())
+            return '';
+
+        $log = $req->hasFile('log') ? $req->file('log')->get() : '';
+        if (strlen($log) > self::MAX_LOG_SIZE)
+            $log = substr($log, 0, self::MAX_LOG_SIZE)."\nLog was bigger than max allowed size. Truncated.";
+        $host = substr(preg_replace('/[^A-Za-z0-9.-]/', '', (string) $req->input('hostname')), 0, 64);
+        $state = substr(preg_replace('/[^a-z-]/', '', (string) $req->input('state')), 0, 20);
+        $units = trim(preg_replace('/\s+/', ' ', (string) $req->input('failed_units')));
+        $this->cm->hostname = $host !== '' ? $host : null;
+        $this->cm->os_state = $state !== '' ? $state : null;
+        $this->cm->os_failed_units = $units !== '' ? Str::limit($units, 2000, '') : null;
+        $this->cm->os_checked_at = now();
+        $this->cm->os_check_output = $log;
+
+        if ((string) $req->query('retcode') === '0')
+        {
+            $this->cm->os_check = 'passed';
+            $this->cm->provisioning_complete_at = now();
+            $this->cm->setPhase('done');
+            $this->cm->save();
+            $this->touchBatch();
+            $project = $this->cm->project;
+            $printLabel = $project && $project->label_moment === 'firstboot' && $project->label;
+            $this->logInfo('OS check passed'.$this->osAbout().'.'.($printLabel ? ' Printing label.' : '')."\n\n".$log);
+            if ($printLabel)
+            {
+                try
+                {
+                    PrintLabel::dispatch($this->cm->id);   // the report does not wait for the printer
+                }
+                catch (\Throwable $e)
+                {
+                    report($e);
+                }
+            }
+            CmProvisioningComplete::dispatch($this->cm);
+            return '';
+        }
+
+        $reason = Str::limit(trim((string) $req->input('reason')), 200, '');
+        $msg = 'OS check failed: '.($reason !== '' ? $reason : 'the new system reported a failure');
+        $this->cm->os_check = 'failed';
+        $this->logInfo($msg.$this->osAbout().".\n\n".$log, 'error');
+        $this->cm->markFailed($msg)->save();
+        $this->failed();
+        return '';
+    }
+
+    /* The waiting run of the OS check ends without a report: failed with $reason, the notification goes out */
+    protected function closeTheCheck($reason)
+    {
+        $this->cm->os_check = 'failed';
+        $this->logInfo($reason, 'error');
+        $this->cm->markFailed($reason)->save();
+        $this->failed();
+    }
+
+    /* " on wlanpi-a1b (systemd: degraded; failed: firefox-setup.service)" for the log */
+    protected function osAbout()
+    {
+        $about = $this->cm->hostname ? ' on '.$this->cm->hostname : '';
+        $parts = [];
+        if ($this->cm->os_state)
+            $parts[] = 'systemd: '.$this->cm->os_state;
+        if ($this->cm->os_failed_units)
+            $parts[] = 'failed: '.$this->cm->os_failed_units;
+        return $about.($parts ? ' ('.implode('; ', $parts).')' : '');
     }
 
     public function registerLogFile(Request $req)
@@ -495,6 +652,8 @@ exit 1
         $this->cm = Cm::where('serial', $this->serial)->first();
         if (!$this->cm || !$this->cm->isActive())
             return '';   // unknown module, or a late report after completion or failure
+        if ($this->cm->phase === 'firstboot')
+            return '';   // a late mark of the utility OS: the module reboots into its new system
 
         $this->cm->setPhase($phase, $req->query('detail'));
         $sectors = $req->query('sectors');

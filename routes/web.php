@@ -11,6 +11,7 @@ use App\Http\Livewire\Scripts;
 use App\Http\Livewire\Firmwares;
 use App\Http\Livewire\Settings;
 use App\Http\Controllers\AddImageController;
+use App\Http\Controllers\AddPackageController;
 
 /*
 |--------------------------------------------------------------------------
@@ -37,6 +38,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/ports', Ports::class)->name('ports');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/images', Images::class)->name('images');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->post('/addImage', [AddImageController::class, 'store']);
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->post('/addPackage', [AddPackageController::class, 'store'])->name('packages.add');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/projects', Projects::class)->name('projects');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/scripts', Scripts::class)->name('scripts');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/labels', Labels::class)->name('labels');

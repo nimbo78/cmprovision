@@ -10,16 +10,21 @@ class Cm extends Model
 {
     use HasFactory;
 
-    /* Phases a module reports while it works, in order, and the two final ones */
-    const ACTIVE_PHASES = ['preinstall', 'write', 'verify', 'postinstall'];
+    /* Phases a module reports while it works, in order, and the two final ones; the OS check (2.6.0) waits for the
+       module's new system in firstboot */
+    const ACTIVE_PHASES = ['preinstall', 'write', 'verify', 'postinstall', 'firstboot'];
     const PHASE_LABELS = [
         'preinstall' => 'Pre-install', 'write' => 'Writing image', 'verify' => 'Verifying',
-        'postinstall' => 'Post-install', 'done' => 'Done', 'failed' => 'Failed',
+        'postinstall' => 'Post-install', 'firstboot' => 'Checking the OS', 'done' => 'Done', 'failed' => 'Failed',
     ];
     /* Seconds without a report after which a module counts as silent: the image write and the
        verification report every few seconds, scripts only when they start */
     const STALE_AFTER_STREAMING = 60;
     const STALE_AFTER_SCRIPTS = 600;
+    /* The OS check: the module reboots into its new system, which reports within this many seconds (FirstBootTimeout);
+       it is quiet until then */
+    const FIRSTBOOT_SECONDS = 900;
+    const OS_NO_REPORT = 'No report from the new system in 15 min';
     /* A module still "in progress" this long after it started was unplugged */
     const ACTIVE_HOURS = 12;
     /* A run has a dozen steps; the cap only guards against a script that keeps renaming itself */
@@ -40,6 +45,7 @@ class Cm extends Model
         'notification_batch_id', 'eeprom_before', 'eeprom_config_before', 'eeprom_config_after', 'eeprom_result',
         'switch_id', 'switch_name', 'switch_port', 'board_pending_since',
         'timeline', 'polled_at', 'identify_until',
+        'os_check', 'hostname', 'os_state', 'os_failed_units', 'os_checked_at', 'os_check_output',
     ];
 
     protected $casts = [
@@ -53,6 +59,7 @@ class Cm extends Model
         'polled_at' => 'datetime',
         'identify_until' => 'datetime',
         'board_pending_since' => 'datetime',
+        'os_checked_at' => 'datetime',
     ];
 
     /* A module that finished and still asks the server whether to blink, i.e. is still on the bench */
@@ -152,6 +159,20 @@ class Cm extends Model
         return $this->setPhase('failed', $reason);
     }
 
+    /* The new system's report is welcome: the module waits for it (pending when its "written" report was lost), or its
+       run failed only for want of it (a late report still counts) */
+    public function awaitsOsReport()
+    {
+        return in_array($this->os_check, ['pending', 'waiting'], true)
+            || ($this->os_check === 'failed' && $this->os_checked_at === null && $this->phase_detail === self::OS_NO_REPORT);
+    }
+
+    /* Failed the OS check by its own report: the module runs its new system, and a power cycle starts that again */
+    public function failedInItsSystem()
+    {
+        return $this->phase === 'failed' && $this->os_check === 'failed' && $this->os_checked_at !== null;
+    }
+
     public function isActive()
     {
         return in_array($this->phase, self::ACTIVE_PHASES, true);
@@ -210,7 +231,8 @@ class Cm extends Model
         if (!$this->isActive() || !$this->progress_updated_at)
             return null;
         $silent = now()->getTimestamp() - $this->progress_updated_at->getTimestamp();
-        $limit = $this->isStreaming() ? self::STALE_AFTER_STREAMING : self::STALE_AFTER_SCRIPTS;
+        $limit = $this->phase === 'firstboot' ? self::FIRSTBOOT_SECONDS
+            : ($this->isStreaming() ? self::STALE_AFTER_STREAMING : self::STALE_AFTER_SCRIPTS);
         return $silent > $limit ? $silent : null;
     }
 }

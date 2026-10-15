@@ -62,9 +62,28 @@ class FailureAdvice
             if ($failedStep && $failedStep['phase'] === 'verify')
                 return ['step' => $step, 'advice' => 'The data read back from the storage does not match the image (SHA256). '
                                                      .self::RESTART.' If it fails again, the eMMC is probably failing.'];
+            if ($failedStep && $failedStep['detail'] === 'Installing the OS check')
+                return ['step' => $step, 'advice' => 'The utility OS could not put the OS check into the written system; the '
+                    .'post-install log says why. The image\'s second partition must be its root file system (ext4), one the '
+                    .'utility OS can mount. '.self::RESTART];
             return ['step' => $step, 'advice' => self::scriptAdvice('Post-install', $failedStep, $code)
                                                  .' The image is written. Fix the script, then restart the module to provision it again.'];
         }
+
+        if (Str::startsWith($reason, 'The new system did not start'))
+            return ['step' => $step, 'advice' => 'After the reboot the module came back to network boot instead of starting the '
+                .'written system. Check that the image boots on another module, that the bootloader tries eMMC before the '
+                .'network (BOOT_ORDER, e.g. 0xf21), and the eMMC itself. '.self::RESTART];
+
+        if (Str::startsWith($reason, Cm::OS_NO_REPORT))
+            return ['step' => $step, 'advice' => 'The new system did not report: it may not have started, it may have no network '
+                .'to the server (eth0 gets its address by DHCP on the stand), it may lack curl, or the module was unplugged. On '
+                .'the module: /var/log/cmprovision-firstboot.log and journalctl -u cmprovision-firstboot.'];
+
+        if (Str::startsWith($reason, 'OS check failed'))
+            return ['step' => $step, 'advice' => 'The new system started but failed its check; the first boot log below says '
+                .'where. The module keeps running that system with the error on its LEDs: log in to look. A power cycle '
+                .'starts the same system again; to provision the module again, boot it over USB (rpiboot jumper).'];
 
         foreach (self::REFUSALS as $pattern => $advice)
         {

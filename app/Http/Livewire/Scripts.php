@@ -4,18 +4,19 @@ namespace App\Http\Livewire;
 
 use Livewire\Attributes\Title;
 use Livewire\Component;
+use App\Models\Package;
 use App\Models\Script;
 
 #[Title('Scripts')]
 class Scripts extends Component
 {
     public $isOpen = false;
-    public $scripts;
+    public $scripts, $packages;
     public $scriptid, $name, $script_type, $bg, $priority, $script;
 
     protected $rules = [
         'name' => 'required|max:255',
-        'script_type' => 'in:preinstall,postinstall',
+        'script_type' => 'required|in:preinstall,postinstall,firstboot',
         'bg' => 'required|boolean',
         'priority' => 'required|numeric',
         'script' => 'required'
@@ -24,6 +25,7 @@ class Scripts extends Component
     public function render()
     {
         $this->scripts = Script::orderBy('name')->get();
+        $this->packages = Package::orderBy('deb_package')->orderBy('id')->get();
         return view('livewire.scripts');
     }
 
@@ -57,6 +59,21 @@ class Scripts extends Component
         session()->flash('message', 'Script deleted.');
     }
 
+    /* A package goes only while no project installs it on the first boot */
+    public function deletePackage($id)
+    {
+        $package = Package::findOrFail($id);
+        $projects = $package->projects->map(function ($project) { return "'".$project->name."'"; })->implode(' ');
+        if ($projects !== '')
+        {
+            session()->flash('message', 'Cannot delete: package '.$package->deb_package.' is installed by projects: '.$projects);
+            return;
+        }
+        @unlink($package->path());
+        $package->delete();
+        session()->flash('message', 'Package '.$package->deb_package.' deleted.');
+    }
+
     public function create()
     {
         $this->name = $this->scriptid = '';
@@ -86,7 +103,8 @@ class Scripts extends Component
         Script::updateOrCreate(['id' => $this->scriptid], [
             'name' => $this->name,
             'script_type' => $this->script_type,
-            'bg' => $this->bg,
+            // a first-boot script runs in the new system's service, one after the other
+            'bg' => $this->script_type === 'firstboot' ? false : $this->bg,
             'priority' => $this->priority,
             'script' => str_replace("\r", "", $this->script)
         ]);

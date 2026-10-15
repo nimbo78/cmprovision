@@ -103,15 +103,25 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
         'storage' => 'sometimes|string|max:255',
         'image_id' => 'sometimes|nullable|exists:images,id',
         'label_id' => 'sometimes|nullable|exists:labels,id',
-        'label_moment' => 'sometimes|in:never,preinstall,postinstall',
+        'label_moment' => 'sometimes|in:never,preinstall,postinstall,firstboot',
         'eeprom_firmware' => 'sometimes|nullable|string|max:255',
         'eeprom_settings' => 'sometimes|nullable|string|max:2024',
         'verify' => 'sometimes|boolean',
+        'os_check' => 'sometimes|boolean',
         'scripts' => 'sometimes|array',
         'scripts.*' => 'integer|exists:scripts,id',
     ]);
 
     $project = Project::findOrFail($projectId);
+    // printing after the OS check needs the OS check
+    $moment = $data['label_moment'] ?? $project->label_moment;
+    $check = array_key_exists('os_check', $data) ? (bool) $data['os_check'] : (bool) $project->os_check;
+    if ($moment === 'firstboot' && !$check)
+        return response()->json(['message' => 'label_moment firstboot needs os_check'], 422);
+    // first-boot scripts run in the OS check: without it they would sit in the project unused
+    $scriptIds = array_key_exists('scripts', $data) ? $data['scripts'] : $project->scripts()->pluck('scripts.id')->all();
+    if (!$check && Script::whereIn('id', $scriptIds)->where('script_type', 'firstboot')->exists())
+        return response()->json(['message' => 'firstboot scripts need os_check'], 422);
     $project->update(collect($data)->except('scripts')->all());
     if (array_key_exists('scripts', $data))
     {
@@ -134,7 +144,7 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
 
 $scriptRules = [
     'name' => 'required|string|max:255|unique:scripts,name',
-    'script_type' => ['required', Rule::in(['preinstall', 'postinstall'])],
+    'script_type' => ['required', Rule::in(['preinstall', 'postinstall', 'firstboot'])],
     'priority' => 'sometimes|integer|min:0|max:1000',
     'bg' => 'sometimes|boolean',
     'script' => 'required|string',
@@ -163,7 +173,7 @@ Route::middleware('auth:sanctum')->patch('/scripts/{scriptId}', function (Reques
     $script = Script::findOrFail($scriptId);
     $rules = $scriptRules;
     $rules['name'] = ['sometimes', 'string', 'max:255', Rule::unique('scripts', 'name')->ignore($script->id)];
-    $rules['script_type'] = ['sometimes', Rule::in(['preinstall', 'postinstall'])];
+    $rules['script_type'] = ['sometimes', Rule::in(['preinstall', 'postinstall', 'firstboot'])];
     $rules['script'] = 'sometimes|string';
     $script->update($request->validate($rules));
     return $script;

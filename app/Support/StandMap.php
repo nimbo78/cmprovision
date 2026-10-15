@@ -33,7 +33,7 @@ class StandMap
     /* Worst first: a port with several modules shows the first of these that one of them has */
     const SEVERITY = ['fail', 'stale', 'run', 'unknown', 'ok'];
     /* A running module's tile without a percent shows its step */
-    const STEP_MARKS = ['preinstall' => 'PRE', 'write' => 'WRITE', 'verify' => 'VERIFY', 'postinstall' => 'POST'];
+    const STEP_MARKS = ['preinstall' => 'PRE', 'write' => 'WRITE', 'verify' => 'VERIFY', 'postinstall' => 'POST', 'firstboot' => 'OS'];
 
     protected $parts = [], $modules = [], $serverMac;
 
@@ -259,6 +259,10 @@ class StandMap
         foreach ($tile['modules'] as $cm)
             if (self::writingEeprom($cm) && $cm->isActive() && $cm->silentFor() === null)
                 return 'the module on '.$tile['label'].' is writing its bootloader EEPROM';
+        // a module that failed the OS check in its new system runs that system: a power cycle boots it again
+        foreach ($tile['modules'] as $cm)
+            if ($cm->failedInItsSystem())
+                return 'the module on '.$tile['label'].' runs its new system: a restart would boot it again, not provision it';
         if (($tile['state'] === 'module' && $tile['others'] === 0) || ($tile['state'] === 'boot' && $tile['macs']))
             return null;
         return 'other devices on '.$tile['label'];

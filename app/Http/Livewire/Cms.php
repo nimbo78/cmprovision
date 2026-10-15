@@ -22,7 +22,8 @@ class Cms extends Component
         $term = strtolower(trim((string) $this->search));
         if ($term !== '')
             $query->where(function ($q) use ($term) {
-                $q->whereRaw('lower(serial) like ?', ['%'.$term.'%'])->orWhereRaw('lower(mac) like ?', ['%'.$term.'%']);
+                $q->whereRaw('lower(serial) like ?', ['%'.$term.'%'])->orWhereRaw('lower(mac) like ?', ['%'.$term.'%'])
+                  ->orWhereRaw('lower(hostname) like ?', ['%'.$term.'%']);
             });
         return $query->get();
     }

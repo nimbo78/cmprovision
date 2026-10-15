@@ -33,6 +33,26 @@
                   @error('verify') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
               <div class="mb-4">
+                  <label class="inline-flex items-center">
+                    <input type="checkbox" id="os_check" name="os_check" wire:model.live="os_check" class="form-checkbox h-6 w-6 text-accent">
+                    <span class="ml-3 text-sm">Check the OS after the first boot</span>
+                  </label>
+                  <p class="text-xs text-fg-muted mt-1">The module boots the written system on the stand: it installs the packages, runs the first-boot scripts and reports its host name. The bootloader must try eMMC before the network (BOOT_ORDER).</p>
+                  @error('os_check') <span class="text-neg">{{ $message }}</span>@enderror
+              </div>
+              @if ($os_check && count($packages))
+              <div class="mb-4">
+                  <div class="block text-fg text-sm font-bold mb-2">Packages to install on the first boot:</div>
+                  @foreach ($packages as $package)
+                  <label class="inline-flex items-center">
+                    <input type="checkbox" id="chkpackage{{ $package->id }}" value="{{ $package->id }}" wire:model="selectedPackages" class="form-checkbox h-6 w-6 text-accent">
+                    <span class="ml-3 text-sm">{{ $package->deb_package }} {{ $package->deb_version }} <span class="text-fg-muted">({{ $package->deb_architecture }})</span></span>
+                  </label><br>
+                  @endforeach
+              </div>
+              @endif
+              @error('selectedPackages') <div class="mb-4 text-neg">{{ $message }}</div>@enderror
+              <div class="mb-4">
                   <label for="storage" class="block text-fg text-sm font-bold mb-2">Destination storage device:</label>
                   <input type="text" id="storage" name="storage" wire:model="storage" class="cmp-field w-full">
                   @error('storage') <span class="text-neg">{{ $message }}</span>@enderror
@@ -78,7 +98,10 @@
                   <select id="label_moment" name="label_moment" wire:model.live="label_moment" class="cmp-field w-full">
                     <option value="never">Never</option>
                     <option value="preinstall">Before provisioning</option>
-                    <option value="postinstall">After provisioning completed successfully</option>
+                    <option value="postinstall">After writing and post-install</option>
+                    @if ($os_check)
+                    <option value="firstboot">After the OS check (with $hostname)</option>
+                    @endif
                   </select>
                   @error('label_moment') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
@@ -100,7 +123,7 @@
                   @foreach ($scripts as $script)
                   <label class="inline-flex items-center">
                     <input type="checkbox" id="chkscript{{ $script->id }}" value="{{ $script->id }}" wire:model="selectedScripts" class="form-checkbox h-6 w-6 text-accent">
-                    <span class="ml-3 text-sm">{{ $script->name }}</span>
+                    <span class="ml-3 text-sm">{{ $script->name }} <span class="text-fg-muted">({{ $script->script_type === 'firstboot' ? 'first boot' : $script->script_type }})</span></span>
                   </label><br>
                   @endforeach
                   @error('selectedScripts') <span class="text-neg">{{ $message }}</span>@enderror
