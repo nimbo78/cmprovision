@@ -114,16 +114,10 @@ exit 1
         }
     }
 
-    /* Address of this server as the module reaches it: from the CM's side an IPv6 link-local
-       address ends in %usb0 */
+    /* Address of this server as the module reached it, for the links in the module's script */
     protected function moduleServer(Request $req)
     {
-        $server = (string) $req->server('HTTP_HOST');
-        if ($server !== '' && $server[0] == '[')
-        {
-            $server = substr($server, 0, -1).'%usb0]';
-        }
-        return $server;
+        return (string) $req->server('HTTP_HOST');
     }
 
     /* What a module runs when it cannot be provisioned: the reason on its console, the failed state

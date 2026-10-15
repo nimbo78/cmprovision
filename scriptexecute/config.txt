@@ -9,8 +9,3 @@ dtoverlay=dwc2
 dtparam=audio=off
 dtoverlay=spi-gpio40-45
 
-[pi3]
-# Use USB over Ethernet on CM3
-dtoverlay=dwc2,dr_mode=peripheral
-cmdline=cmdline.txt.ipv6ll
-

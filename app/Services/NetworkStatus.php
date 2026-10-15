@@ -16,6 +16,8 @@ class NetworkStatus
 {
     /** the modules' network is the interface holding the server address (etc/dnsmasq.conf, scriptexecute/cmdline.txt) */
     const SERVER_ADDRESS = '172.20.0.1';
+    /** the stand network, dnsmasq's range (etc/dnsmasq.conf): /scriptexecute answers only it and this server (StandNetworkOnly) */
+    const STAND_NETWORK = '172.20.0.0/16';
     const CACHE_KEY = 'network-status';
     /** the indicator refreshes on its own this often */
     const POLL_SECONDS = 300;
