@@ -124,8 +124,11 @@ class NetworkStatus
         return null;
     }
 
-    /** the built-in Wi-Fi as a cold spare (tools/uplink-spare writes the file as root): null without a file it can read */
-    private function spare(): ?array
+    /**
+     * The built-in Wi-Fi as a cold spare (tools/uplink-spare writes the file as root): null without a file it can read.
+     * The Wi-Fi section asks it too: Check now needs the built-in Wi-Fi idle.
+     */
+    public function spare(): ?array
     {
         if (!is_readable($this->spare)) {
             return null;
