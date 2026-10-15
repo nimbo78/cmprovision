@@ -103,4 +103,56 @@ class PackagingTest extends TestCase
         $this->assertStringNotContainsString('[pi3]', $this->file('scriptexecute/config.txt'));
         $this->assertFileDoesNotExist(dirname(__DIR__, 2).'/scriptexecute/cmdline.txt.ipv6ll');
     }
+
+    public function test_the_cold_spare_is_installed_as_networkmanager_and_systemd_want_it()
+    {
+        // NetworkManager runs only dispatcher scripts that root owns and nobody else can change
+        $rules = $this->file('debian/rules');
+        $this->assertStringContainsString('install -D -m 755 tools/uplink-spare debian/cmprovision4/usr/lib/cmprovision/uplink-spare', $rules);
+        $this->assertStringContainsString('install -D -m 755 tools/90-cmprovision-uplink debian/cmprovision4/usr/lib/NetworkManager/dispatcher.d/90-cmprovision-uplink', $rules);
+        $install = $this->file('debian/install');
+        $this->assertStringContainsString('debian/cmprovision-uplink.service lib/systemd/system', $install);
+        $this->assertStringContainsString('debian/cmprovision-uplink.timer lib/systemd/system', $install);
+        $timer = $this->file('debian/cmprovision-uplink.timer');
+        foreach (['OnBootSec=2min', 'OnUnitActiveSec=5min', 'WantedBy=timers.target'] as $line)
+            $this->assertStringContainsString($line, $timer);
+        $service = $this->file('debian/cmprovision-uplink.service');
+        $this->assertStringContainsString('Type=oneshot', $service);
+        $this->assertStringContainsString('ExecStart=/usr/lib/cmprovision/uplink-spare check timer', $service);
+        $this->assertStringNotContainsString('[Install]', $service, 'only the timer starts it');
+    }
+
+    public function test_the_cold_spare_switch_is_written_once_and_never_fails_the_configure()
+    {
+        $postinst = $this->file('debian/postinst');
+        $this->assertStringContainsString('if [ ! -e /etc/default/cmprovision-uplink ]; then', $postinst);
+        // under set -e a failed write would stop the configure, and with it the start of every service
+        $this->assertStringContainsString("cat > /etc/default/cmprovision-uplink <<'EOF' || echo", $postinst);
+        $this->assertStringContainsString('SPARE=yes', $postinst);
+        $this->assertStringContainsString('/usr/lib/cmprovision/uplink-spare check postinst || true', $postinst);
+        $this->assertLessThan(strpos($postinst, '#DEBHELPER#'), strpos($postinst, 'uplink-spare check postinst'));
+        $this->assertStringContainsString('/etc/default/cmprovision-uplink', $this->file('tools/backup.sh'));
+    }
+
+    public function test_leaving_the_package_or_going_below_2_5_2_gives_the_built_in_wifi_back()
+    {
+        // otherwise the built-in Wi-Fi would stay disconnected until a reboot; a downgrade also takes the timer's unit away
+        $prerm = $this->file('debian/prerm');
+        $this->assertStringContainsString('dpkg --compare-versions "$2" lt "2.5.2~"', $prerm);
+        $this->assertStringContainsString('deb-systemd-invoke stop cmprovision-uplink.timer', $prerm);
+        $this->assertStringContainsString('/usr/lib/cmprovision/uplink-spare release || true', $prerm);
+        $this->assertLessThan(strpos($prerm, '#DEBHELPER#'), strpos($prerm, 'uplink-spare release'));
+        $this->assertStringContainsString('rm -f /etc/default/cmprovision-uplink', $this->file('debian/postrm'));
+    }
+
+    public function test_going_below_2_5_2_forgets_the_timer_so_coming_back_enables_it()
+    {
+        // deb-systemd-helper disable keeps a record that it once made the timer's link, so a later enable (debhelper's
+        // on the next upgrade) takes the missing link for the admin's choice and leaves the 5-minute check off: purge
+        // drops the link and the record, and the next upgrade enables the timer as on a first install (seen on the bench)
+        $prerm = $this->file('debian/prerm');
+        $this->assertStringContainsString('deb-systemd-helper purge cmprovision-uplink.timer', $prerm);
+        $this->assertStringNotContainsString('deb-systemd-helper disable cmprovision-uplink.timer', $prerm);
+        $this->assertStringNotContainsString('deb-systemd-helper enable cmprovision-uplink.timer', $this->file('debian/postinst'));
+    }
 }

@@ -20,4 +20,6 @@ debian/cmprovision-dnsmasq.service lib/systemd/system
 debian/cmprovision-rpiboot.service lib/systemd/system
 debian/cmprovision-queue.service lib/systemd/system
 debian/cmprovision-queue-images.service lib/systemd/system
+debian/cmprovision-uplink.service lib/systemd/system
+debian/cmprovision-uplink.timer lib/systemd/system
 debian/010_cmprovision etc/sudoers.d

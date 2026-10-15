@@ -67,7 +67,7 @@ class NetworkStatusTest extends TestCase
         }
     }
 
-    private function readStatus(?array $addresses = null)
+    private function readStatus(?array $addresses = null, ?string $spare = null)
     {
         $run = function ($command) {
             $this->calls[] = $command;
@@ -96,7 +96,7 @@ class NetworkStatusTest extends TestCase
 
         return (new NetworkStatus($this->root.'/net', $this->root.'/route', $run, function () use ($addresses) {
             return $addresses;
-        }))->read();
+        }, $spare !== null ? $spare : $this->root.'/no-spare'))->read();
     }
 
     public function test_the_uplink_is_the_default_route_with_the_lowest_metric()
@@ -231,5 +231,22 @@ class NetworkStatusTest extends TestCase
     {
         $status = new NetworkStatus($this->root.'/net', $this->root.'/route', function () { return null; }, function () { return []; });
         $this->assertNull($status->serverMac());
+    }
+
+    public function test_the_cold_spare_state_is_read_from_its_file()
+    {
+        file_put_contents($this->root.'/spare', "state=active\nsince=1790000030\nspare=wlan0\nuplink=\nup_since=\nlost_since=1790000000\n");
+
+        $this->assertSame(['state' => 'active', 'since' => 1790000030, 'device' => 'wlan0', 'lost_since' => 1790000000],
+            $this->readStatus(null, $this->root.'/spare')['spare']);
+    }
+
+    public function test_no_cold_spare_without_its_file_or_with_one_it_cannot_read()
+    {
+        $status = $this->readStatus(null, $this->root.'/none');
+        $this->assertArrayHasKey('spare', $status);
+        $this->assertNull($status['spare']);
+        file_put_contents($this->root.'/spare', "garbage\nstate=sideways\n");
+        $this->assertNull($this->readStatus(null, $this->root.'/spare')['spare']);
     }
 }

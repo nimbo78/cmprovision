@@ -39,7 +39,8 @@ tar czf "$OUT/app.tar.gz" --warning=no-file-changed --exclude="$APP/database/dat
 tar czf "$OUT/system-config.tar.gz" --ignore-failed-read \
     /etc/nginx/sites-available/cmprovision /etc/php/*/fpm/php.ini \
     /etc/sudoers.d/010_cmprovision /etc/dhcpcd.conf /etc/NetworkManager/system-connections \
-    /lib/systemd/system/cmprovision-*.service 2>/dev/null || true
+    /lib/systemd/system/cmprovision-*.service /lib/systemd/system/cmprovision-*.timer \
+    /etc/default/cmprovision-uplink 2>/dev/null || true
 
 if command -v dpkg-repack >/dev/null 2>&1; then
     (cd "$OUT" && dpkg-repack cmprovision4 >/dev/null 2>&1) || echo "dpkg-repack failed; restore will keep the installed package" >&2

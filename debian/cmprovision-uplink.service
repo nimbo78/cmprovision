@@ -1,0 +1,7 @@
+[Unit]
+Description=CMProvision: the built-in Wi-Fi as a cold spare (a check for events the dispatcher missed)
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/cmprovision/uplink-spare check timer

@@ -1,0 +1,167 @@
+#!/bin/sh
+# The built-in Wi-Fi as a cold spare (cmprovision 2.5.2, docs/superpowers/specs/2026-10-15-uplink-cold-spare-design.md).
+# The built-in Wi-Fi (the wireless device on the SDIO bus) stays disconnected while another device carries an IPv4
+# default route, connects when there has been none for LOST_SECONDS, and leaves again once the other route has held
+# for STABLE_SECONDS. Every run decides from the state of the system, not from what started it: NetworkManager's
+# dispatcher (90-cmprovision-uplink), a deferred check, or cmprovision-uplink.timer every 5 minutes.
+#   uplink-spare check [event] [device]    decide now
+#   uplink-spare release                   give the built-in Wi-Fi back to NetworkManager (prerm)
+# Only the device is disconnected, never a NetworkManager profile: after a reboot both radios connect as before.
+# Tests point it elsewhere with UPLINK_SPARE_SYS, UPLINK_SPARE_RUN, UPLINK_SPARE_CONF and UPLINK_SPARE_NOW.
+
+LOST_SECONDS=30
+STABLE_SECONDS=60
+SYS=${UPLINK_SPARE_SYS:-/sys/class/net}
+RUN=${UPLINK_SPARE_RUN:-/run/cmprovision}
+CONF=${UPLINK_SPARE_CONF:-/etc/default/cmprovision-uplink}
+STATE=$RUN/uplink-spare
+SELF=/usr/lib/cmprovision/uplink-spare
+
+now() {
+    echo "${UPLINK_SPARE_NOW:-$(date +%s)}"
+}
+
+log() {
+    logger -t cmprovision-uplink "$1" 2>/dev/null || true
+}
+
+# the built-in Wi-Fi: the first wireless device on the SDIO bus (the CM4's brcmfmac)
+builtin_wifi() {
+    for dir in "$SYS"/*; do
+        [ -d "$dir/wireless" ] || [ -e "$dir/phy80211" ] || continue
+        [ "$(basename "$(readlink -f "$dir/device/subsystem")")" = sdio ] || continue
+        basename "$dir"
+        return 0
+    done
+    return 1
+}
+
+# NetworkManager's word for a device: connected, connecting (...), disconnected, unavailable, unmanaged; nothing when
+# NetworkManager does not answer
+device_state() {
+    nmcli -t -f DEVICE,STATE device status 2>/dev/null | awk -F: -v d="$1" '$1 == d { print $2; exit }'
+}
+
+# the device of the IPv4 default route with the lowest metric through anything but $1; nothing when there is none
+uplink() {
+    ip -4 route show default 2>/dev/null | awk -v spare="$1" '
+        { dev = ""; metric = 0
+          for (i = 1; i < NF; i++) { if ($i == "dev") dev = $(i + 1); if ($i == "metric") metric = $(i + 1) + 0 }
+          if (dev != "" && dev != spare && (best == "" || metric < low)) { best = dev; low = metric } }
+        END { print best }'
+}
+
+# SPARE=no in the switch turns the cold spare off; quotes, spaces, a comment and capitals do not count
+switched_off() {
+    value=$(sed -n 's/^[[:space:]]*SPARE[[:space:]]*=//p' "$CONF" 2>/dev/null | tail -n 1 | sed 's/#.*//' \
+        | tr -d " \t\"'" | tr '[:upper:]' '[:lower:]')
+    [ "$value" = no ]
+}
+
+# a value of the state file
+get() {
+    [ -f "$STATE" ] && sed -n "s/^$1=//p" "$STATE" | head -n 1
+}
+
+# the state file, readable by the web server (NetworkStatus): the state, since when (kept while the state stays), the
+# devices, and the two counts the decisions run on
+record() {   # state uplink up_since lost_since
+    since=$(get since)
+    { [ "$(get state)" = "$1" ] && [ -n "$since" ]; } || since=$(now)
+    mkdir -p "$RUN" && chmod 0755 "$RUN"
+    printf 'state=%s\nsince=%s\nspare=%s\nuplink=%s\nup_since=%s\nlost_since=%s\n' \
+        "$1" "$since" "$spare" "$2" "$3" "$4" > "$STATE.new" && chmod 0644 "$STATE.new" && mv -f "$STATE.new" "$STATE"
+}
+
+# decide again in $1 seconds: a transient timer of its own, so a check it starts may schedule the next one, and accurate
+# to the second (a timer of systemd is accurate to a minute by default: 30 s would become up to 90 s)
+later() {
+    systemd-run --collect --quiet --timer-property=AccuracySec=1s --unit="cmprovision-uplink-check-$(now)-$$" \
+        --on-active="$1s" "$SELF" check later >/dev/null 2>&1 || true
+}
+
+# give the built-in Wi-Fi back to NetworkManager: a device it disconnected on request stays blocked from autoconnecting its
+# profile, autoconnect yes or not (seen on the provisioner, NetworkManager 1.52), so a disconnected one is connected here
+give_back() {
+    nmcli device set "$spare" autoconnect yes >/dev/null 2>&1
+    [ "$(device_state "$spare")" = disconnected ] || return 0
+    nmcli -w 20 device connect "$spare" >/dev/null 2>&1 || log "built-in Wi-Fi $spare: nmcli device connect failed"
+}
+
+# a count of the state file, or now when it is missing, not a number, or ahead of the clock (the clock stepped back)
+count() {
+    value=$(get "$1")
+    case "$value" in ''|*[!0-9]*) value=$t ;; esac
+    [ "$value" -le "$t" ] || value=$t
+    echo "$value"
+}
+
+check() {
+    spare=$(builtin_wifi) || return 0
+    state=$(device_state "$spare")
+    case "$state" in ""|unmanaged) return 0 ;; esac         # NetworkManager does not answer or is not in charge of it
+    if switched_off; then
+        if [ "$(get state)" != off ]; then                   # once, on the switch; then NetworkManager's alone
+            log "cold spare off (SPARE=no): $spare connects on its own"
+            give_back
+        fi
+        record off "" "" ""
+        return 0
+    fi
+    case "$state" in connected*|connecting*) on=yes ;; *) on=no ;; esac
+    t=$(now)
+    up=$(uplink "$spare")
+    if [ -n "$up" ]; then
+        up_since=$(count up_since)
+        if [ "$on" = no ]; then
+            record standby "$up" "$up_since" ""
+        elif [ $((t - up_since)) -lt $STABLE_SECONDS ]; then
+            record waiting "$up" "$up_since" ""
+            later $((up_since + STABLE_SECONDS - t))
+        elif nmcli -w 20 device disconnect "$spare" >/dev/null 2>&1; then
+            log "built-in Wi-Fi $spare off: $up has carried the default route for $STABLE_SECONDS s"
+            record standby "$up" "$up_since" ""
+        else
+            log "built-in Wi-Fi $spare: nmcli device disconnect failed"
+            record waiting "$up" "$up_since" ""
+        fi
+    else
+        lost_since=$(count lost_since)
+        if [ "$on" = yes ]; then
+            record active "" "" "$lost_since"
+        elif [ $((t - lost_since)) -lt $LOST_SECONDS ]; then
+            record waiting "" "" "$lost_since"
+            later $((lost_since + LOST_SECONDS - t))
+        elif nmcli -w 20 device connect "$spare" >/dev/null 2>&1; then
+            log "built-in Wi-Fi $spare on: no default route but through it for $LOST_SECONDS s"
+            record active "" "" "$lost_since"
+        else
+            log "built-in Wi-Fi $spare: nmcli device connect failed"
+            record waiting "" "" "$lost_since"
+        fi
+    fi
+}
+
+release() {
+    spare=$(builtin_wifi) || return 0
+    rm -f "$STATE"
+    log "cold spare released: $spare connects on its own"
+    give_back
+}
+
+case "${1:-}" in
+    check)
+        mkdir -p "$RUN"
+        exec 9>"$RUN/uplink-spare.lock"
+        flock -w 10 9 || exit 0     # another run is deciding right now
+        check
+        ;;
+    release)
+        release
+        ;;
+    *)
+        echo "usage: uplink-spare check [event] [device] | release" >&2
+        exit 2
+        ;;
+esac
+exit 0

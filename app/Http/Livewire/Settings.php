@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Validator;
 #[Title('Settings')]
 class Settings extends Component
 {
-    public $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $logOutput, $logTitle;
+    public $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $uplinkSpareRunning, $logOutput, $logTitle;
     public $ip, $mac, $detectedMacs;
     public $hosts;
     public $logModalOpen = false, $staticModalOpen = false;
@@ -22,6 +22,7 @@ class Settings extends Component
         $this->rpibootRunning = $this->isActive('cmprovision-rpiboot');
         $this->queueRunning = $this->isActive('cmprovision-queue');
         $this->imagesQueueRunning = $this->isActive('cmprovision-queue-images');
+        $this->uplinkSpareRunning = $this->isActive('cmprovision-uplink.timer');
         $this->hosts = Host::orderBy('ip')->get();
 
         return view('livewire.settings');
@@ -34,10 +35,11 @@ class Settings extends Component
         return ($retcode == 0);
     }
 
-    protected function getLog($service)
+    /* the journal since boot of a unit (-u) or of a syslog tag (-t) */
+    protected function getLog($name, $option = '-u')
     {
         $output = $retcode = '';
-        exec("/bin/journalctl --boot -u ".escapeshellarg($service), $output, $retcode);
+        exec("/bin/journalctl --boot ".$option." ".escapeshellarg($name), $output, $retcode);
         return implode("\n", $output);
     }
 
@@ -73,6 +75,13 @@ class Settings extends Component
     {
         $this->logTitle = "Image checksum worker log since boot";
         $this->logOutput = $this->getLog('cmprovision-queue-images');
+        $this->logModalOpen = true;
+    }
+
+    public function viewLogUplinkSpare()
+    {
+        $this->logTitle = "Uplink cold spare log since boot";
+        $this->logOutput = $this->getLog('cmprovision-uplink', '-t');
         $this->logModalOpen = true;
     }
 

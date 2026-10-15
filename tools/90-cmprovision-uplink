@@ -1,0 +1,11 @@
+#!/bin/sh
+# NetworkManager's dispatcher runs this on connection and device events ($1 the interface, $2 the action); the decision
+# is uplink-spare's: the built-in Wi-Fi as a cold spare (cmprovision 2.5.2). The dispatcher waits for it: a check takes
+# well under a second, a switch it makes waits for NetworkManager at most 20 s. device-remove: a card whose driver
+# crashed may vanish without a clean down.
+case "$2" in
+    up|down|dhcp4-change|connectivity-change|device-remove)
+        exec sh "${UPLINK_SPARE:-/usr/lib/cmprovision/uplink-spare}" check "$2" "$1"
+        ;;
+esac
+exit 0

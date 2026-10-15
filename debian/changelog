@@ -1,3 +1,14 @@
+cmprovision4 (2.5.2) unstable; urgency=medium
+
+  * The built-in Wi-Fi as a cold spare: while another device carries the
+    default route it stays disconnected; it connects when there has been
+    none for 30 s and leaves once the uplink has held for a minute.
+    NetworkManager dispatcher events drive the helper, a timer checks every
+    5 minutes; SPARE=no in /etc/default/cmprovision-uplink turns it off.
+  * The uplink icon shows the cold spare, Settings its journal.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 15 Oct 2026 11:51:21 +0300
+
 cmprovision4 (2.5.1) unstable; urgency=medium
 
   * /scriptexecute answers only the stand network 172.20.0.0/16 and the

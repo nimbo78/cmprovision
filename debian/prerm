@@ -9,6 +9,20 @@ if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.5.0
     deb-systemd-helper disable cmprovision-queue-images.service >/dev/null || true
 fi
 
+# The built-in Wi-Fi as a cold spare (2.5.2): leaving the package, or going back to a version without it, must not leave
+# the built-in Wi-Fi disconnected until a reboot. A downgrade also takes the timer's unit away: purge drops its link and
+# deb-systemd-helper's record of it, so the next upgrade enables it as on a first install (disable would keep the record,
+# and the next upgrade would take the missing link for the admin's choice). A remove keeps the timer enabled for a later
+# reinstall: debhelper stops it.
+if [ "$1" = "remove" ] || { [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.5.2~"; }; then
+    deb-systemd-invoke stop cmprovision-uplink.timer >/dev/null || true
+    if [ "$1" = "upgrade" ]; then
+        deb-systemd-helper purge cmprovision-uplink.timer >/dev/null || true
+    fi
+    systemctl stop 'cmprovision-uplink-check-*.timer' >/dev/null 2>&1 || true
+    /usr/lib/cmprovision/uplink-spare release || true
+fi
+
 #DEBHELPER#
 
 exit 0
