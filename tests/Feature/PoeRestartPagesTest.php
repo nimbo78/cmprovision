@@ -131,6 +131,18 @@ class PoeRestartPagesTest extends TestCase
             ->assertDontSeeHtml('wire:click="restart(');
     }
 
+    public function test_a_module_that_failed_its_os_check_in_its_own_system_gets_no_restart()
+    {
+        $cm = $this->stand();
+        $cm->update(['phase' => 'failed', 'phase_detail' => "OS check failed: first boot script 'services' exited 3",
+                     'os_check' => 'failed', 'os_checked_at' => now()]);
+        $this->batchWith($cm);
+
+        Livewire::test(ProvisioningStatus::class)
+            ->assertDontSee('Restart failed')
+            ->assertDontSeeHtml('wire:click="restart('.$cm->id.')"');
+    }
+
     public function test_a_row_restart_finds_the_module_where_it_is_now()
     {
         Sleep::fake();

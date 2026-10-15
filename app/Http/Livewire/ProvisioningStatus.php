@@ -92,6 +92,8 @@ class ProvisioningStatus extends Component
         // a module's switch must take writes; one found before 2.4 (no switch_id) needs any switch that does
         $writable = EthernetSwitch::all()->filter(function ($switch) { return PoeControl::writable($switch->config()); })->modelKeys();
         $canRestart = function (Cm $cm) use ($writable) {
+            if ($cm->failedInItsSystem())
+                return false;   // it runs its new system: a power cycle boots that again, it does not provision
             return $cm->switch_id ? in_array($cm->switch_id, $writable) : (bool) $writable;
         };
         return view('livewire.provisioning-status', [

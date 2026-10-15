@@ -16,6 +16,8 @@ class LabelPrinter
             return;
         $label = str_replace('$mac', $cm->mac, $labelsettings->template);
         $label = str_replace('$serial', $cm->serial, $label);
+        // the host name the new system reported (the OS check, 2.6.0); empty before it
+        $label = str_replace('$hostname', (string) $cm->hostname, $label);
         // the board ("sw01 Gi0/3") and its two halves; empty without a switch
         $label = str_replace(['$provisionboard', '$switch', '$port'],
             [(string) $cm->provisioning_board, (string) $cm->switch_name, (string) $cm->switch_port], $label);
