@@ -126,6 +126,8 @@ class PackagingTest extends TestCase
     {
         $postinst = $this->file('debian/postinst');
         $this->assertStringContainsString('if [ ! -e /etc/default/cmprovision-uplink ]; then', $postinst);
+        // under set -e a failed write would stop the configure, and with it the start of every service
+        $this->assertStringContainsString("cat > /etc/default/cmprovision-uplink <<'EOF' || echo", $postinst);
         $this->assertStringContainsString('SPARE=yes', $postinst);
         $this->assertStringContainsString('/usr/lib/cmprovision/uplink-spare check postinst || true', $postinst);
         $this->assertLessThan(strpos($postinst, '#DEBHELPER#'), strpos($postinst, 'uplink-spare check postinst'));

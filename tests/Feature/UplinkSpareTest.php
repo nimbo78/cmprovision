@@ -34,6 +34,7 @@ class UplinkSpareTest extends TestCase
         $this->stub('nmcli', implode("\n", [
             'echo "nmcli $*" >> "$FAKE/calls"',
             '[ -e "$FAKE/nm-gone" ] && exit 8',
+            '[ "$1" = -w ] && shift 2',
             'case "$1 $2 $3 $4 $5" in',
             '    "-t -f DEVICE,STATE device status") for f in "$FAKE"/nm/*; do printf "%s:%s\n" "${f##*/}" "$(cat "$f")"; done ;;',
             '    "device connect "*) [ -e "$FAKE/nm-fails" ] && exit 4; echo connected > "$FAKE/nm/$3" ;;',
@@ -142,7 +143,8 @@ class UplinkSpareTest extends TestCase
         $this->assertSame(['state' => 'waiting', 'since' => (string) self::T, 'spare' => 'wlan0', 'uplink' => 'wlan1',
                            'up_since' => (string) self::T, 'lost_since' => ''], $this->state());
         $this->assertMatchesRegularExpression(
-            '#^systemd-run --collect --quiet --unit=cmprovision-uplink-check-\S+ --on-active=60s /usr/lib/cmprovision/uplink-spare check later$#',
+            // a timer of systemd is accurate to a minute unless told otherwise: 60 s would become up to 120 s
+            '#^systemd-run --collect --quiet --timer-property=AccuracySec=1s --unit=cmprovision-uplink-check-\S+ --on-active=60s /usr/lib/cmprovision/uplink-spare check later$#',
             $this->actions()[0]);
         $this->assertSame('', $this->journal(), 'a check that changes nothing is not logged');
 
@@ -155,7 +157,8 @@ class UplinkSpareTest extends TestCase
         $this->forget();
         $this->runAt(self::T + 60);
         $this->assertSame('disconnected', $this->device('wlan0'));
-        $this->assertSame(['nmcli device disconnect wlan0'], $this->actions());
+        // a bounded wait: run from NetworkManager's dispatcher, the helper holds its queue while nmcli waits
+        $this->assertSame(['nmcli -w 20 device disconnect wlan0'], $this->actions());
         $this->assertSame('standby', $this->state()['state']);
         $this->assertSame((string) (self::T + 60), $this->state()['since']);
         $this->assertSame("-t cmprovision-uplink built-in Wi-Fi wlan0 off: wlan1 has carried the default route for 60 s\n", $this->journal());
@@ -174,7 +177,7 @@ class UplinkSpareTest extends TestCase
         $this->forget();
         $this->runAt(self::T + 30);
         $this->assertSame('connected', $this->device('wlan0'));
-        $this->assertSame(['nmcli device connect wlan0'], $this->actions());
+        $this->assertSame(['nmcli -w 20 device connect wlan0'], $this->actions());
         $this->assertSame('active', $this->state()['state']);
         $this->assertSame("-t cmprovision-uplink built-in Wi-Fi wlan0 on: no default route but through it for 30 s\n", $this->journal());
     }
@@ -378,6 +381,8 @@ class UplinkSpareTest extends TestCase
         return [
             'up' => ['up', true], 'down' => ['down', true], 'dhcp4-change' => ['dhcp4-change', true],
             'connectivity-change' => ['connectivity-change', true],
+            // a card whose driver crashed may vanish without a clean down
+            'device-remove' => ['device-remove', true],
             'pre-up' => ['pre-up', false], 'hostname' => ['hostname', false], 'vpn-up' => ['vpn-up', false],
         ];
     }
@@ -390,5 +395,37 @@ class UplinkSpareTest extends TestCase
         $this->assertSame(0, $this->runAt(self::T, ['wlan1', $action], 'tools/90-cmprovision-uplink'));
 
         $this->assertSame($checks, $this->state() !== [], $action);
+    }
+
+    public function test_a_count_ahead_of_the_clock_or_not_a_number_counts_as_now()
+    {
+        // the clock stepped back after the count was taken: the wait would last until the clock caught up
+        $this->world(['wlan0' => 'disconnected', 'wlan1' => 'disconnected'], '');
+        file_put_contents($this->dir.'/run/uplink-spare',
+            "state=waiting\nsince=".(self::T + 3600)."\nspare=wlan0\nuplink=\nup_since=\nlost_since=".(self::T + 3600)."\n");
+        $this->runAt(self::T);
+        $this->assertSame((string) self::T, $this->state()['lost_since']);
+        $this->assertStringContainsString('--on-active=30s', $this->actions()[0]);
+
+        // a hand-edited file: dash stops at arithmetic on a word, and a run that never records never heals
+        $this->forget();
+        $this->world(['wlan0' => 'connected', 'wlan1' => 'connected'], self::CARD.self::ONBOARD);
+        file_put_contents($this->dir.'/run/uplink-spare', "state=waiting\nsince=x\nspare=wlan0\nuplink=wlan1\nup_since=abc\nlost_since=\n");
+        $this->assertSame(0, $this->runAt(self::T));
+        $this->assertSame((string) self::T, $this->state()['up_since']);
+    }
+
+    public function test_coming_back_from_spare_no_the_built_in_wifi_leaves_a_minute_later()
+    {
+        $this->world(['wlan0' => 'connected', 'wlan1' => 'connected'], self::CARD.self::ONBOARD, 'SPARE=no');
+        $this->runAt(self::T);
+        $this->assertSame('off', $this->state()['state']);
+
+        $this->world(['wlan0' => 'connected', 'wlan1' => 'connected'], self::CARD.self::ONBOARD, 'SPARE=yes');
+        $this->runAt(self::T + 10);
+        $this->assertSame('waiting', $this->state()['state']);
+        $this->assertSame('connected', $this->device('wlan0'), 'not before the card has held a minute from the switch');
+        $this->runAt(self::T + 70);
+        $this->assertSame('disconnected', $this->device('wlan0'));
     }
 }

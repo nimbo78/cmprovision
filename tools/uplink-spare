@@ -26,7 +26,7 @@ log() {
 }
 
 # the built-in Wi-Fi: the first wireless device on the SDIO bus (the CM4's brcmfmac)
-builtin() {
+builtin_wifi() {
     for dir in "$SYS"/*; do
         [ -d "$dir/wireless" ] || [ -e "$dir/phy80211" ] || continue
         [ "$(basename "$(readlink -f "$dir/device/subsystem")")" = sdio ] || continue
@@ -73,14 +73,23 @@ record() {   # state uplink up_since lost_since
         "$1" "$since" "$spare" "$2" "$3" "$4" > "$STATE.new" && chmod 0644 "$STATE.new" && mv -f "$STATE.new" "$STATE"
 }
 
-# decide again in $1 seconds: a transient timer of its own, so a check it starts may schedule the next one
+# decide again in $1 seconds: a transient timer of its own, so a check it starts may schedule the next one, and accurate
+# to the second (a timer of systemd is accurate to a minute by default: 30 s would become up to 90 s)
 later() {
-    systemd-run --collect --quiet --unit="cmprovision-uplink-check-$(now)-$$" --on-active="$1s" \
-        "$SELF" check later >/dev/null 2>&1 || true
+    systemd-run --collect --quiet --timer-property=AccuracySec=1s --unit="cmprovision-uplink-check-$(now)-$$" \
+        --on-active="$1s" "$SELF" check later >/dev/null 2>&1 || true
+}
+
+# a count of the state file, or now when it is missing, not a number, or ahead of the clock (the clock stepped back)
+count() {
+    value=$(get "$1")
+    case "$value" in ''|*[!0-9]*) value=$t ;; esac
+    [ "$value" -le "$t" ] || value=$t
+    echo "$value"
 }
 
 check() {
-    spare=$(builtin) || return 0
+    spare=$(builtin_wifi) || return 0
     state=$(device_state "$spare")
     case "$state" in ""|unmanaged) return 0 ;; esac         # NetworkManager does not answer or is not in charge of it
     if switched_off; then
@@ -93,14 +102,13 @@ check() {
     t=$(now)
     up=$(uplink "$spare")
     if [ -n "$up" ]; then
-        up_since=$(get up_since)
-        [ -n "$up_since" ] || up_since=$t
+        up_since=$(count up_since)
         if [ "$on" = no ]; then
             record standby "$up" "$up_since" ""
         elif [ $((t - up_since)) -lt $STABLE_SECONDS ]; then
             record waiting "$up" "$up_since" ""
             later $((up_since + STABLE_SECONDS - t))
-        elif nmcli device disconnect "$spare" >/dev/null 2>&1; then
+        elif nmcli -w 20 device disconnect "$spare" >/dev/null 2>&1; then
             log "built-in Wi-Fi $spare off: $up has carried the default route for $STABLE_SECONDS s"
             record standby "$up" "$up_since" ""
         else
@@ -108,14 +116,13 @@ check() {
             record waiting "$up" "$up_since" ""
         fi
     else
-        lost_since=$(get lost_since)
-        [ -n "$lost_since" ] || lost_since=$t
+        lost_since=$(count lost_since)
         if [ "$on" = yes ]; then
             record active "" "" "$lost_since"
         elif [ $((t - lost_since)) -lt $LOST_SECONDS ]; then
             record waiting "" "" "$lost_since"
             later $((lost_since + LOST_SECONDS - t))
-        elif nmcli device connect "$spare" >/dev/null 2>&1; then
+        elif nmcli -w 20 device connect "$spare" >/dev/null 2>&1; then
             log "built-in Wi-Fi $spare on: no default route but through it for $LOST_SECONDS s"
             record active "" "" "$lost_since"
         else
@@ -126,7 +133,7 @@ check() {
 }
 
 release() {
-    spare=$(builtin) || return 0
+    spare=$(builtin_wifi) || return 0
     nmcli device set "$spare" autoconnect yes >/dev/null 2>&1
     rm -f "$STATE"
     log "cold spare released: $spare connects on its own"

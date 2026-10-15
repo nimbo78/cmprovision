@@ -178,7 +178,7 @@ POOLCONF
     # The built-in Wi-Fi as a cold spare (2.5.2): the switch is written once and then left to the operator, and one check
     # runs now (the built-in Wi-Fi leaves a minute after the install if the card holds); it never fails the configure
     if [ ! -e /etc/default/cmprovision-uplink ]; then
-        cat > /etc/default/cmprovision-uplink <<'EOF'
+        cat > /etc/default/cmprovision-uplink <<'EOF' || echo "Could not write /etc/default/cmprovision-uplink: the cold spare stays on"
 # The built-in Wi-Fi as a cold spare (cmprovision): disconnected while another uplink carries the default route,
 # connected when there has been none for 30 seconds. SPARE=no keeps it connected all the time.
 SPARE=yes
