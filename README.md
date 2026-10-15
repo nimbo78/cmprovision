@@ -61,6 +61,22 @@ However that requires that network boot is enabled first in the EEPROM settings 
 
 You can create a SD card that enables that with [Imager](https://www.raspberrypi.com/software/), by going to: "Choose OS" -> "Misc utility images" -> "Bootloader" -> "Network boot"
 
+## The OS check after the first boot ##
+
+A project with **Check the OS after the first boot** does not stop when the image is written. The module reboots into its new system right on the stand, where a one-shot service checks it:
+
+1. After the post-install scripts the utility OS mounts the written root partition (the image's second partition, ext4) and adds the service `cmprovision-firstboot`, with the project's first-boot scripts and packages.
+1. The module reboots. Its bootloader must try eMMC before the network (`BOOT_ORDER`, e.g. `0xf21`); otherwise the module comes back to network boot and the run fails with "the new system did not start".
+1. The new system gets its address from the stand's DHCP and waits for its boot to finish (at most 5 minutes). Then it installs the project's packages with one `apt-get` and runs the first-boot scripts, 2 minutes each; a non-zero exit fails the check.
+1. It reports its host name, the systemd state and the failed units. The service then removes itself; its log stays in `/var/log/cmprovision-firstboot.log`.
+1. Only now is the run done. The label can print `$hostname` (label moment "After the OS check"), and the notifications go out. Without a report in 15 minutes the run fails.
+1. The module keeps running and shows the result on its LEDs: ACT and PWR fade in and out together when the check passed, the error pattern when it failed.
+
+- **First-boot scripts** are a script type of their own (Scripts → first boot): they run as root in the new system, with `$SERVER` set.
+- **Packages** (Scripts → Packages) are `.deb` files uploaded to the server. The stand has no internet, so apt downloads nothing: whatever a package depends on must be in the image or be uploaded too.
+- Anyone who reaches the provisioner's web server can download the files under `/uploads`, the images included: keep secrets out of packages.
+- The new system needs systemd and curl. A module booted over USB (rpiboot) is not checked: a reboot would bring it back to USB boot.
+
 ## The built-in Wi-Fi as a cold spare ##
 
 A provisioner with a better Wi-Fi card (an M.2 card, a USB adapter) keeps its built-in Wi-Fi off the network: while another device carries the default route, the built-in Wi-Fi stays disconnected. When there has been no other default route for 30 seconds (the card was removed, its driver failed, it cannot connect), the built-in Wi-Fi connects on its own, and once the card has carried the default route again for a minute, it leaves. Only the device is disconnected, never a NetworkManager profile: after a reboot both radios connect, and the built-in Wi-Fi leaves a minute later.
