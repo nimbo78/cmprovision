@@ -5,7 +5,9 @@
  * "uuid:device" in $FAKE/active. Every call is appended to $FAKE/calls. $FAKE/up says how "connection up" ends
  * ("connected 192.168.68.236/24", "connected" without an address, "wrong-password", "not-found", "no-address",
  * "timeout", "failed"); $FAKE/scan is what "device wifi list" prints; $FAKE/nm-gone makes every call fail;
- * $FAKE/mangle-psk makes the password read back differ. Values are printed as nmcli's terse detail view prints them.
+ * $FAKE/mangle-psk makes the password read back differ, $FAKE/up-delay makes "connection up" answer that many seconds
+ * later; $FAKE/up-profile keeps the settings of the profile it brought up last. Values are printed as nmcli's terse
+ * detail view prints them.
  */
 
 const PROPERTIES = [
@@ -14,6 +16,7 @@ const PROPERTIES = [
     'connection.interface-name' => ['connection', 'interface-name'],
     'connection.autoconnect-priority' => ['connection', 'autoconnect-priority'],
     'connection.multi-connect' => ['connection', 'multi-connect'],
+    'connection.autoconnect' => ['connection', 'autoconnect'],
     '802-11-wireless.ssid' => ['wifi', 'ssid'], 'ssid' => ['wifi', 'ssid'],
     '802-11-wireless.mode' => ['wifi', 'mode'],
     '802-11-wireless.hidden' => ['wifi', 'hidden'],
@@ -112,7 +115,7 @@ function store(array &$data, string $property, string $value): void
         exit(2);
     }
     [$section, $key] = PROPERTIES[$property];
-    if ($property === '802-11-wireless.hidden')
+    if ($property === '802-11-wireless.hidden' || $property === 'connection.autoconnect')
         $value = $value === 'yes' ? 'true' : 'false';
     if ($property === 'connection.multi-connect' && $value === 'multiple')
         $value = '3';
@@ -177,7 +180,8 @@ if ($what === 'connection show' && (count($args) === 2 || $args[2] === '--active
             $type = ($p['data']['connection']['type'] ?? '') === 'wifi' ? '802-11-wireless' : '802-3-ethernet';
             // a profile active on two devices is listed twice, as nmcli does
             foreach ($devices ?: [''] as $device)
-                $rows[] = ['UUID' => $uuid, 'TYPE' => $type, 'ACTIVE' => $device === '' ? 'no' : 'yes', 'DEVICE' => $device, 'FILENAME' => $p['file']];
+                $rows[] = ['UUID' => $uuid, 'TYPE' => $type, 'ACTIVE' => $device === '' ? 'no' : 'yes', 'DEVICE' => $device,
+                           'FILENAME' => $p['file'], 'NAME' => $p['data']['connection']['id'] ?? ''];
         }
     foreach ($rows as $row)
         echo implode(':', array_map(function ($field) use ($row) { return escape_field($row[$field] ?? ''); }, $fields)), "\n";
@@ -252,6 +256,9 @@ if ($what === 'connection up')
 {
     $uuid = $args[2];
     $device = $args[4] ?? '';
+    file_put_contents("$fake/up-profile", json_encode($profiles[$uuid]['data'] ?? null));
+    if (is_file("$fake/up-delay"))
+        sleep((int) file_get_contents("$fake/up-delay"));
     $outcome = is_file("$fake/up") ? trim(file_get_contents("$fake/up")) : 'connected 192.168.68.236/24';
     [$result, $address] = array_pad(explode(' ', $outcome, 2), 2, '');
     $errors = [

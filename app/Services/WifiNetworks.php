@@ -11,6 +11,8 @@ namespace App\Services;
 class WifiNetworks
 {
     const HELPER = '/usr/lib/cmprovision/wifi-networks';
+    /** the name of the copy of a profile that Check now brings up for a few seconds (tools/wifi-networks) */
+    const CHECK_ID = 'cmprovision-check';
     /** the security of a network as the helper takes it => as the page names it */
     const SECURITY = ['wpa2' => 'WPA2-Personal', 'mixed' => 'WPA2/WPA3 (mixed)', 'wpa3' => 'WPA3-Personal'];
     /** what is read of a profile, from nmcli's terse detail view (name:value lines, not escaped) */
@@ -94,6 +96,9 @@ class WifiNetworks
         $groups = $others = [];
         foreach ($profiles as $p) {
             $p += $this->details($p['uuid']);
+            if ($p['id'] === self::CHECK_ID) {
+                continue;
+            }
             $why = $this->unmanaged($p);
             if ($why !== null) {
                 $others[] = ['name' => $p['id'], 'ssid' => $p['ssid'], 'why' => $why];
@@ -113,7 +118,7 @@ class WifiNetworks
             }
             $networks[] = [
                 'uuid' => $keep['uuid'], 'uuids' => array_column($group, 'uuid'), 'ssid' => (string) $ssid,
-                'security' => $keep['key_mgmt'] === 'sae' ? 'wpa3' : ($keep['pmf'] === '2' ? 'mixed' : 'wpa2'),
+                'security' => $keep['key_mgmt'] === 'sae' ? 'wpa3' : ($keep['pmf'] === '1' ? 'wpa2' : 'mixed'),
                 'hidden' => $keep['hidden'] === 'yes', 'priority' => (int) $keep['priority'], 'devices' => $devices,
             ];
         }
@@ -129,7 +134,8 @@ class WifiNetworks
     {
         $spare = (new NetworkStatus($this->net, $this->routes, null, null, $this->spare))->spare();
         if ($spare === null || $spare['device'] === null) {
-            return 'no built-in Wi-Fi';
+            // tools/uplink-spare writes its state on a NetworkManager event, or two minutes after a boot
+            return $this->builtinWifi() ? 'the cold spare has not reported yet' : 'no built-in Wi-Fi';
         }
 
         return [
@@ -182,7 +188,8 @@ class WifiNetworks
      */
     public function check(string $uuid, string $by): array
     {
-        $r = $this->helper('check', [['uuid', $uuid], ['by', $by]], 60);
+        // the helper's worst case: the lists, up 30 s, disconnect 20 s, the cold spare's own check
+        $r = $this->helper('check', [['uuid', $uuid], ['by', $by]], 90);
         if (isset($r['error'])) {
             return ['result' => 'error', 'address' => '', 'detail' => $r['error']];
         }
@@ -190,12 +197,20 @@ class WifiNetworks
         return ['result' => $r['result'] ?? 'failed', 'address' => $r['address'] ?? '', 'detail' => $r['detail'] ?? ''];
     }
 
-    /** the named networks in reach, each once with its best signal: [ssid, signal (0-100), security, bands], strongest first */
+    /**
+     * The named networks in reach, each once with its best signal.
+     *
+     * @return array networks: [ssid, signal (0-100), security, bands], strongest first; error: why there is no list
+     */
     public function scan(): array
     {
         [$code, $out] = $this->call(['timeout', '30', 'sudo', '-n', $this->helper, 'scan']);
+        if ($code !== 0) {
+            return ['networks' => [], 'error' => preg_match('/^error=(.*)$/m', $out, $m) ? $m[1]
+                : ($code === 124 ? 'the Wi-Fi helper did not answer in time' : 'the Wi-Fi helper could not run (exit '.$code.')')];
+        }
         $seen = [];
-        foreach ($code === 0 ? explode("\n", trim($out)) : [] as $line) {
+        foreach (explode("\n", trim($out)) as $line) {
             $f = self::fields($line);
             if (count($f) < 4 || $f[0] === '') {
                 continue;
@@ -218,7 +233,7 @@ class WifiNetworks
             return $b['signal'] <=> $a['signal'] ?: strcmp($a['ssid'], $b['ssid']);
         });
 
-        return $list;
+        return ['networks' => $list, 'error' => null];
     }
 
     /** the helper's changes and refusals from the journal (the web server user is in systemd-journal) */
@@ -234,6 +249,23 @@ class WifiNetworks
         $bus = $bus === false ? null : basename($bus);
 
         return ($bus === 'pci' ? 'M.2 card' : ($bus === 'usb' ? 'USB adapter' : 'built-in')).' ('.$device.')';
+    }
+
+    /** a built-in Wi-Fi is there: a wireless device on the SDIO bus, as tools/uplink-spare finds it */
+    private function builtinWifi(): bool
+    {
+        foreach (@scandir($this->net) ?: [] as $name) {
+            $dir = $this->net.'/'.$name;
+            if ($name[0] === '.' || !(is_dir($dir.'/wireless') || file_exists($dir.'/phy80211'))) {
+                continue;
+            }
+            $bus = @readlink($dir.'/device/subsystem');
+            if ($bus !== false && basename($bus) === 'sdio') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** a profile's settings, FIELDS' names => values */

@@ -12,6 +12,7 @@ class FakeWifiNetworks extends WifiNetworks
     public $others = [];
     public $blocker = null;
     public $scanned = [];
+    public $scanError = null;
     /** [method, arguments...] of every change */
     public $calls = [];
     /** method => what it returns instead of success */
@@ -69,7 +70,7 @@ class FakeWifiNetworks extends WifiNetworks
 
     public function scan(): array
     {
-        return $this->scanned;
+        return ['networks' => $this->scanned, 'error' => $this->scanError];
     }
 
     public function log(): string

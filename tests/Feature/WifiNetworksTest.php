@@ -29,9 +29,12 @@ class WifiNetworksTest extends TestCase
             if (!is_executable('/bin/sh') || trim((string) shell_exec('command -v '.$tool.' 2>/dev/null')) === '')
                 $this->markTestSkipped('needs a POSIX shell, flock and iconv');
         $this->dir = sys_get_temp_dir().'/cmp-wifi-'.bin2hex(random_bytes(4));
-        foreach (['bin', 'keyfiles', 'elsewhere', 'run', 'sys/wlan0'] as $sub)
+        foreach (['bin', 'keyfiles', 'elsewhere', 'run', 'sys/wlan0/wireless', 'devices/wlan0', 'bus/sdio'] as $sub)
             mkdir($this->dir.'/'.$sub, 0755, true);
-        file_put_contents($this->dir.'/sys/wlan0/address', "2c:cf:67:30:7d:a3\n");
+        // the built-in Wi-Fi: a wireless device on the SDIO bus, as tools/uplink-spare finds it
+        if (!@symlink($this->dir.'/bus/sdio', $this->dir.'/devices/wlan0/subsystem'))
+            $this->markTestSkipped('symlinks are not available here');
+        symlink($this->dir.'/devices/wlan0', $this->dir.'/sys/wlan0/device');
         $this->stub('nmcli', 'exec php '.escapeshellarg(base_path('tests/Support/fake-nmcli.php')).' "$@"');
         $this->stub('ip', 'cat "$FAKE/routes" 2>/dev/null; exit 0');
         // logger as util-linux parses it: -t TAG, -- ends the options, and any other leading dash is an option it refuses
@@ -95,14 +98,22 @@ class WifiNetworksTest extends TestCase
         file_put_contents($this->dir.'/active', self::M2.":wlan1\n");
     }
 
+    /** the environment of the helper in a test: the stand-ins first in PATH, the made-up places, short lock waits */
+    protected function env(): string
+    {
+        return 'FAKE='.escapeshellarg($this->dir).' PATH='.escapeshellarg($this->dir.'/bin').':"$PATH"'
+            .' WIFI_NETWORKS_KEYFILES='.escapeshellarg($this->dir.'/keyfiles')
+            .' WIFI_NETWORKS_RUNTIME='.escapeshellarg($this->dir.'/elsewhere')
+            .' WIFI_NETWORKS_RUN='.escapeshellarg($this->dir.'/run')
+            .' WIFI_NETWORKS_SYS='.escapeshellarg($this->dir.'/sys')
+            .' WIFI_NETWORKS_SPARE='.escapeshellarg($this->dir.'/bin/uplink-spare')
+            .' WIFI_NETWORKS_WAIT=1';
+    }
+
     /** run tools/wifi-networks <command> with these lines on stdin, the way root does; its exit code */
     protected function runHelper(string $command, array $lines = []): int
     {
-        $env = 'FAKE='.escapeshellarg($this->dir).' PATH='.escapeshellarg($this->dir.'/bin').':"$PATH"'
-            .' WIFI_NETWORKS_KEYFILES='.escapeshellarg($this->dir.'/keyfiles')
-            .' WIFI_NETWORKS_RUN='.escapeshellarg($this->dir.'/run')
-            .' WIFI_NETWORKS_SYS='.escapeshellarg($this->dir.'/sys')
-            .' WIFI_NETWORKS_SPARE='.escapeshellarg($this->dir.'/bin/uplink-spare');
+        $env = $this->env();
         $process = proc_open($env.' sh '.escapeshellarg(base_path('tools/wifi-networks')).' '.$command.' 2>&1',
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w']], $pipes);
         fwrite($pipes[0], $lines ? implode("\n", $lines)."\n" : '');
@@ -267,7 +278,7 @@ class WifiNetworksTest extends TestCase
         $this->assertStringStartsWith('error=', $this->output);
         $this->assertStringContainsString($reason, $this->output);
         $this->assertSame([], $this->changes(), 'no profile changed');
-        $this->assertStringContainsString(': save refused: ', $this->journal());
+        $this->assertStringContainsString('anna: save refused: ', $this->journal(), 'the refusal names the user');
     }
 
     public function test_a_listed_ssid_is_edited_not_added_again()
@@ -492,11 +503,17 @@ class WifiNetworksTest extends TestCase
         $this->assertSame(0, $this->runHelper('check', ["uuid=$uuid", 'by=anna']), $this->output);
 
         $this->assertSame(['result' => 'connected', 'address' => '192.168.68.236/24', 'detail' => ''], $this->answer());
-        $this->assertSame([
-            "nmcli -w 30 connection up $uuid ifname wlan0",
-            'nmcli -w 20 device disconnect wlan0',
-            'uplink-spare check wifi-check',
-        ], $this->changes());
+        $changes = $this->changes();
+        $this->assertCount(4, $changes, implode("\n", $changes));
+        $this->assertSame(1, preg_match('/^nmcli -w 30 connection up (\S+) ifname wlan0$/', $changes[0], $m), $changes[0]);
+        $this->assertNotSame($uuid, $m[1], 'a copy of the profile comes up, not the profile itself');
+        $this->assertSame(['nmcli -w 20 device disconnect wlan0', 'nmcli connection delete '.$m[1], 'uplink-spare check wifi-check'],
+            array_slice($changes, 1));
+        $copy = $this->upProfile();
+        $this->assertSame(['cmprovision-check', 'wlan0', 'false'],
+            [$copy['connection']['id'], $copy['connection']['interface-name'], $copy['connection']['autoconnect']]);
+        $this->assertSame(['office', 'office-pass'], [$copy['wifi']['ssid'], $copy['wifi-security']['psk']]);
+        $this->assertSame([], $this->copies(), 'the copy is gone');
         $this->assertSame("-t cmprovision-wifi anna checked 'office' on wlan0: connected, 192.168.68.236\n", $this->journal());
     }
 
@@ -524,6 +541,7 @@ class WifiNetworksTest extends TestCase
         $this->assertStringContainsString("checked 'office' on wlan0: $text", $this->journal());
         $this->assertContains('nmcli -w 20 device disconnect wlan0', $this->changes(), 'the built-in Wi-Fi goes back to the spare');
         $this->assertContains('uplink-spare check wifi-check', $this->changes());
+        $this->assertSame([], $this->copies(), 'the copy is gone whatever the answer');
     }
 
     public static function busySpare(): array
@@ -532,7 +550,7 @@ class WifiNetworksTest extends TestCase
             'the built-in Wi-Fi carries the traffic' => ['active', 'the built-in Wi-Fi carries the traffic'],
             'the cold spare is counting' => ['waiting', 'the cold spare is switching'],
             'SPARE=no' => ['off', 'the cold spare is off (SPARE=no)'],
-            'no cold spare at all' => [null, 'no built-in Wi-Fi'],
+            'no word from the cold spare yet' => [null, 'the cold spare has not reported yet'],
         ];
     }
 
@@ -548,25 +566,31 @@ class WifiNetworksTest extends TestCase
         $this->assertSame([], $this->changes());
     }
 
-    public function test_the_78_pair_is_checked_through_its_built_in_profile()
+    public function test_the_78_pair_is_checked_through_a_copy_of_the_profile_the_card_uses()
     {
         $this->pair();
+        $before = [file_get_contents($this->dir.'/keyfiles/uplink-m2.nmconnection'), file_get_contents($this->dir.'/keyfiles/uplink-onboard.nmconnection')];
 
-        $this->runHelper('check', ['uuid='.self::M2, 'by=anna']);
+        $this->runHelper('check', ['uuid='.self::ONBOARD, 'by=anna']);
 
         $this->assertSame('connected', $this->answer()['result']);
-        $this->assertSame('nmcli -w 30 connection up '.self::ONBOARD.' ifname wlan0', $this->changes()[0]);
+        $copy = $this->upProfile();
+        $this->assertSame(['78', 'wlan0', self::SECRET], [$copy['wifi']['ssid'], $copy['connection']['interface-name'], $copy['wifi-security']['psk']]);
+        $this->assertArrayNotHasKey('mac-address', $copy['wifi'], "the card's MAC binding stays out of the copy");
+        $this->assertSame($before, [file_get_contents($this->dir.'/keyfiles/uplink-m2.nmconnection'), file_get_contents($this->dir.'/keyfiles/uplink-onboard.nmconnection')],
+            'the profiles themselves are untouched');
+        $this->assertSame(self::M2.":wlan1\n", file_get_contents($this->dir.'/active'), 'the card stays connected');
     }
 
-    public function test_a_network_bound_only_to_the_card_is_saved_once_before_a_check()
+    public function test_a_network_bound_to_the_card_alone_is_checked_too()
     {
         $this->pair();
         unlink($this->dir.'/keyfiles/uplink-onboard.nmconnection');
 
-        $this->assertSame(1, $this->runHelper('check', ['uuid='.self::M2, 'by=anna']));
+        $this->assertSame(0, $this->runHelper('check', ['uuid='.self::M2, 'by=anna']));
 
-        $this->assertStringContainsString("'78' is bound to the card: save it once to manage it here", $this->output);
-        $this->assertSame([], $this->changes());
+        $this->assertSame('connected', $this->answer()['result']);
+        $this->assertSame('4C:D5:77:F7:AD:FB', $this->keyfile(self::M2)['wifi']['mac-address'], 'the profile keeps its binding');
     }
 
     public function test_a_profile_not_managed_here_is_not_checked()
@@ -595,5 +619,160 @@ class WifiNetworksTest extends TestCase
         $this->assertSame(0, $this->runHelper('save', ['ssid=office', 'security=wpa2', 'hidden=no', 'password=office-pass', 'by=-f/etc/shadow']));
 
         $this->assertSame("-t cmprovision-wifi -f/etc/shadow added 'office' (WPA2)\n", $this->journal());
+    }
+
+    /** the settings the fake NetworkManager saw in the profile it brought up last */
+    protected function upProfile(): ?array
+    {
+        return is_file($this->dir.'/up-profile') ? json_decode(file_get_contents($this->dir.'/up-profile'), true) : null;
+    }
+
+    /** the copies of checks in NetworkManager's memory */
+    protected function copies(): array
+    {
+        return glob($this->dir.'/elsewhere/cmprovision-check*') ?: [];
+    }
+
+    public function test_a_check_never_touches_the_connection_of_the_card()
+    {
+        // a profile made by hand: no card binding, and active only once at a time (no multi-connect): brought up on the
+        // built-in Wi-Fi, NetworkManager would take it off the card
+        $this->profile('0b1c2d3e-0000-4000-8000-000000000004', 'by-hand');
+        file_put_contents($this->dir.'/active', "0b1c2d3e-0000-4000-8000-000000000004:wlan1\n");
+
+        $this->runHelper('check', ['uuid=0b1c2d3e-0000-4000-8000-000000000004', 'by=anna']);
+
+        $this->assertSame('connected', $this->answer()['result']);
+        foreach ($this->changes() as $call)
+            $this->assertStringNotContainsString('connection up 0b1c2d3e-0000-4000-8000-000000000004', $call);
+        $this->assertSame("0b1c2d3e-0000-4000-8000-000000000004:wlan1\n", file_get_contents($this->dir.'/active'));
+    }
+
+    public function test_a_wrong_password_stays_with_the_copy()
+    {
+        // NetworkManager blocks a profile that failed for want of secrets from connecting on its own: here, the copy
+        $uuid = $this->network();
+        $before = $this->keyfile($uuid);
+        file_put_contents($this->dir.'/up', 'wrong-password');
+
+        $this->runHelper('check', ["uuid=$uuid", 'by=anna']);
+
+        $this->assertSame('wrong-password', $this->answer()['result']);
+        $this->assertNotSame($uuid, $this->upProfile()['connection']['uuid']);
+        $this->assertSame($before, $this->keyfile($uuid));
+        $this->assertSame([], $this->copies());
+    }
+
+    public function test_a_copy_a_killed_check_left_is_removed_first()
+    {
+        $uuid = $this->network();
+        $this->profile('0b1c2d3e-0000-4000-8000-00000000c0de', 'cmprovision-check', ['connection' => ['interface-name' => 'wlan0']], 'elsewhere');
+
+        $this->runHelper('check', ["uuid=$uuid", 'by=anna']);
+
+        $this->assertSame('nmcli connection delete 0b1c2d3e-0000-4000-8000-00000000c0de', $this->changes()[0]);
+        $this->assertSame([], $this->copies());
+    }
+
+    public function test_a_check_cut_short_removes_its_copy()
+    {
+        // the web app gives a check 90 s, then timeout stops sudo and the helper: the copy must not stay behind
+        $uuid = $this->network();
+        file_put_contents($this->dir.'/up-delay', '3');
+        $process = proc_open('exec env '.$this->env().' sh '.escapeshellarg(base_path('tools/wifi-networks')).' check',
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        fwrite($pipes[0], "uuid=$uuid\nby=anna\n");
+        fclose($pipes[0]);
+        for ($i = 0; $i < 200 && !$this->copies(); $i++)
+            usleep(50000);
+        $this->assertNotSame([], $this->copies(), 'the check got as far as its copy');
+
+        proc_terminate($process, 15);
+        stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($process);
+
+        $this->assertSame([], $this->copies(), 'the copy is deleted');
+        $this->assertSame([], array_filter(glob($this->dir.'/run/wifi-networks.*') ?: [], 'is_dir'), 'and so is the scratch directory (the lock file stays)');
+    }
+
+    public function test_without_a_built_in_wifi_there_is_no_check()
+    {
+        $uuid = $this->network();
+        $this->spare(null);
+        unlink($this->dir.'/sys/wlan0/device');
+
+        $this->runHelper('check', ["uuid=$uuid", 'by=anna']);
+
+        $this->assertSame(['result' => 'busy', 'address' => '', 'detail' => 'no built-in Wi-Fi'], $this->answer());
+    }
+
+    public function test_scan_waits_for_a_change_in_progress()
+    {
+        // a rescan while a check brings the built-in Wi-Fi up could spoil the check
+        $lock = fopen($this->dir.'/run/wifi-networks.lock', 'c');
+        flock($lock, LOCK_EX);
+        try {
+            $this->assertSame(1, $this->runHelper('scan'));
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+
+        $this->assertStringContainsString('error=another Wi-Fi change is running: try again', $this->output);
+    }
+
+    public function test_check_waits_for_the_cold_spare_lock()
+    {
+        $uuid = $this->network();
+        $lock = fopen($this->dir.'/run/uplink-spare.lock', 'c');
+        flock($lock, LOCK_EX);
+        try {
+            $this->assertSame(0, $this->runHelper('check', ["uuid=$uuid", 'by=anna']));
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+
+        $this->assertSame(['result' => 'busy', 'address' => '', 'detail' => 'the cold spare is switching right now'], $this->answer());
+        $this->assertSame([], $this->changes());
+    }
+
+    public function test_a_key_of_two_words_is_refused_as_unknown()
+    {
+        $this->assertSame(1, $this->runHelper('save', ['ssid security=office', 'by=anna']));
+
+        $this->assertStringContainsString('error=unknown input: ssid security', $this->output);
+    }
+
+    public function test_an_order_entry_is_never_expanded_as_a_file_name()
+    {
+        $this->assertSame(1, $this->runHelper('order', ['uuid=*', 'by=anna']));
+
+        $this->assertStringContainsString('error=not a network ID: *', $this->output);
+    }
+
+    public function test_a_new_network_connects_on_its_own_only_once_its_password_is_in()
+    {
+        // tried without a password on an idle radio, a profile fails for want of secrets and NetworkManager blocks it
+        $this->runHelper('save', ['ssid=office', 'security=mixed', 'hidden=no', 'password=office-pass', 'by=anna']);
+        $uuid = $this->answer()['uuid'];
+
+        $calls = $this->changes();
+        $this->assertStringContainsString(' connection.autoconnect no ', $calls[0]);
+        $this->assertSame("nmcli connection modify $uuid connection.autoconnect yes", end($calls));
+        $this->assertSame('true', $this->keyfile($uuid)['connection']['autoconnect']);
+    }
+
+    public function test_an_edit_whose_new_password_does_not_survive_keeps_the_old_one()
+    {
+        $this->pair();
+        touch($this->dir.'/mangle-psk');
+
+        $this->assertSame(1, $this->runHelper('save', ['uuid='.self::M2, 'ssid=78', 'security=mixed', 'hidden=no', 'password=new-secret-78', 'by=anna']));
+
+        $this->assertStringContainsString("'78' is saved, its new password is not: try again", $this->output);
+        $this->assertSame(self::SECRET, $this->keyfile(self::M2)['wifi-security']['psk']);
     }
 }

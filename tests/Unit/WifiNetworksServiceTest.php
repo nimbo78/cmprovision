@@ -23,7 +23,7 @@ class WifiNetworksServiceTest extends TestCase
     {
         parent::setUp();
         $this->dir = sys_get_temp_dir().'/cmp-wifi-service-'.bin2hex(random_bytes(4));
-        foreach (['sys/wlan0/device', 'sys/wlan1/device', 'bus/pci', 'bus/sdio'] as $sub)
+        foreach (['sys/wlan0/device', 'sys/wlan0/wireless', 'sys/wlan1/device', 'sys/wlan1/wireless', 'bus/pci', 'bus/sdio'] as $sub)
             mkdir($this->dir.'/'.$sub, 0755, true);
         if (!@symlink($this->dir.'/bus/pci', $this->dir.'/sys/wlan1/device/subsystem'))
             $this->markTestSkipped('symlinks are not available here');
@@ -80,7 +80,7 @@ class WifiNetworksServiceTest extends TestCase
         $list = $this->wifi()->list();
 
         $this->assertSame([[
-            'uuid' => self::M2, 'uuids' => [self::M2, self::ONBOARD], 'ssid' => '78', 'security' => 'wpa2', 'hidden' => false,
+            'uuid' => self::M2, 'uuids' => [self::M2, self::ONBOARD], 'ssid' => '78', 'security' => 'mixed', 'hidden' => false,
             'priority' => 20, 'devices' => ['wlan1' => 'M.2 card (wlan1)'],
         ]], $list['networks']);
         $this->assertSame([], $list['others'], 'Ethernet is no Wi-Fi profile at all');
@@ -206,7 +206,8 @@ class WifiNetworksServiceTest extends TestCase
         $this->answers['sudo -n '.$this->dir.'/helper check'] = [0, "result=busy\naddress=\ndetail=the cold spare is switching\n"];
 
         $this->assertSame(['result' => 'busy', 'address' => '', 'detail' => 'the cold spare is switching'], $this->wifi()->check(self::M2, 'anna'));
-        $this->assertSame(['timeout', '60', 'sudo', '-n', $this->dir.'/helper', 'check'], $this->commands[0]['command']);
+        // the helper's worst case: the lists, up 30 s, disconnect 20 s, the cold spare's own check
+        $this->assertSame(['timeout', '90', 'sudo', '-n', $this->dir.'/helper', 'check'], $this->commands[0]['command']);
     }
 
     public function test_scan_names_each_network_once_with_its_best_signal_and_bands()
@@ -221,13 +222,13 @@ class WifiNetworksServiceTest extends TestCase
             ['ssid' => 'Service PSK', 'signal' => 80, 'security' => 'mixed', 'bands' => ['2.4 GHz']],
             ['ssid' => 'lab:2', 'signal' => 55, 'security' => 'wpa3', 'bands' => ['6 GHz']],
             ['ssid' => 'Guest', 'signal' => 40, 'security' => 'open', 'bands' => ['2.4 GHz']],
-        ], $this->wifi()->scan());
+        ], $this->wifi()->scan()['networks']);
     }
 
     public function test_check_now_needs_the_built_in_wifi_idle_in_the_cold_spare()
     {
         $wifi = $this->wifi();
-        $this->assertSame('no built-in Wi-Fi', $wifi->checkBlocker(), 'no state file');
+        $this->assertSame('the cold spare has not reported yet', $wifi->checkBlocker(), 'no state file yet');
         foreach (['standby' => null, 'active' => 'the built-in Wi-Fi carries the traffic', 'waiting' => 'the cold spare is switching',
                   'off' => 'the cold spare is off (SPARE=no)'] as $state => $reason) {
             file_put_contents($this->dir.'/spare', "state=$state\nsince=1790000000\nspare=wlan0\nuplink=wlan1\nup_since=\nlost_since=\n");
@@ -245,5 +246,51 @@ class WifiNetworksServiceTest extends TestCase
 
         $this->answers['nmcli -t -f TYPE,STATE device'] = [0, "wifi:unmanaged\nethernet:connected\n"];
         $this->assertFalse($this->wifi()->available(), 'WLAN Pi OS: NetworkManager leaves the Wi-Fi alone');
+    }
+
+    public function test_security_reads_the_pmf_as_networkmanager_means_it()
+    {
+        // pmf 0 is NetworkManager's default: optional, with SAE where the radio and the access point have it — mixed;
+        // shown as WPA2, an untouched save would switch PMF off
+        $list = '';
+        foreach (['0' => ['wpa-psk', '0'], '1' => ['wpa-psk', '1'], '2' => ['wpa-psk', '2'], '3' => ['sae', '3']] as $n => [$keyMgmt, $pmf]) {
+            $uuid = '44444444-0000-4000-8000-00000000000'.$n;
+            $list .= "$uuid:802-11-wireless::".self::KEYFILES."net$n.nmconnection\n";
+            $this->shows($uuid, $this->details("net$n", "net$n", $keyMgmt, $pmf, '1'.$n));
+        }
+        $this->answers['nmcli -t -f UUID,TYPE,DEVICE,FILENAME connection show'] = [0, $list];
+
+        $security = array_column($this->wifi()->list()['networks'], 'security', 'ssid');
+        ksort($security);
+
+        $this->assertSame(['net0' => 'mixed', 'net1' => 'wpa2', 'net2' => 'mixed', 'net3' => 'wpa3'], $security);
+    }
+
+    public function test_a_copy_of_a_check_is_not_listed()
+    {
+        // Check now brings a copy of the profile up in NetworkManager's memory for a few seconds
+        $this->pair();
+        $this->answers['nmcli -t -f UUID,TYPE,DEVICE,FILENAME connection show'][1] .=
+            "55555555-0000-4000-8000-000000000001:802-11-wireless:wlan0:/run/NetworkManager/system-connections/cmprovision-check-55555555.nmconnection\n";
+        $this->shows('55555555-0000-4000-8000-000000000001', $this->details('cmprovision-check', '78', 'wpa-psk', '0', '20'));
+
+        $list = $this->wifi()->list();
+
+        $this->assertSame([], $list['others']);
+        $this->assertSame(['wlan1' => 'M.2 card (wlan1)'], $list['networks'][0]['devices']);
+    }
+
+    public function test_a_scan_the_helper_refuses_says_why()
+    {
+        $this->answers['sudo -n '.$this->dir.'/helper scan'] = [1, "error=another Wi-Fi change is running: try again\n"];
+
+        $this->assertSame(['networks' => [], 'error' => 'another Wi-Fi change is running: try again'], $this->wifi()->scan());
+    }
+
+    public function test_without_a_built_in_wifi_there_is_no_check_now()
+    {
+        rmdir($this->dir.'/sys/wlan0/wireless');
+
+        $this->assertSame('no built-in Wi-Fi', $this->wifi()->checkBlocker());
     }
 }

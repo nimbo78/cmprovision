@@ -56,6 +56,8 @@ class WifiSettings extends Component
         $network = $this->network($uuid);
         if ($network)
             $this->open($network);
+        else
+            $this->gone();
     }
 
     public function cancel()
@@ -91,7 +93,10 @@ class WifiSettings extends Component
         $this->ensurePasswordIsConfirmed();
         $network = $this->network($uuid);
         if (!$network)
+        {
+            $this->gone();
             return;
+        }
         $error = app(WifiNetworks::class)->delete($network['uuid'], $this->by());
         if ($error)
         {
@@ -118,8 +123,11 @@ class WifiSettings extends Component
     /* Find networks: what both radios see, for the form */
     public function findNetworks()
     {
-        $this->found = app(WifiNetworks::class)->scan();
-        if (!$this->found)
+        $scan = app(WifiNetworks::class)->scan();
+        $this->found = $scan['networks'];
+        if ($scan['error'])
+            $this->flash($scan['error'], true);
+        elseif (!$this->found)
             $this->flash('No networks found: is the Wi-Fi switched on?', true);
     }
 
@@ -187,7 +195,10 @@ class WifiSettings extends Component
     {
         $network = $this->network($uuid);
         if (!$network)
+        {
+            $this->gone();
             return;
+        }
         $r = app(WifiNetworks::class)->check($network['uuid'], $this->by());
         $address = $r['address'] !== '' ? ', '.explode('/', $r['address'])[0] : '';
         $text = [
@@ -206,7 +217,12 @@ class WifiSettings extends Component
     {
         $uuids = array_column(app(WifiNetworks::class)->list()['networks'], 'uuid');
         $at = array_search($uuid, $uuids, true);
-        if ($at === false || !isset($uuids[$at + $step]))
+        if ($at === false)
+        {
+            $this->gone();
+            return;
+        }
+        if (!isset($uuids[$at + $step]))
             return;
         [$uuids[$at], $uuids[$at + $step]] = [$uuids[$at + $step], $uuids[$at]];
         $error = app(WifiNetworks::class)->order($uuids, $this->by());
@@ -232,6 +248,12 @@ class WifiSettings extends Component
         $this->ssid = $network['ssid'] ?? '';
         $this->security = $network['security'] ?? 'mixed';
         $this->hidden = $network['hidden'] ?? false;
+    }
+
+    /* a network of the page that is no longer there: removed in another tab, or nmcli did not answer in time */
+    protected function gone()
+    {
+        $this->flash('This network is no longer in the list: reload the page.', true);
     }
 
     protected function by(): string

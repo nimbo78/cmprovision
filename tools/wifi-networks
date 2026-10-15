@@ -11,20 +11,30 @@
 # a network is every managed profile with one SSID. A password never becomes an argument of a process, a journal line
 # or output: it goes straight into the root-only keyfile.
 # Exit codes: 0 done, 1 refused or failed (error=<the reason for the operator>), 2 a wrong call.
-# Tests point it elsewhere with WIFI_NETWORKS_KEYFILES, WIFI_NETWORKS_RUN, WIFI_NETWORKS_SYS and WIFI_NETWORKS_SPARE.
+# Tests point it elsewhere with WIFI_NETWORKS_KEYFILES, WIFI_NETWORKS_RUNTIME, WIFI_NETWORKS_RUN, WIFI_NETWORKS_SYS,
+# WIFI_NETWORKS_SPARE and WIFI_NETWORKS_WAIT.
 
 KEYFILES=${WIFI_NETWORKS_KEYFILES:-/etc/NetworkManager/system-connections}
+# profiles in NetworkManager's memory: where a check puts its copy
+RUNTIME=${WIFI_NETWORKS_RUNTIME:-/run/NetworkManager/system-connections}
 RUN=${WIFI_NETWORKS_RUN:-/run/cmprovision}
 SYS=${WIFI_NETWORKS_SYS:-/sys/class/net}
 SPARE=${WIFI_NETWORKS_SPARE:-/usr/lib/cmprovision/uplink-spare}
-# nmcli untranslated, text tools on UTF-8
+# seconds to wait for a lock
+WAIT=${WIFI_NETWORKS_WAIT:-10}
+# the name of the copy a check brings up
+CHECK_ID=cmprovision-check
+# nmcli untranslated, text tools on UTF-8; nothing the input brings is expanded as a file name
 LC_ALL=C.UTF-8
 export LC_ALL
 umask 077
+set -f
 
 command=${1:-}
 by=unknown
 order=
+copy=
+TMP=
 
 # the journal line; -- ends the options of logger (root runs it): a user name may start with a dash
 log() {
@@ -43,12 +53,26 @@ usage() {
     exit 2
 }
 
-# the input: key=value lines with the keys the command takes, each once (order takes uuid once per network), as in_<key>
+# what a run leaves behind, whatever ends it: its scratch directory, and the copy of a check cut short
+cleanup() {
+    if [ -n "$copy" ]; then
+        nmcli connection delete "$copy" >/dev/null 2>&1
+        rm -f "$RUNTIME/$CHECK_ID-$copy.nmconnection"
+    fi
+    [ -z "$TMP" ] || rm -rf "$TMP"
+}
+
+# the input: key=value lines with the keys the command takes, each once (order takes uuid once per network), as in_<key>;
+# the user is read first, so that a refusal names them
 read_input() {
     allowed=" $* "
+    cat > "$TMP/input"
+    in_by=$(sed -n 's/^by=//p' "$TMP/input" | head -n 1)
+    user
     while IFS= read -r line || [ -n "$line" ]; do
         key=${line%%=*}
         [ "$key" != "$line" ] || fail "a line of the input has no '='"
+        case "$key" in ''|*[!a-z]*) fail "unknown input: $key" ;; esac
         case "$allowed" in *" $key "*) ;; *) fail "unknown input: $key" ;; esac
         if [ "$key" = uuid ] && [ "$command" = order ]; then
             order="$order ${line#*=}"
@@ -56,7 +80,7 @@ read_input() {
         fi
         eval "[ -z \"\${seen_$key:-}\" ]" || fail "$key given twice"
         eval "seen_$key=1 in_$key=\${line#*=}"
-    done
+    done < "$TMP/input"
 }
 
 # the user named in the journal: control characters dropped, at most 64 bytes
@@ -239,7 +263,6 @@ save_existing() {
 
 cmd_delete() {
     read_input uuid by
-    user
     is_uuid "${in_uuid:-}" || fail "not a network ID: ${in_uuid:-}"
     network_of "$in_uuid" || fail "this is not a network managed here: reload the page"
     route=$(route_device)
@@ -257,7 +280,6 @@ cmd_delete() {
 # the whole order, a UUID per network, the preferred first: every profile of a network gets its priority
 cmd_order() {
     read_input uuid by
-    user
     managed > "$TMP/managed"
     : > "$TMP/given"
     names=
@@ -291,23 +313,25 @@ save_new() {
     lowest=$(cut -f 1 "$TMP/managed" | while IFS= read -r u; do prop "$u" connection.autoconnect-priority; done | sort -n | head -n 1)
     priority=$((${lowest:-101} - 1))
     [ "$priority" -ge -999 ] || priority=-999
+    # not on its own until its password is in: tried without one on an idle radio, a profile fails for want of secrets
+    # and NetworkManager blocks it from connecting on its own
     nmcli connection add type wifi connection.uuid "$uuid" con-name "$in_ssid" ssid "$in_ssid" \
         802-11-wireless.mode infrastructure 802-11-wireless.hidden "$hidden" \
         wifi-sec.key-mgmt "$(key_mgmt "$in_security")" wifi-sec.pmf "$(pmf "$in_security")" wifi-sec.psk-flags 0 \
-        connection.multi-connect multiple connection.autoconnect-priority "$priority" \
+        connection.autoconnect no connection.multi-connect multiple connection.autoconnect-priority "$priority" \
         ipv4.route-metric -1 ipv6.route-metric -1 >/dev/null 2>"$TMP/err" \
         || fail "NetworkManager did not add the network: $(head -n 1 "$TMP/err")"
     if ! set_password "$uuid" "$password"; then
         nmcli connection delete "$uuid" >/dev/null 2>&1
         fail "the password could not be stored: nothing was added"
     fi
+    nmcli connection modify "$uuid" connection.autoconnect yes >/dev/null 2>&1
     log "$by added '$in_ssid' ($(described "$in_security" "$hidden"))"
     printf 'uuid=%s\n' "$uuid"
 }
 
 cmd_save() {
     read_input uuid ssid security hidden password by
-    user
     valid_ssid "${in_ssid:-}" || fail "the network name (SSID) must be 1 to 32 bytes of text without control characters"
     case "${in_security:-}" in wpa2|mixed|wpa3) ;; *) fail "security must be wpa2, mixed or wpa3" ;; esac
     hidden=${in_hidden:-no}
@@ -320,19 +344,32 @@ cmd_save() {
     if [ -z "${in_uuid:-}" ]; then save_new; else save_existing; fi
 }
 
+# a built-in Wi-Fi is there: a wireless device on the SDIO bus, as tools/uplink-spare finds it
+builtin_wifi() {
+    for name in $(ls "$SYS" 2>/dev/null); do
+        [ -d "$SYS/$name/wireless" ] || [ -e "$SYS/$name/phy80211" ] || continue
+        [ "$(basename "$(readlink -f "$SYS/$name/device/subsystem")")" = sdio ] && return 0
+    done
+    return 1
+}
+
 # the cold spare (tools/uplink-spare): the built-in Wi-Fi is idle while another device carries the default route;
 # otherwise $reason says why not
 spare_ready() {
     state=$(sed -n 's/^state=//p' "$RUN/uplink-spare" 2>/dev/null | head -n 1)
     spare=$(sed -n 's/^spare=//p' "$RUN/uplink-spare" 2>/dev/null | head -n 1)
     uplink=$(sed -n 's/^uplink=//p' "$RUN/uplink-spare" 2>/dev/null | head -n 1)
-    reason="no built-in Wi-Fi"
-    [ -n "$spare" ] || return 1
+    if [ -z "$spare" ]; then
+        # uplink-spare writes its state on a NetworkManager event, or two minutes after a boot
+        if builtin_wifi; then reason="the cold spare has not reported yet"; else reason="no built-in Wi-Fi"; fi
+        return 1
+    fi
     case "$state" in
         standby) [ -z "$uplink" ] || return 0; reason="the built-in Wi-Fi carries the traffic" ;;
         active) reason="the built-in Wi-Fi carries the traffic" ;;
         waiting) reason="the cold spare is switching" ;;
         off) reason="the cold spare is off (SPARE=no)" ;;
+        *) reason="no built-in Wi-Fi" ;;
     esac
     return 1
 }
@@ -343,29 +380,51 @@ busy() {
     exit 0
 }
 
-# the network on the idle built-in Wi-Fi while the card keeps working; the cold spare's lock keeps uplink-spare out
+# the copies that checks cut short left in NetworkManager's memory
+drop_checks() {
+    nmcli -t -f UUID,NAME connection show 2>/dev/null | sed -n "s/:$CHECK_ID\$//p" | while IFS= read -r u; do
+        is_uuid "$u" || continue
+        nmcli connection delete "$u" >/dev/null 2>&1
+        rm -f "$RUNTIME/$CHECK_ID-$u.nmconnection"
+    done
+}
+
+# a copy of the profile in NetworkManager's memory, for the built-in Wi-Fi alone and never on its own: what a check does
+# to it stays with the copy (NetworkManager blocks a profile that failed for want of secrets from connecting on its own),
+# and the card's connection of the network is never touched (a profile active once at a time would move to the copy's
+# device). Its UUID is in $copy before its file is written, so that whatever ends the run removes both
+copy_for_check() {   # uuid
+    file=$(keyfile "$1")
+    [ -n "$file" ] && [ -f "$file" ] || return 1
+    copy=$(cat /proc/sys/kernel/random/uuid)
+    mkdir -p "$RUNTIME" || return 1
+    UUID=$copy ID=$CHECK_ID DEVICE=$spare awk '
+        /^\[/ { section = $0; print
+                if (section == "[connection]") { print "id=" ENVIRON["ID"]; print "uuid=" ENVIRON["UUID"]
+                                                 print "interface-name=" ENVIRON["DEVICE"]; print "autoconnect=false" }
+                next }
+        section == "[connection]" && /^(id|uuid|interface-name|autoconnect|multi-connect)=/ { next }
+        section == "[wifi]" && /^mac-address=/ { next }
+        { print }
+    ' "$file" > "$RUNTIME/$CHECK_ID-$copy.nmconnection" || return 1
+    nmcli connection load "$RUNTIME/$CHECK_ID-$copy.nmconnection" >/dev/null 2>&1
+}
+
+# the network on the idle built-in Wi-Fi while the card keeps working, through a copy of its profile; the cold spare's
+# lock keeps uplink-spare out meanwhile
 cmd_check() {
     read_input uuid by
-    user
     is_uuid "${in_uuid:-}" || fail "not a network ID: ${in_uuid:-}"
     network_of "$in_uuid" || fail "this is not a network managed here: reload the page"
     spare_ready || busy "$reason"
-    mac=$(tr '[:upper:]' '[:lower:]' < "$SYS/$spare/address" 2>/dev/null)
-    pick=
-    while IFS= read -r u; do
-        bound=$(prop "$u" 802-11-wireless.mac-address | tr '[:upper:]' '[:lower:]')
-        name=$(prop "$u" connection.interface-name)
-        if { [ -z "$bound" ] || [ "$bound" = "$mac" ]; } && { [ -z "$name" ] || [ "$name" = "$spare" ]; }; then
-            pick=$u
-            break
-        fi
-    done < "$TMP/network"
-    [ -n "$pick" ] || fail "'$ssid' is bound to the card: save it once to manage it here"
+    keep=$(kept)
     exec 8>"$RUN/uplink-spare.lock"
-    flock -w 10 8 || busy "the cold spare is switching right now"
+    flock -w "$WAIT" 8 || busy "the cold spare is switching right now"
     spare_ready || busy "$reason"
+    drop_checks
+    copy_for_check "$keep" || fail "'$ssid' could not be copied for the check"
     address=
-    if out=$(nmcli -w 30 connection up "$pick" ifname "$spare" 2>&1); then
+    if out=$(nmcli -w 30 connection up "$copy" ifname "$spare" 2>&1); then
         address=$(nmcli -g IP4.ADDRESS device show "$spare" 2>/dev/null | head -n 1 | sed 's/ | .*//')
         if [ -n "$address" ]; then result=connected text="connected, ${address%%/*}"; else result=no-address text="no address"; fi
     else
@@ -378,6 +437,9 @@ cmd_check() {
         esac
     fi
     nmcli -w 20 device disconnect "$spare" >/dev/null 2>&1
+    nmcli connection delete "$copy" >/dev/null 2>&1
+    rm -f "$RUNTIME/$CHECK_ID-$copy.nmconnection"
+    copy=
     exec 8>&-
     "$SPARE" check wifi-check >/dev/null 2>&1
     log "$by checked '$ssid' on $spare: $text"
@@ -397,14 +459,16 @@ case "$command" in
 esac
 [ $# -eq 1 ] || usage
 nmcli -t -f RUNNING general 2>/dev/null | grep -qx running || fail "NetworkManager does not answer"
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+[ -d "$RUN" ] || (umask 022; mkdir -p "$RUN")
+# one at a time, a scan too: a rescan while a check brings the built-in Wi-Fi up could spoil the check
+exec 9>"$RUN/wifi-networks.lock"
+flock -w "$WAIT" 9 || fail "another Wi-Fi change is running: try again"
 if [ "$command" = scan ]; then
     cmd_scan
     exit 0
 fi
-[ -d "$RUN" ] || (umask 022; mkdir -p "$RUN")
 TMP=$(mktemp -d "$RUN/wifi-networks.XXXXXX") || fail "no room for a temporary file in $RUN"
-trap 'rm -rf "$TMP"' EXIT
-exec 9>"$RUN/wifi-networks.lock"
-flock -w 10 9 || fail "another Wi-Fi change is running: try again"
 "cmd_$command"
 exit 0

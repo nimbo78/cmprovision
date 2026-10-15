@@ -245,4 +245,27 @@ class WifiSettingsTest extends TestCase
             ->call('showLog')
             ->assertSee("anna saved '78' (WPA2)");
     }
+
+    public function test_a_network_gone_from_the_list_is_said_so()
+    {
+        // removed in another tab, or nmcli did not answer in time: the page says so instead of doing nothing
+        $this->confirmed();
+
+        foreach (['edit', 'delete', 'checkNow', 'moveUp'] as $method)
+            Livewire::test(WifiSettings::class)
+                ->call($method, '0b1c2d3e-0000-4000-8000-00000000dead')
+                ->assertSee('This network is no longer in the list: reload the page.');
+
+        $this->assertSame([], $this->wifi->calls);
+    }
+
+    public function test_find_networks_says_why_it_found_nothing()
+    {
+        $this->wifi->scanError = 'another Wi-Fi change is running: try again';
+
+        Livewire::test(WifiSettings::class)
+            ->call('add')
+            ->call('findNetworks')
+            ->assertSee('another Wi-Fi change is running: try again');
+    }
 }
