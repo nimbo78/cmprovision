@@ -71,7 +71,12 @@ mkdir -p "$DIR/packages"
 if [ "$RESULT" -eq 0 ]; then
     # an install that a reboot of the system's own cut short is finished first
     DEBIAN_FRONTEND=noninteractive dpkg --configure -a >> "$LOG" 2>&1 || true
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-download -o DPkg::Lock::Timeout=120 "$DIR"/packages/*.deb >> "$LOG" 2>&1
+    # apt sees no sources, so it downloads nothing and a dependency that is missing fails at once; recommended packages
+    # stay out. (--no-download would fail every local .deb in apt 3.0: "Pathname to install is not absolute".)
+    mkdir -p "$DIR/no-sources"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o DPkg::Lock::Timeout=120 -o Dpkg::Use-Pty=0 \
+        -o Dir::Etc::SourceList=/dev/null -o "Dir::Etc::SourceParts=$DIR/no-sources" -o Dir::Cache::pkgcache= \
+        -o Dir::Cache::srcpkgcache= "$DIR"/packages/*.deb >> "$LOG" 2>&1
     rc=$?
     [ "$rc" -eq 0 ] || fail "package install failed: apt-get exited $rc"
 fi

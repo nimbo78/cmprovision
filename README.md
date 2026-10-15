@@ -73,7 +73,7 @@ A project with **Check the OS after the first boot** does not stop when the imag
 1. The module keeps running and shows the result on its LEDs: ACT and PWR fade in and out together when the check passed, the error pattern when it failed.
 
 - **First-boot scripts** are a script type of their own (Scripts → first boot): they run as root in the new system, with `$SERVER` set.
-- **Packages** (Scripts → Packages) are `.deb` files uploaded to the server. The stand has no internet, so apt downloads nothing: whatever a package depends on must be in the image or be uploaded too. The list shows each package's architecture: it must be the image's (`arm64` for a 64-bit image, `armhf` for a 32-bit one) or `all`.
+- **Packages** (Scripts → Packages) are `.deb` files uploaded to the server. The stand has no internet, so apt downloads nothing: whatever a package depends on must be in the image or be uploaded too, and a missing dependency fails the check. Recommended packages are not installed. The list shows each package's architecture: it must be the image's (`arm64` for a 64-bit image, `armhf` for a 32-bit one) or `all`.
 - Anyone who reaches the provisioner's web server can download the files under `/uploads`, the images included: keep secrets out of packages.
 - The new system needs systemd and curl. A module booted over USB (rpiboot) is not checked: a reboot would bring it back to USB boot.
 

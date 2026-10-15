@@ -62,9 +62,17 @@ class FirstBootServiceTest extends TestCase
             'esac',
         ]));
         $this->stub('dpkg', 'echo "dpkg $*" >> "$FAKE/calls"');
+        // refuses what apt 3.0 refuses: --no-download with local .deb files (seen on WLAN Pi OS), and a parts
+        // directory that is missing or lists sources
         $this->stub('apt-get', implode("\n", [
             'echo "apt-get $*" >> "$FAKE/calls"',
             'echo "$*" >> "$FAKE/apt.log"',
+            'for a in "$@"; do',
+            '    case "$a" in',
+            '        --no-download) echo "E: Internal Error, Pathname to install is not absolute"; exit 100 ;;',
+            '        Dir::Etc::SourceParts=*) d=${a#*=}; [ -d "$d" ] && [ -z "$(ls -A "$d")" ] || { echo "E: sources in $d"; exit 100; } ;;',
+            '    esac',
+            'done',
             'for f in "$@"; do case "$f" in *.deb) cat "$f" >> "$FAKE/apt-content" ;; esac; done',
             'exit ${FAKE_APT:-0}',
         ]));
@@ -179,7 +187,11 @@ class FirstBootServiceTest extends TestCase
 
         $apt = file($this->dir.'/apt.log', FILE_IGNORE_NEW_LINES);
         $this->assertCount(1, $apt);
-        $this->assertStringStartsWith('install -y --no-download -o DPkg::Lock::Timeout=120 ', $apt[0]);
+        // apt sees no sources (nothing to download on a stand without internet) and leaves recommended packages out
+        $lib = $this->dir.'/lib';
+        $this->assertSame('install -y --no-install-recommends -o DPkg::Lock::Timeout=120 -o Dpkg::Use-Pty=0 '
+            .'-o Dir::Etc::SourceList=/dev/null -o Dir::Etc::SourceParts='.$lib.'/no-sources -o Dir::Cache::pkgcache= '
+            .'-o Dir::Cache::srcpkgcache= '.$lib.'/packages/1.deb '.$lib.'/packages/2.deb', $apt[0]);
         $this->assertSame('aaabbb', file_get_contents($this->dir.'/apt-content'));
         $this->assertFileExists($marker);
         $log = $this->serviceLog();
@@ -331,7 +343,7 @@ class FirstBootServiceTest extends TestCase
 
         $calls = file($this->dir.'/calls', FILE_IGNORE_NEW_LINES);
         $this->assertSame('dpkg --configure -a', $calls[0]);
-        $this->assertStringStartsWith('apt-get install -y --no-download', $calls[1]);
+        $this->assertStringStartsWith('apt-get install -y --no-install-recommends ', $calls[1]);
     }
 
     public function test_a_helper_that_cannot_drive_the_leds_leaves_them_to_the_kernel()
