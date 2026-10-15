@@ -56,6 +56,20 @@
             </div>
         </div>
 
+        <div class="md:col-span-1" id="wifi">
+            <div class="px-4 sm:px-0">
+                <h3 class="text-lg font-medium text-fg">Wi-Fi networks</h3>
+                <p class="mt-1 text-sm text-fg-muted">
+                    The networks the provisioner connects to, the preferred first. Each one serves both radios: the
+                    M.2 card carries the traffic, the built-in Wi-Fi stands by. A password is stored on the server and
+                    never shown again; Check now tries a network on the idle built-in Wi-Fi while the card keeps working.
+                </p>
+            </div>
+        </div>
+        <div class="mt-5 md:mt-0 md:col-span-2">
+            <livewire:wifi-settings />
+        </div>
+
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
                 <h3 class="text-lg font-medium text-fg">Ethernet switches</h3>
