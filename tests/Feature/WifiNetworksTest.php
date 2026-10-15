@@ -577,6 +577,8 @@ class WifiNetworksTest extends TestCase
         $copy = $this->upProfile();
         $this->assertSame(['78', 'wlan0', self::SECRET], [$copy['wifi']['ssid'], $copy['connection']['interface-name'], $copy['wifi-security']['psk']]);
         $this->assertArrayNotHasKey('mac-address', $copy['wifi'], "the card's MAC binding stays out of the copy");
+        // the copy takes the built-in Wi-Fi's metric (conf.d), not the card's: two equal default routes would share the traffic
+        $this->assertArrayNotHasKey('route-metric', $copy['ipv4']);
         $this->assertSame($before, [file_get_contents($this->dir.'/keyfiles/uplink-m2.nmconnection'), file_get_contents($this->dir.'/keyfiles/uplink-onboard.nmconnection')],
             'the profiles themselves are untouched');
         $this->assertSame(self::M2.":wlan1\n", file_get_contents($this->dir.'/active'), 'the card stays connected');

@@ -392,7 +392,9 @@ drop_checks() {
 # a copy of the profile in NetworkManager's memory, for the built-in Wi-Fi alone and never on its own: what a check does
 # to it stays with the copy (NetworkManager blocks a profile that failed for want of secrets from connecting on its own),
 # and the card's connection of the network is never touched (a profile active once at a time would move to the copy's
-# device). Its UUID is in $copy before its file is written, so that whatever ends the run removes both
+# device). The copy takes the built-in Wi-Fi's metric (conf.d), not a metric of the profile: the card's 100 would give
+# the copy an equal default route. Its UUID is in $copy before its file is written, so that whatever ends the run
+# removes both
 copy_for_check() {   # uuid
     file=$(keyfile "$1")
     [ -n "$file" ] && [ -f "$file" ] || return 1
@@ -405,6 +407,7 @@ copy_for_check() {   # uuid
                 next }
         section == "[connection]" && /^(id|uuid|interface-name|autoconnect|multi-connect)=/ { next }
         section == "[wifi]" && /^mac-address=/ { next }
+        (section == "[ipv4]" || section == "[ipv6]") && /^route-metric=/ { next }
         { print }
     ' "$file" > "$RUNTIME/$CHECK_ID-$copy.nmconnection" || return 1
     nmcli connection load "$RUNTIME/$CHECK_ID-$copy.nmconnection" >/dev/null 2>&1
