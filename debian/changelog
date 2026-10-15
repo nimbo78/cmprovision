@@ -1,3 +1,10 @@
+cmprovision4 (2.6.0~dev1) unstable; urgency=medium
+
+  * Work in progress: the OS check after the first boot
+    (docs/superpowers/specs/2026-10-15-os-check-design.md).
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 15 Oct 2026 21:06:46 +0300
+
 cmprovision4 (2.5.3) unstable; urgency=medium
 
   * The provisioner's Wi-Fi networks in Settings: add, edit, delete and
