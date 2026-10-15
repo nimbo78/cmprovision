@@ -483,4 +483,108 @@ class WifiNetworksTest extends TestCase
         $this->assertSame(1, $this->runHelper('delete', ['uuid='.self::M2, 'by=anna']));
         $this->assertStringContainsString('is in use', $this->output);
     }
+
+    public function test_check_tries_the_network_on_the_idle_built_in_wifi()
+    {
+        $uuid = $this->network();
+
+        $this->assertSame(0, $this->runHelper('check', ["uuid=$uuid", 'by=anna']), $this->output);
+
+        $this->assertSame(['result' => 'connected', 'address' => '192.168.68.236/24', 'detail' => ''], $this->answer());
+        $this->assertSame([
+            "nmcli -w 30 connection up $uuid ifname wlan0",
+            'nmcli -w 20 device disconnect wlan0',
+            'uplink-spare check wifi-check',
+        ], $this->changes());
+        $this->assertSame("-t cmprovision-wifi anna checked 'office' on wlan0: connected, 192.168.68.236\n", $this->journal());
+    }
+
+    public static function outcomes(): array
+    {
+        return [
+            'a wrong password' => ['wrong-password', 'wrong-password', 'wrong password'],
+            'out of reach' => ['not-found', 'not-found', 'network not found'],
+            'no DHCP answer' => ['no-address', 'no-address', 'no address'],
+            'connected without an address' => ['connected', 'no-address', 'no address'],
+            'no answer in time' => ['timeout', 'timeout', 'no answer in 30 s'],
+            'anything else' => ['failed', 'failed', 'failed'],
+        ];
+    }
+
+    #[DataProvider('outcomes')]
+    public function test_check_says_what_networkmanager_answered($up, $result, $text)
+    {
+        $uuid = $this->network();
+        file_put_contents($this->dir.'/up', $up);
+
+        $this->assertSame(0, $this->runHelper('check', ["uuid=$uuid", 'by=anna']));
+
+        $this->assertSame($result, $this->answer()['result']);
+        $this->assertStringContainsString("checked 'office' on wlan0: $text", $this->journal());
+        $this->assertContains('nmcli -w 20 device disconnect wlan0', $this->changes(), 'the built-in Wi-Fi goes back to the spare');
+        $this->assertContains('uplink-spare check wifi-check', $this->changes());
+    }
+
+    public static function busySpare(): array
+    {
+        return [
+            'the built-in Wi-Fi carries the traffic' => ['active', 'the built-in Wi-Fi carries the traffic'],
+            'the cold spare is counting' => ['waiting', 'the cold spare is switching'],
+            'SPARE=no' => ['off', 'the cold spare is off (SPARE=no)'],
+            'no cold spare at all' => [null, 'no built-in Wi-Fi'],
+        ];
+    }
+
+    #[DataProvider('busySpare')]
+    public function test_check_waits_for_an_idle_built_in_wifi($state, $reason)
+    {
+        $uuid = $this->network();
+        $this->spare($state);
+
+        $this->assertSame(0, $this->runHelper('check', ["uuid=$uuid", 'by=anna']));
+
+        $this->assertSame(['result' => 'busy', 'address' => '', 'detail' => $reason], $this->answer());
+        $this->assertSame([], $this->changes());
+    }
+
+    public function test_the_78_pair_is_checked_through_its_built_in_profile()
+    {
+        $this->pair();
+
+        $this->runHelper('check', ['uuid='.self::M2, 'by=anna']);
+
+        $this->assertSame('connected', $this->answer()['result']);
+        $this->assertSame('nmcli -w 30 connection up '.self::ONBOARD.' ifname wlan0', $this->changes()[0]);
+    }
+
+    public function test_a_network_bound_only_to_the_card_is_saved_once_before_a_check()
+    {
+        $this->pair();
+        unlink($this->dir.'/keyfiles/uplink-onboard.nmconnection');
+
+        $this->assertSame(1, $this->runHelper('check', ['uuid='.self::M2, 'by=anna']));
+
+        $this->assertStringContainsString("'78' is bound to the card: save it once to manage it here", $this->output);
+        $this->assertSame([], $this->changes());
+    }
+
+    public function test_a_profile_not_managed_here_is_not_checked()
+    {
+        $this->profile('0b1c2d3e-0000-4000-8000-000000000003', 'foreign', [], 'elsewhere');
+
+        $this->assertSame(1, $this->runHelper('check', ['uuid=0b1c2d3e-0000-4000-8000-000000000003', 'by=anna']));
+
+        $this->assertStringContainsString('this is not a network managed here', $this->output);
+        $this->assertSame([], $this->changes());
+    }
+
+    public function test_scan_lists_the_networks_that_have_a_name()
+    {
+        file_put_contents($this->dir.'/scan', "78:100:WPA2:2422 MHz\n:40:WPA2:2412 MHz\nService PSK:80:WPA2 WPA3:2437 MHz\nlab\\:2:55:WPA3:5180 MHz\n");
+
+        $this->assertSame(0, $this->runHelper('scan'));
+
+        $this->assertSame("78:100:WPA2:2422 MHz\nService PSK:80:WPA2 WPA3:2437 MHz\nlab\\:2:55:WPA3:5180 MHz\n", $this->output);
+        $this->assertStringContainsString('nmcli -t -f SSID,SIGNAL,SECURITY,FREQ device wifi list --rescan yes', $this->calls());
+    }
 }
