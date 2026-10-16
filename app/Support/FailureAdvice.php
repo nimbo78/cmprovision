@@ -10,6 +10,8 @@ use Illuminate\Support\Str;
 class FailureAdvice
 {
     const RESTART = 'Restart the module (power cycle) to try again.';
+    /* Diagnoses of a write failure (ScriptExecuteController::WRITE_FAILURE_HINTS) that blame the data the module got */
+    const DAMAGED_DATA = '/decompressor stopped|not a valid compressed image|truncated or corrupted|pieces copy is damaged/';
 
     /* What the server answers when it refuses a module at the start => advice */
     const REFUSALS = [
@@ -32,7 +34,7 @@ class FailureAdvice
             return [
                 'step' => $cm->phaseLabel(),
                 'advice' => 'The module has not reported for '.intdiv($silent, 60).' min. Check its power, the network cable '
-                           .'and the switch port, then restart it; provisioning starts over.',
+                           .'and the switch port, then restart it; '.(($from = $cm->resumableFrom()) !== null ? self::goesOn($cm, $from) : 'provisioning starts over.'),
             ];
         }
 
@@ -53,8 +55,11 @@ class FailureAdvice
         if (Str::startsWith($reason, 'Error during dd'))
         {
             $what = preg_match('/Diagnosis: (.*?)\.?$/s', $reason, $m) ? ': '.$m[1] : '; the log entry below has the output of curl, the decompressor and dd';
+            $from = $cm->resumableFrom();
             return ['step' => $step, 'advice' => 'The image write stopped'.$what.'. The partition table was cleared, so the module '
-                                                 .'starts from the network again. '.self::RESTART];
+                                                 .'starts from the network again. '.($from === null ? self::RESTART : 'Restart it (power cycle): '.self::goesOn($cm, $from)
+                    .(preg_match(self::DAMAGED_DATA, $reason) ? ' If it stops at the same place again, the pieces copy on the server is damaged: '
+                        .'untick Split the image into pieces in the project, remove the pieces on the Images page and tick it again.' : ''))];
         }
 
         if (Str::startsWith($reason, 'Error during postinstall'))
@@ -113,6 +118,12 @@ class FailureAdvice
     {
         $name = $step && $step['detail'] !== null ? "'".$step['detail']."'" : 'A script';
         return $kind.' script '.$name.' exited with code '.$code.'; its output is in the '.Str::lower($kind).' log.';
+    }
+
+    /* "it continues the write from 3.2 GB of 6.2 GB." (the image resume, 2.6.1) */
+    protected static function goesOn(Cm $cm, int $from)
+    {
+        return 'it continues the write from '.ImagePieces::gb($from).' of '.ImagePieces::gb((int) $cm->progress_total).'.';
     }
 
     /* The timeline entry the module was in when it failed (the one before the final 'failed') */

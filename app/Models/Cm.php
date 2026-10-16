@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use App\Support\ImagePieces;
 
 class Cm extends Model
 {
@@ -46,6 +47,7 @@ class Cm extends Model
         'switch_id', 'switch_name', 'switch_port', 'board_pending_since',
         'timeline', 'polled_at', 'identify_until',
         'os_check', 'hostname', 'os_state', 'os_failed_units', 'os_checked_at', 'os_check_output',
+        'durable_bytes', 'durable_image_id', 'durable_at', 'progress_base',
     ];
 
     protected $casts = [
@@ -60,6 +62,10 @@ class Cm extends Model
         'identify_until' => 'datetime',
         'board_pending_since' => 'datetime',
         'os_checked_at' => 'datetime',
+        'durable_bytes' => 'integer',
+        'durable_image_id' => 'integer',
+        'durable_at' => 'datetime',
+        'progress_base' => 'integer',
     ];
 
     /* A module that finished and still asks the server whether to blink, i.e. is still on the bench */
@@ -140,7 +146,10 @@ class Cm extends Model
         if ($this->phase !== $phase || $this->phase_detail !== $detail)
         {
             if (in_array($phase, self::ACTIVE_PHASES, true))
+            {
                 $this->progress_bytes = null;
+                $this->progress_base = null;
+            }
             $this->phase = $phase;
             $this->phase_detail = $detail;
             $this->phase_started_at = now();
@@ -171,6 +180,57 @@ class Cm extends Model
     public function failedInItsSystem()
     {
         return $this->phase === 'failed' && $this->os_check === 'failed' && $this->os_checked_at !== null;
+    }
+
+    /* Where the next start of this module goes on with the image write (2.6.1): the start of the first piece not durably
+       written, in bytes, or null when it writes from the beginning. The run stopped in the write, with at least one piece
+       durable, for the project still active with "Split the image into pieces", whose image's pieces copy is ready and has
+       that piece. The marks belong to this run: a run started after them (one that does not know them, as 2.6.0 after a
+       rollback) wrote over what they say. $project: the active project, looked up when not given. */
+    public function resumableFrom(?Project $project = null)
+    {
+        $project = $project ?: Project::getActive();
+        if (!$project || !$project->split_image || !$this->durable_bytes || !$this->durable_image_id)
+            return null;
+        if ((int) $this->project_id !== (int) $project->id || (int) $project->image_id !== (int) $this->durable_image_id)
+            return null;
+        if (!$this->durable_at || !$this->provisioning_started_at || $this->durable_at->lt($this->provisioning_started_at))
+            return null;
+        if (!$this->stoppedInTheWrite())
+            return null;
+        $image = $project->image;
+        if (!$image || !$image->splitReady())
+            return null;
+        $piece = ImagePieces::resumePiece($this->durable_bytes, $image->split_piece_mb);
+        $pieces = count($image->splitOffsets()) - 2;
+        return $piece >= 1 && $piece < $pieces ? ImagePieces::pieceStart($piece, $image->split_piece_mb) : null;
+    }
+
+    /* The run stopped in the image write: the module restarted mid-write, or the write was its last step before it failed */
+    public function stoppedInTheWrite()
+    {
+        if ($this->phase === 'write')
+            return true;
+        $entries = array_values($this->timeline ?: []);
+        $count = count($entries);
+        return $this->phase === 'failed' && $count >= 2 && $entries[$count - 2]['phase'] === 'write';
+    }
+
+    /* The run goes on with the write after a restart (2.6.1): always a step of its own (it notes where it starts in the
+       image for RunTimeline), its clock and byte counter from there */
+    public function resumeWrite(string $detail, int $from)
+    {
+        $this->phase = 'write';
+        $this->phase_detail = $detail;
+        $this->phase_started_at = now();
+        $this->progress_bytes = $from;
+        $this->progress_base = $from;
+        $this->progress_updated_at = now();
+        $timeline = $this->timeline ?: [];
+        if (count($timeline) < self::MAX_TIMELINE)
+            $timeline[] = ['phase' => 'write', 'detail' => $detail, 'at' => now()->getTimestamp(), 'from' => $from];
+        $this->timeline = $timeline;
+        return $this;
     }
 
     public function isActive()
@@ -208,13 +268,15 @@ class Cm extends Model
         return (int) min(100, floor($this->progress_bytes * 100 / $this->progress_total));
     }
 
-    /* Average bytes per second since the phase started, null until there is something to average */
+    /* Average bytes per second since the phase started, null until there is something to average; a write that went on
+       after a restart (2.6.1) counts from where it went on (progress_base) */
     public function bytesPerSecond()
     {
         if (!$this->isStreaming() || !$this->progress_bytes || !$this->phase_started_at || !$this->progress_updated_at)
             return null;
         $seconds = $this->progress_updated_at->getTimestamp() - $this->phase_started_at->getTimestamp();
-        return $seconds > 0 ? $this->progress_bytes / $seconds : null;
+        $written = $this->progress_bytes - (int) $this->progress_base;
+        return $seconds > 0 && $written > 0 ? $written / $seconds : null;
     }
 
     public function secondsLeft()

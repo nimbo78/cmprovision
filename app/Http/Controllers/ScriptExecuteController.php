@@ -13,12 +13,14 @@ use App\Jobs\ResolveBoards;
 use App\Models\Cm;
 use App\Models\Cmlog;
 use App\Models\EthernetSwitch;
+use App\Models\Image;
 use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
 use App\Services\EepromImage;
 use App\Services\LabelPrinter;
+use App\Support\ImagePieces;
 
 class ScriptExecuteController extends Controller
 {
@@ -30,8 +32,18 @@ class ScriptExecuteController extends Controller
     /* The line the generated flash script prints after flashrom: the chip was written, or it held the image already */
     const EEPROM_RESULT_LINE = '/^EEPROM_RESULT=(written|identical)\s*$/m';
 
+    /* What a run that goes on finds on a storage written since its write stopped (storage_unchanged in
+       scriptexecute/write.blade.php): its marks no longer hold */
+    const STORAGE_WRITTEN = 'the storage was written after the write stopped';
+
     /* What the output of a failed image write usually means. Pattern => explanation. */
     const WRITE_FAILURE_HINTS = [
+        '/'.self::STORAGE_WRITTEN.'/' => self::STORAGE_WRITTEN.' (flashed elsewhere, or another card), so the next start writes the image from the beginning',
+        '/the image on the server ends at \d+ of \d+ bytes/' => 'the image file on the server is shorter than expected (damaged or replaced)',
+        '/the first MiB in the script is broken/' => 'the first MiB of the pieces copy is damaged',
+        '/no data from the provisioning server for \d+ minutes/' => 'the provisioning server sent nothing for 10 minutes (network or server down)',
+        '/curl exit code 22\b/' => 'the server answered with an error: the image or its pieces were removed',
+        '/curl exit code 33\b/' => 'the server would not send the rest of the file',
         '/curl exit code (18|56|55|52)\b/' => 'the connection to the provisioning server was closed before the download finished (server timeout, network problem or server restart)',
         '/curl exit code (7|28)\b/'        => 'the module could not reach the provisioning server (connection refused or timed out)',
         '/curl exit code 23\b/'            => 'the decompressor stopped accepting data; see its message below',
@@ -161,63 +173,48 @@ exit 1
 
         $project = Project::getActive();
         $image   = $project ? $project->image : null;
-        $bootmode = $req->query('bootmode');
-        $jumper  = $req->query('inversejumper');
 
+        /* The image resume (2.6.1): a module that stopped in its write goes on from its last durable piece, on the storage
+           that write was on */
+        if ($previous && $project && $this->sameStorage($previous, $req) && ($from = $previous->resumableFrom($project)) !== null)
+            return $this->resumeProvisioning($req, $previous, $project, $from);
+
+        $bootmode = $req->query('bootmode');
         // with switches the board is looked up in the background (ResolveBoards): the module gets its script at once
         $lookUp = $req->query('mac') && EthernetSwitch::exists();
-        if ($lookUp)
+        // with "Split the image into pieces" the module writes the pieces copy. One whose file is gone (a restore without the
+        // uploads) is made again in the background: saving the project makes it in the first place, and a failed one waits
+        // for Retry on the Images page. Queueing it must not fail the start.
+        $split = $project && $project->split_image && $image && $image->splitReady();
+        if ($project && $project->split_image && $image && $image->split_filename && !$split)
         {
-            $board = null;
+            try
+            {
+                $image->queueSplit();
+            }
+            catch (\Throwable $e)
+            {
+                report($e);
+            }
         }
-        else if ($jumper)
-        {
-            // Inverse jumper bits
-            for ($i=0; $i<strlen($jumper); $i++)
-                $jumper[$i] = $jumper[$i] == "0" ? "1" : "0";
 
-            $board = $jumper.' ('.bindec($jumper).')';
-        }
-        else
-        {
-            $board = null;
-        }
-        $memoryInGb = null;
-        if ($req->query("memorysize"))
-        {
-            $memoryInGb = round( ($req->query("memorysize")+200000)/1024/1024 );
-        }
-        $storage_bytes = $req->query('storagesize') ? $req->query('storagesize')*512 : null;
-
-        $this->cm = Cm::updateOrCreate(['serial' => $this->serial], [
+        $this->cm = Cm::updateOrCreate(['serial' => $this->serial], array_merge($this->moduleFields($req, $lookUp), [
             'serial' => $this->serial,
-            'mac'    => $req->query('mac') ? $req->query('mac')
-                        : "b8:27:eb:".substr($this->serial, -6, 2).":".substr($this->serial, -4, 2).":".substr($this->serial, -2, 2),
-            'model'  => $req->query('model'),
-            'memory_in_gb' => $memoryInGb,
-            'storage' => $storage_bytes,
             'firmware' => $project ? $project->eeprom_firmware : null,
-            'cid' => $req->query('cid'),
-            'csd' => $req->query('csd'),
             'pre_script_output' => null,
             'post_script_output' => null,
             'script_return_code' => null,
-            'temp1' => $req->query('temp'),
             'temp2' => null,
             'project_id' => $project ? $project->id : null,
             'image_filename' => $image ? $image->filename : null,
             'image_sha256'   => $image ? $image->sha256 : null,
-            'provisioning_board' => $board,
-            'switch_id' => null,
-            'switch_name' => null,
-            'switch_port' => null,
-            'board_pending_since' => $lookUp ? now() : null,
             'provisioning_started_at' => now(),
             'provisioning_complete_at' => null,
             'phase' => null,
             'phase_detail' => null,
             'phase_started_at' => null,
             'progress_bytes' => null,
+            'progress_base' => null,
             'progress_total' => $image ? $image->uncompressed_size : null,
             'progress_updated_at' => null,
             'timeline' => [],
@@ -238,7 +235,11 @@ exit 1
             'os_failed_units' => null,
             'os_checked_at' => null,
             'os_check_output' => null,
-        ]);
+            /* the image resume (2.6.1): how far a run on the pieces copy is written for sure */
+            'durable_bytes' => null,
+            'durable_image_id' => $split ? $image->id : null,
+            'durable_at' => null,
+        ]));
 
         if (!$project)
         {
@@ -262,24 +263,18 @@ exit 1
         }
         if ($image && $project->storage == '/dev/mmcblk0')
         {
-            if (!$storage_bytes)
+            if (!$this->cm->storage)
             {
                 return $this->refuse("Missing eMMC/SD card.");
             }
-            if ($image->uncompressed_size && $storage_bytes < $image->uncompressed_size)
+            if ($image->uncompressed_size && $this->cm->storage < $image->uncompressed_size)
             {
-                return $this->refuse("Image does not fit in storage. Uncompressed image size: ".$image->uncompressed_size." bytes. Available space: ".$storage_bytes." bytes.",
+                return $this->refuse("Image does not fit in storage. Uncompressed image size: ".$image->uncompressed_size." bytes. Available space: ".$this->cm->storage." bytes.",
                                      'Image does not fit in storage.');
             }
         }
 
         $preinstall_scripts = $project->scripts()->where('script_type','preinstall')->orderBy('priority')->orderBy('id')->get();
-        $postinstall_scripts = $project->scripts()->where('script_type','postinstall')->orderBy('priority')->orderBy('id')->get();
-        /* The OS check: its first-boot scripts and packages go into the written system with its service */
-        $osCheck = $this->cm->os_check === 'pending';
-        $firstboot_scripts = $osCheck ? $project->scripts()->where('script_type','firstboot')->orderBy('priority')->orderBy('id')->get() : collect();
-        $packages = $osCheck ? $project->packages()->orderBy('packages.id')->get() : collect();
-
         $server = $this->moduleServer($req);
 
         if ($project->eeprom_firmware)
@@ -305,27 +300,7 @@ exit 1
             $preinstall_scripts->prepend($fscript);
         }
 
-        if ($project->verify && $image)
-        {
-            $fscript = new Script;
-            $fscript->id = 0;
-            $fscript->name = 'Verifying written image';
-            $fscript->bg = false;
-            $fscript->progress = 'verify';   // the script counts the sectors read while it runs
-
-            if ($image->uncompressed_size % 1048576 == 0)
-                $ddline = "dd if=".$project->storage." bs=1M count=".($image->uncompressed_size / 1048576);
-            else
-                $ddline = "dd if=".$project->storage." count=".($image->uncompressed_size / 512);
-
-            $fscript->script = "#!/bin/sh\n"
-                             . "set -e\n"
-                             . "sync; echo 3 > /proc/sys/vm/drop_caches\n"
-                             . 'READ_SHA256=$('."$ddline | sha256sum | awk '{print $1}')\n"
-                             . 'echo Computed SHA256: "$READ_SHA256"'."\n"
-                             . 'if [ "$READ_SHA256" = "'.$image->uncompressed_sha256.'" ]; then echo Verification successful!; else echo Verification failed; exit 2; fi'."\n";
-            $postinstall_scripts->prepend($fscript);
-        }
+        $postinstall_scripts = $this->postinstallScripts($project, $image);
 
         $this->cm->setPhase(count($preinstall_scripts) ? 'preinstall' : ($image ? 'write' : 'postinstall'))->save();
         CmProvisioningStarted::dispatch($this->cm);
@@ -356,7 +331,145 @@ exit 1
             $this->printLabel();
         }
 
-        // Send script to client (see view in resources/view/scriptexecute.blade.php)
+        $this->lookUpBoardLater();
+        return $this->moduleScript($req, $project, $preinstall_scripts, $postinstall_scripts,
+            $this->writeData($server, $image, $split, null), false);
+    }
+
+    /* The image resume (2.6.1): the module stopped in the write of a project that keeps its image in pieces, so the same
+       run goes on from the first piece not durably written. Kept: the steps, the bootloader before and after, the
+       pre-install log and the start; the batch while it is open. The module skips the bootloader report, the pre-install
+       scripts and blkdiscard, and gets the first MiB of the image inside its script. */
+    protected function resumeProvisioning(Request $req, Cm $previous, Project $project, int $from)
+    {
+        $image = $project->image;
+        $total = (int) $image->uncompressed_size;
+        $lookUp = $req->query('mac') && EthernetSwitch::exists();
+        $this->cm = $previous;
+        $this->cm->fill(array_merge($this->moduleFields($req, $lookUp), [
+            'temp2' => null,
+            'script_return_code' => null,
+            'post_script_output' => null,
+            'provisioning_complete_at' => null,
+            'image_filename' => $image->filename,
+            'image_sha256' => $image->sha256,
+            'progress_total' => $image->uncompressed_size,
+            'polled_at' => null,
+            'identify_until' => null,
+            /* as at any start: booted over USB, the module would only boot over USB again after the write */
+            'os_check' => $project->os_check ? ($req->query('bootmode') == 3 ? 'skipped' : 'pending') : null,
+        ]));
+        $this->cm->resumeWrite(ImagePieces::resumedDetail($from, $total), $from);
+        $batch = NotificationBatch::current($project);
+        $batch->touchEvent();
+        $this->cm->notification_batch_id = $batch->id;
+        $this->cm->save();
+        $this->logInfo('Provisioning resumed: the module restarted during the write; continuing from '
+            .ImagePieces::gb($from).' of '.ImagePieces::gb($total).'.'
+            .($this->cm->os_check === 'skipped' ? ' OS check skipped: the module booted over USB.' : ''));
+
+        $this->lookUpBoardLater();
+        return $this->moduleScript($req, $project, collect(), $this->postinstallScripts($project, $image),
+            $this->writeData($this->moduleServer($req), $image, true, $from), true);
+    }
+
+    /* The module starts with the storage its last run wrote: the same CID and size, where the module tells them (a CM4 Lite
+       may get another SD card) */
+    protected function sameStorage(Cm $previous, Request $req): bool
+    {
+        $cid = (string) $req->query('cid');
+        $size = $req->query('storagesize') ? $req->query('storagesize') * 512 : null;
+        return ($cid === '' || !$previous->cid || $previous->cid === $cid)
+            && (!$size || !$previous->storage || (int) $previous->storage === (int) $size);
+    }
+
+    /* What the module tells about itself at its start (cmdline.txt of scriptexecute): the fields of its row */
+    protected function moduleFields(Request $req, bool $lookUp): array
+    {
+        $board = null;
+        $jumper = $req->query('inversejumper');
+        if (!$lookUp && $jumper)
+        {
+            // Inverse jumper bits
+            for ($i=0; $i<strlen($jumper); $i++)
+                $jumper[$i] = $jumper[$i] == "0" ? "1" : "0";
+            $board = $jumper.' ('.bindec($jumper).')';
+        }
+        return [
+            'mac'    => $req->query('mac') ? $req->query('mac')
+                        : "b8:27:eb:".substr($this->serial, -6, 2).":".substr($this->serial, -4, 2).":".substr($this->serial, -2, 2),
+            'model'  => $req->query('model'),
+            'memory_in_gb' => $req->query("memorysize") ? round( ($req->query("memorysize")+200000)/1024/1024 ) : null,
+            'storage' => $req->query('storagesize') ? $req->query('storagesize')*512 : null,
+            'cid' => $req->query('cid'),
+            'csd' => $req->query('csd'),
+            'temp1' => $req->query('temp'),
+            'provisioning_board' => $board,
+            'switch_id' => null,
+            'switch_name' => null,
+            'switch_port' => null,
+            'board_pending_since' => $lookUp ? now() : null,
+        ];
+    }
+
+    /* The project's post-install scripts, the generated SHA256 verification first when the project verifies */
+    protected function postinstallScripts(Project $project, ?Image $image)
+    {
+        $postinstall_scripts = $project->scripts()->where('script_type','postinstall')->orderBy('priority')->orderBy('id')->get();
+        if ($project->verify && $image)
+        {
+            $fscript = new Script;
+            $fscript->id = 0;
+            $fscript->name = 'Verifying written image';
+            $fscript->bg = false;
+            $fscript->progress = 'verify';   // the script counts the sectors read while it runs
+
+            if ($image->uncompressed_size % 1048576 == 0)
+                $ddline = "dd if=".$project->storage." bs=1M count=".($image->uncompressed_size / 1048576);
+            else
+                $ddline = "dd if=".$project->storage." count=".($image->uncompressed_size / 512);
+
+            $fscript->script = "#!/bin/sh\n"
+                             . "set -e\n"
+                             . "sync; echo 3 > /proc/sys/vm/drop_caches\n"
+                             . 'READ_SHA256=$('."$ddline | sha256sum | awk '{print $1}')\n"
+                             . 'echo Computed SHA256: "$READ_SHA256"'."\n"
+                             . 'if [ "$READ_SHA256" = "'.$image->uncompressed_sha256.'" ]; then echo Verification successful!; else echo Verification failed; exit 2; fi'."\n";
+            $postinstall_scripts->prepend($fscript);
+        }
+        return $postinstall_scripts;
+    }
+
+    /* What the write step of the module's script needs (scriptexecute/write.blade.php): the file the module downloads (the
+       pieces copy when it writes pieces), its size, the decompressor, the pieces and, for a run that goes on from $from,
+       the piece, its offset in the copy and the first MiB of the image (gzip member 0) */
+    protected function writeData($server, ?Image $image, bool $split, ?int $from): array
+    {
+        if (!$image)
+            return ['image_url' => null, 'image_bytes' => null, 'decompress' => null, 'pieces' => null, 'resume' => null];
+        if (!$split)
+            return ['image_url' => "http://$server/uploads/".$image->filename_on_server, 'image_bytes' => (int) $image->filesize(),
+                    'decompress' => self::DECOMPRESSORS[$image->filename_extension], 'pieces' => null, 'resume' => null];
+
+        $mb = (int) $image->split_piece_mb;
+        $offsets = $image->splitOffsets();
+        $data = ['image_url' => "http://$server/uploads/".$image->split_filename, 'image_bytes' => (int) end($offsets),
+                 'decompress' => self::DECOMPRESSORS['gz'], 'pieces' => ['count' => count($offsets) - 2, 'mb' => $mb], 'resume' => null];
+        if ($from !== null)
+        {
+            $piece = ImagePieces::resumePiece($from, $mb);
+            $head = file_get_contents($image->splitPath(), false, null, 0, $offsets[1]);
+            $data['resume'] = ['piece' => $piece, 'from_byte' => $offsets[$piece + 1], 'head' => chunk_split(base64_encode($head), 76, "\n"),
+                               'detail' => ImagePieces::resumedDetail($from, (int) $image->uncompressed_size),
+                               'base_sectors' => intdiv($from, 512)];
+        }
+        return $data;
+    }
+
+    /* The module's script (resources/views/scriptexecute.blade.php), for a start or for a run that goes on */
+    protected function moduleScript(Request $req, Project $project, $preinstall_scripts, $postinstall_scripts, array $write, bool $resumed)
+    {
+        $server = $this->moduleServer($req);
         $storage = $project->storage;
         if (is_numeric($storage[strlen($storage)-1]))
         {
@@ -368,19 +481,20 @@ exit 1
             $part1 = $storage."1";
             $part2 = $storage."2";
         }
+        /* The OS check: its first-boot scripts and packages go into the written system with its service */
+        $osCheck = $this->cm->os_check === 'pending';
+        $firstboot_scripts = $osCheck ? $project->scripts()->where('script_type','firstboot')->orderBy('priority')->orderBy('id')->get() : collect();
+        $packages = $osCheck ? $project->packages()->orderBy('packages.id')->get() : collect();
 
-        $this->lookUpBoardLater();
-        return response()->view('scriptexecute', [
+        return response()->view('scriptexecute', array_merge($write, [
             'cm' => $this->cm,
             'project' => $project,
             'storage' => $storage,
             'part1' => $part1,
             'part2' => $part2,
             'server' => $server,
-            'image_url' => $image ? "http://$server/uploads/".$image->filename_on_server : null,
-            'image_extension' => $image ? $image->filename_extension : null,
-            'decompress' => $image ? self::DECOMPRESSORS[$image->filename_extension] : null,
-            'bootmode' => $bootmode,
+            'bootmode' => $req->query('bootmode'),
+            'resumed' => $resumed,
             'preinstall_scripts' => $preinstall_scripts,
             'postinstall_scripts' => $postinstall_scripts,
             'os_check' => $osCheck,
@@ -388,7 +502,7 @@ exit 1
             'firstboot_run' => $osCheck ? view('scriptexecute.firstboot', ['server' => $server, 'serial' => $this->cm->serial,
                 'scripts' => $firstboot_scripts, 'packages' => $packages])->render() : null,
             'oscheck_install' => $osCheck ? view('scriptexecute.oscheck-install')->render() : null,
-        ])->header('Content-Type', 'text/plain');
+        ]))->header('Content-Type', 'text/plain');
     }
 
     public function provisioningComplete(Request $req)
@@ -573,6 +687,12 @@ exit 1
             {
                 $msg .= " Diagnosis: $diagnosis.";
             }
+            if ($phase == "dd" && str_contains($logfile, self::STORAGE_WRITTEN))
+            {
+                /* the image resume (2.6.1): what the marks say was written is no longer there */
+                $this->cm->durable_bytes = null;
+                $this->cm->durable_at = null;
+            }
             $this->logInfo($msg." Script output:\n\n".$logfile, 'error');
             $this->cm->markFailed($msg);
             $failed = true;
@@ -655,10 +775,33 @@ exit 1
         if ($this->cm->phase === 'firstboot')
             return '';   // a late mark of the utility OS: the module reboots into its new system
 
+        /* the download broke and goes on (fetch_image in scriptexecute/write.blade.php): a line in the module's log; the
+           step stays as it is, a new one would restart the phase clock and the speed would be wrong */
+        $resumed = $req->query('resumed');
+        if (is_string($resumed) && ctype_digit($resumed))
+        {
+            $of = $req->query('of');
+            $code = $req->query('curl');
+            $this->logInfo('Download resumed at '.ImagePieces::gb((int) $resumed)
+                .(is_string($of) && ctype_digit($of) && (int) $of > 0 ? ' of '.ImagePieces::gb((int) $of) : '')
+                .(is_string($code) && ctype_digit($code) ? ' (the connection broke: curl exit '.$code.').' : '.'));
+            return '';
+        }
+
         $this->cm->setPhase($phase, $req->query('detail'));
         $sectors = $req->query('sectors');
         if (is_string($sectors) && ctype_digit($sectors))
             $this->cm->progress_bytes = (int) $sectors * 512;
+        /* the image resume (2.6.1): how far a run on the pieces copy is written for sure, in MiB (write_pieces): only up, and
+           only where a piece of the image starts, so before its end */
+        $durable = $req->query('durable_mb');
+        if (is_string($durable) && ctype_digit($durable) && strlen($durable) < 10 && $this->cm->durable_image_id
+            && $this->cm->phase === 'write' && (int) $durable * 1048576 > (int) $this->cm->durable_bytes
+            && (int) $durable * 1048576 < (int) $this->cm->progress_total)
+        {
+            $this->cm->durable_bytes = (int) $durable * 1048576;
+            $this->cm->durable_at = now();
+        }
         $this->cm->save();
 
         return '';

@@ -1,4 +1,4 @@
-<div class="cmp-page" @if ($hashPending && !$isOpen) wire:poll.5s @endif>
+<div class="cmp-page" @if (($hashPending || $splitPending) && !$isOpen) wire:poll.5s @endif>
     <div class="contents">
         <div class="cmp-title">
             <h1>Images</h1>
@@ -48,6 +48,9 @@
                             <nobr>Comp.: {{ number_format($i->filesize()/1000000000,1) }} GB</nobr><br>
                             @endif
                             <nobr>Uncomp.: {{ $i->uncompressed_size ? number_format($i->uncompressed_size/1000000000,1) : 'unknown' }} GB</nobr>
+                            @if ($i->split_filename || $i->split_queued_at || $i->split_error || $i->splitNeeded())
+                            <br><nobr>Pieces: {{ $i->splitState() }}</nobr>
+                            @endif
                         </td>
                         <td>
                             {{ $i->sha256 ? $i->sha256 : "...still computing hash..." }}<br>
@@ -55,6 +58,11 @@
                         </td>
                         <td>
                             <button wire:click="delete({{ $i->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
+                            @if (($i->split_filename || $i->split_error) && !$i->splitPreparing() && !$i->splitNeeded())
+                            <button wire:click="removeSplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Remove pieces</button>
+                            @elseif (!$i->splitReady() && !$i->splitPreparing() && $i->splitNeeded())
+                            <button wire:click="retrySplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Retry pieces</button>
+                            @endif
                         </td>
                     </tr>
                     @empty

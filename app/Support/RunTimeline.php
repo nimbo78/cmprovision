@@ -24,11 +24,13 @@ class RunTimeline
                 continue;
 
             $speed = null;
-            if ($seconds && $entry['detail'] === null && in_array($entry['phase'], ['write', 'verify'], true))
+            $resumed = isset($entry['from']);   // the write went on after a restart from this byte (2.6.1)
+            if ($seconds && ($entry['detail'] === null || $resumed) && in_array($entry['phase'], ['write', 'verify'], true)
+                && !self::goesOnLater($entries, $i))
             {
                 /* a step cut short by a failure got as far as the byte counter; otherwise the whole image */
-                $bytes = $next['phase'] === 'failed' ? $cm->progress_bytes : $cm->progress_total;
-                $speed = $bytes ? $bytes / $seconds : null;
+                $bytes = ($next['phase'] === 'failed' ? (int) $cm->progress_bytes : (int) $cm->progress_total) - ($resumed ? $entry['from'] : 0);
+                $speed = $bytes > 0 ? $bytes / $seconds : null;
             }
 
             $steps[] = [
@@ -41,5 +43,14 @@ class RunTimeline
             ];
         }
         return $steps;
+    }
+
+    /* A write that went on after a restart follows entry $i: how far the run of entry $i got is not known */
+    protected static function goesOnLater(array $entries, int $i): bool
+    {
+        foreach (array_slice($entries, $i + 1) as $later)
+            if (isset($later['from']))
+                return true;
+        return false;
     }
 }

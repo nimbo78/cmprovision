@@ -47,6 +47,19 @@ class CmCard extends Component
         Cm::where('serial', $this->serial)->firstOrFail()->stopIdentify();
     }
 
+    /* The next start writes the image from the beginning instead of going on from the last durable piece (2.6.1) */
+    public function startOver()
+    {
+        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        if ($cm->durable_bytes === null)
+            return;
+        $cm->durable_bytes = null;
+        $cm->durable_at = null;
+        $cm->save();
+        Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => 'info',
+            'msg' => 'Start over: the next start writes the image from the beginning (by '.(auth()->user()->name ?? 'unknown').').']);
+    }
+
     /* Switch the PoE of the module's port off and on (PoeRestart) */
     public function restart()
     {
@@ -64,6 +77,7 @@ class CmCard extends Component
             'cm' => $cm,
             'steps' => RunTimeline::steps($cm),
             'advice' => FailureAdvice::for($cm),
+            'resumeFrom' => $cm->resumableFrom(),
             'settings' => self::settingsDiff($cm->eeprom_config_before, $cm->eeprom_config_after),
             'history' => Cmlog::where('cm', $this->serial)->orderByDesc('id')->limit(self::HISTORY_ROWS)->get(),
             'zone' => config('app.display_timezone'),

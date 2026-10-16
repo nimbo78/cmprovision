@@ -42,4 +42,19 @@ return [
 
     'telegram_api' => env('TELEGRAM_API', 'https://api.telegram.org'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Image pieces (2.6.1)
+    |--------------------------------------------------------------------------
+    |
+    | A project with "Split the image into pieces" keeps a gzip copy of its image in pieces of this many MiB; a
+    | module restarted mid-write continues from its last verified piece. Making the copy needs free space of
+    | about the original's size times split_space_factor.
+    |
+    */
+
+    'split_piece_mb' => (int) env('CMPROVISION_SPLIT_PIECE_MB', 512),
+
+    'split_space_factor' => 1.25,
+
 ];

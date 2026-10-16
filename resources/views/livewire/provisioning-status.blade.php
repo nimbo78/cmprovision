@@ -25,7 +25,7 @@
                 @if ($summary->open)
                     <div class="ml-auto flex flex-wrap gap-2">
                         @if ($failedToRestart)
-                            <button type="button" wire:click="restartFailed" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirmFailed($failedToRestart) }}" wire:loading.attr="disabled" class="cmp-btn cmp-btn-danger">
+                            <button type="button" wire:click="restartFailed" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirmFailed($failedToRestart, $resumingToRestart) }}" wire:loading.attr="disabled" class="cmp-btn cmp-btn-danger">
                                 <span wire:loading.remove wire:target="restartFailed">Restart failed ({{ $failedToRestart }})</span>
                                 <span wire:loading wire:target="restartFailed">Restarting…</span>
                             </button>
@@ -99,7 +99,7 @@
                         </td>
                         <td class="text-right whitespace-nowrap">
                             @if ($canRestart($m) && ($m->phase === 'failed' || $silent))
-                                <button type="button" wire:click="restart({{ $m->id }})" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirm($m, $m->provisioning_board) }}" wire:loading.attr="disabled" wire:target="restart({{ $m->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small mr-1">
+                                <button type="button" wire:click="restart({{ $m->id }})" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirm($m, $m->provisioning_board, $activeProject) }}" wire:loading.attr="disabled" wire:target="restart({{ $m->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small mr-1">
                                     <span wire:loading.remove wire:target="restart({{ $m->id }})">Restart</span>
                                     <span wire:loading wire:target="restart({{ $m->id }})">Restarting…</span>
                                 </button>

@@ -108,6 +108,7 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
         'eeprom_settings' => 'sometimes|nullable|string|max:2024',
         'verify' => 'sometimes|boolean',
         'os_check' => 'sometimes|boolean',
+        'split_image' => 'sometimes|boolean',
         'scripts' => 'sometimes|array',
         'scripts.*' => 'integer|exists:scripts,id',
     ]);
@@ -127,6 +128,8 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
     {
         $project->scripts()->sync($data['scripts']);
     }
+    if ($project->split_image && $project->image)
+        $project->image->queueSplit();   // the pieces copy (2.6.1)
 
     try
     {
