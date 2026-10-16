@@ -77,6 +77,19 @@ A project with **Check the OS after the first boot** does not stop when the imag
 - Anyone who reaches the provisioner's web server can download the files under `/uploads`, the images included: keep secrets out of packages.
 - The new system needs systemd and curl. A module booted over USB (rpiboot) is not checked: a reboot would bring it back to USB boot.
 
+## The image download resumes ##
+
+A broken connection no longer fails the write. The module downloads, decompresses and writes the image in one stream; when the connection breaks (a switch hiccup, an nginx restart, a re-plugged cable), curl starts again from the byte it got to while the decompressor and `dd` keep running. Server errors (5xx) and lost connections are retried every 5 seconds; after 10 minutes without a byte the write fails, and an answer like 404 (the image was deleted) fails it at once.
+
+The partition table (the first MiB of the image) is cleared before the write and written last. A module that loses power mid-write, a PoE restart included, finds no partition table on its eMMC and boots from the network again instead of a half-written image.
+
+A project with **Split the image into 512 MB pieces** goes further: a module restarted during the write, or after a failed write, continues from its last verified piece and downloads only the rest.
+
+- The server keeps a gzip copy of the image in pieces next to the original, made in the background after the project is saved (about 5 minutes for a 6 GB image on a CM4); the Images page shows its state. Until it is ready the project writes the original, and a restart starts over.
+- A piece counts once the module has written it with `fsync` and the decompressor has checked its checksum; the run goes on from the first piece that does not count. Turn on **Verify that image was written correctly** too: it checks the whole image, including the part written before the restart.
+- The module card shows where the next start continues; **Start over** makes it write from the beginning instead.
+- For an `.xz` or `.bz2` image the copy is gzip, so the download grows.
+
 ## The built-in Wi-Fi as a cold spare ##
 
 A provisioner with a better Wi-Fi card (an M.2 card, a USB adapter) keeps its built-in Wi-Fi off the network: while another device carries the default route, the built-in Wi-Fi stays disconnected. When there has been no other default route for 30 seconds (the card was removed, its driver failed, it cannot connect), the built-in Wi-Fi connects on its own, and once the card has carried the default route again for a minute, it leaves. Only the device is disconnected, never a NetworkManager profile: after a reboot both radios connect, and the built-in Wi-Fi leaves a minute later.
