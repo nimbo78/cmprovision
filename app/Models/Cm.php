@@ -46,6 +46,7 @@ class Cm extends Model
         'switch_id', 'switch_name', 'switch_port', 'board_pending_since',
         'timeline', 'polled_at', 'identify_until',
         'os_check', 'hostname', 'os_state', 'os_failed_units', 'os_checked_at', 'os_check_output',
+        'durable_bytes', 'durable_image_id', 'progress_base',
     ];
 
     protected $casts = [
@@ -60,6 +61,9 @@ class Cm extends Model
         'identify_until' => 'datetime',
         'board_pending_since' => 'datetime',
         'os_checked_at' => 'datetime',
+        'durable_bytes' => 'integer',
+        'durable_image_id' => 'integer',
+        'progress_base' => 'integer',
     ];
 
     /* A module that finished and still asks the server whether to blink, i.e. is still on the bench */
@@ -140,7 +144,10 @@ class Cm extends Model
         if ($this->phase !== $phase || $this->phase_detail !== $detail)
         {
             if (in_array($phase, self::ACTIVE_PHASES, true))
+            {
                 $this->progress_bytes = null;
+                $this->progress_base = null;
+            }
             $this->phase = $phase;
             $this->phase_detail = $detail;
             $this->phase_started_at = now();
@@ -208,13 +215,15 @@ class Cm extends Model
         return (int) min(100, floor($this->progress_bytes * 100 / $this->progress_total));
     }
 
-    /* Average bytes per second since the phase started, null until there is something to average */
+    /* Average bytes per second since the phase started, null until there is something to average; a write that went on
+       after a restart (2.6.1) counts from where it went on (progress_base) */
     public function bytesPerSecond()
     {
         if (!$this->isStreaming() || !$this->progress_bytes || !$this->phase_started_at || !$this->progress_updated_at)
             return null;
         $seconds = $this->progress_updated_at->getTimestamp() - $this->phase_started_at->getTimestamp();
-        return $seconds > 0 ? $this->progress_bytes / $seconds : null;
+        $written = $this->progress_bytes - (int) $this->progress_base;
+        return $seconds > 0 && $written > 0 ? $written / $seconds : null;
     }
 
     public function secondsLeft()
