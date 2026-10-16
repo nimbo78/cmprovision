@@ -8,6 +8,7 @@ use App\Models\EthernetSwitch;
 use App\Models\PoeOutage;
 use App\Services\Snmp\SnmpClient;
 use App\Services\Snmp\SnmpError;
+use App\Support\ImagePieces;
 use App\Support\StandMap;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -112,6 +113,9 @@ class PoeRestart
             $then = 'the module boots the system it was flashed with.';
         elseif ($cm->phase === 'firstboot' || ($cm->os_check === 'failed' && $cm->phase_detail === Cm::OS_NO_REPORT))
             $then = 'the module boots its new system again.';   // the OS check: eMMC comes before the network
+        elseif (($from = $cm->resumableFrom()) !== null)
+            $then = ($cm->isRunning() && $cm->silentFor() === null ? 'its write stops and continues' : 'the module boots from the network and continues the write')
+                .' from '.ImagePieces::gb($from).' of '.ImagePieces::gb((int) $cm->progress_total).'.';
         elseif ($cm->isRunning() && $cm->silentFor() === null)
             $then = 'its run stops and starts over.';
         else
@@ -119,10 +123,10 @@ class PoeRestart
         return 'Restart '.$cm->serial.$on.'? PoE goes off for '.self::OFF_SECONDS.' s; '.$then;
     }
 
-    public static function confirmFailed(int $count): string
+    public static function confirmFailed(int $count, int $resuming = 0): string
     {
         return 'Restart '.$count.' '.($count === 1 ? 'module' : 'modules').' (failed or without a report)? PoE goes off for '
-            .self::OFF_SECONDS.' s on each port.';
+            .self::OFF_SECONDS.' s on each port.'.($resuming ? ' For '.$resuming.' of them the write goes on where it stopped.' : '');
     }
 
     /** Why no port of this switch (Stand::current()'s state of it) is restarted now; null when they may be */

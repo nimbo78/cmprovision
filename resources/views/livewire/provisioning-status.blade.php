@@ -25,7 +25,7 @@
                 @if ($summary->open)
                     <div class="ml-auto flex flex-wrap gap-2">
                         @if ($failedToRestart)
-                            <button type="button" wire:click="restartFailed" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirmFailed($failedToRestart) }}" wire:loading.attr="disabled" class="cmp-btn cmp-btn-danger">
+                            <button type="button" wire:click="restartFailed" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirmFailed($failedToRestart, $resumingToRestart) }}" wire:loading.attr="disabled" class="cmp-btn cmp-btn-danger">
                                 <span wire:loading.remove wire:target="restartFailed">Restart failed ({{ $failedToRestart }})</span>
                                 <span wire:loading wire:target="restartFailed">Restarting…</span>
                             </button>

@@ -64,6 +64,15 @@
                     </td>
                 </tr>
                 @endif
+                @if ($resumeFrom !== null && ($cm->phase === 'failed' || $cm->silentFor() !== null))
+                <tr>
+                    <td class="text-fg-muted">Resume</td>
+                    <td>
+                        the next start continues from {{ \App\Support\ImagePieces::gb($resumeFrom) }} of {{ \App\Support\ImagePieces::gb((int) $cm->progress_total) }}
+                        <button wire:click="startOver" wire:confirm="Write the image from the beginning at the next start?" class="ml-2 cmp-btn cmp-btn-secondary cmp-btn-small">Start over</button>
+                    </td>
+                </tr>
+                @endif
                 @if ($power)
                 <tr>
                     <td class="text-fg-muted">Power (PoE)</td>

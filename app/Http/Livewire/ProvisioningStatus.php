@@ -5,6 +5,7 @@ namespace App\Http\Livewire;
 use App\Models\Cm;
 use App\Models\EthernetSwitch;
 use App\Models\NotificationBatch;
+use App\Models\Project;
 use App\Services\Switch\PoeControl;
 use App\Services\Switch\PoeRestart;
 use App\Support\BatchSummary;
@@ -99,15 +100,23 @@ class ProvisioningStatus extends Component
                 return false;   // it runs its new system: a power cycle boots that again, it does not provision
             return $cm->switch_id ? in_array($cm->switch_id, $writable) : (bool) $writable;
         };
+        $restartable = $summary && $summary->open ? $summary->modules->filter(function ($cm) use ($canRestart) {
+            return ($cm->phase === 'failed' || $cm->silentFor() !== null) && $canRestart($cm);
+        }) : collect();
         return view('livewire.provisioning-status', [
             'summary' => $summary,
             'modules' => $modules,
             'activeCount' => $modules->filter->isActive()->count(),
             'canRestart' => $canRestart,
-            'failedToRestart' => $summary && $summary->open ? $summary->modules->filter(function ($cm) use ($canRestart) {
-                return ($cm->phase === 'failed' || $cm->silentFor() !== null) && $canRestart($cm);
-            })->count() : 0,
+            'failedToRestart' => count($restartable),
+            'resumingToRestart' => self::resuming($restartable, Project::getActive()),
         ]);
+    }
+
+    /* How many of $cms go on with their write after a restart (2.6.1) */
+    public static function resuming($cms, ?Project $active): int
+    {
+        return collect($cms)->filter(function (Cm $cm) use ($active) { return $cm->resumableFrom($active) !== null; })->count();
     }
 
     public static function bytes($bytes)
