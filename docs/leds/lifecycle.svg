@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="680" viewBox="0 0 1100 680" role="img">
+<title>Что показывает модуль на каждом этапе</title>
+<desc>Включение, пре-скрипты, запись и сверка, затем готово, проверка ОС или ошибка; опознать поверх итога.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7A6650"/></marker>
+<marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#D9342B"/></marker>
+</defs>
+<rect width="1100" height="680" fill="#FFF7E8"/>
+<text x="24" y="38" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="22" font-weight="bold" fill="#2A1A0C" text-anchor="start">Что показывает модуль на каждом этапе</text>
+<rect x="24" y="48" width="48" height="4" rx="2" fill="#E2681C"/>
+<text x="24" y="74" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="13" font-weight="normal" fill="#7A6650" text-anchor="start">От включения питания до итога прогона. В рамке — имя режима из таблицы режимов.</text>
+<rect x="24" y="100" width="180" height="190" rx="8" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<text x="38" y="126" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="15" font-weight="bold" fill="#2A1A0C" text-anchor="start">Включение</text>
+<text x="38" y="148" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Прошивка Pi берёт ядро</text>
+<text x="38" y="164" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">и утилитарную ОС по</text>
+<text x="38" y="180" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">сети: около полуминуты.</text>
+<text x="38" y="196" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Светодиоды ведут</text>
+<text x="38" y="212" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">прошивка и ядро.</text>
+<rect x="38" y="256" width="128" height="20" rx="10" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<text x="102" y="270" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#7A6650" text-anchor="middle">не cmprovision</text>
+<rect x="228" y="100" width="180" height="190" rx="8" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<text x="242" y="126" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="15" font-weight="bold" fill="#2A1A0C" text-anchor="start">Пре-скрипты</text>
+<text x="242" y="148" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Прошивка EEPROM и</text>
+<text x="242" y="164" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">скрипты проекта. ACT</text>
+<text x="242" y="180" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">тёмный: его вывод</text>
+<text x="242" y="196" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">занят шиной SPI.</text>
+<rect x="268" y="212" width="124" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M268,224 L268,224 L392,224 L392,224 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="268,224 392,224" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="268" y="227" width="124" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M268,239 L268,227 L392,227 L392,239 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="268,227 392,227" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="262" y="222" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="9" font-weight="bold" fill="#7A6650" text-anchor="end">ACT</text>
+<text x="262" y="237" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="9" font-weight="bold" fill="#7A6650" text-anchor="end">PWR</text>
+<rect x="242" y="256" width="80" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="282" y="270" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">progress</text>
+<rect x="432" y="100" width="180" height="190" rx="8" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<text x="446" y="126" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="15" font-weight="bold" fill="#2A1A0C" text-anchor="start">Запись и сверка</text>
+<text x="446" y="148" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Образ в eMMC, потом</text>
+<text x="446" y="164" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">сверка SHA256 и</text>
+<text x="446" y="180" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">пост-скрипты.</text>
+<text x="446" y="196" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">ACT уже мигает.</text>
+<rect x="472" y="212" width="124" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M472,224 L472,212 L474,212 L474.1,224 L476.1,224 L476.1,212 L478.2,212 L478.2,224 L480.2,224 L480.3,212 L482.3,212 L482.4,224 L484.4,224 L484.4,212 L486.5,212 L486.5,224 L488.5,224 L488.5,212 L490.6,212 L490.6,224 L492.7,224 L492.7,212 L494.7,212 L494.7,224 L496.8,224 L496.8,212 L498.9,212 L498.9,224 L500.9,224 L501,212 L503,212 L503,224 L505,224 L505.1,212 L507.1,212 L507.2,224 L509.2,224 L509.2,212 L511.3,212 L511.3,224 L513.3,224 L513.4,212 L515.4,212 L515.4,224 L517.4,224 L517.5,212 L519.5,212 L519.6,224 L521.6,224 L521.6,212 L523.7,212 L523.7,224 L525.7,224 L525.8,212 L527.8,212 L527.8,224 L529.9,224 L529.9,212 L531.9,212 L532,224 L534,224 L534,212 L536.1,212 L536.1,224 L538.1,224 L538.1,212 L540.2,212 L540.2,224 L542.3,224 L542.3,212 L544.3,212 L544.4,224 L546.4,224 L546.4,212 L548.5,212 L548.5,224 L550.5,224 L550.6,212 L552.6,212 L552.6,224 L554.7,224 L554.7,212 L556.7,212 L556.8,224 L558.8,224 L558.8,212 L560.9,212 L560.9,224 L562.9,224 L562.9,212 L565,212 L565,224 L567.1,224 L567.1,212 L569.1,212 L569.2,224 L571.2,224 L571.2,212 L573.2,212 L573.3,224 L575.3,224 L575.4,212 L577.4,212 L577.4,224 L579.5,224 L579.5,212 L581.5,212 L581.6,224 L583.6,224 L583.6,212 L585.7,212 L585.7,224 L587.7,224 L587.8,212 L589.8,212 L589.8,224 L591.9,224 L591.9,212 L593.9,212 L593.9,224 L596,224 L596,224 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="472,212 474,212 474.1,224 476.1,224 476.1,212 478.2,212 478.2,224 480.2,224 480.3,212 482.3,212 482.4,224 484.4,224 484.4,212 486.5,212 486.5,224 488.5,224 488.5,212 490.6,212 490.6,224 492.7,224 492.7,212 494.7,212 494.7,224 496.8,224 496.8,212 498.9,212 498.9,224 500.9,224 501,212 503,212 503,224 505,224 505.1,212 507.1,212 507.2,224 509.2,224 509.2,212 511.3,212 511.3,224 513.3,224 513.4,212 515.4,212 515.4,224 517.4,224 517.5,212 519.5,212 519.6,224 521.6,224 521.6,212 523.7,212 523.7,224 525.7,224 525.8,212 527.8,212 527.8,224 529.9,224 529.9,212 531.9,212 532,224 534,224 534,212 536.1,212 536.1,224 538.1,224 538.1,212 540.2,212 540.2,224 542.3,224 542.3,212 544.3,212 544.4,224 546.4,224 546.4,212 548.5,212 548.5,224 550.5,224 550.6,212 552.6,212 552.6,224 554.7,224 554.7,212 556.7,212 556.8,224 558.8,224 558.8,212 560.9,212 560.9,224 562.9,224 562.9,212 565,212 565,224 567.1,224 567.1,212 569.1,212 569.2,224 571.2,224 571.2,212 573.2,212 573.3,224 575.3,224 575.4,212 577.4,212 577.4,224 579.5,224 579.5,212 581.5,212 581.6,224 583.6,224 583.6,212 585.7,212 585.7,224 587.7,224 587.8,212 589.8,212 589.8,224 591.9,224 591.9,212 593.9,212 593.9,224 596,224" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="472" y="227" width="124" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M472,239 L472,227 L596,227 L596,239 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="472,227 596,227" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="466" y="222" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="9" font-weight="bold" fill="#7A6650" text-anchor="end">ACT</text>
+<text x="466" y="237" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="9" font-weight="bold" fill="#7A6650" text-anchor="end">PWR</text>
+<rect x="446" y="256" width="80" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="486" y="270" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">progress</text>
+<path d="M204,195 L224,195" fill="none" stroke="#7A6650" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M408,195 L428,195" fill="none" stroke="#7A6650" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="780" y="96" width="296" height="118" rx="8" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<text x="794" y="122" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="15" font-weight="bold" fill="#2A1A0C" text-anchor="start">Готово</text>
+<text x="794" y="144" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Проект без проверки ОС. Модуль ждёт,</text>
+<text x="794" y="160" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">раз в 5 с спрашивает: опознаться?</text>
+<rect x="794" y="168" width="48" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="818" y="182" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">done</text>
+<rect x="880" y="174" width="182" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M880,186 L880,186 L889.8,185.8 L893.1,185.4 L896.1,184.6 L898.9,183.7 L901.8,182.3 L910.9,177.2 L914.2,175.5 L917.7,174.4 L921,174 L924.3,174.4 L927.9,175.6 L931.2,177.3 L939.3,181.9 L943.6,183.9 L947.6,185.1 L952.1,185.8 L959.2,186 L1062,186 L1062,186 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="880,186 889.8,185.8 893.1,185.4 896.1,184.6 898.9,183.7 901.8,182.3 910.9,177.2 914.2,175.5 917.7,174.4 921,174 924.3,174.4 927.9,175.6 931.2,177.3 939.3,181.9 943.6,183.9 947.6,185.1 952.1,185.8 959.2,186 1062,186" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="880" y="189" width="182" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M880,201 L880,201 L973.9,201 L981.1,200.8 L985.4,200.1 L989.4,198.9 L993.7,196.9 L1001.7,192.3 L1005,190.6 L1008.6,189.4 L1012,189 L1015.2,189.4 L1018.6,190.5 L1021.9,192.1 L1031.6,197.6 L1034.9,199 L1038.2,200 L1041.5,200.6 L1045.3,200.9 L1062,201 L1062,201 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="880,201 973.9,201 981.1,200.8 985.4,200.1 989.4,198.9 993.7,196.9 1001.7,192.3 1005,190.6 1008.6,189.4 1012,189 1015.2,189.4 1018.6,190.5 1021.9,192.1 1031.6,197.6 1034.9,199 1038.2,200 1041.5,200.6 1045.3,200.9 1062,201" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="780" y="232" width="296" height="146" rx="8" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<text x="794" y="258" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="15" font-weight="bold" fill="#2A1A0C" text-anchor="start">С проверкой ОС</text>
+<text x="794" y="280" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Перезагрузка в записанную систему:</text>
+<text x="794" y="296" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">её служба проверяет и отчитывается.</text>
+<rect x="794" y="304" width="124" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M794,316 L794,316 L800.7,315.8 L802.9,315.4 L805,314.6 L806.9,313.7 L808.9,312.3 L815,307.2 L817.3,305.5 L819.7,304.4 L821.9,304 L824.2,304.4 L826.7,305.6 L828.9,307.3 L834.4,311.9 L837.3,313.9 L840.1,315.1 L843.1,315.8 L847.9,316 L918,316 L918,316 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="794,316 800.7,315.8 802.9,315.4 805,314.6 806.9,313.7 808.9,312.3 815,307.2 817.3,305.5 819.7,304.4 821.9,304 824.2,304.4 826.7,305.6 828.9,307.3 834.4,311.9 837.3,313.9 840.1,315.1 843.1,315.8 847.9,316 918,316" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="794" y="319" width="124" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M794,331 L794,331 L800.7,330.8 L802.9,330.4 L805,329.6 L806.9,328.7 L808.9,327.3 L815,322.2 L817.3,320.5 L819.7,319.4 L821.9,319 L824.2,319.4 L826.7,320.6 L828.9,322.3 L834.4,326.9 L837.3,328.9 L840.1,330.1 L843.1,330.8 L847.9,331 L918,331 L918,331 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="794,331 800.7,330.8 802.9,330.4 805,329.6 806.9,328.7 808.9,327.3 815,322.2 817.3,320.5 819.7,319.4 821.9,319 824.2,319.4 826.7,320.6 828.9,322.3 834.4,326.9 837.3,328.9 840.1,330.1 843.1,330.8 847.9,331 918,331" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="794" y="340" width="56" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="822" y="354" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">ready</text>
+<text x="858" y="354" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">прошла</text>
+<rect x="938" y="304" width="124" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M938,316 L938,315.3 L1062,315.3 L1062,316 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="938,315.3 1062,315.3" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="938" y="319" width="124" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M938,331 L938,319 L946.2,319 L946.3,331 L958.6,331 L958.7,319 L966.9,319 L966.9,331 L1020.6,331 L1020.7,319 L1028.9,319 L1028.9,331 L1041.3,331 L1041.3,319 L1049.6,319 L1049.6,331 L1062,331 L1062,331 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="938,319 946.2,319 946.3,331 958.6,331 958.7,319 966.9,319 966.9,331 1020.6,331 1020.7,319 1028.9,319 1028.9,331 1041.3,331 1041.3,319 1049.6,319 1049.6,331 1062,331" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="938" y="340" width="48" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="962" y="354" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">fail</text>
+<text x="994" y="354" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">не прошла</text>
+<rect x="780" y="392" width="296" height="118" rx="8" fill="#FFFDF8" stroke="#D9342B" stroke-width="1.5"/>
+<text x="794" y="418" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="15" font-weight="bold" fill="#2A1A0C" text-anchor="start">Ошибка на любом шаге</text>
+<text x="794" y="440" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Сбой скрипта, отказ сервера на старте</text>
+<text x="794" y="456" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">или его ошибка. Модуль ждёт оператора.</text>
+<rect x="794" y="464" width="48" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="818" y="478" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">fail</text>
+<rect x="880" y="470" width="182" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M880,482 L880,481.3 L1062,481.3 L1062,482 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="880,481.3 1062,481.3" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="880" y="485" width="182" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M880,497 L880,485 L892.1,485 L892.1,497 L910.3,497 L910.3,485 L922.4,485 L922.5,497 L1001.3,497 L1001.3,485 L1013.4,485 L1013.5,497 L1031.6,497 L1031.7,485 L1043.7,485 L1043.8,497 L1062,497 L1062,497 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="880,485 892.1,485 892.1,497 910.3,497 910.3,485 922.4,485 922.5,497 1001.3,497 1001.3,485 1013.4,485 1013.5,497 1031.6,497 1031.7,485 1043.7,485 1043.8,497 1062,497" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M612,195 L650,195" fill="none" stroke="#7A6650" stroke-width="2"/>
+<path d="M650,195 L650,155 L776,155" fill="none" stroke="#7A6650" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M650,195 L650,305 L776,305" fill="none" stroke="#7A6650" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="660" y="147" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">без проверки ОС</text>
+<text x="660" y="297" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">с проверкой ОС</text>
+<path d="M522,290 L522,451" fill="none" stroke="#D9342B" stroke-width="2" stroke-dasharray="6 5"/>
+<path d="M318,290 L318,451 L776,451" fill="none" stroke="#D9342B" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow-red)"/>
+<text x="400" y="443" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#D9342B" text-anchor="start">любой сбой</text>
+<rect x="24" y="540" width="1052" height="116" rx="8" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<text x="38" y="566" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="15" font-weight="bold" fill="#2A1A0C" text-anchor="start">Опознать</text>
+<text x="38" y="588" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Кнопка Identify в карточке модуля и на дашборде. Закончивший модуль, который ещё на стенде,</text>
+<text x="38" y="604" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">раз в 5 с спрашивает сервер. Услышав identify, он мигает 30 с или до Stop (опрос раз в 2 с)</text>
+<text x="38" y="620" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">и возвращается к «готово» или «ошибка». Из новой системы после проверки ОС модуль сервер</text>
+<text x="38" y="636" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">не спрашивает: Identify там нет.</text>
+<rect x="868" y="600" width="80" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="908" y="614" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">identify</text>
+<rect x="868" y="562" width="190" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M868,574 L868,562 L877.4,562 L877.5,574 L886.9,574 L887,562 L896.4,562 L896.5,574 L905.9,574 L906,562 L915.4,562 L915.5,574 L924.9,574 L925,562 L934.4,562 L934.5,574 L943.9,574 L944,562 L953.4,562 L953.5,574 L962.9,574 L963,562 L972.5,562 L972.6,574 L981.9,574 L982,562 L991.4,562 L991.5,574 L1000.9,574 L1001,562 L1010.4,562 L1010.5,574 L1019.9,574 L1020,562 L1029.5,562 L1029.6,574 L1038.9,574 L1039,562 L1048.4,562 L1048.5,574 L1057.9,574 L1058,562 L1058,574 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="868,562 877.4,562 877.5,574 886.9,574 887,562 896.4,562 896.5,574 905.9,574 906,562 915.4,562 915.5,574 924.9,574 925,562 934.4,562 934.5,574 943.9,574 944,562 953.4,562 953.5,574 962.9,574 963,562 972.5,562 972.6,574 981.9,574 982,562 991.4,562 991.5,574 1000.9,574 1001,562 1010.4,562 1010.5,574 1019.9,574 1020,562 1029.5,562 1029.6,574 1038.9,574 1039,562 1048.4,562 1048.5,574 1057.9,574 1058,562" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="868" y="577" width="190" height="12" rx="3" fill="#F4E8D2"/>
+<path d="M868,589 L868,589 L877.4,589 L877.5,577 L886.9,577 L887,589 L896.4,589 L896.5,577 L905.9,577 L906,589 L915.4,589 L915.5,577 L924.9,577 L925,589 L934.4,589 L934.5,577 L943.9,577 L944,589 L953.4,589 L953.5,577 L962.9,577 L963,589 L972.5,589 L972.6,577 L981.9,577 L982,589 L991.4,589 L991.5,577 L1000.9,577 L1001,589 L1010.4,589 L1010.5,577 L1019.9,577 L1020,589 L1029.5,589 L1029.6,577 L1038.9,577 L1039,589 L1048.4,589 L1048.5,577 L1057.9,577 L1058,589 L1058,589 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="868,589 877.4,589 877.5,577 886.9,577 887,589 896.4,589 896.5,577 905.9,577 906,589 915.4,589 915.5,577 924.9,577 925,589 934.4,589 934.5,577 943.9,577 944,589 953.4,589 953.5,577 962.9,577 963,589 972.5,589 972.6,577 981.9,577 982,589 991.4,589 991.5,577 1000.9,577 1001,589 1010.4,589 1010.5,577 1019.9,577 1020,589 1029.5,589 1029.6,577 1038.9,577 1039,589 1048.4,589 1048.5,577 1057.9,577 1058,589" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

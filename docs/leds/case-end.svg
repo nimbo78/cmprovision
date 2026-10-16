@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="372" viewBox="0 0 800 372" role="img">
+<title>Где смотреть светодиоды</title>
+<desc>Схема торцов модуля: у Ethernet светодиоды ACT у разъёма и PWR у слота microSD, у USB-C светодиод 5V, который горит всегда.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7A6650"/></marker>
+<marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#D9342B"/></marker>
+</defs>
+<rect width="800" height="372" fill="#FFF7E8"/>
+<text x="24" y="38" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="22" font-weight="bold" fill="#2A1A0C" text-anchor="start">Где смотреть светодиоды</text>
+<rect x="24" y="48" width="48" height="4" rx="2" fill="#E2681C"/>
+<text x="24" y="74" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="13" font-weight="normal" fill="#7A6650" text-anchor="start">Схема торцов WLAN Pi M4+, не в масштабе.</text>
+<text x="30" y="112" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="14" font-weight="bold" fill="#2A1A0C" text-anchor="start">Торец с Ethernet</text>
+<rect x="30" y="124" width="480" height="170" rx="10" fill="#3B3836" stroke="#2A1A0C" stroke-width="2"/>
+<rect x="54" y="150" width="120" height="100" rx="4" fill="#B9B6B1" stroke="#6F6B66" stroke-width="2"/>
+<rect x="70" y="168" width="88" height="54" rx="3" fill="#8C8884" stroke="#6F6B66" stroke-width="1"/>
+<text x="114" y="274" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="13" font-weight="normal" fill="#ECE7DF" text-anchor="middle">RJ45</text>
+<circle cx="212" cy="200" r="16" fill="#D9342B" fill-opacity="0.20"/>
+<circle cx="212" cy="200" r="10" fill="#D9342B" fill-opacity="0.40"/>
+<circle cx="212" cy="200" r="5" fill="#D9342B" stroke="#1B1A19" stroke-width="1"/>
+<text x="212" y="236" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="15" font-weight="bold" fill="#ECE7DF" text-anchor="middle">ACT</text>
+<rect x="330" y="212" width="140" height="18" rx="3" fill="#1B1A19" stroke="#6F6B66" stroke-width="1"/>
+<text x="400" y="256" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="13" font-weight="normal" fill="#ECE7DF" text-anchor="middle">слот microSD</text>
+<circle cx="400" cy="152" r="16" fill="#D9342B" fill-opacity="0.20"/>
+<circle cx="400" cy="152" r="10" fill="#D9342B" fill-opacity="0.40"/>
+<circle cx="400" cy="152" r="5" fill="#D9342B" stroke="#1B1A19" stroke-width="1"/>
+<text x="400" y="188" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="15" font-weight="bold" fill="#ECE7DF" text-anchor="middle">PWR</text>
+<text x="560" y="112" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="14" font-weight="bold" fill="#2A1A0C" text-anchor="start">Торец с USB-C</text>
+<rect x="560" y="124" width="210" height="170" rx="10" fill="#3B3836" stroke="#2A1A0C" stroke-width="2"/>
+<rect x="590" y="178" width="70" height="26" rx="13" fill="#B9B6B1" stroke="#6F6B66" stroke-width="2"/>
+<text x="625" y="228" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="13" font-weight="normal" fill="#ECE7DF" text-anchor="middle">USB-C</text>
+<circle cx="722" cy="191" r="16" fill="#F4F1EA" fill-opacity="0.20"/>
+<circle cx="722" cy="191" r="10" fill="#F4F1EA" fill-opacity="0.40"/>
+<circle cx="722" cy="191" r="5" fill="#F4F1EA" stroke="#1B1A19" stroke-width="1"/>
+<text x="722" y="227" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="15" font-weight="bold" fill="#ECE7DF" text-anchor="middle">5V</text>
+<text x="665" y="276" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#ECE7DF" text-anchor="middle">питание напрямую: горит всегда</text>
+<text x="30" y="326" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="13" font-weight="normal" fill="#2A1A0C" text-anchor="start">ACT — у разъёма Ethernet, PWR — у слота microSD. Оба красные: режимы различаются ритмом</text>
+<text x="30" y="346" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="13" font-weight="normal" fill="#2A1A0C" text-anchor="start">и тем, какой из двух горит. Светодиод 5V от cmprovision не зависит.</text>
+</svg>

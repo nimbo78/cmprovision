@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="628" viewBox="0 0 1000 628" role="img">
+<title>Как рисуется яркость</title>
+<desc>Яркость режима done как sin в четвёртой степени на 45% цикла и программный ШИМ с кадром 5 мс.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7A6650"/></marker>
+<marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#D9342B"/></marker>
+</defs>
+<rect width="1000" height="628" fill="#FFF7E8"/>
+<text x="24" y="38" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="22" font-weight="bold" fill="#2A1A0C" text-anchor="start">Как рисуется яркость</text>
+<rect x="24" y="48" width="48" height="4" rx="2" fill="#E2681C"/>
+<text x="24" y="74" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="13" font-weight="normal" fill="#7A6650" text-anchor="start">Светодиод умеет только «включён» и «выключен»; плавность даёт программный ШИМ.</text>
+<text x="24" y="112" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="14" font-weight="bold" fill="#2A1A0C" text-anchor="start">Режим done: один цикл</text>
+<rect x="40" y="130" width="920" height="90" rx="3" fill="#F4E8D2"/>
+<polyline points="40,220 514.7,220 526.4,219.9 535.6,219.5 543.5,219 550.9,218.2 556.7,217.3 562.3,216.1 567.5,214.8 572.7,213.2 577.9,211.3 582.8,209.3 587.7,206.9 592.9,204.1 598.1,201 603.7,197.4 609.2,193.5 614.7,189.2 625.7,180.1 646.9,161.5 655.2,154.5 663.8,147.7 671.7,142.1 676.3,139.3 680.9,136.8 685.5,134.7 689.8,133 694.1,131.7 698.4,130.8 702.7,130.2 707,130 711,130.2 715,130.7 719,131.5 723.3,132.7 727.2,134.2 731.5,136.1 735.8,138.3 740.4,141 748.4,146.4 757.3,153.2 766.2,160.7 791,182.5 799,189 806.4,194.6 814.6,200.2 822.9,205.1 831.2,209.3 839.5,212.6 847.8,215.2 856.3,217.1 865.5,218.5 875.7,219.4 884.6,219.8 895.6,220 960,220" fill="none" stroke="#8E1B2E" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 4"/>
+<path d="M40,220 L40,220 L59.3,220 L70.7,219.7 L80.5,219.2 L89.4,218.4 L98,217 L106.2,215.2 L113.9,212.8 L121.6,209.8 L128.6,206.4 L135.7,202.5 L143,197.8 L150.4,192.6 L156.8,187.5 L164.2,181.4 L187.2,161.3 L196.1,153.7 L204.7,147 L212.7,141.6 L217.3,138.8 L221.9,136.4 L226.1,134.4 L230.4,132.8 L234.7,131.5 L238.7,130.7 L243,130.2 L247,130 L251.3,130.2 L255.6,130.8 L259.9,131.7 L264.2,133 L268.5,134.7 L273.1,136.8 L277.7,139.3 L282.3,142.1 L290.2,147.7 L298.8,154.5 L307.1,161.5 L328.3,180.1 L339.6,189.5 L345.1,193.7 L350.7,197.6 L356.2,201.2 L361.4,204.3 L366.3,206.9 L371.5,209.4 L376.7,211.6 L381.9,213.4 L387.1,215 L392.7,216.3 L398.5,217.5 L404.3,218.3 L411.7,219.1 L419.7,219.6 L428.5,219.9 L440.2,220 L960,220 L960,220 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="40,220 59.3,220 70.7,219.7 80.5,219.2 89.4,218.4 98,217 106.2,215.2 113.9,212.8 121.6,209.8 128.6,206.4 135.7,202.5 143,197.8 150.4,192.6 156.8,187.5 164.2,181.4 187.2,161.3 196.1,153.7 204.7,147 212.7,141.6 217.3,138.8 221.9,136.4 226.1,134.4 230.4,132.8 234.7,131.5 238.7,130.7 243,130.2 247,130 251.3,130.2 255.6,130.8 259.9,131.7 264.2,133 268.5,134.7 273.1,136.8 277.7,139.3 282.3,142.1 290.2,147.7 298.8,154.5 307.1,161.5 328.3,180.1 339.6,189.5 345.1,193.7 350.7,197.6 356.2,201.2 361.4,204.3 366.3,206.9 371.5,209.4 376.7,211.6 381.9,213.4 387.1,215 392.7,216.3 398.5,217.5 404.3,218.3 411.7,219.1 419.7,219.6 428.5,219.9 440.2,220 960,220" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="770" y1="146" x2="798" y2="146" stroke="#D9342B" stroke-width="2"/>
+<text x="806" y="150" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="11" font-weight="bold" fill="#7A6650" text-anchor="start">ACT</text>
+<line x1="860" y1="146" x2="888" y2="146" stroke="#8E1B2E" stroke-width="2" stroke-dasharray="5 4"/>
+<text x="896" y="150" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="11" font-weight="bold" fill="#8E1B2E" text-anchor="start">PWR</text>
+<line x1="40" y1="232" x2="454" y2="232" stroke="#2A1A0C" stroke-width="1.5"/>
+<text x="247" y="250" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#2A1A0C" text-anchor="middle">подъём и спад: 45% цикла, 1,35 с</text>
+<line x1="500" y1="232" x2="914" y2="232" stroke="#8E1B2E" stroke-width="1.5"/>
+<text x="707" y="250" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#8E1B2E" text-anchor="middle">PWR: то же, на полцикла (1,5 с) позже</text>
+<line x1="477" y1="236" x2="477" y2="258" stroke="#7A6650" stroke-width="1"/>
+<text x="477" y="272" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="middle">тёмная пауза 0,15 с: оба погашены</text>
+<text x="40" y="296" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Яркость — sin⁴ от фазы: плавный подъём и спад без резкого края.</text>
+<text x="40" y="318" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="middle">0</text>
+<text x="346.7" y="318" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="middle">1 с</text>
+<text x="653.3" y="318" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="middle">2 с</text>
+<text x="960" y="318" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="middle">3 с</text>
+<text x="24" y="356" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="14" font-weight="bold" fill="#2A1A0C" text-anchor="start">Каждый кадр — 5 мс (200 кадров в секунду)</text>
+<text x="24" y="376" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Светодиод включают на часть кадра и выключают; глаз усредняет мерцание, и видна яркость.</text>
+<text x="24" y="422" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="13" font-weight="bold" fill="#2A1A0C" text-anchor="start">яркость 10%</text>
+<text x="24" y="440" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">светится 0,5 мс из 5 мс</text>
+<rect x="250" y="400" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="250" y="400" width="16" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<rect x="410" y="400" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="410" y="400" width="16" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<rect x="570" y="400" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="570" y="400" width="16" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<rect x="730" y="400" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="730" y="400" width="16" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<text x="902" y="425" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">кадры по 5 мс</text>
+<text x="24" y="484" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="13" font-weight="bold" fill="#2A1A0C" text-anchor="start">яркость 50%</text>
+<text x="24" y="502" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">светится 2,5 мс из 5 мс</text>
+<rect x="250" y="462" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="250" y="462" width="80" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<rect x="410" y="462" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="410" y="462" width="80" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<rect x="570" y="462" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="570" y="462" width="80" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<rect x="730" y="462" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="730" y="462" width="80" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<text x="902" y="487" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">кадры по 5 мс</text>
+<text x="24" y="546" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="13" font-weight="bold" fill="#2A1A0C" text-anchor="start">яркость 90%</text>
+<text x="24" y="564" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">светится 4,5 мс из 5 мс</text>
+<rect x="250" y="524" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="250" y="524" width="144" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<rect x="410" y="524" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="410" y="524" width="144" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<rect x="570" y="524" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="570" y="524" width="144" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<rect x="730" y="524" width="160" height="40" rx="2" fill="#F4E8D2" stroke="#D8C7A8" stroke-width="1"/>
+<rect x="730" y="524" width="144" height="40" rx="2" fill="#D9342B" fill-opacity="0.85"/>
+<text x="902" y="549" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">кадры по 5 мс</text>
+<text x="24" y="604" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Светодиод записывается только при смене состояния: PWR включается через почтовый ящик прошивки, и каждая запись — вызов.</text>
+</svg>
