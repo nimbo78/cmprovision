@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Jobs\SplitImage;
 use App\Support\ImagePieces;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -53,6 +54,17 @@ class Image extends Model
     function splitNeeded(): bool
     {
         return Project::where('image_id', $this->id)->where('split_image', true)->exists();
+    }
+
+    /* Have the pieces copy made (App\Jobs\SplitImage), unless it is there or on its way */
+    function queueSplit()
+    {
+        if ($this->splitReady() || $this->splitPreparing())
+            return;
+        $this->split_error = null;
+        $this->split_queued_at = now();
+        $this->save();
+        SplitImage::dispatch($this);
     }
 
     function removeSplit()
