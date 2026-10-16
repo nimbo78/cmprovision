@@ -99,6 +99,7 @@ cat >/tmp/oscheck-install.sh << "CMPROVISIONINGEOF"
 CMPROVISIONINGEOF
 @endif
 
+@if (!$resumed)
 # The bootloader as it is before provisioning: the EEPROM flash, if the project has one, is the first
 # pre-install script. Booted by rpiboot (boot mode 3) the module runs the bootloader sent over USB, so
 # the version comes from the flash chip itself, without the settings.
@@ -113,6 +114,9 @@ vcgencmd bootloader_version >/tmp/eeprom_version || true
 vcgencmd bootloader_config >/tmp/eeprom_config || true
 @endif
 report -F 'eeprom_version=@/tmp/eeprom_version' -F 'eeprom_config=@/tmp/eeprom_config' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}"
+@else
+# The run goes on after a restart (2.6.1): the run that flashed the bootloader reported it "before"
+@endif
 
 @if ( count($preinstall_scripts) )
 echo "Running pre-install scripts"

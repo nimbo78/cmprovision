@@ -181,11 +181,11 @@ class OsCheckReportTest extends TestCase
             [$cm->phase, $cm->os_check, $cm->phase_detail]);
         $this->assertSame($startedAt, $cm->provisioning_started_at->getTimestamp(), 'no new run');
         $this->assertStringContainsString('finish fail', $script);
-        $this->assertStringNotContainsString('dd of=$STORAGE', $script);
+        $this->assertStringNotContainsString("\nwrite_image\n", $script);
         Event::assertDispatched(CmProvisioningFailed::class);
 
         // its next start is a new run
-        $this->assertStringContainsString('dd of=$STORAGE', $this->get(self::START)->assertOk()->getContent());
+        $this->assertStringContainsString("\nwrite_image\n", $this->get(self::START)->assertOk()->getContent());
     }
 
     public function test_no_report_in_15_minutes_fails_the_run_and_a_late_one_still_counts()
@@ -340,7 +340,7 @@ class OsCheckReportTest extends TestCase
 
         $script = $this->get(self::START)->assertOk()->getContent();
 
-        $this->assertStringContainsString('dd of=$STORAGE', $script, 'a new run');
+        $this->assertStringContainsString("\nwrite_image\n", $script, 'a new run');
         $this->assertSame('write', $this->cm()->phase);
         Event::assertDispatched(CmProvisioningFailed::class);
         $this->assertSame(1, Cmlog::where('msg', 'like', Cm::OS_NO_REPORT.'%')->count());
@@ -354,7 +354,7 @@ class OsCheckReportTest extends TestCase
 
         $script = $this->get(self::START.'&bootmode=3')->assertOk()->getContent();
 
-        $this->assertStringContainsString('dd of=$STORAGE', $script, 'the operator re-flashes it over USB');
+        $this->assertStringContainsString("\nwrite_image\n", $script, 'the operator re-flashes it over USB');
         $this->assertSame('skipped', $this->cm()->os_check);
         $this->assertSame(1, Cmlog::where('msg', 'Interrupted: the module was booted over USB.')->count());
         Event::assertDispatched(CmProvisioningFailed::class);

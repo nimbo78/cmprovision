@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use App\Support\ImagePieces;
 
 class Cm extends Model
 {
@@ -178,6 +179,52 @@ class Cm extends Model
     public function failedInItsSystem()
     {
         return $this->phase === 'failed' && $this->os_check === 'failed' && $this->os_checked_at !== null;
+    }
+
+    /* Where the next start of this module goes on with the image write (2.6.1): the start of the first piece not durably
+       written, in bytes, or null when it writes from the beginning. The run stopped in the write, with at least one piece
+       durable, for the project still active with "Split the image into pieces", whose image's pieces copy is ready. */
+    public function resumableFrom(?Project $project = null)
+    {
+        $project = $project ?: Project::getActive();
+        if (!$project || !$project->split_image || !$this->durable_bytes || !$this->durable_image_id)
+            return null;
+        if ((int) $this->project_id !== (int) $project->id || (int) $project->image_id !== (int) $this->durable_image_id)
+            return null;
+        if (!$this->stoppedInTheWrite())
+            return null;
+        $image = $project->image;
+        if (!$image || !$image->splitReady())
+            return null;
+        $piece = ImagePieces::resumePiece($this->durable_bytes, $image->split_piece_mb);
+        return $piece >= 1 ? ImagePieces::pieceStart($piece, $image->split_piece_mb) : null;
+    }
+
+    /* The run stopped in the image write: the module restarted mid-write, or the write was its last step before it failed */
+    public function stoppedInTheWrite()
+    {
+        if ($this->phase === 'write')
+            return true;
+        $entries = array_values($this->timeline ?: []);
+        $count = count($entries);
+        return $this->phase === 'failed' && $count >= 2 && $entries[$count - 2]['phase'] === 'write';
+    }
+
+    /* The run goes on with the write after a restart (2.6.1): always a step of its own (it notes where it starts in the
+       image for RunTimeline), its clock and byte counter from there */
+    public function resumeWrite(string $detail, int $from)
+    {
+        $this->phase = 'write';
+        $this->phase_detail = $detail;
+        $this->phase_started_at = now();
+        $this->progress_bytes = $from;
+        $this->progress_base = $from;
+        $this->progress_updated_at = now();
+        $timeline = $this->timeline ?: [];
+        if (count($timeline) < self::MAX_TIMELINE)
+            $timeline[] = ['phase' => 'write', 'detail' => $detail, 'at' => now()->getTimestamp(), 'from' => $from];
+        $this->timeline = $timeline;
+        return $this;
     }
 
     public function isActive()
