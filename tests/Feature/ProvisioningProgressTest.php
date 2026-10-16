@@ -179,7 +179,7 @@ class ProvisioningProgressTest extends TestCase
 
         $this->assertStringContainsString('progress_mark()', $script);
         $this->assertStringContainsString("progress_mark preinstall 'Set '\\''serial'\\'' file'", $script, 'script names are shell-quoted');
-        $this->assertMatchesRegularExpression('/progress_start write 7\n.*\| dd of=\$STORAGE/s', $script);
+        $this->assertMatchesRegularExpression('/progress_start write 7 "\$PROGRESS_DETAIL" "\$PROGRESS_BASE_SECTORS"\n.*\| write_plain/s', $script);
         $this->assertMatchesRegularExpression('/progress_start verify 3\n.*post-0\.sh.*\nRETCODE=\$\?\nprogress_stop/s', $script);
         $this->assertStringContainsString('/sys/block/$(basename $STORAGE)/stat', $script);
         $this->assertStringNotContainsString('--retry', $this->extractFunction($script, 'progress_mark'),

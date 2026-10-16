@@ -52,10 +52,11 @@ class ImageWriteDiagnosticsTest extends TestCase
     {
         $script = $this->provisioningScript('gz');
 
-        $this->assertStringContainsString(': > /tmp/dd.log', $script);
-        $this->assertStringContainsString('echo "curl exit code $RC" >> /tmp/dd.log', $script);
-        $this->assertStringContainsString('gzip -dc 2>> /tmp/dd.log', $script);
-        $this->assertStringContainsString('dd of=$STORAGE conv=fsync obs=1M >> /tmp/dd.log 2>&1', $script);
+        $this->assertStringContainsString('WRITE_LOG=${WRITE_LOG:-/tmp/dd.log}', $script);
+        $this->assertStringContainsString(': >"$WRITE_LOG"', $script);
+        $this->assertStringContainsString('echo "curl exit code $rc" >>"$WRITE_LOG"', $script);
+        $this->assertStringContainsString('{ gzip -dc 2>>"$WRITE_LOG"; }', $script);
+        $this->assertStringContainsString('dd of="$STORAGE" bs=1M seek=1 iflag=fullblock conv=fsync,notrunc 2>>"$WRITE_LOG"', $script);
     }
 
     public function test_script_leaves_the_storage_unbootable_after_a_failed_write()
@@ -83,7 +84,7 @@ class ImageWriteDiagnosticsTest extends TestCase
 
     public function test_script_uses_the_decompressor_matching_the_image_type()
     {
-        $this->assertStringContainsString('xz -dc 2>> /tmp/dd.log', $this->provisioningScript('xz'));
+        $this->assertStringContainsString('{ xz -dc 2>>"$WRITE_LOG"; }', $this->provisioningScript('xz'));
     }
 
     protected function postWriteLog($log, $retcode = 1)

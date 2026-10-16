@@ -26,17 +26,26 @@ STORAGE_STAT=/sys/block/$(basename $STORAGE)/stat
 progress_mark() {
     curl --silent --output /dev/null --connect-timeout 2 --max-time 4 -G "http://{{ $server }}/scriptexecute" \
         --data-urlencode "serial={{ $cm->serial }}" --data-urlencode "progress=$1" \
-        --data-urlencode "detail=$2" --data-urlencode "sectors=$3" || true
+        --data-urlencode "detail=$2" --data-urlencode "sectors=$3" --data-urlencode "durable_mb=$4" || true
 }
-# progress_start <phase> <field of $STORAGE_STAT: 7 = sectors written, 3 = sectors read>
+# progress_start <phase> <field of $STORAGE_STAT: 7 = sectors written, 3 = sectors read> [<detail> [<sectors before>]]:
+# a write that goes on after a restart keeps its step (detail) and counts on from where it was; the marks also carry how
+# far the write is durable (write_pieces in scriptexecute/write.blade.php)
 progress_start() {
-    progress_mark "$1"
+    progress_mark "$1" "$3"
     [ -r "$STORAGE_STAT" ] || return 0
     PROGRESS_BASE=$(awk -v f="$2" '{print $f}' "$STORAGE_STAT")
     ( while sleep 5; do
-          progress_mark "$1" "" "$(( $(awk -v f="$2" '{print $f}' "$STORAGE_STAT") - PROGRESS_BASE ))"
+          progress_mark "$1" "$3" "$(( ${4:-0} + $(awk -v f="$2" '{print $f}' "$STORAGE_STAT") - PROGRESS_BASE ))" \
+              "$(cat "${WORK:-/tmp}/durable" 2>/dev/null)"
       done ) &
     PROGRESS_PID=$!
+}
+# progress_note <bytes> <of bytes> <curl exit code>: the download broke and goes on from that byte (a line in the log)
+progress_note() {
+    curl --silent --output /dev/null --connect-timeout 2 --max-time 4 -G "http://{{ $server }}/scriptexecute" \
+        --data-urlencode "serial={{ $cm->serial }}" --data-urlencode "progress=write" \
+        --data-urlencode "resumed=$1" --data-urlencode "of=$2" --data-urlencode "curl=$3" || true
 }
 progress_stop() {
     if [ -n "$PROGRESS_PID" ]; then kill "$PROGRESS_PID" 2>/dev/null; PROGRESS_PID=""; fi
@@ -128,27 +137,16 @@ led_take_act
 led_mode progress
 
 @if ($image_url)
-progress_mark write 'Discarding old data'
-echo Sending BLKDISCARD to $STORAGE
-blkdiscard -v $STORAGE || true
-
-echo Writing image from {{ $image_url }} to $STORAGE
-# Download, decompress and write in one stream. Every stage leaves its failure in /tmp/dd.log,
-# which goes to the server when the pipeline fails (the progress meter of curl stays on the console).
-: > /tmp/dd.log
-progress_start write 7
-{ curl --retry 10 -g "{{ $image_url }}"; RC=$?; [ $RC -eq 0 ] || echo "curl exit code $RC" >> /tmp/dd.log; exit $RC; } \
- | { {{ $decompress }} 2>> /tmp/dd.log; } \
- | dd of=$STORAGE conv=fsync obs=1M >> /tmp/dd.log 2>&1
+@include('scriptexecute.write')
+write_image
 RETCODE=$?
-progress_stop
 if [ $RETCODE -eq 0 ]; then
     echo Original image written successfully
 else
     echo Writing image failed.
-    # Do not leave a half-written image that looks bootable: clear the partition table so the
-    # module returns to network boot (provisioning) on the next power cycle.
-    dd if=/dev/zero of=$STORAGE bs=1M count=1 conv=fsync 2>/dev/null || true
+    # The partition table goes last, so a failed write leaves none: on the next power cycle the module returns to network
+    # boot (provisioning). Cleared again in case the write failed after it.
+    dd if=/dev/zero of=$STORAGE bs=1M count=1 conv=fsync,notrunc 2>/dev/null || true
     report -F 'log=@/tmp/dd.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=$RETCODE&phase=dd"
     finish fail
 fi

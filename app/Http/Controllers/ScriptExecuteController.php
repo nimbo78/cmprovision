@@ -19,6 +19,7 @@ use App\Models\Script;
 use App\Models\Setting;
 use App\Services\EepromImage;
 use App\Services\LabelPrinter;
+use App\Support\ImagePieces;
 
 class ScriptExecuteController extends Controller
 {
@@ -32,6 +33,9 @@ class ScriptExecuteController extends Controller
 
     /* What the output of a failed image write usually means. Pattern => explanation. */
     const WRITE_FAILURE_HINTS = [
+        '/no data from the provisioning server for \d+ minutes/' => 'the provisioning server sent nothing for 10 minutes (network or server down)',
+        '/curl exit code 22\b/' => 'the server answered with an error: the image or its pieces were removed',
+        '/curl exit code 33\b/' => 'the server would not send the rest of the file',
         '/curl exit code (18|56|55|52)\b/' => 'the connection to the provisioning server was closed before the download finished (server timeout, network problem or server restart)',
         '/curl exit code (7|28)\b/'        => 'the module could not reach the provisioning server (connection refused or timed out)',
         '/curl exit code 23\b/'            => 'the decompressor stopped accepting data; see its message below',
@@ -380,6 +384,9 @@ exit 1
             'image_url' => $image ? "http://$server/uploads/".$image->filename_on_server : null,
             'image_extension' => $image ? $image->filename_extension : null,
             'decompress' => $image ? self::DECOMPRESSORS[$image->filename_extension] : null,
+            'image_bytes' => $image ? (int) $image->filesize() : null,
+            'pieces' => null,
+            'resume' => null,
             'bootmode' => $bootmode,
             'preinstall_scripts' => $preinstall_scripts,
             'postinstall_scripts' => $postinstall_scripts,
@@ -654,6 +661,19 @@ exit 1
             return '';   // unknown module, or a late report after completion or failure
         if ($this->cm->phase === 'firstboot')
             return '';   // a late mark of the utility OS: the module reboots into its new system
+
+        /* the download broke and goes on (fetch_image in scriptexecute/write.blade.php): a line in the module's log; the
+           step stays as it is, a new one would restart the phase clock and the speed would be wrong */
+        $resumed = $req->query('resumed');
+        if (is_string($resumed) && ctype_digit($resumed))
+        {
+            $of = $req->query('of');
+            $code = $req->query('curl');
+            $this->logInfo('Download resumed at '.ImagePieces::gb((int) $resumed)
+                .(is_string($of) && ctype_digit($of) && (int) $of > 0 ? ' of '.ImagePieces::gb((int) $of) : '')
+                .(is_string($code) && ctype_digit($code) ? ' (the connection broke: curl exit '.$code.').' : '.'));
+            return '';
+        }
 
         $this->cm->setPhase($phase, $req->query('detail'));
         $sectors = $req->query('sectors');
