@@ -58,7 +58,7 @@
                         </td>
                         <td>
                             <button wire:click="delete({{ $i->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
-                            @if ($i->splitReady() && !$i->splitNeeded())
+                            @if (($i->split_filename || $i->split_error) && !$i->splitPreparing() && !$i->splitNeeded())
                             <button wire:click="removeSplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Remove pieces</button>
                             @elseif (!$i->splitReady() && !$i->splitPreparing() && $i->splitNeeded())
                             <button wire:click="retrySplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Retry pieces</button>

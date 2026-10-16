@@ -120,6 +120,19 @@ class ImagePiecesPagesTest extends TestCase
         $this->assertFalse($image->fresh()->splitReady());
     }
 
+    public function test_a_failed_copy_no_project_needs_can_be_removed()
+    {
+        $image = $this->image();
+        $image->split_error = 'the pieces do not decompress to the image';
+        $image->save();
+
+        Livewire::test(Images::class)->assertSee('Pieces: failed: the pieces do not decompress to the image')
+            ->assertSeeHtml('wire:click="removeSplit('.$image->id.')"')
+            ->call('removeSplit', $image->id)
+            ->assertDontSee('Pieces:');
+        $this->assertNull($image->fresh()->split_error);
+    }
+
     public function test_a_copy_a_project_needs_is_not_removed()
     {
         $image = $this->image();

@@ -47,7 +47,7 @@ class Cm extends Model
         'switch_id', 'switch_name', 'switch_port', 'board_pending_since',
         'timeline', 'polled_at', 'identify_until',
         'os_check', 'hostname', 'os_state', 'os_failed_units', 'os_checked_at', 'os_check_output',
-        'durable_bytes', 'durable_image_id', 'progress_base',
+        'durable_bytes', 'durable_image_id', 'durable_at', 'progress_base',
     ];
 
     protected $casts = [
@@ -64,6 +64,7 @@ class Cm extends Model
         'os_checked_at' => 'datetime',
         'durable_bytes' => 'integer',
         'durable_image_id' => 'integer',
+        'durable_at' => 'datetime',
         'progress_base' => 'integer',
     ];
 
@@ -183,7 +184,9 @@ class Cm extends Model
 
     /* Where the next start of this module goes on with the image write (2.6.1): the start of the first piece not durably
        written, in bytes, or null when it writes from the beginning. The run stopped in the write, with at least one piece
-       durable, for the project still active with "Split the image into pieces", whose image's pieces copy is ready. */
+       durable, for the project still active with "Split the image into pieces", whose image's pieces copy is ready and has
+       that piece. The marks belong to this run: a run started after them (one that does not know them, as 2.6.0 after a
+       rollback) wrote over what they say. $project: the active project, looked up when not given. */
     public function resumableFrom(?Project $project = null)
     {
         $project = $project ?: Project::getActive();
@@ -191,13 +194,16 @@ class Cm extends Model
             return null;
         if ((int) $this->project_id !== (int) $project->id || (int) $project->image_id !== (int) $this->durable_image_id)
             return null;
+        if (!$this->durable_at || !$this->provisioning_started_at || $this->durable_at->lt($this->provisioning_started_at))
+            return null;
         if (!$this->stoppedInTheWrite())
             return null;
         $image = $project->image;
         if (!$image || !$image->splitReady())
             return null;
         $piece = ImagePieces::resumePiece($this->durable_bytes, $image->split_piece_mb);
-        return $piece >= 1 ? ImagePieces::pieceStart($piece, $image->split_piece_mb) : null;
+        $pieces = count($image->splitOffsets()) - 2;
+        return $piece >= 1 && $piece < $pieces ? ImagePieces::pieceStart($piece, $image->split_piece_mb) : null;
     }
 
     /* The run stopped in the image write: the module restarted mid-write, or the write was its last step before it failed */

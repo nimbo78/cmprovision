@@ -10,6 +10,7 @@ use App\Models\Image;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
@@ -210,6 +211,11 @@ class ImageResumeStartTest extends TestCase
             'the checkbox is off' => ['checkbox'],
             'the copy is gone' => ['file'],
             'the operator pressed Start over' => ['over'],
+            'a run started after the marks' => ['later'],
+            'another card' => ['card'],
+            'a card of another size' => ['size'],
+            'the storage was written since' => ['written'],
+            'a mark past the pieces of the copy' => ['past'],
         ];
     }
 
@@ -218,7 +224,8 @@ class ImageResumeStartTest extends TestCase
     {
         Queue::fake();
         $project = $this->project();
-        $this->get(self::START)->assertOk();
+        $start = self::START.'&cid=1b534d4e4d4d4301';
+        $this->get($start)->assertOk();
         $this->durable($case === 'short' ? 1 : 3);
         switch ($case)
         {
@@ -242,9 +249,27 @@ class ImageResumeStartTest extends TestCase
             case 'over':
                 $this->cm()->update(['durable_bytes' => null]);
                 break;
+            case 'later':
+                // a run that knows nothing of the marks (2.6.0 after a rollback) left them as they were
+                $this->cm()->update(['provisioning_started_at' => now()->addMinute()]);
+                break;
+            case 'card':
+                $start = self::START.'&cid=1b534d4e4d4d4302';
+                break;
+            case 'size':
+                $start = str_replace('storagesize=62500000', 'storagesize=31250000', $start);
+                break;
+            case 'written':
+                $this->get($start)->assertOk();   // the run goes on and finds a partition table on the storage
+                $this->post('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => UploadedFile::fake()
+                    ->createWithContent('dd.log', "1+0 records in\n1+0 records out\nthe storage was written after the write stopped\n")])->assertOk();
+                break;
+            case 'past':
+                $this->cm()->update(['durable_bytes' => 5 * self::MIB]);   // the copy has pieces 0-3: piece 4 is none of them
+                break;
         }
 
-        $script = $this->get(self::START)->assertOk()->getContent();
+        $script = $this->get($start)->assertOk()->getContent();
 
         $this->assertStringContainsString("PROGRESS_DETAIL=''\n", $script);
         $this->assertStringContainsString('vcgencmd bootloader_version', $script);
@@ -254,17 +279,73 @@ class ImageResumeStartTest extends TestCase
             Queue::assertPushed(SplitImage::class);
     }
 
-    public function test_the_checkbox_without_a_copy_writes_the_original_and_has_the_copy_made()
+    public function test_without_a_copy_the_start_writes_the_original_and_leaves_the_copy_to_the_pages()
     {
         Queue::fake();
-        $project = $this->project([], $this->imageWithCopy(false));
+        $image = $this->imageWithCopy(false);
+        $image->split_error = 'not enough free space: need about 0.0 GB, 0.0 GB free';
+        $image->save();
+        $project = $this->project([], $image);
 
         $script = $this->get(self::START)->assertOk()->getContent();
 
         $this->assertStringContainsString('/uploads/'.$project->image->filename_on_server."'\n", $script);
         $this->assertStringContainsString('| write_plain', $script);
         $this->assertNull($this->cm()->durable_image_id);
-        Queue::assertPushedOn('images', SplitImage::class);
+        // saving the project and Retry on the Images page make it; a failed one waits for Retry, not for every start
+        Queue::assertNotPushed(SplitImage::class);
+    }
+
+    public function test_a_copy_that_cannot_be_queued_does_not_fail_the_start()
+    {
+        $project = $this->project();
+        unlink($project->image->splitPath());   // its file is gone: the start has it made again
+        $this->mock(Dispatcher::class, function ($mock) {
+            $mock->shouldReceive('dispatch')->andThrow(new \RuntimeException('database is locked'));
+        });
+
+        $script = $this->get(self::START)->assertOk()->getContent();
+
+        $this->assertStringContainsString('| write_plain', $script);
+        $this->assertSame('write', $this->cm()->phase);
+        $this->assertNull($project->image->fresh()->split_queued_at, 'no "preparing…" without a job');
+    }
+
+    public function test_the_same_card_goes_on()
+    {
+        $this->project();
+        $this->get(self::START.'&cid=1b534d4e4d4d4301')->assertOk();
+        $this->durable(3);
+
+        $this->assertStringContainsString('write_pieces 2', $this->get(self::START.'&cid=1b534d4e4d4d4301')->assertOk()->getContent());
+    }
+
+    public function test_a_run_that_goes_on_over_usb_skips_its_os_check()
+    {
+        $this->project(['os_check' => true]);
+        $this->get(self::START)->assertOk();
+        $this->durable(3);
+        $this->assertSame('pending', $this->cm()->os_check);
+
+        $script = $this->get(self::START.'&bootmode=3')->assertOk()->getContent();
+
+        $this->assertStringContainsString('write_pieces 2', $script, 'the run went on');
+        $this->assertSame('skipped', $this->cm()->os_check, 'a reboot would bring it back to USB boot');
+        $this->assertStringNotContainsString('cat >/tmp/oscheck/run', $script);
+        $this->assertStringNotContainsString("reboot -f\n", $script);
+        $this->assertTrue(Cmlog::where('cm', self::SERIAL)->where('msg', 'like', 'Provisioning resumed:%OS check skipped: the module booted over USB.')->exists());
+    }
+
+    public function test_marks_past_the_image_or_outside_the_write_do_not_count()
+    {
+        $this->project();
+        $this->get(self::START)->assertOk();
+        $this->durable(3);
+
+        $this->durable(5);   // the image is 4.5 MiB: no piece starts that far
+        $this->assertSame(3 * self::MIB, $this->cm()->durable_bytes);
+        $this->get('/scriptexecute?serial='.self::SERIAL.'&progress=verify&detail=&sectors=&durable_mb=4')->assertOk();
+        $this->assertSame(3 * self::MIB, $this->cm()->durable_bytes, 'only the write marks pieces');
     }
 
     public function test_a_project_without_the_checkbox_writes_as_before()

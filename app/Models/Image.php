@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Jobs\SplitImage;
 use App\Support\ImagePieces;
+use Illuminate\Bus\UniqueLock;
+use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -64,7 +66,19 @@ class Image extends Model
         $this->split_error = null;
         $this->split_queued_at = now();
         $this->save();
-        SplitImage::dispatch($this);
+        $job = new SplitImage($this);
+        try
+        {
+            dispatch($job);
+        }
+        catch (\Throwable $e)
+        {
+            /* not queued: no "preparing…", and no lock against a second job, which Laravel keeps and would skip Retry with */
+            (new UniqueLock(app(Cache::class)))->release($job);
+            $this->split_queued_at = null;
+            $this->save();
+            throw $e;
+        }
     }
 
     /* What the pages say about the pieces copy */
@@ -86,6 +100,7 @@ class Image extends Model
         $this->split_filename = null;
         $this->split_offsets = null;
         $this->split_piece_mb = null;
+        $this->split_error = null;
         $this->save();
     }
 

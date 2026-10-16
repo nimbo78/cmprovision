@@ -54,6 +54,7 @@ class CmCard extends Component
         if ($cm->durable_bytes === null)
             return;
         $cm->durable_bytes = null;
+        $cm->durable_at = null;
         $cm->save();
         Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => 'info',
             'msg' => 'Start over: the next start writes the image from the beginning (by '.(auth()->user()->name ?? 'unknown').').']);

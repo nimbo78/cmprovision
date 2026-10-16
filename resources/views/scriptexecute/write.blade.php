@@ -34,7 +34,12 @@ fetch_image() {
         bytes_at_least "$n" 1 && quiet_since=$(date +%s)
         case $rc in
             0)
-                bytes_at_least "$got" "$IMAGE_BYTES" && return 0 ;;
+                bytes_at_least "$got" "$IMAGE_BYTES" && return 0
+                # nothing more, although the file is not complete: it is shorter than the script was told
+                if ! bytes_at_least "$n" 1; then
+                    echo "the image on the server ends at $got of $IMAGE_BYTES bytes (curl exit code 0)" >>"$WRITE_LOG"
+                    return 1
+                fi ;;
             23|33)
                 echo "curl exit code $rc" >>"$WRITE_LOG"
                 return $rc ;;
@@ -100,21 +105,29 @@ write_head_from_script() {
 CMPROVISIONINGEOF
     gzip -dc "$WORK/head.gz" >"$WORK/head" 2>>"$WRITE_LOG" && [ $(( $(wc -c <"$WORK/head") )) -eq 1048576 ]
 }
+
+# storage_unchanged: the first MiB on the storage is as a write that stopped leaves it: zero (it is written last), or this
+# image's own when the write got through its last step. Anything else was written since (flashed elsewhere, another card):
+# going on would mix two images.
+storage_unchanged() {
+    dd if="$STORAGE" of="$WORK/stored-head" bs=1M count=1 2>>"$WRITE_LOG" || return 1
+    [ $(( $(tr -d '\000' <"$WORK/stored-head" | wc -c) )) -eq 0 ] || cmp -s "$WORK/stored-head" "$WORK/head"
+}
 @endif
 
 # write_image: the whole write; 0 once the image and, last, its partition table are on the storage
 write_image() {
     : >"$WRITE_LOG"
-@if (!$resume)
+@if ($resume)
+    write_head_from_script || { echo "the first MiB in the script is broken" >>"$WRITE_LOG"; return 1; }
+    storage_unchanged || { echo "the storage was written after the write stopped" >>"$WRITE_LOG"; return 1; }
+@else
     progress_mark write 'Discarding old data'
     echo Sending BLKDISCARD to $STORAGE
     blkdiscard -v $STORAGE || true
 @endif
     # TRIM does not promise zeros on eMMC: the first MiB is cleared on purpose, and written last
     dd if=/dev/zero of="$STORAGE" bs=1M count=1 conv=fsync,notrunc 2>>"$WRITE_LOG" || return 1
-@if ($resume)
-    write_head_from_script || { echo "the first MiB in the script is broken" >>"$WRITE_LOG"; return 1; }
-@endif
     echo Writing image from $IMAGE_URL to $STORAGE
     progress_start write 7 "$PROGRESS_DETAIL" "$PROGRESS_BASE_SECTORS"
 @if ($resume)

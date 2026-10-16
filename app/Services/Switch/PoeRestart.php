@@ -6,6 +6,7 @@ use App\Models\Cm;
 use App\Models\Cmlog;
 use App\Models\EthernetSwitch;
 use App\Models\PoeOutage;
+use App\Models\Project;
 use App\Services\Snmp\SnmpClient;
 use App\Services\Snmp\SnmpError;
 use App\Support\ImagePieces;
@@ -103,8 +104,9 @@ class PoeRestart
                 'error' => $r['stayed_off'] || $r['failed'] || !$r['restarted']];
     }
 
-    /** The question before restarting one module, or the Raspberry Pi on a port when $cm is null */
-    public static function confirm(?Cm $cm, ?string $port): string
+    /** The question before restarting one module, or the Raspberry Pi on a port when $cm is null; $active, the active project,
+        from a page that asks for many modules (looked up when not given) */
+    public static function confirm(?Cm $cm, ?string $port, ?Project $active = null): string
     {
         $on = $port ? ' on '.$port : '';
         if (!$cm)
@@ -113,7 +115,7 @@ class PoeRestart
             $then = 'the module boots the system it was flashed with.';
         elseif ($cm->phase === 'firstboot' || ($cm->os_check === 'failed' && $cm->phase_detail === Cm::OS_NO_REPORT))
             $then = 'the module boots its new system again.';   // the OS check: eMMC comes before the network
-        elseif (($from = $cm->resumableFrom()) !== null)
+        elseif (($from = $cm->resumableFrom($active)) !== null)
             $then = ($cm->isRunning() && $cm->silentFor() === null ? 'its write stops and continues' : 'the module boots from the network and continues the write')
                 .' from '.ImagePieces::gb($from).' of '.ImagePieces::gb((int) $cm->progress_total).'.';
         elseif ($cm->isRunning() && $cm->silentFor() === null)

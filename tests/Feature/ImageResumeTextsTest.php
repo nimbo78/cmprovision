@@ -7,6 +7,7 @@ use App\Http\Livewire\ProvisioningStatus;
 use App\Models\Cm;
 use App\Models\Cmlog;
 use App\Models\Image;
+use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Setting;
 use App\Models\User;
@@ -15,7 +16,9 @@ use App\Support\FailureAdvice;
 use App\Support\RunTimeline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
+use Tests\Support\SwitchRow;
 use Tests\TestCase;
 
 /** 2.6.1: what the card, the steps, the advice and the restart dialogs say about a write that would go on */
@@ -51,17 +54,18 @@ class ImageResumeTextsTest extends TestCase
         $image->sha256 = str_repeat('a', 64);
         $image->uncompressed_size = 6200000000;
         $image->split_filename = 'pieces-'.uniqid().'.gz';
-        $image->split_offsets = json_encode([0, 10, 20, 30]);
+        $image->split_offsets = json_encode(range(0, 130, 10));   // the first MiB and 12 pieces of 512 MiB
         $image->split_piece_mb = 512;
         $image->save();
         $this->files[] = $image->splitPath();
-        file_put_contents($image->splitPath(), str_repeat('x', 30));
+        file_put_contents($image->splitPath(), str_repeat('x', 130));
         $project = Project::create(['name' => '78', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id,
             'label_moment' => 'never', 'verify' => true, 'os_check' => false, 'split_image' => true]);
         Setting::updateOrCreate(['key' => 'active_project'], ['value' => $project->id]);
         return Cm::create(array_merge(['serial' => '10000000e611110c', 'mac' => 'e4:5f:01:62:9f:d3', 'project_id' => $project->id,
             'phase' => 'failed', 'phase_detail' => 'Error during dd. Return code 1.', 'provisioning_started_at' => now()->subMinutes(30),
             'progress_total' => 6200000000, 'progress_bytes' => 3500000000, 'durable_bytes' => 3500000000, 'durable_image_id' => $image->id,
+            'durable_at' => now()->subMinutes(10),
             'timeline' => [['phase' => 'write', 'detail' => null, 'at' => now()->getTimestamp() - 600],
                            ['phase' => 'failed', 'detail' => 'Error during dd. Return code 1.', 'at' => now()->getTimestamp()]]], $attributes));
     }
@@ -96,6 +100,39 @@ class ImageResumeTextsTest extends TestCase
 
         unlink(Image::first()->splitPath());
         $this->assertStringEndsWith(FailureAdvice::RESTART, FailureAdvice::for($cm->fresh())['advice'], 'without the copy it starts over');
+    }
+
+    public function test_the_advice_when_the_data_was_damaged()
+    {
+        $reason = 'Error during dd. Return code 1. Diagnosis: the decompressor stopped accepting data; see its message below.';
+        $cm = $this->resumable(['phase_detail' => $reason, 'timeline' => [['phase' => 'write', 'detail' => null, 'at' => now()->getTimestamp() - 600],
+            ['phase' => 'failed', 'detail' => $reason, 'at' => now()->getTimestamp()]]]);
+
+        $this->assertStringEndsWith('it continues the write from 3.2 GB of 6.2 GB. If it stops at the same place again, the pieces copy on the '
+            .'server is damaged: untick Split the image into pieces in the project, remove the pieces on the Images page and tick it again.',
+            FailureAdvice::for($cm)['advice']);
+    }
+
+    public function test_the_dashboard_looks_up_the_active_project_once_for_all_its_rows()
+    {
+        $cm = $this->resumable();
+        SwitchRow::put(['ip' => '192.0.2.10', 'snmp_community' => 'public', 'snmp_write_community' => 'private']);
+        $batch = NotificationBatch::create(['project_id' => $cm->project_id, 'started_at' => now()->subMinutes(30), 'last_event_at' => now()]);
+        $cm->update(['notification_batch_id' => $batch->id]);
+        $settings = function () {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            Livewire::test(ProvisioningStatus::class)->assertSee('Restart failed');
+            DB::disableQueryLog();
+            return count(array_filter(DB::getQueryLog(), function ($q) { return str_contains($q['query'], '"settings"'); }));
+        };
+        $one = $settings();
+        foreach (range(1, 4) as $i)
+            Cm::create(['serial' => '10000000e61111a'.$i, 'mac' => 'e4:5f:01:62:9f:a'.$i, 'project_id' => $cm->project_id,
+                'phase' => 'failed', 'phase_detail' => 'Error during dd. Return code 1.', 'notification_batch_id' => $batch->id,
+                'provisioning_started_at' => now()->subMinutes(30), 'phase_started_at' => now()->subMinute()]);
+
+        $this->assertSame($one, $settings(), 'not once more for every row with a Restart');
     }
 
     public function test_the_advice_for_a_silent_module_that_would_go_on()

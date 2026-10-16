@@ -83,6 +83,11 @@ class ImageWriteServerTest extends TestCase
                 'the provisioning server sent nothing for 10 minutes (network or server down)'],
             'a file gone' => ["curl exit code 22 (HTTP 404)\n", 'the server answered with an error: the image or its pieces were removed'],
             'no range' => ["curl exit code 33\n", 'the server would not send the rest of the file'],
+            'a storage written since' => ["1+0 records in\n1+0 records out\nthe storage was written after the write stopped\n",
+                'the storage was written after the write stopped (flashed elsewhere, or another card), so the next start writes the image from the beginning'],
+            'a shorter file' => ["the image on the server ends at 1000 of 2000 bytes (curl exit code 0)\n",
+                'the image file on the server is shorter than expected (damaged or replaced)'],
+            'a broken first MiB' => ["gzip: corrupted data\nthe first MiB in the script is broken\n", 'the first MiB of the pieces copy is damaged'],
         ];
     }
 

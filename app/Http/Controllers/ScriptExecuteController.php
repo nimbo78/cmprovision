@@ -32,8 +32,15 @@ class ScriptExecuteController extends Controller
     /* The line the generated flash script prints after flashrom: the chip was written, or it held the image already */
     const EEPROM_RESULT_LINE = '/^EEPROM_RESULT=(written|identical)\s*$/m';
 
+    /* What a run that goes on finds on a storage written since its write stopped (storage_unchanged in
+       scriptexecute/write.blade.php): its marks no longer hold */
+    const STORAGE_WRITTEN = 'the storage was written after the write stopped';
+
     /* What the output of a failed image write usually means. Pattern => explanation. */
     const WRITE_FAILURE_HINTS = [
+        '/'.self::STORAGE_WRITTEN.'/' => self::STORAGE_WRITTEN.' (flashed elsewhere, or another card), so the next start writes the image from the beginning',
+        '/the image on the server ends at \d+ of \d+ bytes/' => 'the image file on the server is shorter than expected (damaged or replaced)',
+        '/the first MiB in the script is broken/' => 'the first MiB of the pieces copy is damaged',
         '/no data from the provisioning server for \d+ minutes/' => 'the provisioning server sent nothing for 10 minutes (network or server down)',
         '/curl exit code 22\b/' => 'the server answered with an error: the image or its pieces were removed',
         '/curl exit code 33\b/' => 'the server would not send the rest of the file',
@@ -167,17 +174,29 @@ exit 1
         $project = Project::getActive();
         $image   = $project ? $project->image : null;
 
-        /* The image resume (2.6.1): a module that stopped in its write goes on from its last durable piece */
-        if ($previous && $project && ($from = $previous->resumableFrom($project)) !== null)
+        /* The image resume (2.6.1): a module that stopped in its write goes on from its last durable piece, on the storage
+           that write was on */
+        if ($previous && $project && $this->sameStorage($previous, $req) && ($from = $previous->resumableFrom($project)) !== null)
             return $this->resumeProvisioning($req, $previous, $project, $from);
 
         $bootmode = $req->query('bootmode');
         // with switches the board is looked up in the background (ResolveBoards): the module gets its script at once
         $lookUp = $req->query('mac') && EthernetSwitch::exists();
-        // with "Split the image into pieces" the module writes the pieces copy; a missing one is made in the background
+        // with "Split the image into pieces" the module writes the pieces copy. One whose file is gone (a restore without the
+        // uploads) is made again in the background: saving the project makes it in the first place, and a failed one waits
+        // for Retry on the Images page. Queueing it must not fail the start.
         $split = $project && $project->split_image && $image && $image->splitReady();
-        if ($project && $project->split_image && $image && !$split)
-            $image->queueSplit();
+        if ($project && $project->split_image && $image && $image->split_filename && !$split)
+        {
+            try
+            {
+                $image->queueSplit();
+            }
+            catch (\Throwable $e)
+            {
+                report($e);
+            }
+        }
 
         $this->cm = Cm::updateOrCreate(['serial' => $this->serial], array_merge($this->moduleFields($req, $lookUp), [
             'serial' => $this->serial,
@@ -219,6 +238,7 @@ exit 1
             /* the image resume (2.6.1): how far a run on the pieces copy is written for sure */
             'durable_bytes' => null,
             'durable_image_id' => $split ? $image->id : null,
+            'durable_at' => null,
         ]));
 
         if (!$project)
@@ -336,6 +356,8 @@ exit 1
             'progress_total' => $image->uncompressed_size,
             'polled_at' => null,
             'identify_until' => null,
+            /* as at any start: booted over USB, the module would only boot over USB again after the write */
+            'os_check' => $project->os_check ? ($req->query('bootmode') == 3 ? 'skipped' : 'pending') : null,
         ]));
         $this->cm->resumeWrite(ImagePieces::resumedDetail($from, $total), $from);
         $batch = NotificationBatch::current($project);
@@ -343,11 +365,22 @@ exit 1
         $this->cm->notification_batch_id = $batch->id;
         $this->cm->save();
         $this->logInfo('Provisioning resumed: the module restarted during the write; continuing from '
-            .ImagePieces::gb($from).' of '.ImagePieces::gb($total).'.');
+            .ImagePieces::gb($from).' of '.ImagePieces::gb($total).'.'
+            .($this->cm->os_check === 'skipped' ? ' OS check skipped: the module booted over USB.' : ''));
 
         $this->lookUpBoardLater();
         return $this->moduleScript($req, $project, collect(), $this->postinstallScripts($project, $image),
             $this->writeData($this->moduleServer($req), $image, true, $from), true);
+    }
+
+    /* The module starts with the storage its last run wrote: the same CID and size, where the module tells them (a CM4 Lite
+       may get another SD card) */
+    protected function sameStorage(Cm $previous, Request $req): bool
+    {
+        $cid = (string) $req->query('cid');
+        $size = $req->query('storagesize') ? $req->query('storagesize') * 512 : null;
+        return ($cid === '' || !$previous->cid || $previous->cid === $cid)
+            && (!$size || !$previous->storage || (int) $previous->storage === (int) $size);
     }
 
     /* What the module tells about itself at its start (cmdline.txt of scriptexecute): the fields of its row */
@@ -654,6 +687,12 @@ exit 1
             {
                 $msg .= " Diagnosis: $diagnosis.";
             }
+            if ($phase == "dd" && str_contains($logfile, self::STORAGE_WRITTEN))
+            {
+                /* the image resume (2.6.1): what the marks say was written is no longer there */
+                $this->cm->durable_bytes = null;
+                $this->cm->durable_at = null;
+            }
             $this->logInfo($msg." Script output:\n\n".$logfile, 'error');
             $this->cm->markFailed($msg);
             $failed = true;
@@ -753,11 +792,16 @@ exit 1
         $sectors = $req->query('sectors');
         if (is_string($sectors) && ctype_digit($sectors))
             $this->cm->progress_bytes = (int) $sectors * 512;
-        /* the image resume (2.6.1): how far a run on the pieces copy is written for sure, in MiB (write_pieces) */
+        /* the image resume (2.6.1): how far a run on the pieces copy is written for sure, in MiB (write_pieces): only up, and
+           only where a piece of the image starts, so before its end */
         $durable = $req->query('durable_mb');
-        if (is_string($durable) && ctype_digit($durable) && $this->cm->durable_image_id && $this->cm->phase === 'write'
-            && (int) $durable * 1048576 > (int) $this->cm->durable_bytes)
+        if (is_string($durable) && ctype_digit($durable) && strlen($durable) < 10 && $this->cm->durable_image_id
+            && $this->cm->phase === 'write' && (int) $durable * 1048576 > (int) $this->cm->durable_bytes
+            && (int) $durable * 1048576 < (int) $this->cm->progress_total)
+        {
             $this->cm->durable_bytes = (int) $durable * 1048576;
+            $this->cm->durable_at = now();
+        }
         $this->cm->save();
 
         return '';

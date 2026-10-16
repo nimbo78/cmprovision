@@ -103,13 +103,15 @@ class ProvisioningStatus extends Component
         $restartable = $summary && $summary->open ? $summary->modules->filter(function ($cm) use ($canRestart) {
             return ($cm->phase === 'failed' || $cm->silentFor() !== null) && $canRestart($cm);
         }) : collect();
+        $active = Project::getActive();   // once for every row's Restart question
         return view('livewire.provisioning-status', [
             'summary' => $summary,
             'modules' => $modules,
             'activeCount' => $modules->filter->isActive()->count(),
             'canRestart' => $canRestart,
+            'activeProject' => $active,
             'failedToRestart' => count($restartable),
-            'resumingToRestart' => self::resuming($restartable, Project::getActive()),
+            'resumingToRestart' => self::resuming($restartable, $active),
         ]);
     }
 

@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Jobs\SplitImage;
 use App\Models\Image;
+use App\Support\ImagePieces;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Queue\MaxAttemptsExceededException;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
@@ -162,6 +164,29 @@ class SplitImageTest extends TestCase
         (new SplitImage($image, SplitImage::RESTARTS))->failed(new MaxAttemptsExceededException('cut off'));
 
         $this->assertSame('cut off', $image->fresh()->split_error);
+    }
+
+    public function test_a_run_that_timed_out_is_not_queued_again()
+    {
+        Queue::fake();
+        $image = $this->image(self::diskImage(2 * self::MIB));
+
+        (new SplitImage($image))->failed(new TimeoutExceededException('App\Jobs\SplitImage has timed out.'));
+
+        Queue::assertNothingPushed();
+        $this->assertSame('App\Jobs\SplitImage has timed out.', $image->fresh()->split_error);
+    }
+
+    public function test_a_run_queued_again_counts_as_preparing_from_then()
+    {
+        Queue::fake();
+        $image = $this->image(self::diskImage(2 * self::MIB));
+        $image->split_queued_at = now()->subSeconds(ImagePieces::SPLIT_TIMEOUT + 60);
+        $image->save();
+
+        (new SplitImage($image))->failed(new MaxAttemptsExceededException('cut off'));
+
+        $this->assertTrue($image->fresh()->splitPreparing(), 'no Retry while the next run waits for its turn');
     }
 
     public function test_the_copy_is_queued_once_on_the_images_queue()

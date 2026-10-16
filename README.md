@@ -88,6 +88,7 @@ A project with **Split the image into 512 MB pieces** goes further: a module res
 - The server keeps a gzip copy of the image in pieces next to the original, made in the background after the project is saved (about 5 minutes for a 6 GB image on a CM4); the Images page shows its state. Until it is ready the project writes the original, and a restart starts over.
 - A piece counts once the module has written it with `fsync` and the decompressor has checked its checksum; the run goes on from the first piece that does not count. Turn on **Verify that image was written correctly** too: it checks the whole image, including the part written before the restart.
 - The module card shows where the next start continues; **Start over** makes it write from the beginning instead.
+- A module whose storage was written in between (flashed elsewhere, another SD card) does not continue onto it: the image is written from the beginning, at the latest on the next start.
 - For an `.xz` or `.bz2` image the copy is gzip, so the download grows.
 
 ## The built-in Wi-Fi as a cold spare ##

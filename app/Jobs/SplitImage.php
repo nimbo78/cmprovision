@@ -11,6 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Str;
 
 /* The pieces copy of an image (2.6.1, App\Support\ImagePieces) for the projects with "Split the image into pieces". One pass
@@ -27,6 +28,8 @@ class SplitImage implements ShouldQueue, ShouldBeUniqueUntilProcessing
     public $restarts;
     public $tries = 1;
     public $timeout = ImagePieces::SPLIT_TIMEOUT;
+    /* the lock against a second job outlives the job no longer than "preparing…" does (a job that never got queued) */
+    public $uniqueFor = ImagePieces::SPLIT_TIMEOUT;
     public $failOnTimeout = true;
     public $deleteWhenMissingModels = true;
 
@@ -94,16 +97,18 @@ class SplitImage implements ShouldQueue, ShouldBeUniqueUntilProcessing
             unlink($old);
     }
 
-    /* A run cut off by a restart of the worker goes again (the next run starts from the beginning); anything else is the
-       reason the Images page shows, until Retry */
+    /* A run cut off by a restart of the worker goes again (the next run starts from the beginning), "preparing…" from then;
+       a run that timed out, or anything else, is the reason the Images page shows, until Retry */
     public function failed(?\Throwable $e = null): void
     {
         $image = Image::find($this->image->id);
         if (!$image)
             return;
         self::clean($image);
-        if ($e instanceof MaxAttemptsExceededException && $this->restarts < self::RESTARTS)
+        if ($e instanceof MaxAttemptsExceededException && !$e instanceof TimeoutExceededException && $this->restarts < self::RESTARTS)
         {
+            $image->split_queued_at = now();
+            $image->save();
             self::dispatch($image, $this->restarts + 1)->delay(now()->addMinute());
             return;
         }

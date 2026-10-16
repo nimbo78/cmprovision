@@ -15,7 +15,7 @@ class ImageWriteScriptTest extends TestCase
 {
     const MIB = 1048576;
     const URL = 'http://172.20.0.1/uploads/image';
-    const APPLETS = ['gzip', 'xz', 'bunzip2', 'base64', 'sed', 'awk', 'wc', 'tail', 'tee', 'grep', 'cat'];
+    const APPLETS = ['gzip', 'xz', 'bunzip2', 'base64', 'sed', 'awk', 'wc', 'tail', 'tee', 'grep', 'cat', 'tr', 'cmp'];
 
     /* curl as the module sees it, serving $FAKE/www: -C, -D, -f and -w as curl does them. What goes wrong comes from
          $FAKE/breaks        one number per request: only that many bytes, then the connection breaks (exit 56)
@@ -84,8 +84,12 @@ SH;
             mkdir($this->dir.'/'.$sub, 0755, true);
         foreach (self::APPLETS as $applet)
             symlink($this->busybox, $this->dir.'/bin/'.$applet);
-        // dd as in the utility OS, every call noted
-        $this->stub('dd', 'echo "$*" >> "$FAKE/dd.calls"; exec '.escapeshellarg($this->busybox).' dd "$@"');
+        // dd as in the utility OS, every call noted; the call with $FAKE_DD_FAIL among its arguments copies a whole piece
+        // and then fails at the storage, as a failing eMMC does on its fsync
+        $this->stub('dd', 'echo "$*" >> "$FAKE/dd.calls"'."\n"
+            .'if [ -n "$FAKE_DD_FAIL" ]; then case " $* " in *" $FAKE_DD_FAIL "*)'."\n"
+            .'    head -c 1048576 >/dev/null; printf "1+0 records in\n1+0 records out\ndd: fsync: Input/output error\n" >&2; exit 1 ;; esac; fi'."\n"
+            .'exec '.escapeshellarg($this->busybox).' dd "$@"');
         file_put_contents($this->dir.'/clock', "1000000\n");
         $this->stub('date', 'cat "$FAKE/clock"');
         $this->stub('sleep', 'echo $(( $(cat "$FAKE/clock") + ${1%.*} )) > "$FAKE/clock"');
@@ -285,6 +289,18 @@ SH;
         $this->assertSame(str_repeat("\0", self::MIB), substr($this->emmc(), 0, self::MIB));
     }
 
+    public function test_a_file_shorter_than_the_script_was_told_fails_at_once()
+    {
+        $compressed = gzencode(self::diskImage(2 * self::MIB), 6);
+        $this->serve($compressed);
+        $size = strlen($compressed);
+
+        $this->assertNotSame(0, $this->write(['image_bytes' => $size + 1000]));
+
+        $this->assertSame([0, $size], $this->imageRequests(), 'one more request for the rest, not ten minutes of them');
+        $this->assertStringContainsString("the image on the server ends at $size of ".($size + 1000).' bytes', $this->log());
+    }
+
     public function test_byte_counts_past_two_gibibytes_stay_exact()
     {
         $this->serve('x');
@@ -390,6 +406,19 @@ SH;
         $this->assertSame(str_repeat("\0", self::MIB), substr($this->emmc(), 0, self::MIB));
     }
 
+    public function test_a_piece_the_storage_fails_to_write_ends_the_write_unmarked()
+    {
+        $image = self::diskImage(4 * self::MIB + self::MIB / 2);
+        [$copy, $offsets] = self::pieces($image);
+        $this->serve($copy);
+
+        $this->assertNotSame(0, $this->write(['pieces' => ['count' => 4, 'mb' => 1]], ['FAKE_DD_FAIL' => 'seek=3']));   // piece 2
+
+        $this->assertSame([2], $this->durableMarks(), 'piece 0 only: piece 1 counts once piece 2 is written');
+        $this->assertStringContainsString('dd: fsync: Input/output error', $this->log());
+        $this->assertSame(str_repeat("\0", self::MIB), substr($this->emmc(), 0, self::MIB));
+    }
+
     public function test_a_stream_that_ends_between_pieces_is_not_taken_for_the_image()
     {
         $image = self::diskImage(4 * self::MIB + self::MIB / 2);
@@ -412,5 +441,34 @@ SH;
 
         $this->assertSame([], $this->imageRequests());
         $this->assertStringContainsString('the first MiB in the script is broken', $this->log());
+    }
+
+    public function test_a_run_that_goes_on_over_a_storage_written_since_stops_before_the_download()
+    {
+        $image = self::diskImage(4 * self::MIB + self::MIB / 2);
+        [$copy, $offsets] = self::pieces($image);
+        $this->serve($copy);
+        // flashed elsewhere after the write stopped: a partition table again, and other data
+        $other = str_repeat("\x77", 512).str_repeat("\0", self::MIB - 512).str_repeat("\x99", strlen($image) - self::MIB);
+        file_put_contents($this->dir.'/emmc', $other);
+
+        $this->assertNotSame(0, $this->write(['pieces' => ['count' => 4, 'mb' => 1], 'resume' => $this->resume($offsets, $copy)]));
+
+        $this->assertSame([], $this->imageRequests());
+        $this->assertStringContainsString('the storage was written after the write stopped', $this->log());
+        $this->assertSame($other, $this->emmc(), 'nothing written over it');
+    }
+
+    public function test_a_run_that_stopped_after_its_last_step_goes_on_over_its_own_partition_table()
+    {
+        $image = self::diskImage(4 * self::MIB + self::MIB / 2);
+        [$copy, $offsets] = self::pieces($image);
+        $this->serve($copy);
+        // the write had ended, and the module restarted before the server heard of the next step
+        file_put_contents($this->dir.'/emmc', $image);
+
+        $this->assertSame(0, $this->write(['pieces' => ['count' => 4, 'mb' => 1], 'resume' => $this->resume($offsets, $copy)]));
+
+        $this->assertSame($image, $this->emmc());
     }
 }
