@@ -67,6 +67,18 @@ class Image extends Model
         SplitImage::dispatch($this);
     }
 
+    /* What the pages say about the pieces copy */
+    function splitState(): string
+    {
+        if ($this->splitReady())
+            return 'ready, '.ImagePieces::gb((int) filesize($this->splitPath()));
+        if ($this->splitPreparing())
+            return 'preparing…';
+        if ($this->split_error)
+            return 'failed: '.$this->split_error;
+        return 'not made yet';
+    }
+
     function removeSplit()
     {
         if ($this->splitPath() && is_file($this->splitPath()))

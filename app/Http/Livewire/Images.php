@@ -11,7 +11,7 @@ use \Illuminate\Http\UploadedFile;
 class Images extends Component
 {
 
-    public $images, $maxfilesize, $freediskspace, $hashPending = false;
+    public $images, $maxfilesize, $freediskspace, $hashPending = false, $splitPending = false;
     public $isOpen = false;
     public $os32bit = false;
 
@@ -28,6 +28,7 @@ class Images extends Component
         );
         $this->os32bit = (PHP_INT_MAX == 2147483647);
         $this->hashPending = Image::where('sha256', '')->exists();
+        $this->splitPending = $this->images->contains(function ($image) { return $image->splitPreparing(); });
 
         return view('livewire.images');
     }
@@ -46,6 +47,26 @@ class Images extends Component
     {
         Image::destroy($id);
         session()->flash('message', 'Image deleted.');
+    }
+
+    /* The pieces copy (2.6.1) that no project with "Split the image into pieces" needs */
+    public function removeSplit($id)
+    {
+        $image = Image::findOrFail($id);
+        if ($image->splitNeeded())
+        {
+            session()->flash('message', 'A project with "Split the image into pieces" writes this image: its pieces stay.');
+            return;
+        }
+        $image->removeSplit();
+        session()->flash('message', 'Pieces removed.');
+    }
+
+    public function retrySplit($id)
+    {
+        $image = Image::findOrFail($id);
+        if ($image->splitNeeded())
+            $image->queueSplit();
     }
 
     public function create()

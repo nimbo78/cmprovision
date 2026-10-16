@@ -40,6 +40,20 @@
                   <p class="text-xs text-fg-muted mt-1">The module boots the written system on the stand: it installs the packages, runs the first-boot scripts and reports its host name. The bootloader must try eMMC before the network (BOOT_ORDER).</p>
                   @error('os_check') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
+              <div class="mb-4">
+                  <label class="inline-flex items-center">
+                    <input type="checkbox" id="split_image" name="split_image" wire:model.live="split_image" class="form-checkbox h-6 w-6 text-accent">
+                    <span class="ml-3 text-sm">Split the image into {{ \App\Support\ImagePieces::pieceMb() }} MB pieces</span>
+                  </label>
+                  <p class="text-xs text-fg-muted mt-1">A module restarted during the write continues from the last piece it wrote. Turn on the verification too: it checks the whole written image, including the part written before the restart.</p>
+                  @if ($split_image && ($chosen = $images->firstWhere('id', $image_id)))
+                  <p class="text-xs text-fg-muted mt-1">Pieces of {{ $chosen->filename }}: {{ $chosen->splitState() }}</p>
+                  @if (in_array($chosen->filename_extension, ['xz', 'bz2'], true))
+                  <p class="text-xs text-fg-muted mt-1">The pieces are a gzip copy of this {{ $chosen->filename_extension }} image: the download grows.</p>
+                  @endif
+                  @endif
+                  @error('split_image') <span class="text-neg">{{ $message }}</span>@enderror
+              </div>
               @if ($os_check && count($packages))
               <div class="mb-4">
                   <div class="block text-fg text-sm font-bold mb-2">Packages to install on the first boot:</div>

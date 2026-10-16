@@ -24,7 +24,7 @@ class Projects extends Component
     public $active = true;
     public $projects, $activeProject;
     public $projectid, $name, $device, $storage, $image_id, $label_id, $label_moment, $selectedScripts, $offerSettingsReset;
-    public $firmware, $eeprom_settings, $verify, $os_check, $selectedPackages;
+    public $firmware, $eeprom_settings, $verify, $os_check, $selectedPackages, $split_image;
     public $images, $labels, $scripts, $packages;
 
     protected function rules()
@@ -43,6 +43,7 @@ class Projects extends Component
             'selectedPackages' => 'array',
             'verify' => 'required|boolean',
             'os_check' => 'required|boolean',
+            'split_image' => 'required|boolean',
         ];
     }
 
@@ -127,6 +128,7 @@ class Projects extends Component
         $this->active = true;
         $this->verify = false;
         $this->os_check = false;
+        $this->split_image = false;
         $this->selectedPackages = [];
         $this->eeprom_settings = '';
         $this->firmware = '';
@@ -147,6 +149,7 @@ class Projects extends Component
         $this->label_id = $p->label_id;
         $this->verify = $p->verify;
         $this->os_check = $p->os_check;
+        $this->split_image = $p->split_image;
         $this->selectedPackages = $p->packages->map(function ($package) { return strval($package->id); })->all();
         $this->active = $p->isActive();
         $this->selectedScripts = [];
@@ -203,6 +206,7 @@ class Projects extends Component
             'eeprom_settings' => $this->eeprom_settings ? str_replace("\r", "", $this->eeprom_settings) : null,
             'verify' => $this->verify,
             'os_check' => (bool) $this->os_check,
+            'split_image' => (bool) $this->split_image,
         ]);
         $project->scripts()->sync($this->selectedScripts);
         $project->packages()->sync($this->selectedPackages ?: []);
@@ -216,6 +220,12 @@ class Projects extends Component
         {
             /* Queue SHA256 calculation job */
             ComputeSHA256::dispatch($project->image);
+        }
+
+        if ($this->split_image && $project->image)
+        {
+            /* the pieces copy (2.6.1): made in the background, until then the project writes the original */
+            $project->image->queueSplit();
         }
 
         $this->closeModal();
