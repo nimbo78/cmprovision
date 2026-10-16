@@ -62,18 +62,68 @@ write_plain() {
     dd of="$WORK/head" bs=1M count=1 iflag=fullblock 2>>"$WRITE_LOG" || return 1
     dd of="$STORAGE" bs=1M seek=1 iflag=fullblock conv=fsync,notrunc 2>>"$WRITE_LOG"
 }
+@if ($pieces)
+
+PIECES={{ (int) $pieces['count'] }}
+PIECE_MB={{ (int) $pieces['mb'] }}
+
+# write_pieces <first piece>: the image after its first MiB in pieces of PIECE_MB MiB, each on the storage (fsync) before
+# the next starts. Piece k-1 counts as durable once piece k got data: the decompressor checked the CRC of piece k-1's
+# gzip member before it gave out the first byte of piece k. The mark is in MiB of the image ($WORK/durable). A piece
+# that came short ends the write, unless it is the last.
+write_pieces() {
+    k=$1
+    while [ "$k" -lt "$PIECES" ]; do
+        dd of="$STORAGE" bs=1M seek=$((1 + k * PIECE_MB)) count="$PIECE_MB" iflag=fullblock conv=fsync,notrunc 2>"$WORK/piece.dd"
+        rc=$?
+        cat "$WORK/piece.dd" >>"$WRITE_LOG"
+        [ $rc -eq 0 ] || return $rc
+        records=$(sed -n 's/^\([0-9]*\)+\([0-9]*\) records in$/\1 \2/p' "$WORK/piece.dd")
+        full=${records%% *}
+        part=${records##* }
+        [ $(( ${full:-0} + ${part:-0} )) -gt 0 ] || return 1
+        if [ "$k" -gt "$1" ]; then
+            echo $((1 + k * PIECE_MB)) >"$WORK/durable"
+            progress_mark write "$PROGRESS_DETAIL" "" "$((1 + k * PIECE_MB))"
+        fi
+        [ "${full:-0}" -eq "$PIECE_MB" ] || [ $((k + 1)) -eq "$PIECES" ] || return 1
+        k=$((k + 1))
+    done
+}
+@endif
+@if ($resume)
+
+# write_head_from_script: the first MiB of the image (gzip member 0 of the pieces copy), as it came with this script
+write_head_from_script() {
+    base64 -d >"$WORK/head.gz" << "CMPROVISIONINGEOF"
+{!! $resume['head'] !!}
+CMPROVISIONINGEOF
+    gzip -dc "$WORK/head.gz" >"$WORK/head" 2>>"$WRITE_LOG" && [ $(( $(wc -c <"$WORK/head") )) -eq 1048576 ]
+}
+@endif
 
 # write_image: the whole write; 0 once the image and, last, its partition table are on the storage
 write_image() {
     : >"$WRITE_LOG"
+@if (!$resume)
     progress_mark write 'Discarding old data'
     echo Sending BLKDISCARD to $STORAGE
     blkdiscard -v $STORAGE || true
+@endif
     # TRIM does not promise zeros on eMMC: the first MiB is cleared on purpose, and written last
     dd if=/dev/zero of="$STORAGE" bs=1M count=1 conv=fsync,notrunc 2>>"$WRITE_LOG" || return 1
+@if ($resume)
+    write_head_from_script || { echo "the first MiB in the script is broken" >>"$WRITE_LOG"; return 1; }
+@endif
     echo Writing image from $IMAGE_URL to $STORAGE
     progress_start write 7 "$PROGRESS_DETAIL" "$PROGRESS_BASE_SECTORS"
+@if ($resume)
+    fetch_image {{ (int) $resume['from_byte'] }} | { {!! $decompress !!} 2>>"$WRITE_LOG"; } | write_pieces {{ (int) $resume['piece'] }}
+@elseif ($pieces)
+    fetch_image 0 | { {!! $decompress !!} 2>>"$WRITE_LOG"; } | { dd of="$WORK/head" bs=1M count=1 iflag=fullblock 2>>"$WRITE_LOG" && write_pieces 0; }
+@else
     fetch_image 0 | { {!! $decompress !!} 2>>"$WRITE_LOG"; } | write_plain
+@endif
     status=$?
     progress_stop
     [ $status -eq 0 ] || return $status

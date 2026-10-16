@@ -296,4 +296,121 @@ SH;
 
         $this->assertSame(['6000000000', 'yes', 'no'], $out);
     }
+
+    /** The pieces copy of $image as SplitImage makes it, pieces of 1 MiB: [file contents, member starts and the size] */
+    protected static function pieces(string $image): array
+    {
+        $members = [gzencode(substr($image, 0, self::MIB), 6)];
+        for ($at = self::MIB; $at < strlen($image); $at += self::MIB)
+            $members[] = gzencode(substr($image, $at, self::MIB), 6);
+        $offsets = [0];
+        foreach ($members as $member)
+            $offsets[] = end($offsets) + strlen($member);
+        return [implode('', $members), $offsets];
+    }
+
+    /** The durable marks the write sent, in MiB */
+    protected function durableMarks(): array
+    {
+        return array_values(array_filter(array_map(function ($line) {
+            return preg_match('/^mark write\|[^|]*\|\|(\d+)$/', $line, $m) ? (int) $m[1] : null;
+        }, $this->lines('marks'))));
+    }
+
+    public function test_pieces_are_marked_durable_one_piece_behind()
+    {
+        $image = self::diskImage(4 * self::MIB + self::MIB / 2);   // the first MiB, pieces 0-2 and half a piece 3
+        [$copy, $offsets] = self::pieces($image);
+        $this->serve($copy);
+
+        $this->assertSame(0, $this->write(['pieces' => ['count' => 4, 'mb' => 1]]));
+
+        $this->assertSame($image, $this->emmc());
+        $this->assertSame([2, 3, 4], $this->durableMarks(), 'piece k-1 once piece k is written; the last piece never');
+        $this->assertSame('4', trim(file_get_contents($this->dir.'/work/durable')));
+    }
+
+    public function test_a_broken_connection_inside_a_piece_is_resumed_too()
+    {
+        $image = self::diskImage(4 * self::MIB + self::MIB / 2);
+        [$copy, $offsets] = self::pieces($image);
+        $this->serve($copy);
+        file_put_contents($this->dir.'/breaks', ($offsets[2] + 100)."\n");
+
+        $this->assertSame(0, $this->write(['pieces' => ['count' => 4, 'mb' => 1]]));
+
+        $this->assertSame($image, $this->emmc());
+        $this->assertSame([0, $offsets[2] + 100], $this->imageRequests());
+        $this->assertSame([2, 3, 4], $this->durableMarks());
+    }
+
+    protected function resume(array $offsets, string $copy, ?string $head = null): array
+    {
+        return ['piece' => 2, 'from_byte' => $offsets[3],
+            'head' => chunk_split(base64_encode($head ?? substr($copy, 0, $offsets[1])), 76, "\n"),
+            'detail' => 'Resumed after a restart at 0.0 GB of 0.0 GB', 'base_sectors' => 3 * 2048];
+    }
+
+    public function test_a_resumed_run_writes_from_its_piece_and_the_partition_table_from_the_script()
+    {
+        $image = self::diskImage(4 * self::MIB + self::MIB / 2);
+        [$copy, $offsets] = self::pieces($image);
+        $this->serve($copy);
+        // the earlier run wrote pieces 0 and 1 (the image from 1 to 3 MiB); after them the eMMC holds old data
+        file_put_contents($this->dir.'/emmc', str_repeat("\0", self::MIB).substr($image, self::MIB, 2 * self::MIB)
+            .str_repeat("\xee", strlen($image) - 3 * self::MIB));
+
+        $this->assertSame(0, $this->write(['pieces' => ['count' => 4, 'mb' => 1], 'resume' => $this->resume($offsets, $copy)]));
+
+        $this->assertSame($image, $this->emmc());
+        $this->assertSame([$offsets[3]], $this->imageRequests(), 'from piece 2 on: the first MiB came with the script');
+        $this->assertSame([], $this->lines('calls'), 'no blkdiscard');
+        $marks = $this->lines('marks');
+        $this->assertSame('start write|7|Resumed after a restart at 0.0 GB of 0.0 GB|6144', $marks[0]);
+        $this->assertNotContains('mark write|Discarding old data||', $marks);
+        $seeks = array_values(array_filter(array_map(function ($call) {
+            return preg_match('/ seek=(\d+) /', $call, $m) ? (int) $m[1] : null;
+        }, $this->lines('dd.calls'))));
+        $this->assertSame([3, 4], $seeks, 'pieces 2 and 3 only');
+        $this->assertSame([4], $this->durableMarks());
+    }
+
+    public function test_a_corrupt_piece_is_never_marked_durable()
+    {
+        $image = self::diskImage(4 * self::MIB + self::MIB / 2);
+        [$copy, $offsets] = self::pieces($image);
+        // the CRC of member 2 (piece 1) is wrong: the 8 bytes before the end of a member are its CRC32 and its length
+        $at = $offsets[3] - 8;
+        $copy[$at] = chr(ord($copy[$at]) ^ 0xff);
+        $this->serve($copy);
+
+        $this->assertNotSame(0, $this->write(['pieces' => ['count' => 4, 'mb' => 1]]));
+
+        $this->assertSame([2], $this->durableMarks(), 'piece 0 is durable, the corrupt piece 1 never');
+        $this->assertSame(str_repeat("\0", self::MIB), substr($this->emmc(), 0, self::MIB));
+    }
+
+    public function test_a_stream_that_ends_between_pieces_is_not_taken_for_the_image()
+    {
+        $image = self::diskImage(4 * self::MIB + self::MIB / 2);
+        [$copy, $offsets] = self::pieces($image);
+        $this->serve(substr($copy, 0, $offsets[3]));   // members 0-2 only: gzip ends without complaint
+
+        $this->assertNotSame(0, $this->write(['pieces' => ['count' => 4, 'mb' => 1]]));
+
+        $this->assertSame(str_repeat("\0", self::MIB), substr($this->emmc(), 0, self::MIB), 'no partition table on a short image');
+    }
+
+    public function test_a_broken_partition_table_in_the_script_stops_before_the_download()
+    {
+        $image = self::diskImage(4 * self::MIB + self::MIB / 2);
+        [$copy, $offsets] = self::pieces($image);
+        $this->serve($copy);
+
+        $this->assertNotSame(0, $this->write(['pieces' => ['count' => 4, 'mb' => 1],
+            'resume' => $this->resume($offsets, $copy, gzencode(str_repeat("\0", 1000)))]));
+
+        $this->assertSame([], $this->imageRequests());
+        $this->assertStringContainsString('the first MiB in the script is broken', $this->log());
+    }
 }
