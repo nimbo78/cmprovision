@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1104" height="720" viewBox="0 0 1104 720" role="img">
+<title>Режимы без помощника ledpattern</title>
+<desc>Режимы светодиодов без помощника ledpattern: ядерные триггеры timer и heartbeat, без плавности и без чередования.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7A6650"/></marker>
+<marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#D9342B"/></marker>
+</defs>
+<rect width="1104" height="720" fill="#FFF7E8"/>
+<text x="24" y="38" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="22" font-weight="bold" fill="#2A1A0C" text-anchor="start">Режимы без помощника ledpattern</text>
+<rect x="24" y="48" width="48" height="4" rx="2" fill="#E2681C"/>
+<text x="24" y="74" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="13" font-weight="normal" fill="#7A6650" text-anchor="start">Если помощник не скачался или не запустился, те же состояния показываются триггерами ядра.</text>
+<text x="1080" y="38" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="end">высота линии — яркость светодиода, красное — светится</text>
+<line x1="300" y1="88" x2="300" y2="656" stroke="#D8C7A8" stroke-width="1"/>
+<line x1="430" y1="88" x2="430" y2="656" stroke="#EADFCB" stroke-width="1"/>
+<line x1="560" y1="88" x2="560" y2="656" stroke="#D8C7A8" stroke-width="1"/>
+<line x1="690" y1="88" x2="690" y2="656" stroke="#EADFCB" stroke-width="1"/>
+<line x1="820" y1="88" x2="820" y2="656" stroke="#D8C7A8" stroke-width="1"/>
+<line x1="950" y1="88" x2="950" y2="656" stroke="#EADFCB" stroke-width="1"/>
+<line x1="1080" y1="88" x2="1080" y2="656" stroke="#D8C7A8" stroke-width="1"/>
+<text x="24" y="124" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="17" font-weight="bold" fill="#2A1A0C" text-anchor="start">Идёт прошивка</text>
+<rect x="24" y="132" width="80" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="64" y="146" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">progress</text>
+<text x="24" y="170" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Как с помощником: это и так</text>
+<text x="24" y="184" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">таймер ядра.</text>
+<rect x="300" y="119" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,149 L300,119 L312.7,119 L313,149 L325.7,149 L326,119 L339,119 L339.3,149 L351.7,149 L352,119 L365,119 L365.3,149 L378,149 L378.3,119 L391,119 L391.3,149 L403.7,149 L404,119 L417,119 L417.3,149 L430,149 L430.3,119 L442.7,119 L443,149 L456,149 L456.3,119 L469,119 L469.3,149 L482,149 L482.3,119 L495,119 L495.3,149 L507.7,149 L508,119 L521,119 L521.3,149 L534,149 L534.3,119 L547,119 L547.3,149 L560,149 L560.3,119 L573,119 L573.3,149 L585.7,149 L586,119 L599,119 L599.3,149 L612,149 L612.3,119 L625,119 L625.3,149 L638,149 L638.3,119 L650.7,119 L651,149 L664,149 L664.3,119 L677,119 L677.3,149 L690,149 L690.3,119 L703,119 L703.3,149 L715.7,149 L716,119 L729,119 L729.3,149 L742,149 L742.3,119 L755,119 L755.3,149 L768,149 L768.3,119 L781,119 L781.3,149 L794,149 L794.3,119 L807,119 L807.3,149 L820,149 L820.3,119 L833,119 L833.3,149 L846,149 L846.3,119 L859,119 L859.3,149 L871.7,149 L872,119 L885,119 L885.3,149 L898,149 L898.3,119 L911,119 L911.3,149 L924,149 L924.3,119 L936.7,119 L937,149 L950,149 L950.3,119 L963,119 L963.3,149 L976,149 L976.3,119 L989,119 L989.3,149 L1001.7,149 L1002,119 L1015,119 L1015.3,149 L1028,149 L1028.3,119 L1041,119 L1041.3,149 L1054,149 L1054.3,119 L1066.7,119 L1067,149 L1080,149 L1080,149 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,119 312.7,119 313,149 325.7,149 326,119 339,119 339.3,149 351.7,149 352,119 365,119 365.3,149 378,149 378.3,119 391,119 391.3,149 403.7,149 404,119 417,119 417.3,149 430,149 430.3,119 442.7,119 443,149 456,149 456.3,119 469,119 469.3,149 482,149 482.3,119 495,119 495.3,149 507.7,149 508,119 521,119 521.3,149 534,149 534.3,119 547,119 547.3,149 560,149 560.3,119 573,119 573.3,149 585.7,149 586,119 599,119 599.3,149 612,149 612.3,119 625,119 625.3,149 638,149 638.3,119 650.7,119 651,149 664,149 664.3,119 677,119 677.3,149 690,149 690.3,119 703,119 703.3,149 715.7,149 716,119 729,119 729.3,149 742,149 742.3,119 755,119 755.3,149 768,149 768.3,119 781,119 781.3,149 794,149 794.3,119 807,119 807.3,149 820,149 820.3,119 833,119 833.3,149 846,149 846.3,119 859,119 859.3,149 871.7,149 872,119 885,119 885.3,149 898,149 898.3,119 911,119 911.3,149 924,149 924.3,119 936.7,119 937,149 950,149 950.3,119 963,119 963.3,149 976,149 976.3,119 989,119 989.3,149 1001.7,149 1002,119 1015,119 1015.3,149 1028,149 1028.3,119 1041,119 1041.3,149 1054,149 1054.3,119 1066.7,119 1067,149 1080,149" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="138" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">ACT</text>
+<rect x="300" y="155" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,185 L300,155 L1080,155 L1080,185 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,155 1080,155" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="174" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">PWR</text>
+<line x1="24" y1="208" x2="1080" y2="208" stroke="#D8C7A8" stroke-width="1"/>
+<text x="24" y="236" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="17" font-weight="bold" fill="#2A1A0C" text-anchor="start">Готово</text>
+<rect x="24" y="244" width="48" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="48" y="258" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">done</text>
+<text x="24" y="282" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Оба светодиода мигают вместе:</text>
+<text x="24" y="296" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">1,5 с горят, 1,5 с нет.</text>
+<text x="24" y="310" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Плавности нет.</text>
+<rect x="300" y="231" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,261 L300,231 L689.7,231 L690,261 L1079.7,261 L1080,231 L1080,261 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,231 689.7,231 690,261 1079.7,261 1080,231" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="250" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">ACT</text>
+<rect x="300" y="267" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,297 L300,267 L689.7,267 L690,297 L1079.7,297 L1080,267 L1080,297 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,267 689.7,267 690,297 1079.7,297 1080,267" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="286" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">PWR</text>
+<line x1="24" y1="320" x2="1080" y2="320" stroke="#D8C7A8" stroke-width="1"/>
+<text x="24" y="348" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="17" font-weight="bold" fill="#2A1A0C" text-anchor="start">ОС проверена</text>
+<rect x="24" y="356" width="56" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="52" y="370" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">ready</text>
+<text x="24" y="394" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Оба светодиода просто горят.</text>
+<rect x="300" y="343" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,373 L300,343 L1080,343 L1080,373 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,343 1080,343" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="362" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">ACT</text>
+<rect x="300" y="379" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,409 L300,379 L1080,379 L1080,409 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,379 1080,379" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="398" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">PWR</text>
+<line x1="24" y1="432" x2="1080" y2="432" stroke="#D8C7A8" stroke-width="1"/>
+<text x="24" y="460" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="17" font-weight="bold" fill="#2A1A0C" text-anchor="start">Ошибка</text>
+<rect x="24" y="468" width="48" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="48" y="482" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">fail</text>
+<text x="24" y="506" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">ACT погашен, PWR — триггер</text>
+<text x="24" y="520" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">heartbeat: две короткие вспышки</text>
+<text x="24" y="534" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">и пауза (ритм зависит от нагрузки).</text>
+<rect x="300" y="455" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,485 L300,485 L1080,485 L1080,485 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,485 1080,485" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="474" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">ACT</text>
+<rect x="300" y="491" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,521 L300,491 L317.9,491 L318.2,521 L537.1,521 L537.4,491 L555.3,491 L555.6,521 L1080,521 L1080,521 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,491 317.9,491 318.2,521 537.1,521 537.4,491 555.3,491 555.6,521 1080,521" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="510" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">PWR</text>
+<line x1="24" y1="544" x2="1080" y2="544" stroke="#D8C7A8" stroke-width="1"/>
+<text x="24" y="572" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="17" font-weight="bold" fill="#2A1A0C" text-anchor="start">Опознать</text>
+<rect x="24" y="580" width="80" height="20" rx="10" fill="#FBEBD0" stroke="#E2681C" stroke-width="1"/>
+<text x="64" y="594" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="bold" fill="#2A1A0C" text-anchor="middle">identify</text>
+<text x="24" y="618" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">Оба мигают вместе по 0,15 с:</text>
+<text x="24" y="632" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">чередоваться без помощника</text>
+<text x="24" y="646" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="start">они не умеют.</text>
+<rect x="300" y="567" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,597 L300,567 L338.7,567 L339,597 L377.7,597 L378,567 L416.7,567 L417,597 L455.7,597 L456,567 L494.7,567 L495,597 L533.7,597 L534,567 L572.7,567 L573,597 L611.7,597 L612,567 L650.7,567 L651,597 L689.7,597 L690,567 L729,567 L729.3,597 L767.7,597 L768,567 L806.7,567 L807,597 L845.7,597 L846,567 L884.7,567 L885,597 L923.7,597 L924,567 L963,567 L963.3,597 L1001.7,597 L1002,567 L1040.7,567 L1041,597 L1079.7,597 L1080,567 L1080,597 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,567 338.7,567 339,597 377.7,597 378,567 416.7,567 417,597 455.7,597 456,567 494.7,567 495,597 533.7,597 534,567 572.7,567 573,597 611.7,597 612,567 650.7,567 651,597 689.7,597 690,567 729,567 729.3,597 767.7,597 768,567 806.7,567 807,597 845.7,597 846,567 884.7,567 885,597 923.7,597 924,567 963,567 963.3,597 1001.7,597 1002,567 1040.7,567 1041,597 1079.7,597 1080,567" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="586" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">ACT</text>
+<rect x="300" y="603" width="780" height="30" rx="3" fill="#F4E8D2"/>
+<path d="M300,633 L300,603 L338.7,603 L339,633 L377.7,633 L378,603 L416.7,603 L417,633 L455.7,633 L456,603 L494.7,603 L495,633 L533.7,633 L534,603 L572.7,603 L573,633 L611.7,633 L612,603 L650.7,603 L651,633 L689.7,633 L690,603 L729,603 L729.3,633 L767.7,633 L768,603 L806.7,603 L807,633 L845.7,633 L846,603 L884.7,603 L885,633 L923.7,633 L924,603 L963,603 L963.3,633 L1001.7,633 L1002,603 L1040.7,603 L1041,633 L1079.7,633 L1080,603 L1080,633 Z" fill="#D9342B" fill-opacity="0.3"/>
+<polyline points="300,603 338.7,603 339,633 377.7,633 378,603 416.7,603 417,633 455.7,633 456,603 494.7,603 495,633 533.7,633 534,603 572.7,603 573,633 611.7,633 612,603 650.7,603 651,633 689.7,633 690,603 729,603 729.3,633 767.7,633 768,603 806.7,603 807,633 845.7,633 846,603 884.7,603 885,633 923.7,633 924,603 963,603 963.3,633 1001.7,633 1002,603 1040.7,603 1041,633 1079.7,633 1080,603" fill="none" stroke="#D9342B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="294" y="622" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="bold" fill="#7A6650" text-anchor="end">PWR</text>
+<text x="300" y="678" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="middle">0</text>
+<text x="560" y="678" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="middle">1 с</text>
+<text x="820" y="678" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="middle">2 с</text>
+<text x="1080" y="678" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="12" font-weight="normal" fill="#7A6650" text-anchor="middle">3 с</text>
+<text x="24" y="702" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="11" font-weight="normal" fill="#7A6650" text-anchor="start">heartbeat нарисован схематично: его период 0,3 + 6,7 / (2 + нагрузка) секунды, у простаивающего модуля около 3,6 с.</text>
+</svg>

@@ -79,10 +79,12 @@
         </div>
     </div>
 
-    {{-- The phone menu: Dashboard and the account, as since 1.6 (the user's decision in 2.0) --}}
+    {{-- The phone menu (below sm): every page of the bar from the same list, the current one marked; then the account --}}
     <div :class="{'block': open, 'hidden': ! open}" class="hidden sm:hidden border-t border-pline">
-        <div class="pt-2 pb-3 space-y-1">
-            <x-responsive-nav-link href="{{ route('dashboard') }}" :active="request()->routeIs('dashboard')">{{ __('Dashboard') }}</x-responsive-nav-link>
+        <div class="pt-2 pb-3 space-y-1" data-menu="phone">
+            @foreach ($pages as [$route, $label])
+                <x-responsive-nav-link href="{{ route($route) }}" :active="request()->routeIs($route)">{{ $label }}</x-responsive-nav-link>
+            @endforeach
         </div>
         <div class="pt-4 pb-1 border-t border-pline">
             <div class="px-4">
