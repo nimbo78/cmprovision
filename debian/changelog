@@ -1,3 +1,11 @@
+cmprovision4 (2.6.1~dev1) unstable; urgency=medium
+
+  * Work in progress: the image download resumes after a broken
+    connection or a restart
+    (docs/superpowers/specs/2026-10-16-image-resume-design.md).
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 16 Oct 2026 10:00:00 +0300
+
 cmprovision4 (2.6.0) unstable; urgency=medium
 
   * The OS check after the first boot: a project can have each module
