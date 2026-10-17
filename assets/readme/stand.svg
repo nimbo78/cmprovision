@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
+  <title id="title">One provisioner, an isolated stand</title>
+  <desc id="desc">A browser reaches the Raspberry Pi 4 provisioner over management Wi-Fi. The provisioner's eth0 interface at 172.20.0.1/16 serves an isolated Ethernet switch and multiple CM4 modules. Never connect the provisioning switch to an office network.</desc>
+  <rect width="1200" height="500" rx="24" fill="#FBF7F2"/>
+  <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, sans-serif" fill="#2A1A0C">
+    <text x="56" y="78" font-size="42" font-weight="700">One provisioner. A whole batch.</text>
+    <text x="56" y="118" font-size="22" fill="#776759">Management over Wi-Fi · Provisioning over isolated Ethernet</text>
+    <g id="management">
+      <rect x="56" y="202" width="220" height="148" rx="16" fill="#FFFFFF" stroke="#D9CEC2" stroke-width="2"/>
+      <text x="80" y="244" font-size="22" fill="#776759">MANAGEMENT</text>
+      <text x="80" y="291" font-size="30" font-weight="600">Your browser</text>
+      <path d="M276 276H360" fill="none" stroke="#776759" stroke-width="3" stroke-dasharray="8 6"/>
+      <text x="318" y="258" font-size="22" text-anchor="middle" fill="#776759">Wi-Fi</text>
+    </g>
+    <g id="provisioner">
+      <rect x="360" y="184" width="290" height="184" rx="16" fill="#2A1A0C"/>
+      <text x="388" y="229" font-size="22" fill="#FFD37A">PROVISIONER</text>
+      <text x="388" y="275" font-size="30" font-weight="600" fill="#FFFFFF">Raspberry Pi 4</text>
+      <text x="388" y="319" font-size="24" fill="#FFFFFF">eth0 · 172.20.0.1/16</text>
+      <path d="M650 276H728" fill="none" stroke="#E2681C" stroke-width="3"/>
+    </g>
+    <g id="isolated-network">
+      <rect x="704" y="152" width="440" height="264" rx="20" fill="none" stroke="#B8652C" stroke-width="2" stroke-dasharray="7 6"/>
+      <text x="728" y="190" font-size="22" font-weight="600" fill="#8A3C0C">ISOLATED STAND</text>
+      <rect x="728" y="228" width="166" height="96" rx="12" fill="#FFFFFF" stroke="#D9CEC2" stroke-width="2"/>
+      <text x="811" y="268" text-anchor="middle" font-size="28" font-weight="600">Switch</text>
+      <g fill="#E2681C">
+        <rect x="758" y="286" width="18" height="12" rx="2"/>
+        <rect x="786" y="286" width="18" height="12" rx="2"/>
+        <rect x="814" y="286" width="18" height="12" rx="2"/>
+        <rect x="842" y="286" width="18" height="12" rx="2"/>
+      </g>
+      <path d="M894 276H928M928 228V356M928 228H960M928 292H960M928 356H960" fill="none" stroke="#E2681C" stroke-width="3"/>
+      <g fill="#FFFFFF" stroke="#D9CEC2" stroke-width="2">
+        <rect x="960" y="204" width="156" height="48" rx="8"/>
+        <rect x="960" y="268" width="156" height="48" rx="8"/>
+        <rect x="960" y="332" width="156" height="48" rx="8"/>
+      </g>
+      <g font-size="28" font-weight="600" text-anchor="middle">
+        <text x="1038" y="238">CM4</text>
+        <text x="1038" y="302">CM4</text>
+        <text x="1038" y="366">CM4</text>
+      </g>
+    </g>
+    <text x="56" y="454" font-size="22" fill="#776759">Choose a project → boot the modules → write and verify → optional first-boot check</text>
+  </g>
+</svg>
