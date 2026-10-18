@@ -4,7 +4,7 @@
 
 ## Install over the existing package
 
-The 2.6.3 development migration adds a per-run destination-disk snapshot. Resume marks from older versions have no such snapshot and are cleared once during the upgrade: an interrupted old run writes from the beginning at its next start. New runs keep their normal split-image resume behavior. The re-provision project option starts disabled.
+The 2.6.3 migration adds a per-run destination-disk snapshot. Resume marks from older versions have no such snapshot and are cleared once during the upgrade: an interrupted old run writes from the beginning at its next start. New runs keep their normal split-image resume behavior. The re-provision project option starts disabled. Upgrading from 2.6.3 development builds that already applied this migration does not clear the marks again.
 
 > [!IMPORTANT]
 > Never run `apt remove` before upgrading: package removal deletes the database and storage.
