@@ -95,6 +95,7 @@
                     <td class="text-fg-muted">asking the switch…</td>
                 </tr>
                 @endif
+                <tr><td class="text-fg-muted">Re-provision</td><td><livewire:reprovision-dialog :serial="$cm->serial" :key="'reprovision-'.$cm->serial" /></td></tr>
                 <tr><td class="text-fg-muted">MAC</td><td class="font-mono">{{ $cm->mac }}</td></tr>
                 <tr><td class="text-fg-muted">Model</td><td>{{ $cm->model }}</td></tr>
                 <tr><td class="text-fg-muted">Board</td><td>{{ $cm->board_pending_since ? 'looking up the switch port…' : $cm->provisioning_board }}</td></tr>

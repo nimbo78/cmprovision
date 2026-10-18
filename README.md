@@ -19,6 +19,7 @@ An independently maintained fork of [raspberrypi/cmprovision](https://github.com
 - **Recover interrupted writes.** Downloads resume after connection loss. Enable image splitting to continue after a restart from the last verified 512 MB piece; enable verification to check the whole image.
 - **Check the installed system.** First-boot checks can install uploaded `.deb` packages, run scripts and report the hostname before labels and notifications are sent.
 - **Operate the stand.** Restart eligible modules through PoE, manage Wi-Fi networks and keep the built-in radio as a cold spare when another adapter provides the uplink.
+- **Re-provision an installed sensor.** Check its identity over SSH, confirm its disk and return it to network boot from the module card. [Setup and supported layouts](docs/operations.md#re-provision-an-installed-sensor).
 
 Details and limits are in the [operation guide](docs/operations.md).
 

@@ -102,6 +102,25 @@ Open or hover over the network indicator in the navigation bar to inspect the up
 
 The Wi-Fi speed is the **link rate**, not measured internet throughput. See [cold-spare behavior](operations.md#built-in-wi-fi-as-a-cold-spare) for failover details.
 
+## Re-provision an installed sensor
+
+The module card checks access before offering the destructive action. These three views were captured on 18 October 2026 from the development implementation with simulated SSH responses, in Warm · Dark. No device was erased for the screenshots.
+
+| Check access | Confirm identity, disk and project |
+| --- | --- |
+| <a href="../assets/readme/screenshots/reprovision-access.png"><img src="../assets/readme/screenshots/reprovision-access.png" width="440" alt="Re-provision dialog ready to check sensor access"></a> | <a href="../assets/readme/screenshots/reprovision-confirm.png"><img src="../assets/readme/screenshots/reprovision-confirm.png" width="440" alt="Re-provision dialog with a matched serial, eMMC disk, CID and project before the wipe confirmation"></a> |
+
+<details>
+<summary>A sensor that requires a new password</summary>
+<a href="../assets/readme/screenshots/reprovision-password.png"><img src="../assets/readme/screenshots/reprovision-password.png" width="512" alt="Re-provision dialog asking for a new sensor password and its confirmation"></a>
+</details>
+
+See [supported layouts, key installation and recovery](operations.md#re-provision-an-installed-sensor).
+
+Settings also has an ordered list of saved sensor accounts. The public factory profiles below are demonstration data; stored custom passwords are never displayed.
+
+<a href="../assets/readme/screenshots/reprovision-accounts.png"><img src="../assets/readme/screenshots/reprovision-accounts.png" width="720" alt="Settings for saved re-provision accounts, with WLAN Pi enabled and legacy Raspberry Pi disabled"></a>
+
 ## Appearance
 
 Open **Appearance** in the navigation bar. Choose one of two styles, **Warm** or **Neutral**, and a **Light**, **Dark** or **Auto** theme. The same dashboard is shown in all four palettes below. Choices are saved in the browser and synchronized between its open tabs.

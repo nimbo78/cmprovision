@@ -6,6 +6,7 @@ Detailed behaviour of the project options and stand controls. Start with the [in
 
 - [First-boot OS check](#first-boot-os-check)
 - [Image download and write recovery](#image-download-and-write-recovery)
+- [Re-provision an installed sensor](#re-provision-an-installed-sensor)
 - [Built-in Wi-Fi as a cold spare](#built-in-wi-fi-as-a-cold-spare)
 - [Wi-Fi networks](#wi-fi-networks)
 - [Switches and PoE restart](#switches-and-poe-restart)
@@ -26,6 +27,31 @@ A project with **Check the OS after the first boot** does not stop when the imag
 - **Packages** (Scripts → Packages) are `.deb` files uploaded to the server. The stand has no internet, so apt downloads nothing: whatever a package depends on must be in the image or be uploaded too, and a missing dependency fails the check. Recommended packages are not installed. The list shows each package's architecture: it must be the image's (`arm64` for a 64-bit image, `armhf` for a 32-bit one) or `all`.
 - Anyone who reaches the provisioner's web server can download the files under `/uploads`, the images included: keep secrets out of packages.
 - The new system needs systemd and curl. A module booted over USB (rpiboot) is not checked: a reboot would bring it back to USB boot.
+
+## Re-provision an installed sensor
+
+Use **CMs → module → Re-provision…** when a sensor has booted its installed OS and needs a new image. The first implementation supports eMMC/SD, an MBR partition table and an ext4 root on partition 2. SSH must be running; the bootloader must fall back to network boot when the disk is no longer bootable. A module still in the utility OS can be restarted through PoE instead.
+
+1. Select the active project and open the module card. The module needs a current DHCP lease on the stand network and must not be writing an image or running its first-boot check.
+2. Choose **Check access**. The provisioner tries its restricted SSH key first, then enabled accounts from **Settings → Re-provision accounts**, in their listed order. If none provides access, enter the sensor login and password manually; the account needs sudo access. If a saved or manually entered account requires a password change, enter and repeat a new password. The server verifies the new login before continuing.
+3. Review the matched serial, address, disk, CID and next project. Choose **Wipe and re-provision** and confirm. This erases the first MiB of that disk and requests a reboot; it is not a full secure erase.
+4. The card waits for the module to return to network boot, then its normal provisioning run starts from the beginning. If SSH disconnects without a confirmed result, the command is not repeated automatically. Wait for boot or perform a fresh access check after 30 seconds if the installed system is still running.
+
+To enable key access for future runs, turn on **Re-provision from the web UI** in the project editor. After the image's verification and post-install scripts, the provisioner adds its public key and `/usr/local/sbin/cmprovision-agent` to the written root. The key uses a forced command and cannot provide an ordinary shell or forwarding. The option defaults to off and does not change the image's SSH login policy: files can be installed while root key login is disabled. Installation failures are nonfatal and appear as `agent skipped` in the post-install log.
+
+**Settings → Re-provision key** shows the public key. Its private part stays in `storage/app/ssh/id_ed25519`; backups and `restore --data-only` preserve it. Protect those backups as server credentials. Manual key installation requires the matching agent and a restricted `authorized_keys` entry, not a plain unrestricted key.
+
+An access check lasts two minutes and is tied to the operator's web session. Passwords are kept encrypted on the server for that interval and are cleared when the dialog is cancelled or the command is dispatched. The SSH host key is remembered for the operation, so changing devices between its steps is refused; the initial connection relies on the isolated stand network.
+
+If the active project or its configuration changes, the previous confirmation no longer authorizes that project. A module returning after the erase waits instead of receiving an unexpected configuration. Review the new active project, use **Confirm current project for next boot** on its card, then restart it through PoE if it is waiting in the utility OS. Existing records with no stored disk path are accepted only when the sensor's root disk can be determined and matched to its recorded identity; no disk path is guessed.
+
+### Saved sensor accounts
+
+**Settings → Re-provision accounts** lets you add, edit, enable, disable, delete and reorder sensor logins. The initial list enables `wlanpi / wlanpi` for [WLAN Pi](https://userguide.wlanpi.com/wlan-pi-os/faq/default-password). The `pi / raspberry` profile starts disabled for legacy Raspberry Pi OS images; [current images require a user configured at installation](https://www.raspberrypi.com/news/raspberry-pi-bullseye-update-april-2022/).
+
+Changes require your web account password. Saved passwords are encrypted with the provisioner's APP_KEY; they never return to the browser. An empty password when editing keeps the stored one. Backups preserve the list together with its matching APP_KEY. Changing one sensor's expired password does not replace a shared saved password.
+
+Keep up to 10 profiles, with at most 3 enabled for automatic checks. Enabled profiles run in order, identical credentials are tried once, and the first usable login with a matching device and sudo access wins. Automatic attempts run only on the first **Check access** of an operation, at most once per minute per module; manual entry remains available during that interval. A changed SSH host key, network failure or mismatched hardware stops the sequence. Finding a password does not erase anything: the normal identity review and separate wipe confirmation still apply.
 
 ## Image download and write recovery
 

@@ -205,7 +205,15 @@ class PoeRestart
                 }
                 $runs[] = [new self(PoeControl::forConfig($state['config']), $state['switch'], $user), $group, $admin];
             }
-            return self::runAll($runs, $result);
+            $serials = [];
+            foreach ($runs as [$runner, $group, $admin])
+                foreach ($group as $tile)
+                    if (!empty($tile['serial'])) $serials[] = $tile['serial'];
+            try {
+                return \App\Services\ModuleOperationLock::run($serials, fn () => self::runAll($runs, $result), self::LOCK_SECONDS + 30);
+            } catch (\RuntimeException $e) {
+                return ['error' => $e->getMessage()] + $result;
+            }
         }
         finally
         {

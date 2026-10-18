@@ -21,6 +21,11 @@ use App\Models\Setting;
 use App\Services\EepromImage;
 use App\Services\LabelPrinter;
 use App\Support\ImagePieces;
+use App\Services\ModuleOperationLock;
+use App\Services\Sensor\ReprovisionAgent;
+use App\Services\Sensor\ProvisionerKey;
+use App\Services\Sensor\ReprovisionIntent;
+use App\Models\ReprovisionOperation;
 
 class ScriptExecuteController extends Controller
 {
@@ -151,6 +156,15 @@ exit 1
 
     public function startProvisoning(Request $req)
     {
+        return ModuleOperationLock::run([$this->serial], fn () => $this->startLockedProvisioning($req));
+    }
+
+    protected function startLockedProvisioning(Request $req)
+    {
+        if ($reason = ReprovisionIntent::guard($this->serial, Project::getActive(), $req->query('mac')))
+            return $this->failureScript($req, $reason);
+        if (ReprovisionOperation::pending($this->serial))
+            Cm::where('serial', $this->serial)->update(['durable_bytes' => null, 'durable_at' => null, 'durable_image_id' => null]);
         /* The OS check (2.6.0): a module that comes back to network boot while its new system should be starting did not
            start it. That run fails and the module waits (no second write); its start after that is a new run. A USB boot
            is the operator re-flashing it, and a start long after the reboot finds a run whose timeout was lost: both close
@@ -206,6 +220,7 @@ exit 1
             'script_return_code' => null,
             'temp2' => null,
             'project_id' => $project ? $project->id : null,
+            'provisioning_storage' => $project?->storage,
             'image_filename' => $image ? $image->filename : null,
             'image_sha256'   => $image ? $image->sha256 : null,
             'provisioning_started_at' => now(),
@@ -379,7 +394,8 @@ exit 1
     {
         $cid = (string) $req->query('cid');
         $size = $req->query('storagesize') ? $req->query('storagesize') * 512 : null;
-        return ($cid === '' || !$previous->cid || $previous->cid === $cid)
+        return (!$previous->provisioning_storage || $previous->provisioning_storage === Project::getActive()?->storage)
+            && ($cid === '' || !$previous->cid || $previous->cid === $cid)
             && (!$size || !$previous->storage || (int) $previous->storage === (int) $size);
     }
 
@@ -437,6 +453,19 @@ exit 1
                              . 'if [ "$READ_SHA256" = "'.$image->uncompressed_sha256.'" ]; then echo Verification successful!; else echo Verification failed; exit 2; fi'."\n";
             $postinstall_scripts->prepend($fscript);
         }
+        if ($project->reprovision && $image)
+        {
+            $agent = new Script;
+            $agent->id = -1;
+            $agent->name = 'Re-provision agent';
+            $agent->bg = false;
+            try {
+                $agent->script = app(ReprovisionAgent::class)->install($project->storage, app(ProvisionerKey::class)->ensure());
+            } catch (\RuntimeException|\InvalidArgumentException $e) {
+                $agent->script = "#!/bin/sh\nprintf '%s\\n' ".escapeshellarg('agent skipped: '.$e->getMessage())."\nexit 0\n";
+            }
+            $postinstall_scripts->push($agent);
+        }
         return $postinstall_scripts;
     }
 
@@ -486,7 +515,7 @@ exit 1
         $firstboot_scripts = $osCheck ? $project->scripts()->where('script_type','firstboot')->orderBy('priority')->orderBy('id')->get() : collect();
         $packages = $osCheck ? $project->packages()->orderBy('packages.id')->get() : collect();
 
-        return response()->view('scriptexecute', array_merge($write, [
+        $response = response()->view('scriptexecute', array_merge($write, [
             'cm' => $this->cm,
             'project' => $project,
             'storage' => $storage,
@@ -503,6 +532,8 @@ exit 1
                 'scripts' => $firstboot_scripts, 'packages' => $packages])->render() : null,
             'oscheck_install' => $osCheck ? view('scriptexecute.oscheck-install')->render() : null,
         ]))->header('Content-Type', 'text/plain');
+        ReprovisionIntent::started($this->cm);
+        return $response;
     }
 
     public function provisioningComplete(Request $req)

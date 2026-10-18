@@ -19,7 +19,7 @@ Palette: warm white `#FBF7F2`, ink `#2A1A0C`, orange `#E2681C`, muted brown `#77
 - `source/hero-subject.png`: transparent hardware illustration generated and refined with the built-in ImageGen tool on 2026-10-17.
 - `source/hero-prompt.txt`: generation and refinement prompts for the final illustration.
 - `stand.svg`: network topology; labels and network requirements are also explained in the README.
-- `screenshots/`: 24 PNG browser captures made on 2026-10-17 with Playwright and headless Edge. The application was a disposable copy of the current working tree (version `2.6.2` in `debian/changelog`), served locally inside the `cmprov-trixie` WSL environment with its own SQLite database and demo account.
+- `screenshots/`: 28 PNG browser captures made with Playwright and headless Edge: 24 views from version 2.6.2 on 2026-10-17 and four re-provision views from the development implementation on 2026-10-18 (three dialogs and the saved-account settings). Each capture used a disposable local application copy in `cmprov-trixie` WSL, with its own SQLite database and demo account.
 
 ## Hero production
 
@@ -39,7 +39,9 @@ Screenshots come directly from the rendered application, without visual editing 
 
 The gallery covers Dashboard, CMs, Ports, Images, Projects, Scripts, Labels, Firmware and Settings; three editor dialogs; module details; four style/theme combinations; two densities; connection and appearance panels; Profile; API Tokens; and mobile navigation.
 
-All 24 views use Israel's `Asia/Jerusalem` time zone for both the demo application's display times and the capture browser. The Appearance panel derives its city and sunrise/sunset times from that zone. Screens were recaptured after changing the demo configuration; the PNG text was not retouched.
+All 27 views use Israel's `Asia/Jerusalem` time zone for both the demo application's display times and the capture browser. The Appearance panel derives its city and sunrise/sunset times from that zone. Screens were recaptured after changing the demo configuration; the PNG text was not retouched.
+
+The re-provision dialogs use `FakeSensorShell` with synthetic serial, disk and CID responses. The three captures show access checking, matched identity before confirmation and a required password change, in Warm / Dark. Their wipe/reboot response was simulated; no SSH connection to a real sensor or disk erase was performed. Browser checks also covered account fallback, password clearing, the confirmation flow, light mode and a 390-pixel viewport.
 
 To refresh, create an isolated copy with its own database and sample fixtures, sign in, and exercise the real navigation and appearance controls. Capture all nine tabs in the same browser session, then the dialogs and UI variants. Keep credentials and production identifiers out of the images. Label simulated readings wherever the screenshots are presented. Verify there are no browser errors, broken views or clipped dialogs, then remove the temporary account and stop the demo server.
 

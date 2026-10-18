@@ -32,4 +32,6 @@ Replace the server address and set `CMPROVISION_TOKEN` to your token before runn
 
 For a project update, `scripts` is the **complete list** of script IDs to attach. Updating an active project rebuilds the EEPROM image that modules download. First-boot scripts and the `firstboot` label moment require `os_check` to be enabled.
 
+The project boolean `reprovision` defaults to false. Setting it to true opts future provisioning runs into installation of the provisioner's restricted public key and agent; it does not erase a sensor. The checked, confirmed re-provision action is available in the module card. See [re-provisioning](operations.md#re-provision-an-installed-sensor).
+
 Scripts have type `preinstall`, `postinstall` or `firstboot`. Deleting a script still used by a project returns HTTP 409. The request validation and complete field definitions live in [`routes/api.php`](../routes/api.php).
