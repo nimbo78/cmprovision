@@ -1,3 +1,47 @@
+cmprovision4 (2.6.3) unstable; urgency=medium
+
+  * Re-provision an installed CM4 from its module card. Check the
+    hardware and disk identity over SSH, then separately confirm the
+    first-MiB erase and reboot into the active project's provisioning.
+  * Install a restricted SSH agent with opted-in images. Support
+    account fallback, expired passwords and editable encrypted accounts
+    in Settings; try the key and enabled saved accounts before manual login.
+  * Persist pending operations, guard the next boot against changed
+    configuration, and do not retry an unconfirmed erase automatically.
+    Coordinate SSH, PoE and provisioning through module locks.
+  * Store the destination disk with each run; clear older resume marks
+    without a disk snapshot once during upgrade. Preserve artisan execute
+    permissions and isolate password confirmation in Settings components.
+  * Document supported layouts, recovery and hardware acceptance, with
+    screenshots. Identify after booting the installed OS remains a
+    separate follow-up release.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 18 Oct 2026 23:50:00 +0300
+
+cmprovision4 (2.6.3~dev2) unstable; urgency=medium
+
+  * Add editable, encrypted sensor accounts in Settings. Check the
+    provisioner key, then enabled saved accounts, before manual login.
+    Include WLAN Pi defaults and an opt-in legacy Raspberry Pi profile;
+    bound automatic attempts and handle expired saved passwords.
+  * Scope password confirmation dialogs to their Livewire component.
+  * Preserve artisan execute permissions in packages built from Windows.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 18 Oct 2026 20:00:00 +0300
+
+cmprovision4 (2.6.3~dev1) unstable; urgency=medium
+
+  * Re-provision an installed CM4 from its module card: check its
+    hardware and disk identity over SSH, then confirm the erase and
+    reboot into network provisioning. Restricted provisioner key,
+    account fallback and required sensor password changes are supported.
+  * Keep an operation record and guard the next boot against a changed
+    project. Do not retry an unconfirmed erase automatically.
+  * Store the destination disk with each run. Old interrupted-write
+    resume marks without a disk-path snapshot are cleared on upgrade.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 18 Oct 2026 00:00:00 +0300
+
 cmprovision4 (2.6.2) unstable; urgency=medium
 
   * The phone menu lists every page of the top bar, in the bar's order,

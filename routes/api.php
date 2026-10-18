@@ -109,6 +109,7 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
         'verify' => 'sometimes|boolean',
         'os_check' => 'sometimes|boolean',
         'split_image' => 'sometimes|boolean',
+        'reprovision' => 'sometimes|boolean',
         'scripts' => 'sometimes|array',
         'scripts.*' => 'integer|exists:scripts,id',
     ]);

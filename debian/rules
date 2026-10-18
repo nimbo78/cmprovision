@@ -8,6 +8,7 @@ WEB_CONTENT = debian/cmprovision4/var/lib/cmprovision/
 # Backup/restore run as root: install them outside the www-data-owned application directory.
 override_dh_install:
 	dh_install
+	install -D -m 755 tools/sensor-askpass $(WEB_CONTENT)tools/sensor-askpass
 	install -D -m 755 tools/backup.sh debian/cmprovision4/usr/sbin/cmprovision-backup
 	install -D -m 755 tools/restore.sh debian/cmprovision4/usr/sbin/cmprovision-restore
 	install -D -m 755 tools/uplink-spare debian/cmprovision4/usr/lib/cmprovision/uplink-spare
@@ -24,5 +25,6 @@ WRITABLE = storage bootstrap/cache public/uploads etc
 
 override_dh_fixperms:
 	dh_fixperms
+	chmod 755 $(WEB_CONTENT)artisan
 	for d in $(WRITABLE); do chown -R www-data:www-data $(WEB_CONTENT)$$d; done
 	chown www-data:www-data $(WEB_CONTENT)database

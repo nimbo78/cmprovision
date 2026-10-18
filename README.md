@@ -1,165 +1,186 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/cmprovision-horizontal-white.svg">
-  <img src="docs/brand/cmprovision-horizontal.svg" alt="cmprovision" height="48">
-</picture>
+<img src="assets/readme/hero.png" width="100%" alt="cmprovision — One image. A whole batch. Raspberry Pi CM4 provisioning, illustrated by a WLAN Pi M4+ provisioner, an Ethernet switch and four modules. Write, verify and optionally check the installed OS on first boot.">
 
-# Raspberry Pi Compute Module Provisioning System #
+# Batch provisioning for Raspberry Pi CM4
 
-Web application to mass program compute modules; designed to run on a Raspberry Pi 4. Compute Module 4 is supported out-of-the-box; Compute Module 3 and 3+ are not supported since 2.5.1 (for them use v1.6.11 of this fork on Raspberry Pi OS with dhcpcd, or upstream raspberrypi/cmprovision).
-Pi 4 boards can also be provisioned, but that requires that network boot is enabled in EEPROM settings first.
+Write OS images, update EEPROM firmware and verify a batch of Compute Modules from one Raspberry Pi and a browser. Optionally boot each module into its new system, install packages and run first-boot checks before marking it done.
 
-![screenshot](https://user-images.githubusercontent.com/1123701/209007803-7cc38d14-7f07-4910-8108-87323d25ac20.png)
+An independently maintained fork of [raspberrypi/cmprovision](https://github.com/raspberrypi/cmprovision), built for Raspberry Pi OS Trixie. See the [changelog](debian/changelog) for release history.
 
-This is a maintained fork of [raspberrypi/cmprovision](https://github.com/raspberrypi/cmprovision) (last upstream release: v1.6.3, 2023).
-It fixes the open upstream issues around EEPROM firmware downloads, silent provisioning failures and current Raspberry Pi OS releases; see `debian/changelog` for the full list and the [Upgrading](#upgrading) section before installing over an existing server.
+**[Quick start](#quick-start)** · **[Screenshots](docs/gallery.md)** · **[Operation guide](docs/operations.md)** · **[Upgrading](#upgrading)** · **[API](docs/api.md)**
 
-## Documentation ##
+<img src="assets/readme/screenshots/dashboard.png" width="100%" alt="Dashboard showing eight demo modules: four running, three done and one failed, with per-module progress and recovery controls">
 
-Full documentation is available on the Product Information Portal: [Using the Compute Module Provisioner.pdf](https://pip.raspberrypi.com/categories/685-whitepapers-app-notes/documents/RP-003468-WP/Using-the-Compute-Module-Provisioner.pdf)
+*Live batch dashboard. All screenshots use a disposable demo with simulated modules, network and switch data; displayed speeds and timings are illustrative. [Explore every tab](docs/gallery.md).*
 
-## Provisioning Compute Module 4 Devices ##
+## From image to checked device
 
-This process requires a Raspberry Pi 4 which will be used solely to mass program compute modules. Make sure eth0 connects to an Ethernet switch that only has the compute modules you wish to program connected.
+- **Prepare a project.** Choose a compressed OS image, EEPROM firmware, scripts and a label template, then make the project active for the stand.
+- **Follow the batch.** See each module's phase, progress, transfer rate, time remaining and errors. Use the Ports page to locate modules on configured SNMP switches.
+- **Recover interrupted writes.** Downloads resume after connection loss. Enable image splitting to continue after a restart from the last verified 512 MB piece; enable verification to check the whole image.
+- **Check the installed system.** First-boot checks can install uploaded `.deb` packages, run scripts and report the hostname before labels and notifications are sent.
+- **Operate the stand.** Restart eligible modules through PoE, manage Wi-Fi networks and keep the built-in radio as a cold spare when another adapter provides the uplink.
+- **Re-provision an installed sensor.** Check its identity over SSH, confirm its disk and return it to network boot from the module card. [Setup and supported layouts](docs/operations.md#re-provision-an-installed-sensor).
 
-**WARNING:** Do NOT connect eth0 to your office/public network, since it may also provision other Raspberry Pi devices. Instead, use the wireless LAN interface to access the web interface, and your local network.
+Details and limits are in the [operation guide](docs/operations.md).
 
-The modules' endpoint `/scriptexecute` takes no login, so it answers only the stand network 172.20.0.0/16 and the server itself: a request from any other network, the office included, gets 403. Keep nginx talking to the clients directly: a reverse proxy in front of it, or nginx's realip module (`set_real_ip_from`, `real_ip_header`), would make the client address come from a header.
+## What this fork adds
 
-1. Start with a fresh 64-bit Raspberry Pi OS (Lite) installation. For simplicity, use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) and the advanced settings menu (Ctrl-Shift-X) to set the password, hostname and wireless LAN configuration.  
-    
-    **NOTE:** If you intend to write images larger than 2 GB, you MUST install the **64-bit** edition of Raspberry Pi OS (Lite), which is available in Raspberry Pi Imager under the category "Raspberry Pi OS (other)" -> "Raspberry Pi OS Lite (64-bit)".
+The original provisioner supplies the image-to-device workflow. This fork extends it with tools for watching and operating a busy stand:
 
-1. Configure eth0 to have a static IP of 172.20.0.1 inside a /16 subnet (netmask 255.255.0.0). Do not set a default gateway.
+| Feature | What you can see or do |
+| --- | --- |
+| Batch monitoring | Follow write, verification and first-boot phases, progress, rates, estimated time and failure advice; inspect each module's run history. |
+| Switch and PoE view | Find modules on a visual port map, filter by state, identify a module and restart eligible ports or failed modules on supported switches. |
+| Connection details | Open the uplink indicator for Wi-Fi generation, signal, link rate, band, channel, adapter and address, plus cold-spare and module-network status. |
+| Appearance controls | Choose **Warm** or **Neutral**, **Light**, **Dark** or **Auto**, and **Compact** or **Roomy** spacing. Choices are remembered in the browser. |
+| Stand management | Manage Wi-Fi networks and a spare radio, check the installed OS, run first-boot scripts and packages, and send batch notifications. |
 
-    On Raspberry Pi OS **Trixie** the network is managed by NetworkManager:
+| Connection at a glance | Appearance controls |
+| --- | --- |
+| <a href="docs/gallery.md#connection-status"><img src="assets/readme/screenshots/connection.png" width="440" alt="Connection panel with Wi-Fi 6 link details, spare-radio state and provisioning Ethernet status"></a> | <a href="docs/gallery.md#appearance"><img src="assets/readme/screenshots/appearance.png" width="360" alt="Appearance panel offering Warm and Neutral styles, Compact and Roomy density, and Light, Dark and Auto themes"></a> |
 
-    ```
-    sudo nmcli connection add type ethernet ifname eth0 con-name cmprovision         ipv4.method manual ipv4.addresses 172.20.0.1/16 ipv4.never-default yes         ipv6.method link-local ipv6.addr-gen-mode eui64 connection.autoconnect yes
-    sudo nmcli connection up cmprovision
-    ```
+**Auto** switches between light and dark at sunrise and sunset for the location associated with the server's time zone, falling back to the system preference when solar times are unavailable. See [all four palettes, both densities and mobile navigation](docs/gallery.md#appearance).
 
-1. Run `sudo apt update` to make sure the package information on your Pi is up to date, and it is able to install dependencies.
+## Explore the interface
 
-1. Install the ready-made .deb package from https://github.com/raspberrypi/cmprovision/releases/:  
+All nine main tabs are shown below. Open the [screenshot tour](docs/gallery.md) for full-size views, editor dialogs, module details and account screens.
 
-    ```
-    sudo apt install ./cmprovision4_*_all.deb  
-    ```
+| Dashboard | CMs | Ports |
+| --- | --- | --- |
+| <a href="docs/gallery.md#dashboard"><img src="assets/readme/screenshots/dashboard.png" width="280" alt="Dashboard preview"></a><br>Batch progress and actions | <a href="docs/gallery.md#cms"><img src="assets/readme/screenshots/cms.png" width="280" alt="CMs tab preview"></a><br>Device records and CSV export | <a href="docs/gallery.md#ports"><img src="assets/readme/screenshots/ports.png" width="280" alt="Ports tab preview"></a><br>Switch map and PoE |
 
-1. Set a web application username and password with:  
+| Images | Projects | Scripts |
+| --- | --- | --- |
+| <a href="docs/gallery.md#images"><img src="assets/readme/screenshots/images.png" width="280" alt="Images tab preview"></a><br>OS images and checksums | <a href="docs/gallery.md#projects"><img src="assets/readme/screenshots/projects.png" width="280" alt="Projects tab preview"></a><br>Reusable provisioning recipes | <a href="docs/gallery.md#scripts"><img src="assets/readme/screenshots/scripts.png" width="280" alt="Scripts tab preview"></a><br>Scripts and Debian packages |
 
-    ```
-    sudo -u www-data /var/lib/cmprovision/artisan auth:create-user  
-    ```
+| Labels | Firmware | Settings |
+| --- | --- | --- |
+| <a href="docs/gallery.md#labels"><img src="assets/readme/screenshots/labels.png" width="280" alt="Labels tab preview"></a><br>Printed device identifiers | <a href="docs/gallery.md#firmware"><img src="assets/readme/screenshots/firmware.png" width="280" alt="Firmware tab preview"></a><br>EEPROM release channels | <a href="docs/gallery.md#settings"><img src="assets/readme/screenshots/settings.png" width="280" alt="Settings tab preview"></a><br>Networks, switches and services |
 
-You can now access the web interface with a web browser on the wireless LAN IP address.
+## The stand
 
-## Provisioning Raspberry Pi 4 boards ##
+<img src="assets/readme/stand.svg" width="100%" alt="Your browser reaches the Raspberry Pi provisioner over Wi-Fi. Its eth0 interface, 172.20.0.1/16, connects to an isolated Ethernet switch serving the CM4 modules.">
 
-It is also possible to use the system to provision regular Raspberry Pi 4 boards, instead of CM4 modules.
-However that requires that network boot is enabled first in the EEPROM settings of each Pi 4.
+Use **Wi-Fi for management** and **eth0 for provisioning**. The provisioner serves the boot environment and images to modules on an isolated Ethernet switch.
 
-You can create a SD card that enables that with [Imager](https://www.raspberrypi.com/software/), by going to: "Choose OS" -> "Misc utility images" -> "Bootloader" -> "Network boot"
+> [!WARNING]
+> Connect `eth0` only to the provisioning switch. Connecting it to an office or public network may provision other Raspberry Pi devices on that network.
 
-## The OS check after the first boot ##
+| Component | Requirement |
+| --- | --- |
+| Provisioning server | Dedicated Raspberry Pi 4 with Raspberry Pi OS Lite **64-bit**, Trixie / Debian 13 or newer |
+| Target modules | Compute Module 4; CM3 and CM3+ are not supported from 2.5.1 |
+| Raspberry Pi 4 targets | Enable network boot in each board's EEPROM first |
+| Network | Isolated Ethernet switch; server `eth0` at `172.20.0.1/16`, with no default gateway |
+| Optional switch controls | SNMP read access for port lookup; separate write access for PoE restart |
 
-A project with **Check the OS after the first boot** does not stop when the image is written. The module reboots into its new system right on the stand, where a one-shot service checks it:
+For CM3/3+ or Debian 11/12, use this fork's [`v1.6.11`](https://github.com/nimbo78/cmprovision/tree/v1.6.11) on Raspberry Pi OS with dhcpcd, or consult upstream. For Pi 4 targets, Raspberry Pi Imager provides a **Bootloader → Network boot** utility image.
 
-1. After the post-install scripts the utility OS mounts the written root partition (the image's second partition, ext4) and adds the service `cmprovision-firstboot`, with the project's first-boot scripts and packages.
-1. The module reboots. Its bootloader must try eMMC before the network (`BOOT_ORDER`, e.g. `0xf21`); otherwise the module comes back to network boot and the run fails with "the new system did not start".
-1. The new system gets its address from the stand's DHCP and waits for its boot to finish (at most 5 minutes). Then it installs the project's packages with one `apt-get` and runs the first-boot scripts, 2 minutes each; a non-zero exit fails the check.
-1. It reports its host name, the systemd state and the failed units. The service then removes itself; its log stays in `/var/log/cmprovision-firstboot.log`, readable by root alone: it keeps the text of the first-boot scripts.
-1. Only now is the run done. The label can print `$hostname` (label moment "After the OS check"), and the notifications go out. Without a report in 15 minutes the run fails.
-1. The module keeps running and shows the result on its LEDs: ACT and PWR fade in and out together when the check passed, the error pattern when it failed.
+## Quick start
 
-- **First-boot scripts** are a script type of their own (Scripts → first boot): they run as root in the new system, with `$SERVER` set.
-- **Packages** (Scripts → Packages) are `.deb` files uploaded to the server. The stand has no internet, so apt downloads nothing: whatever a package depends on must be in the image or be uploaded too, and a missing dependency fails the check. Recommended packages are not installed. The list shows each package's architecture: it must be the image's (`arm64` for a 64-bit image, `armhf` for a 32-bit one) or `all`.
-- Anyone who reaches the provisioner's web server can download the files under `/uploads`, the images included: keep secrets out of packages.
-- The new system needs systemd and curl. A module booted over USB (rpiboot) is not checked: a reboot would bring it back to USB boot.
+### 1. Prepare the server
 
-## The image download resumes ##
+Install a fresh 64-bit Raspberry Pi OS Lite with [Raspberry Pi Imager](https://www.raspberrypi.com/software/). Set its hostname, login and Wi-Fi connection in Imager. Use the Wi-Fi address to administer the server; 64-bit OS is required for images larger than 2 GB.
 
-A broken connection no longer fails the write. The module downloads, decompresses and writes the image in one stream; when the connection breaks (a switch hiccup, an nginx restart, a re-plugged cable), curl starts again from the byte it got to while the decompressor and `dd` keep running. Server errors (5xx) and lost connections are retried every 5 seconds; after 10 minutes without a byte the write fails, and an answer like 404 (the image was deleted) fails it at once.
+On Trixie, configure the provisioning interface with NetworkManager:
 
-The partition table (the first MiB of the image) is cleared before the write and written last. A module that loses power mid-write, a PoE restart included, finds no partition table on its eMMC and boots from the network again instead of a half-written image.
-
-A project with **Split the image into 512 MB pieces** goes further: a module restarted during the write, or after a failed write, continues from its last verified piece and downloads only the rest.
-
-- The server keeps a gzip copy of the image in pieces next to the original, made in the background after the project is saved (about 5 minutes for a 6 GB image on a CM4); the Images page shows its state. Until it is ready the project writes the original, and a restart starts over.
-- A piece counts once the module has written it with `fsync` and the decompressor has checked its checksum; the run goes on from the first piece that does not count. Turn on **Verify that image was written correctly** too: it checks the whole image, including the part written before the restart.
-- The module card shows where the next start continues; **Start over** makes it write from the beginning instead.
-- A module whose storage was written in between (flashed elsewhere, another SD card) does not continue onto it: the image is written from the beginning, at the latest on the next start.
-- For an `.xz` or `.bz2` image the copy is gzip, so the download grows.
-
-## The built-in Wi-Fi as a cold spare ##
-
-A provisioner with a better Wi-Fi card (an M.2 card, a USB adapter) keeps its built-in Wi-Fi off the network: while another device carries the default route, the built-in Wi-Fi stays disconnected. When there has been no other default route for 30 seconds (the card was removed, its driver failed, it cannot connect), the built-in Wi-Fi connects on its own, and once the card has carried the default route again for a minute, it leaves. Only the device is disconnected, never a NetworkManager profile: after a reboot both radios connect, and the built-in Wi-Fi leaves a minute later.
-
-- The provisioner's address changes with the radio that carries the traffic; `<hostname>.local` (avahi) follows it.
-- Every switch goes to the journal: `journalctl -t cmprovision-uplink`, or Settings → Service status → uplink cold spare.
-- `SPARE=no` in `/etc/default/cmprovision-uplink` keeps the built-in Wi-Fi connected all the time.
-- It works where NetworkManager runs the Wi-Fi (Raspberry Pi OS); on WLAN Pi OS, where it does not, nothing changes.
-
-## The provisioner's Wi-Fi networks ##
-
-Settings → Wi-Fi networks lists the networks the provisioner connects to, the preferred first, and the Wi-Fi profiles it leaves to other tools (greyed). Each network is one NetworkManager profile that serves both radios: the card carries the traffic, the built-in Wi-Fi stands by as the cold spare.
-
-- **Add network** takes the name (SSID; **Find networks** lists the networks in reach), the security (WPA2-Personal, WPA2/WPA3 mixed or WPA3-Personal), the password, and whether the network is hidden. Every change asks for your account password first.
-- The password is stored on the server and never shown again; left empty when editing, it keeps the stored one. A new password of the network in use takes effect at its next connection, so it can be entered before the router changes.
-- **Check now** tries a network on the idle built-in Wi-Fi while the card keeps working: connected, wrong password, not found, no address. A network only the card can reach (6 GHz, say) shows as not found and can be saved all the same.
-- The order (↑ ↓) decides which network the provisioner joins when it connects; it does not leave a working network for a higher one. The network in use cannot be deleted. **Changes log** shows every change (`journalctl -t cmprovision-wifi`).
-- A provisioner set up with Raspberry Pi Imager keeps its Wi-Fi in a netplan profile, shown greyed: add the same network here, check it, then remove the old profile with `sudo nmcli connection delete <name>`.
-- It works where NetworkManager runs the Wi-Fi (Raspberry Pi OS); on WLAN Pi OS the section says it is not available.
-
-## Switches: port lookup, the Ports page and PoE restart ##
-
-Settings → Ethernet switches lists the switches of the stand; **Add switch** takes a switch's address and SNMP read access (a community for v2c, a user for v3). With them a module gets its switch and port as its board, `sw01 Gi0/3` (the switch's sysName before the first dot, then the port's description or name), and the Ports page shows each switch's front panel port by port. A port that leads to another switch of the list is a link, never a module's port: it shows that switch's own MAC (its base MAC, the MAC of its VLAN interface, or the MAC of its address in the provisioner's ARP cache). The same switch cannot be added twice under two addresses. Two switches with the same sysName give boards that look the same: Settings and the Ports page warn about it, rename one on the switch.
-
-Write access is optional, set for each switch, and only used to restart modules over PoE: a write community for v2c, or a user of its own for v3. **Check write access** writes one PoE port's current value back, so it changes nothing. With write access, the module card, the Ports page and the dashboard get a **Restart** button: the switch turns the port's PoE off for 5 seconds and on again. It is offered only on ports with one of the provisioner's modules (or a Raspberry Pi still booting) and nothing else, and not while the module writes its bootloader EEPROM. A port that does not come back on is listed on the dashboard, the Ports page and the module card with **Power on** until it does.
-
-## Upgrading ##
-
-Install the new package over the old one with `sudo apt install ./cmprovision4_*.deb`; never `apt remove` it first, the package's removal step deletes the database and storage.
-
-Upgrading from a version older than 2.5 (1.x, or 2.0 to 2.4) takes a snapshot by itself first: `/var/backups/cmprovision/<timestamp>-<old version>/`, with the old package inside, and `sudo cmprovision-restore <that directory>` goes back to the old version with its data. If no snapshot can be taken (three tries), the upgrade stops and the old version stays installed: try again while no module is on the stand, or upgrade without a way back with `sudo CMPROVISION_NO_SNAPSHOT=1 apt install ./cmprovision4_*.deb`. Reload browser tabs that were open during the upgrade.
-
-2.5 is built for 40-48 modules starting at once. The web interface runs in a php-fpm pool of its own (`/etc/php/<version>/fpm/pool.d/cmprovision.conf`, socket `/run/php/cmprovision-fpm.sock`); after a new PHP version comes with a system upgrade, run `sudo dpkg-reconfigure cmprovision4` to give it the pool. Two queue workers run next to it: `cmprovision-queue` finds the modules' switch ports and sends the notifications, `cmprovision-queue-images` computes image checksums (and finds ports when the first one is busy); Settings → Service status shows both with their logs. A module gets its script at once and its board a few seconds later; notifications go out in packs, one message per channel every 10 seconds. The database runs in WAL mode: run `artisan` and `sqlite3` by hand as the web user, `sudo -u www-data /var/lib/cmprovision/artisan …`.
-
-2.4 keeps the switches in a list of their own and makes the 2.3 switch settings its first entry; the 2.3 settings stay for going back. Going back with `cmprovision-restore` puts back the 2.3 database, so the next upgrade makes the list again from the 2.3 settings; after installing the 2.3 package over 2.4 without a restore, the list stays as 2.4 left it. Check Settings → Ethernet switches after either.
-
-For other upgrades take the snapshot yourself (the commands come with the package; in a checkout they are `tools/backup.sh` and `tools/restore.sh`). Only with `dpkg-repack` installed does it hold the installed package; without one, `cmprovision-restore` refuses it while another version is installed:
-
-```
-sudo apt install dpkg-repack       # once
-sudo cmprovision-backup            # /var/backups/cmprovision/<timestamp>-<version>/
-sudo cmprovision-restore /var/backups/cmprovision/<snapshot>
+```sh
+sudo nmcli connection add type ethernet ifname eth0 con-name cmprovision \
+  ipv4.method manual ipv4.addresses 172.20.0.1/16 ipv4.never-default yes \
+  ipv6.method link-local ipv6.addr-gen-mode eui64 connection.autoconnect yes
+sudo nmcli connection up cmprovision
+sudo apt update
 ```
 
-The package's post-installation step adjusts existing servers: `send_timeout 6h` for image downloads in the nginx site, `upload_tmp_dir` on disk next to the images, `APP_ENV=production` / `APP_DEBUG=false` in `.env`. The firmware store moves from the `stable`/`beta` channel names to `default`/`latest`; images downloaded earlier stay available to the projects that use them.
+### 2. Install cmprovision
 
-## API ##
+Use a `cmprovision4_*_all.deb` built from **this fork**; the [build instructions](#build-the-debian-package) below produce it. Copy the package to the server, then run:
 
-Create a token on the profile page (permissions: create, read, update, delete) and send it as `Authorization: Bearer <token>`.
+```sh
+sudo apt install ./cmprovision4_*_all.deb
+sudo -u www-data /var/lib/cmprovision/artisan auth:create-user
+```
 
-* `GET /api/cms`, `/api/projects`, `/api/projects/{id}`, `/api/projects/{id}/cms`, `/api/images`, `/api/firmware`, `/api/scripts`, `/api/labels`
-* `POST /api/images` (multipart field `image`), `DELETE /api/images/{id}`
-* `PATCH /api/projects/{id}` with any project fields and `scripts` (list of script ids); changing the active project rebuilds the EEPROM image the modules download
-* `POST /api/scripts`, `GET|PATCH|DELETE /api/scripts/{id}`
+Open `http://<server-wifi-address>/` and sign in with the account you created. For an existing server, read [Upgrading](#upgrading) before installing.
 
-## Development ##
+### 3. Provision the first module
 
-This PHP web application uses the Laravel framework.
-Make sure you familarize yourself with the fine documentation: https://laravel.com/docs/13.x/.
+1. In **Images**, upload an OS image compressed as `.gz`, `.xz` or `.bz2` and wait for its checksum to finish.
+2. In **Projects → Add project**, select the image and destination storage. Enable **Verify that image was written correctly**; add EEPROM settings, scripts or labels as needed.
+3. Save the project and choose **Set active**.
+4. Connect a CM4 prepared for network boot to the isolated switch and power it on. Follow its progress on **Dashboard**; open the module for its detailed log.
+5. Wait for **Done**. If **Check the OS after the first boot** is enabled, the run finishes only after the new system reports back.
 
-In particular note:
-* run `composer install` to install the dependencies living in the `vendor` directory.
-* the styles are built with the standalone Tailwind CLI 3.4 (no Node needed): `tailwindcss -c tailwind.config.js -i resources/css/app.css -o public/css/app.css --minify` after `php artisan view:cache`, then commit `public/css/app.css`.
-* tests: `php artisan test` (phpunit.xml runs them on an in-memory SQLite database) and `npm run test:js` (Node 20 or newer).
-* requirements: Debian 13 / Raspberry Pi OS Trixie or newer, PHP 8.3 or newer. Version 1.6.11 is the last one for Debian 11 and 12.
-* `docker/` holds a test bench (Debian 13 with PHP 8.4) laid out like the installed package, see `docker/README.md`.
-* build the package with `dpkg-buildpackage -b -us -uc` from a clean checkout without a `vendor/` directory (the build installs production dependencies itself).
+For carrier-board and boot-mode setup, see Raspberry Pi's [Using the Compute Module Provisioner](https://pip.raspberrypi.com/categories/685-whitepapers-app-notes/documents/RP-003468-WP/Using-the-Compute-Module-Provisioner.pdf). This upstream guide covers the original hardware workflow; use this README for the fork's software requirements.
 
-## Licence ##
+> [!NOTE]
+> First-boot checks need a systemd-based image with `curl`, an ext4 second partition and a boot order that tries eMMC before the network. USB-booted modules are not checked. The target network has no internet: include package dependencies in the image or upload them too. See [first-boot checks](docs/operations.md#first-boot-os-check).
 
-The main code of the Raspberry Pi compute module provisioning system is made available under the terms of the BSD 3-clause ("new") license.
-Look in the `vendor` directory (after running `composer --install`) to consult the open source licenses of the various dependencies like the Laravel framework used.
+## Upgrading
+
+> [!IMPORTANT]
+> Install the new package over the old one. **Do not run `apt remove` first:** package removal deletes the database and storage.
+
+```sh
+sudo apt install ./cmprovision4_*_all.deb
+```
+
+Upgrades from versions older than 2.5 take a rollback snapshot automatically. For other upgrades, create a backup first. Reload open browser tabs after upgrading.
+
+The [upgrade and restore guide](docs/upgrading.md) covers snapshots, rollback, PHP upgrades and changes to switch settings.
+
+## Documentation
+
+| Task | Guide |
+| --- | --- |
+| Tour every tab, theme and UI mode | [Screenshot gallery](docs/gallery.md) |
+| First-boot checks, packages and scripts | [OS check](docs/operations.md#first-boot-os-check) |
+| Interrupted downloads and power loss | [Image recovery](docs/operations.md#image-download-and-write-recovery) |
+| Wi-Fi networks and a spare radio | [Wi-Fi management](docs/operations.md#wi-fi-networks) · [Cold spare](docs/operations.md#built-in-wi-fi-as-a-cold-spare) |
+| Find a module's port or restart it | [Switches and PoE](docs/operations.md#switches-and-poe-restart) |
+| Read the module's LEDs | [LED signals](docs/leds.md) |
+| Restrict access to the stand | [Network access](docs/operations.md#network-access) |
+| Back up or roll back a server | [Upgrade and restore](docs/upgrading.md) |
+| Automate projects, images and scripts | [HTTP API](docs/api.md) |
+
+The `/scriptexecute` endpoint is restricted to the stand network and the server itself. Keep nginx connected directly to clients. Files under `/uploads` are downloadable by anyone who can reach the web server; keep secrets out of images and packages.
+
+## Development
+
+The application uses **Laravel 13, Livewire 3, Tailwind CSS 3.4 and SQLite**, with PHP **8.3+**. Provisioning and service management depend on Linux tools; the [Debian 13 test bench](docker/README.md) provides nginx and PHP 8.4 in the installed package layout.
+
+```sh
+composer install
+php artisan test
+npm run test:js
+```
+
+PHP tests use an in-memory SQLite database. JavaScript tests need Node.js 20+. End-to-end network boot and EEPROM flashing require real Raspberry Pi hardware; the [load-test guide](tests/load/README.md) documents the simulated 48-module stand.
+
+Styles are built with the standalone Tailwind CLI 3.4.19. After changing templates or styles, rebuild and commit `public/css/app.css`:
+
+```sh
+tailwindcss -c tailwind.config.js -i resources/css/app.css \
+  -o public/css/app.css --minify
+```
+
+### Build the Debian package
+
+On Raspberry Pi OS Trixie / Debian 13 or newer, install the build tools and PHP extensions, then build from a fresh checkout:
+
+```sh
+sudo apt update
+sudo apt install git build-essential debhelper fakeroot composer unzip php-cli \
+  php-sqlite3 php-bcmath php-mbstring php-xml php-zip php-snmp php-curl
+git clone https://github.com/nimbo78/cmprovision.git
+cd cmprovision
+dpkg-buildpackage -b -us -uc
+```
+
+The package is written to the parent directory. Start without a `vendor/` directory: the build installs production dependencies itself, but reuses an existing `vendor/` unchanged. Install the resulting package on the Raspberry Pi server with `apt` so runtime dependencies are installed too.
+
+See the [roadmap](ROADMAP.md) for planned work and the [brand files](docs/brand/README.md) for reusable logos.
+
+## Licence
+
+[BSD 3-Clause](LICENSE). Originally developed by Raspberry Pi; this fork is maintained independently. Dependencies retain their own licences in `vendor/` after `composer install`.

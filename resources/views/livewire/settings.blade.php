@@ -98,6 +98,17 @@
             <livewire:notification-settings />
         </div>
 
+        <div class="md:col-span-1" id="reprovision-key">
+            <h3 class="text-lg font-medium text-fg">Re-provision key</h3>
+            <p class="mt-1 text-sm text-fg-muted">The server key for identifying and re-provisioning opted-in devices.</p>
+        </div>
+        <div class="mt-5 md:mt-0 md:col-span-2"><livewire:reprovision-key /></div>
+        <div class="md:col-span-1" id="reprovision-accounts">
+            <h3 class="text-lg font-medium text-fg">Re-provision accounts</h3>
+            <p class="mt-1 text-sm text-fg-muted">Saved sensor accounts for access checks before re-provisioning. These are separate from your web login.</p>
+        </div>
+        <div class="mt-5 md:mt-0 md:col-span-2"><livewire:reprovision-accounts /></div>
+
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
                 <h3 class="text-lg font-medium text-fg">Service status</h3>

@@ -54,6 +54,14 @@
                   @endif
                   @error('split_image') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
+              <div class="mb-4">
+                  <label class="inline-flex items-center">
+                    <input type="checkbox" wire:model="reprovision" class="form-checkbox h-6 w-6 text-accent">
+                    <span class="ml-3 text-sm">Re-provision from the web UI</span>
+                  </label>
+                  <p class="text-xs text-fg-muted mt-1">Puts the provisioner's public SSH key on this image. Its restricted agent can identify the device and erase its boot structure for re-provisioning. The key stays on each device; keep this off for images that should not permit remote re-provisioning. Requires eMMC/SD, MBR partitioning, an ext4 root on partition 2 and SSH root key access.</p>
+                  @error('reprovision') <span class="text-neg">{{ $message }}</span>@enderror
+              </div>
               @if ($os_check && count($packages))
               <div class="mb-4">
                   <div class="block text-fg text-sm font-bold mb-2">Packages to install on the first boot:</div>

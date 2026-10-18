@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 class Project extends Model
 {
     use HasFactory;
-    protected $fillable = ['name','device','storage','image_id','label_id','label_moment','eeprom_firmware','eeprom_settings','verify','os_check','split_image'];
-    protected $casts = ['verify' => 'boolean', 'os_check' => 'boolean', 'split_image' => 'boolean'];
+    protected $fillable = ['name','device','storage','image_id','label_id','label_moment','eeprom_firmware','eeprom_settings','verify','os_check','split_image','reprovision'];
+    protected $casts = ['verify' => 'boolean', 'os_check' => 'boolean', 'split_image' => 'boolean', 'reprovision' => 'boolean'];
 
     function image()
     {

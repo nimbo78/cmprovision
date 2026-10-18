@@ -39,7 +39,7 @@ class Cm extends Model
     const ON_BENCH_SECONDS = 120;
 
     protected $fillable = [
-        'serial','mac','model','memory_in_gb','storage','csd','cid','firmware',
+        'serial','mac','model','memory_in_gb','storage','csd','cid','firmware','provisioning_storage',
         'image_filename', 'image_sha256', 'pre_script_output', 'post_script_output', 'script_return_code',
         'temp1', 'temp2', 'provisioning_board', 'provisioning_started_at', 'provisioning_complete_at', 'project_id',
         'phase', 'phase_detail', 'phase_started_at', 'progress_bytes', 'progress_total', 'progress_updated_at',
@@ -191,6 +191,8 @@ class Cm extends Model
     {
         $project = $project ?: Project::getActive();
         if (!$project || !$project->split_image || !$this->durable_bytes || !$this->durable_image_id)
+            return null;
+        if ($this->provisioning_storage && $this->provisioning_storage !== $project->storage)
             return null;
         if ((int) $this->project_id !== (int) $project->id || (int) $project->image_id !== (int) $this->durable_image_id)
             return null;

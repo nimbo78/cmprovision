@@ -1,0 +1,3 @@
+#!/bin/sh
+# The password belongs only to this SSH process; never put it in argv or a file.
+printf '%s\n' "$CMPROVISION_SSH_PASSWORD"
