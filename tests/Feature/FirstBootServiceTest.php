@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Package;
 use App\Models\Script;
 use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 /**
@@ -17,6 +18,7 @@ class FirstBootServiceTest extends TestCase
     const SERIAL = '10000000e611110c';
 
     protected $dir;
+    protected $process;
 
     protected function setUp(): void
     {
@@ -35,6 +37,9 @@ class FirstBootServiceTest extends TestCase
         file_put_contents($this->dir.'/systemd/cmprovision-firstboot.service', "[Unit]\n");
         symlink($this->dir.'/systemd/cmprovision-firstboot.service', $this->dir.'/systemd/multi-user.target.wants/cmprovision-firstboot.service');
         file_put_contents($this->dir.'/hostname', "wlanpi-a1b\n");
+        file_put_contents($this->dir.'/answers', '');
+        // End finite polling scenarios after the last answer; real sleep still runs for scripts/timeouts.
+        $this->stub('sleep', 'case "$1" in 0.03|0.02) [ -s "$FAKE/answers" ] || [ "${FAKE_KEEP_POLLING:-0}" = 1 ] || exit 1 ;; esac' . "\n" . 'exec /bin/sleep "$@"');
         $this->stub('systemctl', implode("\n", [
             'case "$*" in',
             '    *--wait*) exit 0 ;;',
@@ -52,6 +57,13 @@ class FirstBootServiceTest extends TestCase
             '    prev=$a; url=$a',
             'done',
             'case "$url" in',
+            '    *identify=poll*)',
+            '        [ ! -e "$FIRSTBOOT_DIR" ] && [ ! -e "$FIRSTBOOT_UNIT" ] && [ ! -L "$FIRSTBOOT_WANTS" ] || touch "$FAKE/inputs-remain"',
+            '        /bin/sleep 0.02',
+            '        a=$(head -n 1 "$FAKE/answers"); sed -i 1d "$FAKE/answers"',
+            '        [ "$a" != error ] || exit 7',
+            '        [ "$a" != partial ] || { printf identify; exit 18; }',
+            '        printf "%s" "$a" ;;',
             '    *firstboot=1*)',
             '        left=$(cat "$FAKE/refusals" 2>/dev/null || echo 0)',
             '        if [ "$left" -gt 0 ]; then echo $((left - 1)) > "$FAKE/refusals"; exit 22; fi',
@@ -76,13 +88,18 @@ class FirstBootServiceTest extends TestCase
             'for f in "$@"; do case "$f" in *.deb) cat "$f" >> "$FAKE/apt-content" ;; esac; done',
             'exit ${FAKE_APT:-0}',
         ]));
-        // the LED helper's stand-in: notes the pattern and returns at once
-        file_put_contents($this->dir.'/helper', "#!/bin/sh\n[ \"\$1\" = check ] && exit \${FAKE_HELPER_CHECK:-0}\necho \"\$1\" >> \"\$FAKE/patterns\"\n");
+        // Like the real helper, retain the same PID until killed, so transitions must reap it.
+        file_put_contents($this->dir.'/helper', "#!/bin/sh\n[ \"\$1\" = check ] && exit \${FAKE_HELPER_CHECK:-0}\necho \"\$1\" >> \"\$FAKE/patterns\"\necho \"\$\$\" >> \"\$FAKE/helper-pids\"\nexec /bin/sleep 30\n");
         chmod($this->dir.'/helper', 0755);
     }
 
     protected function tearDown(): void
     {
+        if ($this->process && $this->process->isRunning())
+            $this->process->stop(2);
+        if (file_exists($this->dir.'/helper-pids'))
+            foreach (file($this->dir.'/helper-pids', FILE_IGNORE_NEW_LINES) as $pid)
+                exec('kill '.(int) $pid.' 2>/dev/null');
         File::deleteDirectory($this->dir);
         parent::tearDown();
     }
@@ -113,9 +130,15 @@ class FirstBootServiceTest extends TestCase
     /** Renders the service, puts it where the install step would and runs it as systemd would; its exit code */
     protected function firstBoot(array $scripts = [], array $packages = [], array $env = [], bool $helper = true)
     {
+        $this->process = $this->firstBootProcess($scripts, $packages, $env, $helper);
+        return $this->process->run();
+    }
+
+    protected function firstBootProcess(array $scripts = [], array $packages = [], array $env = [], bool $helper = true): Process
+    {
         @mkdir($this->dir.'/lib/scripts', 0755, true);   // a run before removed it
         file_put_contents($this->dir.'/lib/run', view('scriptexecute.firstboot', ['server' => '172.20.0.1', 'serial' => self::SERIAL,
-            'scripts' => collect($scripts), 'packages' => collect($packages)])->render());
+            'scripts' => collect($scripts), 'packages' => collect($packages), 'identify_run' => '1791327300'])->render());
         foreach ($scripts as $script)
             file_put_contents($this->dir.'/lib/scripts/'.$script->id.'.sh', $script->script);
         if ($helper)
@@ -130,13 +153,10 @@ class FirstBootServiceTest extends TestCase
             'FIRSTBOOT_LOG' => $this->dir.'/firstboot.log', 'FIRSTBOOT_HOSTNAME' => $this->dir.'/hostname',
             'FIRSTBOOT_SETTLE' => '5', 'FIRSTBOOT_SCRIPT_SECONDS' => '5', 'FIRSTBOOT_TRIES' => '3',
             'FIRSTBOOT_DOWNLOAD_TRIES' => '3', 'FIRSTBOOT_KILL_AFTER' => '1',
-            'FIRSTBOOT_PAUSE' => '0', 'FIRSTBOOT_GRACE' => '0',
+            'FIRSTBOOT_PAUSE' => '0', 'FIRSTBOOT_RUNTIME_BASE' => $this->dir,
+            'LED_POLL_SECONDS' => '0.03', 'LED_IDENTIFY_POLL_SECONDS' => '0.02',
         ], $env);
-        $prefix = '';
-        foreach ($vars as $name => $value)
-            $prefix .= $name.'='.escapeshellarg($value).' ';
-        exec($prefix.'sh '.escapeshellarg($this->dir.'/lib/run').' 2>&1', $out, $code);
-        return $code;
+        return new Process(['sh', $this->dir.'/lib/run'], $this->dir, $vars, null, 30);
     }
 
     /** The report's text fields and its URL; [] when no report arrived */
@@ -352,5 +372,64 @@ class FirstBootServiceTest extends TestCase
 
         $this->assertSame('', $this->ledPatterns());
         $this->assertSame('none', trim(file_get_contents($this->dir.'/leds/ACT/trigger')));
+    }
+
+    public function test_identify_restores_ready_without_repeating_scripts_or_reports()
+    {
+        file_put_contents($this->dir.'/answers', "\nidentify\nidentify\n\n");
+        $marker = $this->dir.'/script-calls';
+        $this->firstBoot([$this->script(1, 'once', "echo once >> '$marker'\n")]);
+
+        $this->assertSame("ready\nidentify\nready", $this->ledPatterns());
+        $this->assertSame("once\n", file_get_contents($marker));
+        $curl = file_get_contents($this->dir.'/curl.log');
+        $this->assertSame(1, substr_count($curl, 'firstboot=1'));
+        $this->assertSame(4, substr_count($curl, 'identify=poll&identify_run=1791327300'));
+        $this->assertFileDoesNotExist($this->dir.'/inputs-remain');
+        $this->assertSame([], glob($this->dir.'/cmprovision-leds.*'));
+        foreach (file($this->dir.'/helper-pids', FILE_IGNORE_NEW_LINES) as $pid)
+        {
+            exec('kill -0 '.(int) $pid.' 2>/dev/null', $out, $code);
+            $this->assertNotSame(0, $code, 'every previous helper is stopped and reaped');
+        }
+    }
+
+    public function test_a_failed_check_can_identify_and_returns_to_fail_when_the_network_breaks()
+    {
+        file_put_contents($this->dir.'/answers', "identify\nerror\nidentify\npartial\n\n");
+        $this->firstBoot([$this->script(1, 'bad', "exit 3\n")]);
+
+        $this->assertSame("fail\nidentify\nfail\nidentify\nfail", $this->ledPatterns());
+        $this->assertSame("first boot script 'bad' exited 3", $this->reportFields()['reason']);
+    }
+
+    public function test_identify_without_the_helper_uses_kernel_triggers_and_restores_the_result()
+    {
+        file_put_contents($this->dir.'/answers', "identify\n\n");
+        $this->firstBoot([], [], [], false);
+        $this->assertSame('150', trim(file_get_contents($this->dir.'/leds/ACT/delay_on')));
+        $this->assertSame('none', trim(file_get_contents($this->dir.'/leds/ACT/trigger')));
+        $this->assertSame('1', trim(file_get_contents($this->dir.'/leds/PWR/brightness')));
+    }
+
+    public function test_termination_cleans_the_private_runtime_helper()
+    {
+        $this->process = $this->firstBootProcess([], [], ['FAKE_KEEP_POLLING' => '1']);
+        $this->process->start();
+        $deadline = microtime(true) + 5;
+        do {
+            usleep(20000);
+        } while (!file_exists($this->dir.'/helper-pids') && microtime(true) < $deadline && $this->process->isRunning());
+        $this->assertTrue($this->process->isRunning());
+        $runtime = glob($this->dir.'/cmprovision-leds.*');
+        $this->assertCount(1, $runtime);
+        $this->assertSame('0700', substr(sprintf('%o', fileperms($runtime[0])), -4));
+        $this->assertSame(['ledpattern'], array_values(array_diff(scandir($runtime[0]), ['.', '..'])));
+        $this->assertDirectoryDoesNotExist($this->dir.'/lib');
+
+        $this->process->signal(15);
+        $this->assertSame(0, $this->process->wait());
+        $this->assertSame([], glob($this->dir.'/cmprovision-leds.*'));
+        $this->assertSame('ready', $this->ledPatterns());
     }
 }

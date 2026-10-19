@@ -1,3 +1,16 @@
+cmprovision4 (2.6.4~dev1) unstable; urgency=medium
+
+  * Keep Identify/Stop available after the first-boot OS check, until
+    the next reboot. Poll the existing endpoint and restore ready/fail
+    after Stop, expiry or network failure; retain kernel LED fallback.
+  * Remove one-shot scripts, packages and unit before polling. Keep only
+    a private volatile LED helper, stop it on transitions and clean up
+    on termination. Bind installed-system polls to their provisioning run.
+  * Show heartbeat availability on the module card and document the
+    lifetime and upgrade requirements for already provisioned systems.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Mon, 19 Oct 2026 12:00:00 +0300
+
 cmprovision4 (2.6.3) unstable; urgency=medium
 
   * Re-provision an installed CM4 from its module card. Check the

@@ -75,7 +75,7 @@ class ScriptExecuteController extends Controller
         {
             if ($req->query("identify"))
             {
-                return $this->identifyPoll();
+                return $this->identifyPoll($req);
             }
             else if ($req->query("alldone"))
             {
@@ -529,7 +529,8 @@ exit 1
             'os_check' => $osCheck,
             'firstboot_scripts' => $firstboot_scripts,
             'firstboot_run' => $osCheck ? view('scriptexecute.firstboot', ['server' => $server, 'serial' => $this->cm->serial,
-                'scripts' => $firstboot_scripts, 'packages' => $packages])->render() : null,
+                'scripts' => $firstboot_scripts, 'packages' => $packages,
+                'identify_run' => (string) $this->cm->provisioning_started_at->getTimestamp()])->render() : null,
             'oscheck_install' => $osCheck ? view('scriptexecute.oscheck-install')->render() : null,
         ]))->header('Content-Type', 'text/plain');
         ReprovisionIntent::started($this->cm);
@@ -778,10 +779,14 @@ exit 1
 
     /* ?identify=poll: a module that finished asks every few seconds whether the operator wants it to
        blink. No log entry; the module is noted as on the bench (polled_at) at most once a minute. */
-    public function identifyPoll()
+    public function identifyPoll(Request $req)
     {
         $this->cm = Cm::where('serial', $this->serial)->first();
         if (!$this->cm)
+            return '';
+
+        // New-system loops belong to one run. Older utility OS scripts have no run parameter.
+        if ($req->query->has('identify_run') && $req->query('identify_run') !== (string) $this->cm->provisioning_started_at?->getTimestamp())
             return '';
 
         if (!$this->cm->polled_at || $this->cm->polled_at->getTimestamp() <= now()->getTimestamp() - Cm::POLL_NOTE_SECONDS)
