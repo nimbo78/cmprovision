@@ -1,0 +1,3 @@
+source "$BR2_EXTERNAL_CMPROVISION_PATH/package/cmp-rpi-boot-files/Config.in"
+source "$BR2_EXTERNAL_CMPROVISION_PATH/package/cmp-rpi-utils/Config.in"
+source "$BR2_EXTERNAL_CMPROVISION_PATH/package/cmp-usbboot-bootfiles/Config.in"

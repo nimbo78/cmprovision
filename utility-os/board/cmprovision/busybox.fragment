@@ -1,0 +1,17 @@
+# cmprovision utility OS: BusyBox beyond buildroot's package/busybox/busybox.config, which has 253 of the 255 applets of
+# the legacy OS (sysctl is CONFIG_BB_SYSCTL there): tc; the seamless decompression of tar; and nothing that logs in over
+# the network
+CONFIG_TC=y
+CONFIG_FEATURE_AWK_LIBM=y
+# Full xz-utils supplies these commands and reports malformed input (BusyBox xz can fail silently).
+# CONFIG_XZ is not set
+# CONFIG_UNXZ is not set
+# CONFIG_XZCAT is not set
+CONFIG_FEATURE_SEAMLESS_GZ=y
+CONFIG_FEATURE_SEAMLESS_XZ=y
+CONFIG_FEATURE_SEAMLESS_BZ2=y
+CONFIG_FEATURE_TAR_AUTODETECT=y
+# CONFIG_TELNETD is not set
+# CONFIG_HTTPD is not set
+# CONFIG_FTPD is not set
+# CONFIG_TFTPD is not set

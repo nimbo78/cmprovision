@@ -2042,7 +2042,7 @@ Facts this task rests on (research of 2026-10-16, buildroot 2025.02.18 sources):
 - buildroot's BusyBox config already has 253 of the 255 legacy applets: `tc` is off and `sysctl` is `CONFIG_BB_SYSCTL=y`. BusyBox's package installs `S50crond` when `CONFIG_CROND=y`. The legacy OS started no cron daemon, so `post-build.sh` removes that script.
 - `BR2_LINUX_KERNEL_INTREE_DTSO_NAMES` builds `overlays/<name>.dtbo` and puts it flat into `images/`. The kernel's own `make all` builds every overlay into the build directory as well, and `post-image.sh` falls back to that.
 
-- [ ] **Step 1: Write the failing test of the tree**
+- [x] **Step 1: Write the failing test of the tree**
 
 Create `tests/Unit/UtilityOsTreeTest.php`:
 ```php
@@ -2224,12 +2224,12 @@ class UtilityOsTreeTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsTreeTest'`
 Expected: `phpunit exit 1` or `2`: `utility-os/versions.env` is missing.
 
-- [ ] **Step 3: The pins and the external tree**
+- [x] **Step 3: The pins and the external tree**
 
 Create `utility-os/versions.env`:
 ```
@@ -2281,7 +2281,7 @@ endef
 LINUX_POST_EXTRACT_HOOKS += CMPROVISION_LINUX_GPL_TEXT
 ```
 
-- [ ] **Step 4: The packages**
+- [x] **Step 4: The packages**
 
 Create `utility-os/package/cmp-rpi-boot-files/Config.in`:
 ```
@@ -2415,7 +2415,7 @@ add_subdirectory(../vcgencmd vcgencmd)
 add_subdirectory(../vcmailbox vcmailbox)
 ```
 
-- [ ] **Step 5: The configuration, the fragments, the post scripts**
+- [x] **Step 5: The configuration, the fragments, the post scripts**
 
 Create `utility-os/configs/cmprovision_defconfig`:
 ```
@@ -2557,7 +2557,7 @@ sh "$EXT/../tools/utility-os/manifest.sh" "$OUT" "version=$UOS_VERSION" bits=64 
 echo "post-image: $OUT"
 ```
 
-- [ ] **Step 6: The legacy command list, the hash files, the build**
+- [x] **Step 6: The legacy command list, the hash files, the build**
 
 Create `tools/utility-os/legacy_commands.py`:
 ```python
@@ -2718,12 +2718,12 @@ echo "build.sh: done: $REPO/scriptexecute64 ($(du -sh "$REPO/scriptexecute64" | 
 Run: `cd "$REPO" && git add -N utility-os tools/utility-os && git update-index --chmod=+x tools/utility-os/build.sh tools/utility-os/hashes.sh tools/utility-os/legacy_commands.py utility-os/board/cmprovision/post-build.sh utility-os/board/cmprovision/post-image.sh`
 (The `-N` keeps the new files listed by `git ls-files`, which the bench sync reads.)
 
-- [ ] **Step 7: Run the tree test**
+- [x] **Step 7: Run the tree test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsTreeTest|UtilityOsInitTest|UtilityOsFilesTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 8: The bench helpers**
+- [x] **Step 8: The bench helpers**
 
 Create `$SP/wsl-bench/32-uos-in.sh`:
 ```sh
@@ -2784,7 +2784,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -d cmprov-trixie -u root -- ls /root/bench/ | tr '\n'
 ```
 Expected: the listing has the four new scripts.
 
-- [ ] **Step 9: The first build**
+- [x] **Step 9: The first build**
 
 Run:
 ```bash
@@ -2811,7 +2811,7 @@ When the build stops, read the lines above `build.sh exit` and fix by kind; ledg
 
 After a fix: push the tree again (`32-uos-in.sh`) and run `33-uos-build.sh` again. It builds only what changed; a changed fragment reconfigures its package.
 
-- [ ] **Step 10: Commit the tree (the built files follow in Task 8, after their checks)**
+- [x] **Step 10: Commit the tree (the built files follow in Task 8, after their checks)**
 
 Write `$SP/commit-270-t7.txt`:
 ```

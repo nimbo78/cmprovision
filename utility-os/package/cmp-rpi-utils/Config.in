@@ -1,0 +1,9 @@
+config BR2_PACKAGE_CMP_RPI_UTILS
+	bool "cmp-rpi-utils"
+	select BR2_PACKAGE_DTC # libfdt, for dtmerge
+	help
+	  vcgencmd, vcmailbox, dtoverlay, dtparam, dtmerge and pinctrl of
+	  raspberrypi/utils (UOS_RPI_UTILS_COMMIT of
+	  utility-os/versions.env), for the cmprovision utility OS.
+
+	  https://github.com/raspberrypi/utils

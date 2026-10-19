@@ -1,0 +1,124 @@
+# Утилитарная ОС
+
+Модуль прошивается из маленькой ОС, которую грузит по сети (TFTP от dnsmasq) или по USB (`rpiboot`). С 2.7.0 их в
+пакете две:
+
+| Каталог | Что это |
+|---|---|
+| `scriptexecute64/` | наша: buildroot LTS, 64-битное ядро Raspberry Pi, свежие BusyBox, curl, e2fsprogs, flashrom. Собирается из `utility-os/` |
+| `scriptexecute/` | старая: готовые файлы raspberrypi/scriptexecutor 2022 года, 32 бита. Уйдёт отдельным выпуском |
+
+Какую получают модули, задаёт ссылка `/var/lib/cmprovision/etc/boot` (`../scriptexecute` или `../scriptexecute64`):
+по ней идут `tftp-root` у dnsmasq и `rpiboot -d`. Переключатель — Settings → Utility OS. Он заменяет ссылку сразу, без
+перезапуска служб, и пишет в журнал Laravel, кто переключил. Переключайте, когда ни один модуль не грузится: модуль,
+который грузится в эту секунду, может взять файлы обеих.
+
+Вручную, если веб-интерфейс недоступен:
+
+    sudo -u www-data ln -sfn ../scriptexecute /var/lib/cmprovision/etc/boot      # старая
+    sudo -u www-data ln -sfn ../scriptexecute64 /var/lib/cmprovision/etc/boot    # наша
+
+Ссылку делает и чинит `tools/boot-link` (`/usr/lib/cmprovision/boot-link`). Его зовут `postinst`, `prerm` при откате
+ниже 2.7 и `cmprovision-restore`, всегда от www-data. Откат пакета ниже 2.7 возвращает модули на старую ОС.
+
+В обоих каталогах лежит `bootfiles.bin` из usbboot. С usbboot 20261002 `rpiboot` не несёт `bootcode4.bin` в себе, а с
+28 сентября 2026 usbboot держит его только внутри `bootfiles.bin` (член `2711/bootcode4.bin` вместе с нужными ему
+файлами). Найдя `bootfiles.bin` в каталоге `-d`, `rpiboot` берёт вторую ступень оттуда, а остальное — из каталога.
+
+`MANIFEST` каждого каталога говорит, что это за ОС (версия, ядро, разрядность, дата сборки), и перечисляет файлы с SHA256.
+Settings показывает его, а тесты сверяют с файлами.
+Каталог с отсутствующим файлом, неверным размером или SHA256 не предлагается для загрузки.
+
+## Устройство
+
+- `utility-os/` — BR2_EXTERNAL-дерево `CMPROVISION`: `configs/cmprovision_defconfig`, `board/cmprovision/` (фрагменты
+  конфигурации ядра и BusyBox, init `S99scriptexec`, `post-build.sh`, `post-image.sh`, шаблоны `config.txt` и
+  `cmdline.txt`), `package/` (загрузочные файлы, `raspberrypi/utils`, `bootfiles.bin`), `legacy-commands.txt`.
+- `utility-os/versions.env` — единственное место с версиями и SHA256.
+- XZ-образы распаковывает `xz-utils`: он сообщает об ошибке формата, где BusyBox xz может завершиться молча.
+  В BusyBox включена математика awk, а в util-linux — `ipcmk`, чтобы сохранить возможности прежней ОС.
+- `tools/utility-os/build.sh` — сборка, `test.sh` — проверки, `update.sh` — подъём версий, `manifest.sh` — `MANIFEST`.
+- `.github/workflows/utility-os.yml` — те же сборка и проверки в GitHub Actions.
+
+Init повторяет старый: те же параметры старта в тех же форматах, плюс `uos=<версия>`. Сервер узнаёт модуль по серийному
+номеру, поэтому форматы менять нельзя (тест `UtilityOsInitTest`).
+
+## Сборка
+
+Хост — Debian или Ubuntu x86_64: WSL-стенд или раннер `ubuntu-24.04`. Сборка идёт от обычного пользователя,
+вне OneDrive и не на провижинере. Нужны `build-essential bc cpio rsync unzip file wget git python3 perl patch
+xz-utils bzip2`; для проверок — `qemu-system-arm`.
+
+    UOS_WORK=$HOME/uos-work UOS_CACHE=$HOME/uos-cache sh tools/utility-os/build.sh
+
+Скрипт проверяет программы хоста, скачивает buildroot из `versions.env` со сверкой SHA256 и собирает. Готовый каталог
+кладёт в `scriptexecute64/`, исходники и лицензии — в `$UOS_WORK/output/legal-info`. Первая сборка идёт около часа,
+дальше помогают кэш загрузок и ccache в `$UOS_CACHE`.
+При смене закреплённых версий или defconfig рабочий output пересоздаётся: иначе `linux-custom` может сохранить исходники
+предыдущего ядра, а rootfs — отключённые компоненты. Кэши загрузок и компилятора сохраняются;
+с теми же версиями и defconfig сборка остаётся инкрементальной.
+
+## Проверки
+
+    sh tools/utility-os/test.sh
+
+- ядро: обязательные опции встроены;
+- состав: все команды из `legacy-commands.txt` есть, модулей ядра нет, нет служб входа по сети;
+- QEMU (`qemu-system-aarch64 -M virt`) грузит тот же `kernel8.img` и `scriptexecute.img`, init получает скрипт от
+  тестового сервера после ответа 502 и возвращает параметры старта, версии программ и их сообщения;
+- размер и `MANIFEST`.
+
+Сообщения программ ложатся в `tests/fixtures/utility-os/messages.txt`. PHPUnit (`UtilityOsMessagesTest`) сверяет их с
+шаблонами, по которым сервер объясняет сбои. Специфику Pi (светодиоды, SPI и flashrom, `vcgencmd`, перемычки, eMMC)
+проверяет только живая проверка.
+
+## Обновление версий
+
+    sh tools/utility-os/update.sh --check     # 0 — нового нет, 10 — есть, 1 — не удалось спросить
+    sh tools/utility-os/update.sh             # переписывает versions.env и печатает «было → стало»
+
+Новейшее берётся так: buildroot — в пределах LTS-ветки, ядро — последний тег `stable_*`, прошивка — последний релиз,
+`raspberrypi/utils` — последний коммит, usbboot — последний тег. Переход на следующую LTS buildroot делается вручную.
+По [политике Buildroot](https://buildroot.org/lts.html) с 2025 года LTS выходит в феврале нечётных лет:
+после 2025.02 — 2027.02. Февральский релиз 2026 года не является LTS.
+Хэши строгие: файл, скачавшийся с другим SHA256, останавливает сборку.
+Команда принимает только полностью полученные ответы; ошибка оставляет закреплённые версии прежними.
+
+Раз в месяц CI делает то же сам. Если есть новое, он собирает, проверяет и открывает PR в stage2 с таблицей версий и
+размерами. Для этого в GitHub нужно включить Actions в форке и разрешить им создавать PR (Settings → Actions → General).
+PR, открытый токеном `GITHUB_TOKEN`, запускает свою проверку только после одобрения («Approve workflows to run»): сборка
+и проверки к этому времени уже прошли в прогоне по расписанию. См. [документацию GitHub](https://docs.github.com/en/actions/concepts/security/github_token).
+GitHub выключает расписание после 60 дней без коммитов: снова включает его кнопка «Enable workflow».
+
+## Выпуск новой версии ОС
+
+1. `update.sh` (или PR из CI), `build.sh`, `test.sh`.
+2. Коммит `utility-os/versions.env`, `scriptexecute64/`, `tests/fixtures/utility-os/messages.txt`; PHPUnit целиком.
+3. Пакет, установка на провижинер, живая проверка через переключатель: запись со сверкой, EEPROM, светодиоды, проверка ОС,
+   докачка после перезапуска по PoE, время загрузки.
+4. Выпуск cmprovision. Вместе с ним — GitHub Release `utility-os-<версия>` с архивом `legal-info`.
+
+## Исходники и лицензии
+
+В ОС — программы под GPL (ядро, BusyBox и другие). Исходники всех компонентов и тексты лицензий собирает
+`make legal-info` (`$UOS_WORK/output/legal-info`). Архив публикуется GitHub Release `utility-os-<версия>`, а CI кладёт
+его в артефакты каждого прогона.
+
+`build.sh` дополняет стандартный вывод через `tools/utility-os/legal_info.py`: в нём остаются исходный архив Buildroot,
+наши рецепты и соответствующие исходники, патчи и лицензии Bootlin SDK. Компоненты определяются по `summary.csv` внутри
+проверенного SDK, их хэши — по исходному коммиту Buildroot этого SDK. Дополнение записывает `source-complete.json`;
+без него CI не архивирует исходники. Хэши отдельных лицензий ядра и Raspberry Pi utils выводятся из уже закреплённых
+исходных архивов, поэтому новые тексты GPL проверяются без ослабления проверки исходников.
+
+## Разбор проблем
+
+- Модуль с новой ОС не стартует или стартует не так: Settings → Utility OS → старая, модуль перезапустить. Журнал консоли
+  модуля (экран, tty1) и отчёты на сервере покажут, на каком шаге он встал.
+- Settings предупреждает, что dnsmasq не идёт по ссылке: в `etc/dnsmasq.conf` должна быть строка
+  `tftp-root=/var/lib/cmprovision/etc/boot`, затем `systemctl restart cmprovision-dnsmasq`.
+- Загрузка по USB не идёт: в каталоге, на который указывает `etc/boot`, должен лежать `bootfiles.bin`. Без него
+  `rpiboot` на первом же CM4 пишет «Failed to open second stage bootloader» и завершается (служба поднимает его снова).
+- Сборка встала на хэше: проверьте загрузку и исходный релиз. Изменившийся файл по прежнему тегу требует отдельного
+  разбора; `update.sh` пересчитывает хэши при смене версии, а не исправляет несоответствие прежнего закреплённого файла.
+- Проверка в QEMU не дошла до скрипта: в `$UOS_WORK/qemu.log` — консоль модуля в QEMU, в `$UOS_WORK/smoke/` — то, что
+  получил тестовый сервер.
