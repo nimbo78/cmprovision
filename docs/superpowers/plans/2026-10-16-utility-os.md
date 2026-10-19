@@ -4350,12 +4350,12 @@ Run: `git add docs/utility-os.md CLAUDE.md README.md ROADMAP.md debian/changelog
 - Consumes: the whole branch.
 - Produces: a ledger record of the rehearsal.
 
-- [ ] **Step 1: The whole suite**
+- [x] **Step 1: The whole suite**
 
 Run: `bash "$SP/wsl-bench/suite-ok.sh"`
 Expected: last line `php rc=0 js rc=0`.
 
-- [ ] **Step 2: Build 2.6.2 (the version to go back to) and the branch**
+- [x] **Step 2: Build 2.6.2 (the version to go back to) and the branch**
 
 Run:
 ```bash
@@ -4371,7 +4371,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -d cmprov-trixie -u root -- sh /root/bench/13-build-w
 ```
 Expected: `built 2.6.2: …`, `2.6.2`, then `built 2.7.0~dev1: … bytes` (about 15 MB larger than 2.6.2).
 
-- [ ] **Step 3: 2.6.2 installed, a snapshot of it, then the branch over it**
+- [x] **Step 3: 2.6.2 installed, a snapshot of it, then the branch over it**
 
 Run:
 ```bash
@@ -4399,7 +4399,7 @@ Expected:
 - 2.6.2: `link: readlink: … No such file or directory`, `tftp-root: tftp-root=/var/lib/cmprovision/scriptexecute`, `rpiboot: … -d /var/lib/cmprovision/scriptexecute`, `helper: … No such file`, one dir, `bootfiles: 0`; a snapshot directory named `…-2.6.2`.
 - 2.7.0~dev1: `link: ../scriptexecute owner www-data`, `tftp-root: tftp-root=/var/lib/cmprovision/etc/boot`, `rpiboot: ExecStart=/usr/bin/rpiboot -l -d /var/lib/cmprovision/etc/boot`, `helper: 755 root`, both dirs, `bootfiles: 2`.
 
-- [ ] **Step 4: The switch as the web app does it, the downgrade, the upgrade again, a data-only restore of the 2.6.2 snapshot**
+- [x] **Step 4: The switch as the web app does it, the downgrade, the upgrade again, a data-only restore of the 2.6.2 snapshot**
 
 Run:
 ```bash
@@ -4425,7 +4425,7 @@ Expected:
 - `== up to 2.7.0~dev1: link ../scriptexecute, tftp-root=/var/lib/cmprovision/etc/boot`;
 - `== data-only restore …: link ../scriptexecute, tftp-root=/var/lib/cmprovision/etc/boot` (the snapshot brought the old line, restore moved it back to the link).
 
-- [ ] **Step 5: Ledger**
+- [x] **Step 5: Ledger**
 
 Write the outputs of steps 2–4 into the ledger. No commit (nothing changed).
 
