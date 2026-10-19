@@ -3867,7 +3867,7 @@ Run: `git add tools/utility-os/update.sh tests/Unit/UtilityOsUpdateTest.php && g
 
 Facts (docs.github.com, 2026-10-16): the standard runner has 4 CPUs, 16 GB RAM and a 6-hour job limit. Scheduled runs use the workflow file of the default branch. Workflows in a fork run only after they are enabled in its Actions tab. A PR created with `GITHUB_TOKEN` starts its own `pull_request` run only after someone approves it. The cache is 10 GB per repository, and entries unused for 7 days go, so a monthly run usually starts cold.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Unit/UtilityOsWorkflowTest.php`:
 ```php
@@ -3909,12 +3909,12 @@ class UtilityOsWorkflowTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsWorkflowTest'`
 Expected: `phpunit exit 1` or `2` (no workflow file).
 
-- [ ] **Step 3: The workflow**
+- [x] **Step 3: The workflow**
 
 Create `.github/workflows/utility-os.yml`:
 ```yaml
@@ -4038,12 +4038,12 @@ jobs:
           gh pr create --base stage2 --head "$branch" --title "Utility OS $UOS_VERSION" --body-file "$RUNNER_TEMP/pr.md"
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsWorkflowTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 5: The YAML parses**
+- [x] **Step 5: The YAML parses**
 
 Run:
 ```bash
@@ -4054,7 +4054,7 @@ EOF
 ```
 Expected: `['pull_request', 'schedule', 'workflow_dispatch'] 11`. (PyYAML reads the key `on` as `True`.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t10.txt`:
 ```
