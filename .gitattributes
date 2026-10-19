@@ -4,6 +4,8 @@
 # the version and commit of a package: git archive fills them in (App\Support\AppVersion)
 config/version.php export-subst
 *.bin binary
+# Utility OS inventories hash the committed bytes on every platform.
+MANIFEST text eol=lf
 *.img binary
 *.dtb binary
 *.dtbo binary

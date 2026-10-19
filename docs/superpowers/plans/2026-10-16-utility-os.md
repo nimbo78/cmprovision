@@ -541,7 +541,7 @@ This is the fix rpiboot needs now. On da2, `rpiboot 20261005` finds no BCM2711 s
 - Consumes: —
 - Produces: `sh tools/utility-os/manifest.sh <dir> key=value…` writes `<dir>/MANIFEST`: a `#` comment line, the `key=value` arguments in their order, then `file=<sha256> <size> <path>` for every file under `<dir>` except `MANIFEST`, sorted by path (`LC_ALL=C`), paths relative to `<dir>` with `/`. The legacy keys: `version=legacy`, `bits=32`, `kernel=Linux 5.4`, `built=2022-11`, `source=raspberrypi/scriptexecutor (buildroot 2019.11.1)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Unit/UtilityOsFilesTest.php`:
 ```php
@@ -666,12 +666,12 @@ class UtilityOsFilesTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsFilesTest'`
 Expected: `phpunit exit 1`, no `scriptexecute/MANIFEST`, no `bootfiles.bin`, no `manifest.sh`.
 
-- [ ] **Step 3: The MANIFEST writer**
+- [x] **Step 3: The MANIFEST writer**
 
 Create `tools/utility-os/manifest.sh`:
 ```sh
@@ -695,7 +695,7 @@ shift
 mv "$DIR/MANIFEST.new" "$DIR/MANIFEST"
 ```
 
-- [ ] **Step 4: `bootfiles.bin` for the legacy directory, and its MANIFEST**
+- [x] **Step 4: `bootfiles.bin` for the legacy directory, and its MANIFEST**
 
 Add to `.gitattributes`, after `*.bin binary`:
 ```
@@ -715,12 +715,12 @@ Expected: `scriptexecute/bootfiles.bin: OK`. The MANIFEST head is the comment, t
 
 (Git Bash on Windows has `sha256sum`, `find`, `sort` and `wc`; `manifest.sh` gives the same bytes there as on Linux because `.gitattributes` keeps every file of the directory LF or binary.)
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsFilesTest|PackagingTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t2.txt`:
 ```
