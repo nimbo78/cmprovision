@@ -4449,3 +4449,8 @@ When the user says go, the order they set for releases:
    - the time from power-on to the script's start, next to the same measurement under the legacy OS.
    Then switch to the legacy OS and run once more. USB boot through rpiboot only if a CM4 that can boot over USB is at hand; else mark it unchecked, and the tty2 shell too (sensor1 has no screen or keyboard).
 5. Push main, stage2 and the tag only after the install and the live check are fine. Then the GitHub Release `utility-os-<version>` with the `legal-info` archive. The user enables Actions in the fork and allows them to create PRs.
+
+Development stand check, 19 October 2026: two network-boot/write/verify/OS-check cycles completed on the authorised CM4;
+the second includes the SPI/LED handoff fix and actual Identify/Stop/expiry checks. See
+[the hardware report](2026-10-19-utility-os-hardware-check.md) for package hashes, timings, evidence and remaining
+hardware checks. This does not complete the full acceptance matrix or authorise merging/publishing the release.
