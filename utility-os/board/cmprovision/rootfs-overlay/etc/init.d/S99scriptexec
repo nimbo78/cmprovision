@@ -1,0 +1,114 @@
+#!/bin/sh
+# cmprovision utility OS (utility-os/, docs/utility-os.md): fill the module's facts into the script address of the kernel
+# command line, get the provisioning script from the server and run it. The parameters and their formats are the legacy
+# OS's (etc/init.d/S99scriptexec of scriptexecute/scriptexecute.img): the server knows a module by its serial number.
+# No set -e: a fact that cannot be read leaves its value empty, it does not stop the module.
+# UOS_PROC, UOS_SYS and UOS_TMP move /proc, /sys and /tmp (tests/Feature/UtilityOsInitTest.php).
+
+case "$1" in
+    start) ;;
+    *) exit 0 ;;
+esac
+
+PROC=${UOS_PROC:-/proc}
+SYS=${UOS_SYS:-/sys}
+TMP=${UOS_TMP:-/tmp}
+
+say() { echo "cmprovision: $*"; }
+# a file's text without NUL bytes (device tree strings end with one); nothing when there is no such file
+text() { [ -r "$1" ] && tr -d '\000' < "$1"; }
+# every {name} in URL becomes the value: awk's index() takes both literally, whatever the value holds
+fill() {
+    URL=$(printf '%s' "$URL" | awk -v name="{$1}" -v value="$2" '{
+        out = ""
+        while ((i = index($0, name)) > 0) { out = out substr($0, 1, i - 1) value; $0 = substr($0, i + length(name)) }
+        printf "%s", out $0 }')
+}
+# the level of a GPIO, 0 or 1 ("pinctrl lev 5" prints "1"): pinctrl reads the register with its own numbers, while the
+# sysfs numbers of the legacy init are shifted since Linux 6.6 (the controller starts at 512)
+level() { pinctrl lev "$1" 2>/dev/null | tr -d ' \n'; }
+
+URL=
+READJUMPER=
+set -f   # the address has ? in it: no file name expansion
+for p in $(cat "$PROC/cmdline"); do
+    case "$p" in
+        script=*) URL=${p#script=} ;;
+        readjumper) READJUMPER=1 ;;
+    esac
+done
+set +f
+
+# ACT dark until the script takes it: led0 up to Linux 6.0, ACT since 6.1
+for led in "$SYS/class/leds/led0" "$SYS/class/leds/ACT"; do
+    [ -e "$led/trigger" ] || continue
+    echo none > "$led/trigger"
+    echo 0 > "$led/brightness"
+done
+
+mount -t debugfs none "$SYS/kernel/debug" 2>/dev/null
+echo "Note: shell is available on tty2 for debugging purposes"
+getty -L tty2 0 vt100 &
+
+say "waiting for eth0 to appear"
+while [ ! -e "$SYS/class/net/eth0" ]; do sleep 1; done
+ip link set eth0 up
+say "waiting for the network link"
+while [ "$(text "$SYS/class/net/eth0/carrier")" != 1 ]; do sleep 1; done
+say "obtaining a DHCP lease"
+udhcpc -i eth0   # it goes to the background with the lease and renews it
+
+case "$URL" in
+    http://*) ;;
+    *) say "no script= address on the kernel command line: nothing to do"; exit 0 ;;
+esac
+
+SERIAL=$(sed -n 's/^Serial[[:space:]]*: *//p' "$PROC/cpuinfo" | head -n 1)
+[ -n "$SERIAL" ] || SERIAL=$(text "$PROC/device-tree/serial-number")
+TEMP=$(vcgencmd measure_temp 2>/dev/null | sed -n 's/^temp=//p')
+if [ -z "$TEMP" ] && [ -r "$SYS/class/thermal/thermal_zone0/temp" ]; then
+    TEMP=$(awk '{ printf "%.1f'"'"'C", $1 / 1000 }' "$SYS/class/thermal/thermal_zone0/temp")
+fi
+BOOTMODE=
+if [ -r "$PROC/device-tree/chosen/bootloader/boot-mode" ]; then
+    BOOTMODE=$(od -An -tu1 -j3 -N1 "$PROC/device-tree/chosen/bootloader/boot-mode" | tr -d ' \n')
+fi
+JUMPER=
+if [ -n "$READJUMPER" ]; then
+    for gpio in 5 13 21; do JUMPER=$JUMPER$(level $gpio); done
+fi
+
+fill serial "$SERIAL"
+fill model "$(text "$PROC/device-tree/model" | tr ' ' '+')"
+fill temp "$TEMP"
+fill storagesize "$(text "$SYS/block/mmcblk0/size")"
+fill cid "$(text "$SYS/block/mmcblk0/device/cid")"
+fill csd "$(text "$SYS/block/mmcblk0/device/csd")"
+fill bootmode "$BOOTMODE"
+fill memorysize "$(awk '/^MemTotal:/ { print $2 }' "$PROC/meminfo")"
+fill mac "$(text "$SYS/class/net/eth0/address")"
+fill jumper "$JUMPER"
+
+# 200 is the script (the server answers its own refusals with a script too); no connection or 5xx (php-fpm restarting
+# under a package upgrade) is tried again; any other answer stops the module, since running it would do no good
+while :; do
+    say "downloading the script from $URL"
+    CODE=$(curl -g --retry 10 --retry-connrefused -o "$TMP/script" -w '%{http_code}' "$URL")
+    CURL_EXIT=$?
+    # A response may start with 200 and then end early. Only a complete download is executable.
+    if [ "$CURL_EXIT" -ne 0 ]; then
+        say "download failed (HTTP $CODE), curl exit $CURL_EXIT: trying again in 10 seconds"
+        sleep 10
+        continue
+    fi
+    case "$CODE" in
+        200) break ;;
+        000|5??) say "no answer from the server (HTTP $CODE): trying again in 10 seconds" ;;
+        *) say "the server answered HTTP $CODE: stopping"; exit 0 ;;
+    esac
+    sleep 10
+done
+say "executing the script"
+sh "$TMP/script"
+# the script ends in finish and waits for the operator; one that returns is not run again (a second run would write again)
+say "the script ended with exit code $?: nothing more to do"

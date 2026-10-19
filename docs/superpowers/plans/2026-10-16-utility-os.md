@@ -1563,7 +1563,7 @@ The init is written and tested before any build: under the bench's `busybox sh` 
   - environment `UOS_PROC`, `UOS_SYS`, `UOS_TMP` (defaults `/proc`, `/sys`, `/tmp`);
   - `cmdline.txt` and `config.txt` templates with `@UOS_VERSION@` (only in `cmdline.txt`), which `post-image.sh` (Task 7) fills in.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/UtilityOsInitTest.php`:
 ```php
@@ -1830,12 +1830,12 @@ class UtilityOsInitTest extends TestCase
     }
 }
 ```
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsInitTest'`
 Expected: `phpunit exit 1`. The template files and the init are missing (`file_get_contents(...cmdline.txt): Failed to open stream`).
 
-- [ ] **Step 3: The templates**
+- [x] **Step 3: The templates**
 
 Create `utility-os/board/cmprovision/cmdline.txt` (one line, then a newline):
 ```
@@ -1859,7 +1859,7 @@ dtparam=audio=off
 dtoverlay=spi-gpio40-45
 ```
 
-- [ ] **Step 4: The init**
+- [x] **Step 4: The init**
 
 Create `utility-os/board/cmprovision/rootfs-overlay/etc/init.d/S99scriptexec`:
 ```sh
@@ -1973,12 +1973,12 @@ say "the script ended with exit code $?: nothing more to do"
 ```
 Run: `git update-index --add --chmod=+x utility-os/board/cmprovision/rootfs-overlay/etc/init.d/S99scriptexec` after `git add`, in step 7.
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsInitTest'`
 Expected: `phpunit exit 0`, `OK (11 tests, …)`.
 
-- [ ] **Step 6: Syntax under dash too**
+- [x] **Step 6: Syntax under dash too**
 
 Run:
 ```bash
@@ -1989,7 +1989,7 @@ EOF
 ```
 Expected: `dash-ok`, `busybox-ok`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Write `$SP/commit-270-t6.txt`:
 ```
