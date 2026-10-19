@@ -9,22 +9,27 @@
 # without it the same states are shown with kernel triggers.
 LEDS=${LEDS:-/sys/class/leds}
 LEDS_DRIVER=${LEDS_DRIVER:-/sys/bus/platform/drivers/leds-gpio}
+LED_SPI_DRIVER=${LED_SPI_DRIVER:-/sys/bus/platform/drivers/spi-bcm2835}
 LED_TMP=${LED_TMP:-/tmp}
 LEDPATTERN=$LED_TMP/ledpattern
 LED_POLL_SECONDS=${LED_POLL_SECONDS:-5}
 LED_IDENTIFY_POLL_SECONDS=${LED_IDENTIFY_POLL_SECONDS:-2}
 LED_PID=""
-LED_ACT=$LEDS/led0; [ -e "$LEDS/ACT" ] && LED_ACT=$LEDS/ACT
-LED_PWR=$LEDS/led1; [ -e "$LEDS/PWR" ] && LED_PWR=$LEDS/PWR
+led_paths() {
+    LED_ACT=$LEDS/led0; [ -e "$LEDS/ACT" ] && LED_ACT=$LEDS/ACT
+    LED_PWR=$LEDS/led1; [ -e "$LEDS/PWR" ] && LED_PWR=$LEDS/PWR
+}
+led_paths
 
 # Fetch the helper (best effort: without it only the fading is lost) and show "in progress"
-led_init() {
+led_fetch_helper() {
     if ! { curl --silent --max-time 20 -g -o "$LEDPATTERN" "http://{{ $server }}/tools/ledpattern" \
            && chmod +x "$LEDPATTERN" && "$LEDPATTERN" check; }; then
         rm -f "$LEDPATTERN"
     fi
-    led_mode progress
 }
+
+led_init() { led_fetch_helper; led_mode progress; }
 
 led_set() {   # led_set <led> none <0|1> | timer <on ms> <off ms> | <other trigger>
     [ -e "$1/trigger" ] || return 0
@@ -36,14 +41,23 @@ led_set() {   # led_set <led> none <0|1> | timer <on ms> <off ms> | <other trigg
 }
 
 # ACT shares GPIO 42 with the SPI bus flashrom uses for the EEPROM (overlay spi-gpio40-45): the pin
-# stays with SPI, and ACT dark, until the LED driver is bound again. So only once flashrom is no
-# longer needed: after the pre-install scripts, or when provisioning ends.
+# stays with SPI until its controller is unbound. New kernels refuse to bind the LED driver at
+# all while SPI owns the pin. Release SPI only after flashrom is no longer needed, then bind LEDs.
 led_take_act() {
     [ -e "$LED_TMP/led-act-taken" ] && return 0
-    if [ -e "$LEDS_DRIVER/leds" ]; then
-        echo leds > "$LEDS_DRIVER/unbind"
-        echo leds > "$LEDS_DRIVER/bind"
+    if [ -e "$LED_SPI_DRIVER/fe204000.spi" ]; then
+        echo fe204000.spi > "$LED_SPI_DRIVER/unbind" || return 0
     fi
+    if [ -e "$LEDS_DRIVER/leds" ]; then
+        echo leds > "$LEDS_DRIVER/unbind" || return 0
+    fi
+    if [ -e "$LEDS_DRIVER/bind" ]; then
+        echo leds > "$LEDS_DRIVER/bind" || return 0
+    fi
+    led_paths
+    # The initial check may have rejected the helper because neither LED existed before the bind.
+    [ -x "$LEDPATTERN" ] || led_fetch_helper
+    led_mode progress
     : > "$LED_TMP/led-act-taken"
 }
 
