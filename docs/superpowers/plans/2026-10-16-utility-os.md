@@ -762,7 +762,7 @@ Run: `git add .gitattributes scriptexecute/bootfiles.bin scriptexecute/MANIFEST 
   - Config: `cmprovision.boot_root` (default `base_path()`), `cmprovision.boot_link` (default `base_path('etc/boot')`).
   - Test trait `Tests\Support\UtilityOsTree`: `makeTree(): void`, `$this->tree` (the root), `osDir(string $dir, string $manifestLines)`.
 
-- [ ] **Step 1: Write the test tree and the failing test**
+- [x] **Step 1: Write the test tree and the failing test**
 
 Create `tests/Support/UtilityOsTree.php`:
 ```php
@@ -903,12 +903,12 @@ class UtilityOsTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsTest'`
 Expected: `phpunit exit 2` or `1`: `Class "App\Services\UtilityOs" not found`.
 
-- [ ] **Step 3: The configuration**
+- [x] **Step 3: The configuration**
 
 In `config/cmprovision.php`, before the closing `];`:
 ```php
@@ -927,7 +927,7 @@ In `config/cmprovision.php`, before the closing `];`:
     'boot_link' => env('CMPROVISION_BOOT_LINK', base_path('etc/boot')),
 ```
 
-- [ ] **Step 4: The service**
+- [x] **Step 4: The service**
 
 Create `app/Services/UtilityOs.php`:
 ```php
@@ -1049,14 +1049,14 @@ class UtilityOs
 }
 ```
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsTest'`
 Expected: `phpunit exit 0`, `OK (6 tests, …)`.
 
 If Task 0 step 3 showed that dnsmasq does not follow a switched link, add to `switchTo()` after the rename: `exec(config('cmprovision.dnsmasq_restart'), $out, $rc);`, plus a test that sets `cmprovision.dnsmasq_restart` to `touch <tree>/restarted` and asserts the file. Ledger the ruling.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t3.txt`:
 ```
