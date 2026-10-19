@@ -116,6 +116,14 @@ For carrier-board and boot-mode setup, see Raspberry Pi's [Using the Compute Mod
 > [!NOTE]
 > First-boot checks need a systemd-based image with `curl`, an ext4 second partition and a boot order that tries eMMC before the network. USB-booted modules are not checked. The target network has no internet: include package dependencies in the image or upload them too. See [first-boot checks](docs/operations.md#first-boot-os-check).
 
+## Utility OS
+
+Modules are provisioned from a small OS they boot over the network or over USB. Since 2.7.0 the package ships two: ours
+(`scriptexecute64/`, built with buildroot from current versions, 64-bit) and the legacy one (`scriptexecute/`, 2022,
+32-bit). Settings → Utility OS picks the one modules get; switching back is the same button. How the OS is built and
+updated: [docs/utility-os.md](docs/utility-os.md).
+
+
 ## Upgrading
 
 > [!IMPORTANT]

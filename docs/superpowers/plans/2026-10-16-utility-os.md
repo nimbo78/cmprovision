@@ -4082,7 +4082,7 @@ Run: `git add .github/workflows/utility-os.yml tests/Unit/UtilityOsWorkflowTest.
 - Consumes: everything above (names of scripts, files, keys, texts).
 - Produces: —
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Unit/UtilityOsDocsTest.php`:
 ```php
@@ -4127,12 +4127,12 @@ class UtilityOsDocsTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsDocsTest'`
 Expected: `phpunit exit 1` (no `docs/utility-os.md`, CLAUDE.md still has «исходников в репозитории нет»).
 
-- [ ] **Step 3: The guide**
+- [x] **Step 3: The guide**
 
 Create `docs/utility-os.md` (Russian, like `docs/leds.md`):
 ```markdown
@@ -4244,7 +4244,7 @@ GitHub выключает расписание после 60 дней без к�
   получил тестовый сервер.
 ```
 
-- [ ] **Step 4: CLAUDE.md**
+- [x] **Step 4: CLAUDE.md**
 
 Edit these places in `CLAUDE.md`:
 
@@ -4294,7 +4294,7 @@ Edit these places in `CLAUDE.md`:
   `legal-info`.
 ```
 
-- [ ] **Step 5: README and ROADMAP**
+- [x] **Step 5: README and ROADMAP**
 
 In `README.md`, before the heading `## The OS check after the first boot ##`, add:
 ```markdown
@@ -4325,12 +4325,12 @@ In `debian/changelog`, the dev entry's bullet becomes:
     exits.
 ```
 
-- [ ] **Step 6: Run the test**
+- [x] **Step 6: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsDocsTest|LedDocsTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Write `$SP/commit-270-t11.txt`:
 ```
