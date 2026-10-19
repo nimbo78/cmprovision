@@ -15,7 +15,7 @@ This lasts until the next reboot. Do not install a permanent agent, rerun packag
 - [x] Update operations/LED documentation and changelog as `2.6.4~dev1`. Run relevant tests, then the full existing suite; inspect desktop/mobile controls.
 - [x] Build a development package and verify on the stand: button, helper process/mode, Stop, automatic expiry, original result, no repeated OS-check report/scripts. Record hardware evidence before calling the feature complete.
 
-[Stand results and release acceptance](2026-10-19-identify-hardware-check.md): both the preliminary post-report loop check and the complete fresh re-provision/ordinary reboot cycle passed on `100000004acecfa4`. Full cycle: 6:35, SHA256 and OS check passed; Identify/Stop/expiry worked, and reboot did not repeat firstboot tasks. The development package is installed on `wlanpi-da2`; a stable release is the next step.
+[Stand results and release acceptance](2026-10-19-identify-hardware-check.md): both the preliminary post-report loop check and the complete fresh re-provision/ordinary reboot cycle passed on `100000004acecfa4`. Full cycle: 6:35, SHA256 and OS check passed; Identify/Stop/expiry worked, and reboot did not repeat firstboot tasks. Stable 2.6.4 promotes the same application code; upgrade requirements are in [upgrading.md](../../upgrading.md).
 
 ## Acceptance
 

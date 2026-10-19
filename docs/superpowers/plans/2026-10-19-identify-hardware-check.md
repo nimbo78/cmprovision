@@ -47,4 +47,4 @@ Times below are UTC on 18 October (19 October locally):
 - [x] Complete a fresh re-provision cycle with the final development package, then check Identify/Stop after the OS-check report.
 - [x] Confirm on the sensor that the one-shot unit/scripts/packages are gone, and a subsequent normal reboot cannot repeat them or retain the temporary Identify loop.
 
-The preliminary transient test loop was removed by the full re-provision cycle. The sensor is now running its installed OS after the ordinary reboot, with no temporary Identify loop. Other sensors were not modified. Stable 2.6.4 has not been released by this verification.
+The preliminary transient test loop was removed by the full re-provision cycle. The sensor is now running its installed OS after the ordinary reboot, with no temporary Identify loop. Other sensors were not modified. This acceptance covers `2.6.4~dev1`; stable 2.6.4 promotes the same application code.
