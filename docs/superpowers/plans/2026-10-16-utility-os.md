@@ -104,11 +104,11 @@ The research of 2026-10-16 (raspberrypi/linux at `stable_20260911`, raspberrypi/
 
 No repository changes. This proves the switch idea on the bench before anything relies on it: dnsmasq must serve the link's current target without a restart.
 
-- [ ] **Step 1: Keep the bench awake for the session**
+- [x] **Step 1: Keep the bench awake for the session**
 
 Run (Bash, `run_in_background: true`): `MSYS_NO_PATHCONV=1 wsl.exe -d cmprov-trixie -u root -- sleep 43200`
 
-- [ ] **Step 2: Space, cores and host packages**
+- [x] **Step 2: Space, cores and host packages**
 
 Run:
 ```bash
@@ -127,7 +127,7 @@ EOF
 ```
 Expected: at least 40G available on `/root` (buildroot output about 20 GB plus caches), several cores, no `MISSING` line, `host-ready`. With less space, stop and tell the user. The build cannot run there.
 
-- [ ] **Step 3: dnsmasq serves the link's target, and switching needs no restart**
+- [x] **Step 3: dnsmasq serves the link's target, and switching needs no restart**
 
 Run:
 ```bash
@@ -147,7 +147,7 @@ EOF
 ```
 Expected: `first: A`, then `after the switch: B`. If the second line is still `A`, dnsmasq resolved its root at start. Record a ledger ruling then: Task 3's `UtilityOs::switchTo()` must restart dnsmasq after replacing the link, through the existing `config('cmprovision.dnsmasq_restart')` (the sudo rule allows it). Add a test to Task 3 that the command runs.
 
-- [ ] **Step 4: Ledger**
+- [x] **Step 4: Ledger**
 
 Write the free space, the core count and the result of step 3 into the ledger.
 
@@ -165,7 +165,7 @@ Write the free space, the core count and the result of step 3 into the ledger.
 - Consumes: —
 - Produces: `/usr/lib/cmprovision/boot-link fix <app>` and `boot-link legacy <app>`. Exit 0 on success, 1 when `<app>/etc/boot` is a real directory, 2 on a wrong call. After `fix`, `<app>/etc/boot` is a relative link to `../scriptexecute` or `../scriptexecute64`, and `tftp-root=<app>/scriptexecute` in `<app>/etc/dnsmasq.conf` reads `tftp-root=<app>/etc/boot`.
 
-- [ ] **Step 1: The dev version first**
+- [x] **Step 1: The dev version first**
 
 Add at the top of `debian/changelog`:
 ```
@@ -185,7 +185,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
 Run: `git add debian/changelog && git commit -q -F "$SP/commit-270-t0.txt"`
 
-- [ ] **Step 2: Write the failing test of the helper**
+- [x] **Step 2: Write the failing test of the helper**
 
 Create `tests/Unit/BootLinkTest.php`:
 ```php
@@ -324,12 +324,12 @@ class BootLinkTest extends TestCase
 }
 ```
 
-- [ ] **Step 3: Run it to see it fail**
+- [x] **Step 3: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'BootLinkTest'`
 Expected: `phpunit exit 1`, the tests fail (sh cannot open `tools/boot-link`).
 
-- [ ] **Step 4: Write the helper**
+- [x] **Step 4: Write the helper**
 
 Create `tools/boot-link`:
 ```sh
@@ -382,12 +382,12 @@ case "$CMD" in
 esac
 ```
 
-- [ ] **Step 5: Run the helper's test again**
+- [x] **Step 5: Run the helper's test again**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'BootLinkTest'`
 Expected: `phpunit exit 0`, `OK (9 tests, …)`.
 
-- [ ] **Step 6: Write the failing packaging tests**
+- [x] **Step 6: Write the failing packaging tests**
 
 Append to `tests/Unit/PackagingTest.php`, before the closing `}` of the class:
 ```php
@@ -437,12 +437,12 @@ Append to `tests/Unit/PackagingTest.php`, before the closing `}` of the class:
     }
 ```
 
-- [ ] **Step 7: Run them to see them fail**
+- [x] **Step 7: Run them to see them fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'PackagingTest'`
 Expected: `phpunit exit 1`, the four new tests fail and the old ones pass.
 
-- [ ] **Step 8: Wire the helper into the package**
+- [x] **Step 8: Wire the helper into the package**
 
 In `debian/rules`, `override_dh_install`, after the `wifi-networks` line:
 ```make
@@ -493,12 +493,12 @@ if [ -x /usr/lib/cmprovision/boot-link ]; then
 fi
 ```
 
-- [ ] **Step 9: Run the packaging and helper tests**
+- [x] **Step 9: Run the packaging and helper tests**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'PackagingTest|BootLinkTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 10: Shell syntax**
+- [x] **Step 10: Shell syntax**
 
 Run:
 ```bash
@@ -508,7 +508,7 @@ EOF
 ```
 Expected: five `ok` lines.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 Write `$SP/commit-270-t1.txt`:
 ```

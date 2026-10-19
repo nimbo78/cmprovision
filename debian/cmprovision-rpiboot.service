@@ -3,7 +3,9 @@ Description=rpiboot
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/rpiboot -l -d /var/lib/cmprovision/scriptexecute
+ExecStart=/usr/bin/rpiboot -l -d /var/lib/cmprovision/etc/boot
+Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

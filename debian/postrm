@@ -13,6 +13,8 @@ if [ "$1" = "purge" ]; then
     # the cold spare's switch and state (2.5.2)
     rm -f /etc/default/cmprovision-uplink /run/cmprovision/uplink-spare /run/cmprovision/uplink-spare.lock
     rmdir /run/cmprovision 2>/dev/null || true
+    # The utility OS link made by postinst (2.7.0).
+    rm -f /var/lib/cmprovision/etc/boot
 fi
 
 #DEBHELPER#

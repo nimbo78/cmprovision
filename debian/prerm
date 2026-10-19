@@ -23,6 +23,11 @@ if [ "$1" = "remove" ] || { [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compar
     /usr/lib/cmprovision/uplink-spare release || true
 fi
 
+# Going below 2.7 removes scriptexecute64/ while dnsmasq still follows etc/boot.
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.7.0~"; then
+    runuser -u www-data -- /usr/lib/cmprovision/boot-link legacy /var/lib/cmprovision || true
+fi
+
 #DEBHELPER#
 
 exit 0

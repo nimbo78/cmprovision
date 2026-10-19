@@ -14,6 +14,7 @@ override_dh_install:
 	install -D -m 755 tools/uplink-spare debian/cmprovision4/usr/lib/cmprovision/uplink-spare
 	install -D -m 755 tools/90-cmprovision-uplink debian/cmprovision4/usr/lib/NetworkManager/dispatcher.d/90-cmprovision-uplink
 	install -D -m 755 tools/wifi-networks debian/cmprovision4/usr/lib/cmprovision/wifi-networks
+	install -D -m 755 tools/boot-link debian/cmprovision4/usr/lib/cmprovision/boot-link
 	install -D -m 644 tools/90-cmprovision-uplink.conf debian/cmprovision4/usr/lib/NetworkManager/conf.d/90-cmprovision-uplink.conf
 
 override_dh_strip:

@@ -127,6 +127,10 @@ POOLCONF
         echo "         (for tftpd-hpa: systemctl disable --now tftpd-hpa), then: systemctl restart cmprovision-dnsmasq"
     fi
 
+    # The web user owns etc/: repair the utility OS link and migrate the live TFTP root as that user.
+    # The shipped conffile stays unchanged, so an upgrade needs no dpkg config-file prompt.
+    runuser -u www-data -- /usr/lib/cmprovision/boot-link fix /var/lib/cmprovision || echo "Could not set up the utility OS link in /var/lib/cmprovision/etc"
+
     # Uploaded images pass through PHP's temporary directory. Keep it on disk next to the images:
     # on Debian 13 /tmp is RAM-backed (half the memory at most), and renaming is instant.
     UPLOAD_TMP=/var/lib/cmprovision/storage/app/upload-tmp
