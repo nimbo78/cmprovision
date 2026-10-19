@@ -83,6 +83,23 @@ class ModuleIdentifyTest extends TestCase
         $this->assertSame('', $this->poll('1000000000000bad'));
     }
 
+    public function test_the_new_system_polls_only_for_its_own_run()
+    {
+        $cm = $this->module(['os_check' => 'passed', 'os_checked_at' => now(), 'hostname' => 'wlanpi-a1b',
+            'identify_until' => now()->addSeconds(30)]);
+        $url = '/scriptexecute?serial='.self::SERIAL.'&identify=poll&identify_run=';
+        $run = $cm->provisioning_started_at->getTimestamp();
+        $this->get($url.($run - 1))->assertOk()->assertContent('');
+        $this->assertNull($cm->fresh()->polled_at);
+        $this->get($url.$run)->assertOk()->assertContent('identify');
+        $this->assertEquals(now(), $cm->fresh()->polled_at);
+        Livewire::test('cm-card', ['serial' => self::SERIAL])->assertSee('in its new system wlanpi-a1b')->assertSee('Stop');
+
+        $cm->update(['provisioning_started_at' => now(), 'polled_at' => null, 'identify_until' => null]);
+        $this->get($url.$run)->assertOk()->assertContent('');
+        $this->assertNull($cm->fresh()->polled_at, 'the previous system cannot revive bench status for a new run');
+    }
+
     public function test_a_new_run_forgets_the_bench_state()
     {
         $this->module(['polled_at' => now(), 'identify_until' => now()->addSeconds(20)]);

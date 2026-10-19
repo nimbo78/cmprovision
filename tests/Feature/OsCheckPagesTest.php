@@ -58,8 +58,8 @@ class OsCheckPagesTest extends TestCase
 
     public function test_the_bench_row_names_the_new_system_the_module_reported_from()
     {
-        // the new system does not ask the server, so there is no Identify; the card still knows where the module went
-        $text = 'in its new system wlanpi-a1b, reported at 16.10.2026 13:00:00: from there the module does not ask the server, so there is no Identify';
+        // A report alone is not a live heartbeat: old scripts and a rebooted/disconnected system cannot Identify.
+        $text = 'in its new system wlanpi-a1b, reported at 16.10.2026 13:00:00; no recent Identify heartbeat (disconnected, rebooted, or provisioned before 2.6.4)';
         $cm = $this->module(['phase' => 'done', 'os_check' => 'passed', 'hostname' => 'wlanpi-a1b', 'os_checked_at' => now(),
             'provisioning_complete_at' => now()]);
         Livewire::test(CmCard::class, ['serial' => $cm->serial])->assertSee($text)->assertDontSee('not known: the module does not ask');

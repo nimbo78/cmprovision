@@ -69,6 +69,7 @@ class OsCheckModuleScriptTest extends TestCase
 
         $this->assertSame('pending', $this->cm()->os_check);
         $this->assertStringContainsString('cat >/tmp/oscheck/run << "CMPROVISIONINGEOF"', $script);
+        $this->assertStringContainsString("IDENTIFY_RUN='".$this->cm()->provisioning_started_at->getTimestamp()."'", $script);
         $this->assertStringContainsString('cat >/tmp/oscheck-install.sh << "CMPROVISIONINGEOF"', $script);
         $this->assertStringContainsString("progress_mark postinstall 'Installing the OS check'", $script);
         $this->assertStringContainsString('sh -v /tmp/oscheck-install.sh >>/tmp/post.log 2>&1', $script);

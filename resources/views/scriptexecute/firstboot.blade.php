@@ -2,7 +2,7 @@
 # cmprovision: the OS check after the first boot (2.6.0, docs/superpowers/specs/2026-10-15-os-check-design.md).
 # The provisioning server's last post-install step put this here with cmprovision-firstboot.service. It runs once, as
 # root: waits for the boot to finish, installs the project's packages, runs its first-boot scripts, reports the host
-# name and the result to the server, removes itself and shows the result on the LEDs until the next boot.
+# name and the result to the server, removes itself and shows the result/Identify until the next boot.
 # Tests point it elsewhere with the FIRSTBOOT_* variables and LEDS.
 SERVER={!! escapeshellarg($server) !!}
 SERIAL={!! escapeshellarg($serial) !!}
@@ -18,7 +18,6 @@ TRIES=${FIRSTBOOT_TRIES:-60}
 DOWNLOAD_TRIES=${FIRSTBOOT_DOWNLOAD_TRIES:-30}
 PAUSE=${FIRSTBOOT_PAUSE:-10}
 KILL_AFTER=${FIRSTBOOT_KILL_AFTER:-10}
-GRACE=${FIRSTBOOT_GRACE:-1}
 export SERVER
 
 # the log keeps the first-boot scripts' text (sh -v), a password too: for root alone
@@ -122,34 +121,6 @@ if [ "$sent" = no ]; then
     log "the report did not reach the server"
 fi
 
-# 6. Once only: the unit and its link go now, this directory once the helper runs; the log stays
-rm -f "$WANTS" "$UNIT"
-
-# 7. The result on the LEDs until the next boot: ready (both fade in and out together) or fail, by the helper the
-#    utility OS had, else by kernel triggers
-MODE=ready
-[ "$RESULT" -eq 0 ] || MODE=fail
-if [ -x "$DIR/ledpattern" ] && "$DIR/ledpattern" check 2>/dev/null; then
-    "$DIR/ledpattern" "$MODE" &
-    LED_PID=$!
-    sleep "$GRACE"   # the helper runs before its file goes
-    rm -rf "$DIR"
-    wait "$LED_PID"
-    exit 0
-fi
-rm -rf "$DIR"
-ACT=$LEDS/led0; [ -e "$LEDS/ACT" ] && ACT=$LEDS/ACT
-PWR=$LEDS/led1; [ -e "$LEDS/PWR" ] && PWR=$LEDS/PWR
-led() {   # led <led> none <0|1> | <trigger>
-    [ -e "$1/trigger" ] || return 0
-    echo "$2" > "$1/trigger"
-    [ "$2" != none ] || echo "$3" > "$1/brightness"
-}
-if [ "$MODE" = ready ]; then
-    led "$ACT" none 1
-    led "$PWR" none 1
-else
-    led "$ACT" none 0
-    led "$PWR" heartbeat
-fi
+# 6–7. Remove the one-shot inputs, retain the result and answer Identify until the next reboot.
+@include('scriptexecute.firstboot-leds')
 exit 0
