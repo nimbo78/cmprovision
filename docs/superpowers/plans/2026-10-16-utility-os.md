@@ -1353,7 +1353,7 @@ Run: `git add app/Http/Livewire/UtilityOsSettings.php resources/views/livewire/u
 - Consumes: the `uos=` start parameter of the new OS (Task 6's `cmdline.txt`).
 - Produces: column `cms.utility_os` (string 32, nullable); `Cm::utilityOsLabel(): string` («2026.10» or «legacy»); `ScriptExecuteController::utilityOsOf(Request): ?string` (protected static).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/UtilityOsModuleTest.php`:
 ```php
@@ -1439,12 +1439,12 @@ class UtilityOsModuleTest extends TestCase
 ```
 (`CmCard::mount($serial)` takes the serial; the project without an image makes the start end with «No image to write.».)
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsModuleTest'`
 Expected: `phpunit exit 1`: no column `utility_os`, and the start line has no «Utility OS».
 
-- [ ] **Step 3: The column**
+- [x] **Step 3: The column**
 
 Create `database/migrations/2026_10_17_100000_add_utility_os_to_cms.php`:
 ```php
@@ -1473,7 +1473,7 @@ return new class extends Migration
 };
 ```
 
-- [ ] **Step 4: The model**
+- [x] **Step 4: The model**
 
 In `app/Models/Cm.php`, add `'utility_os'` to `$fillable` (on the line with `'durable_bytes', 'durable_image_id', 'durable_at', 'progress_base',`), and add the method next to `canIdentify()`:
 ```php
@@ -1484,7 +1484,7 @@ In `app/Models/Cm.php`, add `'utility_os'` to `$fillable` (on the line with `'du
     }
 ```
 
-- [ ] **Step 5: The start, the resume and the parameter**
+- [x] **Step 5: The start, the resume and the parameter**
 
 In `app/Http/Controllers/ScriptExecuteController.php`:
 
@@ -1519,19 +1519,19 @@ In `resumeProvisioning()`, the log call becomes:
 
 In `tests/Feature/ImageResumeStartTest.php:148`, the expected line becomes `'Provisioning resumed: the module restarted during the write; continuing from 0.0 GB of 0.0 GB. Utility OS: legacy.'`.
 
-- [ ] **Step 6: The card**
+- [x] **Step 6: The card**
 
 In `resources/views/livewire/cm-card.blade.php`, after the `<tr>` of «Temperature» (line 142):
 ```blade
                 <tr><td class="text-fg-muted">Utility OS</td><td>{{ $cm->utilityOsLabel() }}</td></tr>
 ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsModuleTest|ImageResumeStartTest|ModuleCardTest|ResolveBoardsTest|ProvisioningLogTest|ScriptExecuteRobustnessTest|StandNetworkTest|UpgradeMigrationsTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 Write `$SP/commit-270-t5.txt`:
 ```

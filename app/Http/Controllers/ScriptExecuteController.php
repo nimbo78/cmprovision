@@ -320,7 +320,7 @@ exit 1
         $this->cm->setPhase(count($preinstall_scripts) ? 'preinstall' : ($image ? 'write' : 'postinstall'))->save();
         CmProvisioningStarted::dispatch($this->cm);
 
-        $msg = "Provisioning started.";
+        $msg = "Provisioning started. Utility OS: ".$this->cm->utilityOsLabel().".";
         if ($this->cm->os_check === 'skipped')
             $msg .= " OS check skipped: the module booted over USB.";
         if ($project->label_moment == 'preinstall' && $project->label)
@@ -381,6 +381,7 @@ exit 1
         $this->cm->save();
         $this->logInfo('Provisioning resumed: the module restarted during the write; continuing from '
             .ImagePieces::gb($from).' of '.ImagePieces::gb($total).'.'
+            .' Utility OS: '.$this->cm->utilityOsLabel().'.'
             .($this->cm->os_check === 'skipped' ? ' OS check skipped: the module booted over USB.' : ''));
 
         $this->lookUpBoardLater();
@@ -420,12 +421,20 @@ exit 1
             'cid' => $req->query('cid'),
             'csd' => $req->query('csd'),
             'temp1' => $req->query('temp'),
+            'utility_os' => self::utilityOsOf($req),
             'provisioning_board' => $board,
             'switch_id' => null,
             'switch_name' => null,
             'switch_port' => null,
             'board_pending_since' => $lookUp ? now() : null,
         ];
+    }
+
+    /* Ours sends uos=<version>; the legacy utility OS sends nothing. */
+    protected static function utilityOsOf(Request $req): ?string
+    {
+        $uos = $req->query()['uos'] ?? null;
+        return is_string($uos) && preg_match('/^[0-9A-Za-z.-]{1,32}$/D', $uos) ? $uos : null;
     }
 
     /* The project's post-install scripts, the generated SHA256 verification first when the project verifies */
