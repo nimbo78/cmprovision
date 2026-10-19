@@ -1,0 +1,27 @@
+# The messages of the tools of the utility OS 2026.10, recorded under QEMU by tools/utility-os/test.sh;
+# tests/Unit/UtilityOsMessagesTest.php checks that the server recognises them. Do not edit: run test.sh.
+[gz-cut]
+gzip: unexpected end of file
+[gz-garbage]
+gzip: invalid magic
+[xz-cut]
+xz: (stdin): Unexpected end of input
+[xz-garbage]
+xz: (stdin): File format not recognized
+[bz2-cut]
+bunzip2: bunzip error -3
+[bz2-garbage]
+bunzip2: invalid magic
+[dd-full]
+dd: error writing '/tmp/full/x': No space left on device
+17+0 records in
+16+0 records out
+[dd-records]
+3+0 records in
+3+0 records out
+[sha256-mismatch]
+pieeprom.bin: FAILED
+sha256sum: WARNING: 1 of 1 computed checksums did NOT match
+[flashrom-strings]
+ERROR: Flash chip %s erase function %i and %i are identical. Please report a bug at flashrom@flashrom.org
+No EEPROM/flash device found.

@@ -205,6 +205,7 @@ class PackagingTest extends TestCase
 
     public function test_dnsmasq_and_rpiboot_follow_the_link_and_the_shipped_conffile_stays()
     {
+        $this->assertStringContainsString("scriptexecute var/lib/cmprovision\nscriptexecute64 var/lib/cmprovision\n", $this->file('debian/install'));
         // the application edits dnsmasq.conf (dhcp-host=): a changed shipped copy would stop an upgrade at dpkg's question,
         // so postinst moves tftp-root in the live file instead
         $this->assertStringContainsString("tftp-root=/var/lib/cmprovision/scriptexecute\n", $this->file('etc/dnsmasq.conf'));

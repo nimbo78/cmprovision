@@ -26,7 +26,11 @@ fill() {
 }
 # the level of a GPIO, 0 or 1 ("pinctrl lev 5" prints "1"): pinctrl reads the register with its own numbers, while the
 # sysfs numbers of the legacy init are shifted since Linux 6.6 (the controller starts at 512)
-level() { pinctrl lev "$1" 2>/dev/null | tr -d ' \n'; }
+level() {
+    GPIO_LEVEL=$(pinctrl lev "$1" 2>/dev/null) || return 0
+    GPIO_LEVEL=$(printf '%s' "$GPIO_LEVEL" | tr -d ' \n')
+    case "$GPIO_LEVEL" in 0|1) printf '%s' "$GPIO_LEVEL" ;; esac
+}
 
 URL=
 READJUMPER=
@@ -76,6 +80,7 @@ fi
 JUMPER=
 if [ -n "$READJUMPER" ]; then
     for gpio in 5 13 21; do JUMPER=$JUMPER$(level $gpio); done
+    case "$JUMPER" in [01][01][01]) ;; *) JUMPER= ;; esac
 fi
 
 fill serial "$SERIAL"

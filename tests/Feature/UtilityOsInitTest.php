@@ -159,6 +159,24 @@ class UtilityOsInitTest extends TestCase
         $this->assertStringContainsString('&inversejumper=&memorysize=', $this->startUrl());
     }
 
+    public function test_gpio_diagnostics_are_not_used_as_jumper_levels()
+    {
+        $this->world(['gpio/5' => 'No GPIO chips found', 'gpio/13' => null, 'gpio/21' => null]);
+
+        $this->boot();
+
+        $this->assertStringContainsString('&inversejumper=&memorysize=', $this->startUrl());
+    }
+
+    public function test_a_partial_jumper_read_is_unknown()
+    {
+        $this->world(['gpio/5' => null]);
+
+        $this->boot();
+
+        $this->assertStringContainsString('&inversejumper=&memorysize=', $this->startUrl());
+    }
+
     public function test_serial_and_temperature_have_fallbacks()
     {
         // a kernel without the Serial line, a firmware vcgencmd cannot reach

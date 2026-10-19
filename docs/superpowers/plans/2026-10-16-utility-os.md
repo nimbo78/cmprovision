@@ -2851,7 +2851,7 @@ Add any file a fix of step 9 changed.
 - Consumes: Task 7's build (`$UOS_WORK/output`, `scriptexecute64/` in the source tree, `UOS_*` of `versions.env`), Task 6's init and `cmdline.txt`, `public/tools/ledpattern`.
 - Produces: `sh tools/utility-os/test.sh` (one `ok`/`FAIL` line per check, exit 0 only when all pass; files in `$UOS_WORK/smoke`, QEMU's console in `$UOS_WORK/qemu.log`); the fixture `tests/fixtures/utility-os/messages.txt`. Its format: two `#` lines, then sections `[name]` followed by the text. The sections are `gz-cut`, `gz-garbage`, `xz-cut`, `xz-garbage`, `bz2-cut`, `bz2-garbage`, `dd-full`, `dd-records`, `sha256-mismatch`, `flashrom-strings`.
 
-- [ ] **Step 1: The test server, the check script and the verifier**
+- [x] **Step 1: The test server, the check script and the verifier**
 
 Create `tools/utility-os/smoke/server.py`:
 ```python
@@ -3140,7 +3140,7 @@ if all(text.get(name) for name in MESSAGES):
 sys.exit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: `test.sh`**
+- [x] **Step 2: `test.sh`**
 
 Create `tools/utility-os/test.sh`:
 ```sh
@@ -3245,7 +3245,7 @@ echo "test.sh: $FAILS check(s) failed"
 exit 1
 ```
 
-- [ ] **Step 3: Write the failing messages test**
+- [x] **Step 3: Write the failing messages test**
 
 Create `tests/Unit/UtilityOsMessagesTest.php`:
 ```php
@@ -3323,12 +3323,12 @@ class UtilityOsMessagesTest extends TestCase
 }
 ```
 
-- [ ] **Step 4: Run it to see it fail**
+- [x] **Step 4: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsMessagesTest'`
 Expected: `phpunit exit 1` or `2`: `file(…/messages.txt): Failed to open stream`.
 
-- [ ] **Step 5: Run the checks on the bench**
+- [x] **Step 5: Run the checks on the bench**
 
 Push the tree again (the build in `/root/uos/work` stays) and run `test.sh`:
 ```bash
@@ -3354,7 +3354,7 @@ When a line says FAIL, fix by kind, and record a ledger ruling for each:
 - `start: …` or `tools: …` — the init (Task 6) or a package. Fix it there with a test first.
 - `messages: …` empty — `check.sh` did not get there; see `result.txt` in `/root/uos/work/smoke`.
 
-- [ ] **Step 6: The built files into the repository**
+- [x] **Step 6: The built files into the repository**
 
 Run:
 ```bash
@@ -3364,13 +3364,13 @@ ls scriptexecute64 scriptexecute64/overlays; cat scriptexecute64/cmdline.txt; he
 ```
 Expected: `bcm2711-rpi-4-b.dtb bcm2711-rpi-400.dtb bcm2711-rpi-cm4.dtb bootfiles.bin cmdline.txt config.txt fixup4.dat kernel8.img MANIFEST overlays scriptexecute.img start4.elf` and `dwc2.dtbo spi-gpio40-45.dtbo`. The cmdline ends in `&uos=2026.10`, the MANIFEST names `version=2026.10`, and the fixture starts with its two comment lines and `[gz-cut]`.
 
-- [ ] **Step 7: Run the messages test**
+- [x] **Step 7: Run the messages test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsMessagesTest'`
 Expected: `phpunit exit 0`.
 If a case fails, the server does not recognise a message of the new OS. Add the message to the matching pattern of `ScriptExecuteController::WRITE_FAILURE_HINTS` (or `FailureAdvice::eepromAdvice()`), run `ImageWriteDiagnosticsTest|ModuleCardTest|UtilityOsMessagesTest`, and ledger it.
 
-- [ ] **Step 8: The OS in the package, and its files test**
+- [x] **Step 8: The OS in the package, and its files test**
 
 In `debian/install`, after `scriptexecute var/lib/cmprovision`:
 ```
@@ -3404,7 +3404,7 @@ In `tests/Unit/UtilityOsFilesTest.php`, `dirs()` becomes `return [['scriptexecut
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsFilesTest|UtilityOsMessagesTest|UtilityOsTreeTest|PackagingTest|UtilityOsInitTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 Write `$SP/commit-270-t8.txt`:
 ```

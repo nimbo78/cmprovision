@@ -54,7 +54,7 @@ class ScriptExecuteController extends Controller
         '/curl exit code 23\b/'            => 'the decompressor stopped accepting data; see its message below',
         '/curl exit code 6\b/'             => 'the provisioning server name could not be resolved',
         '/(invalid magic|not in gzip format|File format not recognized|unsupported compression|Not a bzip2 file)/i' => 'the downloaded data is not a valid compressed image (wrong file type, or an HTTP error page instead of the image)',
-        '/(unexpected end of (file|input)|corrupt|crc error|data integrity)/i' => 'the compressed image is truncated or corrupted (interrupted download or a bad upload)',
+        '/(unexpected end of (file|input)|bunzip error -3\b|corrupt|crc error|data integrity)/i' => 'the compressed image is truncated or corrupted (interrupted download or a bad upload)',
         '/(No space left on device|cannot open .*mmcblk|No such file or directory)/i' => 'the storage device could not be written (missing, too small or failing eMMC/SD card)',
         '/Input\/output error/i' => 'the storage device reported an I/O error (failing eMMC/SD card or power problem)',
     ];

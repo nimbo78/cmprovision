@@ -11,6 +11,7 @@ public var/lib/cmprovision
 resources var/lib/cmprovision
 routes var/lib/cmprovision
 scriptexecute var/lib/cmprovision
+scriptexecute64 var/lib/cmprovision
 storage var/lib/cmprovision
 vendor var/lib/cmprovision
 etc var/lib/cmprovision

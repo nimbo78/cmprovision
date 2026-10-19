@@ -18,7 +18,7 @@ class UtilityOsFilesTest extends TestCase
 
     public static function dirs(): array
     {
-        return [['scriptexecute']];
+        return [['scriptexecute'], ['scriptexecute64']];
     }
 
     /** the file= lines of a MANIFEST: path => [sha256, size] */
@@ -116,4 +116,21 @@ class UtilityOsFilesTest extends TestCase
             exec('rm -rf '.escapeshellarg($dir));
         }
     }
+
+    public function test_ours_says_the_versions_it_was_built_from()
+    {
+        preg_match_all('/^(UOS_[A-Z0-9_]+)=(.*)$/m', file_get_contents(self::root().'/utility-os/versions.env'), $m);
+        $v = array_combine($m[1], $m[2]);
+        $manifest = file_get_contents(self::root().'/scriptexecute64/MANIFEST');
+        foreach (["version={$v['UOS_VERSION']}", 'bits=64', "kernel=Linux {$v['UOS_LINUX_VERSION']} (raspberrypi/linux {$v['UOS_LINUX_TAG']})",
+                  "buildroot={$v['UOS_BUILDROOT_VERSION']}", "firmware={$v['UOS_FIRMWARE_TAG']}", "rpi_utils={$v['UOS_RPI_UTILS_COMMIT']}",
+                  "usbboot={$v['UOS_USBBOOT_TAG']}"] as $line)
+            $this->assertStringContainsString($line."\n", $manifest);
+        $this->assertSame($v['UOS_BOOTFILES_SHA256'], hash_file('sha256', self::root().'/scriptexecute64/bootfiles.bin'));
+        $this->assertStringEndsWith("&uos={$v['UOS_VERSION']}\n", file_get_contents(self::root().'/scriptexecute64/cmdline.txt'));
+        $this->assertStringContainsString("# tests/Unit/UtilityOsMessagesTest.php", file_get_contents(self::root().'/tests/fixtures/utility-os/messages.txt'));
+        $this->assertStringContainsString("utility OS {$v['UOS_VERSION']}, recorded", file_get_contents(self::root().'/tests/fixtures/utility-os/messages.txt'),
+            'the messages are of this build');
+    }
+
 }
