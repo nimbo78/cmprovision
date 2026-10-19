@@ -1085,7 +1085,7 @@ Run: `git add app/Services/UtilityOs.php config/cmprovision.php tests/Support/Ut
 - Consumes: `App\Services\UtilityOs` (Task 3): `systems()`, `current()`, `manifest()`, `switchTo()`, `link()`, `tftpRoot()`, `tftpRootFollowsLink()`, `label()`; `Tests\Support\UtilityOsTree`.
 - Produces: Livewire component `utility-os-settings` with the action `serve(string $dir)`; `Settings::$utilityOs` (string label).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/UtilityOsSettingsTest.php`:
 ```php
@@ -1173,12 +1173,12 @@ class UtilityOsSettingsTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsSettingsTest'`
 Expected: `phpunit exit 1` or `2`: `Class "App\Http\Livewire\UtilityOsSettings" not found`.
 
-- [ ] **Step 3: The component and its view**
+- [x] **Step 3: The component and its view**
 
 Create `app/Http/Livewire/UtilityOsSettings.php`:
 ```php
@@ -1275,7 +1275,7 @@ Create `resources/views/livewire/utility-os-settings.blade.php`:
 </div>
 ```
 
-- [ ] **Step 4: The section on the Settings page and the status row**
+- [x] **Step 4: The section on the Settings page and the status row**
 
 In `resources/views/livewire/settings.blade.php`, insert before the line `        <div class="md:col-span-1">` that opens the «Service status» heading block:
 ```blade
@@ -1316,12 +1316,12 @@ In `app/Http/Livewire/Settings.php`, add `$utilityOs` to the first `public` line
         $this->utilityOs = \App\Services\UtilityOs::label($current ? $os->manifest($current) : null);
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsSettingsTest|ServiceStatusTest|StaticIpSettingsTest|TokenGuardTest|PageLayoutTest|OverlayLayerTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t4.txt`:
 ```
