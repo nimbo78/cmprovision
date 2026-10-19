@@ -3442,7 +3442,7 @@ Add to `git add` any file changed in steps 5 or 7 (`linux.fragment`, `cmprovisio
   - Without `--check`: the same lines, then the downloads and hashes, then `versions.env` rewritten in one `mv` with `UOS_VERSION` raised. Exit 0, or 1 with the file untouched.
   - Environment: `UOS_VERSIONS_ENV` (the file, default `utility-os/versions.env`), `UOS_TODAY` (`YYYY-MM-DD`, default today in UTC).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Unit/UtilityOsUpdateTest.php`:
 ```php
@@ -3670,12 +3670,12 @@ class UtilityOsUpdateTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsUpdateTest'`
 Expected: `phpunit exit 1`: sh cannot open `tools/utility-os/update.sh`.
 
-- [ ] **Step 3: Write `update.sh`**
+- [x] **Step 3: Write `update.sh`**
 
 Create `tools/utility-os/update.sh`:
 ```sh
@@ -3822,12 +3822,12 @@ echo "update.sh: versions.env rewritten, the OS is now $V_OS: build.sh, then tes
 ```
 `fetch` runs in a command substitution: its `fail` prints the message and ends that subshell with 1, and `set -e` then ends the script at the assignment. So `versions.env.new` never appears.
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsUpdateTest'`
 Expected: `phpunit exit 0`, `OK (10 tests, …)`.
 
-- [ ] **Step 5: Once against the real world, read-only**
+- [x] **Step 5: Once against the real world, read-only**
 
 Run:
 ```bash
@@ -3837,7 +3837,7 @@ EOF
 ```
 Expected: five lines, each `(newest)` or a `->` to a newer version, then `check exit 0` or `check exit 10`. Write the output into the ledger. Do not run the update itself here: adopting new versions is the monthly PR's job.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t9.txt`:
 ```
