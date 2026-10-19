@@ -27,8 +27,11 @@ class UtilityOsSmokeTest extends TestCase
             'od' => '3', 'base64' => 'hello', 'zeros' => '0', 'awk' => '1099511627777',
             'cmp' => 'rc=0', 'dd-flags' => 'rc=0', 'curl' => '404 rc=22',
             'ledpattern' => 'rc=1 usage: ledpattern', 'dd-records' => '3+0 records in',
+            'flashrom-identical' => "Chip content is identical to the requested image.\nrc=0",
+            'flashrom-written' => "VERIFIED.\nrc=0",
+            'flashrom-missing' => "No EEPROM/flash device found.\nrc=1",
         ];
-        foreach (['gz-cut', 'gz-garbage', 'xz-cut', 'xz-garbage', 'bz2-cut', 'bz2-garbage', 'dd-full', 'sha256-mismatch', 'flashrom-strings'] as $name)
+        foreach (['gz-cut', 'gz-garbage', 'xz-cut', 'xz-garbage', 'bz2-cut', 'bz2-garbage', 'dd-full', 'sha256-mismatch'] as $name)
             $sections[$name] = 'sample message';
         $result = '';
         foreach ($sections as $name => $text)
@@ -78,5 +81,28 @@ class UtilityOsSmokeTest extends TestCase
 
         $this->assertSame(1, $code, $output);
         $this->assertFileDoesNotExist($this->dir.'/messages.txt');
+    }
+
+    public function test_a_successful_flashrom_noop_must_identify_unchanged_contents()
+    {
+        $result = file_get_contents($this->dir.'/result.txt');
+        file_put_contents($this->dir.'/result.txt', str_replace('Chip content is identical to the requested image.',
+            'Updating flash chip contents... Erase/write done', $result));
+
+        [$code, $output] = $this->verify();
+
+        $this->assertSame(1, $code, $output);
+        $this->assertFileDoesNotExist($this->dir.'/messages.txt');
+    }
+
+    public function test_a_real_write_must_not_claim_identical()
+    {
+        $result = file_get_contents($this->dir.'/result.txt');
+        file_put_contents($this->dir.'/result.txt', str_replace("[flashrom-written]\nVERIFIED.",
+            "[flashrom-written]\nidentical\nVERIFIED.", $result));
+
+        [$code, $output] = $this->verify();
+
+        $this->assertSame(1, $code, $output);
     }
 }

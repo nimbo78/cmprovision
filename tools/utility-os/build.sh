@@ -46,31 +46,44 @@ fi
 sh "$REPO/tools/utility-os/hashes.sh" "$EXT/versions.env" "$WORK/hashes"
 
 OUT=$WORK/output
+# Buildroot stamps do not track changed package recipes or copied POST_EXTRACT inputs.
+# Keep a deterministic inventory of every build input, excluding Python's generated cache.
+INPUTS=$WORK/cmprovision-build-inputs
+(
+    cd "$REPO"
+    find utility-os -type f ! -name '*.pyc' ! -path '*/__pycache__/*' | LC_ALL=C sort | while IFS= read -r file; do
+        sha256sum "$file"
+    done
+    sha256sum tools/utility-os/build.sh tools/utility-os/hashes.sh tools/utility-os/manifest.sh tools/utility-os/legal_info.py
+) > "$INPUTS"
 # Buildroot's linux-custom name stays the same when its tarball changes. Reconfigure does not
 # re-extract it, and a new Buildroot/toolchain also requires a fresh output. Keep download/ccache.
 if [ -d "$OUT" ] && { ! cmp -s "$EXT/versions.env" "$OUT/.cmprovision-versions" \
-    || ! cmp -s "$EXT/configs/cmprovision_defconfig" "$OUT/.cmprovision-defconfig"; }; then
-    echo "build.sh: pins or package selection changed/unknown: rebuilding output (download and compiler caches stay)"
+    || ! cmp -s "$EXT/configs/cmprovision_defconfig" "$OUT/.cmprovision-defconfig" \
+    || ! cmp -s "$INPUTS" "$OUT/.cmprovision-build-inputs"; }; then
+    echo "build.sh: build inputs changed/unknown: rebuilding output (download and compiler caches stay)"
     rm -rf "$OUT"
 fi
 export BR2_DL_DIR="$CACHE/dl" BR2_CCACHE_DIR="$CACHE/ccache"
 make -C "$BR" O="$OUT" BR2_EXTERNAL="$EXT" cmprovision_defconfig > /dev/null
 # This Buildroot helper uses ':' for sed replacements. Append an undefined URL instead, then verify it.
 KERNEL_URL="https://github.com/raspberrypi/linux/archive/$UOS_LINUX_COMMIT/linux-$UOS_LINUX_COMMIT.tar.gz"
+PATCH_DIRS="$EXT/patches $WORK/hashes"
 "$BR/utils/config" --file "$OUT/.config" \
     --undefine BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION \
     --set-str BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION "$KERNEL_URL" \
-    --set-str BR2_GLOBAL_PATCH_DIR "$WORK/hashes" \
+    --set-str BR2_GLOBAL_PATCH_DIR "$PATCH_DIRS" \
     --set-str BR2_WGET "wget -nd -t 3 --connect-timeout=10 --read-timeout=60"
 make -C "$OUT" olddefconfig > /dev/null
 grep -Fxq "BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"$KERNEL_URL\"" "$OUT/.config" || {
     echo "build.sh: kernel URL was not applied to the configuration" >&2; exit 1;
 }
-grep -Fxq "BR2_GLOBAL_PATCH_DIR=\"$WORK/hashes\"" "$OUT/.config" || {
+grep -Fxq "BR2_GLOBAL_PATCH_DIR=\"$PATCH_DIRS\"" "$OUT/.config" || {
     echo "build.sh: source hashes were not applied to the configuration" >&2; exit 1;
 }
 cp "$EXT/versions.env" "$OUT/.cmprovision-versions"
 cp "$EXT/configs/cmprovision_defconfig" "$OUT/.cmprovision-defconfig"
+cp "$INPUTS" "$OUT/.cmprovision-build-inputs"
 # a changed linux.fragment or busybox.fragment takes effect only with a new configuration of its package
 for pkg in linux-custom busybox; do
     if ls "$OUT"/build/$pkg*/.stamp_configured > /dev/null 2>&1; then

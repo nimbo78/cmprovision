@@ -8,7 +8,7 @@ import sys
 SMOKE, VERSION, FIXTURE = sys.argv[1:4]
 LINUX = sys.argv[4] if len(sys.argv) > 4 else None
 MESSAGES = ['gz-cut', 'gz-garbage', 'xz-cut', 'xz-garbage', 'bz2-cut', 'bz2-garbage', 'dd-full', 'dd-records',
-            'sha256-mismatch', 'flashrom-strings']
+            'sha256-mismatch', 'flashrom-written', 'flashrom-identical', 'flashrom-missing']
 PARAMETERS = ['serial', 'model', 'storagesize', 'mac', 'inversejumper', 'memorysize', 'temp', 'cid', 'csd', 'bootmode', 'uos']
 fails = 0
 
@@ -75,6 +75,15 @@ check(text.get('curl') == '404 rc=22', 'curl -w %{http_code} and -f')
 check(text.get('ledpattern', '').startswith('rc=') and 'usage: ledpattern' in text.get('ledpattern', ''),
       'ledpattern (32-bit) runs')
 check(bool(re.search(r'^\d+\+\d+ records in$', text.get('dd-records', ''), re.M)), 'dd: N+M records in')
+noop = text.get('flashrom-identical', '')
+written = text.get('flashrom-written', '')
+missing = text.get('flashrom-missing', '')
+check('Chip content is identical' in noop and bool(re.search(r'^rc=0$', noop, re.M)),
+      'flashrom: a real no-op reports identical')
+check('VERIFIED.' in written and 'identical' not in written and bool(re.search(r'^rc=0$', written, re.M)),
+      'flashrom: a changed image is written and verified')
+check('No EEPROM/flash device found' in missing and bool(re.search(r'^rc=1$', missing, re.M)),
+      'flashrom: missing chip has the expected diagnosis')
 for name in MESSAGES:
     check(text.get(name, '') != '', 'messages: ' + name)
 

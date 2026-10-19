@@ -70,12 +70,20 @@ section dd-flags
 dd if=/dev/zero of=/tmp/d bs=1M count=2 iflag=fullblock conv=fsync,notrunc 2>/dev/null
 echo "rc=$?" >> "$R"
 
-# the EEPROM flash: the image check, and the lines of flashrom the server looks for
+# EEPROM contract: real writes/no-ops on a file-backed dummy SPI chip, never host hardware.
 echo hi > /tmp/pieeprom.bin
 section sha256-mismatch
 echo "0000000000000000000000000000000000000000000000000000000000000000  pieeprom.bin" | sha256sum -c >> "$R" 2>&1
-section flashrom-strings
-strings "$(command -v flashrom)" | grep -E 'identical|No EEPROM/flash device found' | sort -u >> "$R"
+dd if=/dev/zero of=/tmp/eeprom-image.bin bs=131072 count=1 2>/dev/null
+section flashrom-written
+flashrom -p dummy:emulate=M25P10.RES,image=/tmp/eeprom-chip.bin -c M25P10 -w /tmp/eeprom-image.bin >> "$R" 2>&1
+echo "rc=$?" >> "$R"
+section flashrom-identical
+flashrom -p dummy:emulate=M25P10.RES,image=/tmp/eeprom-chip.bin -c M25P10 -w /tmp/eeprom-image.bin >> "$R" 2>&1
+echo "rc=$?" >> "$R"
+section flashrom-missing
+flashrom -p dummy:bus=spi >> "$R" 2>&1
+echo "rc=$?" >> "$R"
 
 # small tools of the module's script
 section od

@@ -29,7 +29,7 @@ class UtilityOsMessagesTest extends TestCase
     public function test_every_message_was_recorded()
     {
         foreach (['gz-cut', 'gz-garbage', 'xz-cut', 'xz-garbage', 'bz2-cut', 'bz2-garbage', 'dd-full', 'dd-records',
-                  'sha256-mismatch', 'flashrom-strings'] as $section)
+                  'sha256-mismatch', 'flashrom-written', 'flashrom-identical', 'flashrom-missing'] as $section)
             $this->assertNotSame('', trim(self::sections()[$section] ?? ''), $section);
     }
 
@@ -63,10 +63,11 @@ class UtilityOsMessagesTest extends TestCase
     {
         // the flash script greps flashrom's log for "identical" (ScriptExecuteController::startProvisoning); FailureAdvice
         // knows a missing chip and an image that differs from the project
-        $flashrom = self::sections()['flashrom-strings'];
-        $this->assertStringContainsString('identical', $flashrom);
+        $this->assertStringContainsString('identical', self::sections()['flashrom-identical']);
+        $this->assertStringNotContainsString('identical', self::sections()['flashrom-written']);
+        $this->assertStringContainsString('VERIFIED.', self::sections()['flashrom-written']);
         $advice = new \ReflectionMethod(FailureAdvice::class, 'eepromAdvice');
-        $this->assertStringContainsString('flashrom found no SPI flash chip', $advice->invoke(null, $flashrom));
+        $this->assertStringContainsString('flashrom found no SPI flash chip', $advice->invoke(null, self::sections()['flashrom-missing']));
         $this->assertStringContainsString('does not match the active project', $advice->invoke(null, self::sections()['sha256-mismatch']));
     }
 }

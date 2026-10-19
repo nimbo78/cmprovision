@@ -22,6 +22,50 @@ dd: error writing '/tmp/full/x': No space left on device
 [sha256-mismatch]
 pieeprom.bin: FAILED
 sha256sum: WARNING: 1 of 1 computed checksums did NOT match
-[flashrom-strings]
-ERROR: Flash chip %s erase function %i and %i are identical. Please report a bug at flashrom@flashrom.org
+[flashrom-written]
+flashrom v1.5.1 on Linux 6.18.50-cmprovision (aarch64)
+flashrom is free software, get the source code at https://flashrom.org
+
+Found Micron/Numonyx/ST flash chip "M25P10" (128 kB, SPI) on dummy.
+===
+This flash part has status UNTESTED for operations: PROBE READ ERASE WRITE WP
+The test status of this chip may have been updated in the latest development
+version of flashrom. If you are running the latest development version,
+please email a report to flashrom@flashrom.org if any of the above operations
+work correctly for you with this flash chip. Please include the flashrom log
+file for all operations you tested (see the man page for details), and mention
+which mainboard or programmer you tested in the subject line.
+You can also try to follow the instructions here:
+https://www.flashrom.org/contrib_howtos/how_to_mark_chip_tested.html
+Thanks for your help!
+Reading old flash chip contents... done.
+Updating flash chip contents... Erase/write done from 0 to 1ffff
+Verifying flash... VERIFIED.
+rc=0
+[flashrom-identical]
+flashrom v1.5.1 on Linux 6.18.50-cmprovision (aarch64)
+flashrom is free software, get the source code at https://flashrom.org
+
+Found Micron/Numonyx/ST flash chip "M25P10" (128 kB, SPI) on dummy.
+===
+This flash part has status UNTESTED for operations: PROBE READ ERASE WRITE WP
+The test status of this chip may have been updated in the latest development
+version of flashrom. If you are running the latest development version,
+please email a report to flashrom@flashrom.org if any of the above operations
+work correctly for you with this flash chip. Please include the flashrom log
+file for all operations you tested (see the man page for details), and mention
+which mainboard or programmer you tested in the subject line.
+You can also try to follow the instructions here:
+https://www.flashrom.org/contrib_howtos/how_to_mark_chip_tested.html
+Thanks for your help!
+Reading old flash chip contents... done.
+Updating flash chip contents... Erase/write done from 0 to 1ffff
+Chip content is identical to the requested image.
+rc=0
+[flashrom-missing]
+flashrom v1.5.1 on Linux 6.18.50-cmprovision (aarch64)
+flashrom is free software, get the source code at https://flashrom.org
+
 No EEPROM/flash device found.
+Note: flashrom can never write if the flash chip isn't found automatically.
+rc=1

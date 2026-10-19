@@ -1,0 +1,18 @@
+Subject: [PATCH] Preserve the provisioning EEPROM no-op output contract
+
+cmprovision uses this message to distinguish a skipped write from a verified
+write. Report it only when write_by_layout confirms that every block was
+skipped; keep success and failure handling unchanged.
+
+--- a/flashrom.c
++++ b/flashrom.c
+@@ -2039,6 +2039,9 @@
+ 		goto _finalize_ret;
+ 	}
+ 
++	if (all_skipped)
++		msg_cinfo("Chip content is identical to the requested image.\n");
++
+ 	/* Verify only if we actually changed something. */
+ 	if (verify && !all_skipped) {
+ 		msg_cinfo("Verifying flash... ");
