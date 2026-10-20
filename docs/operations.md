@@ -1,8 +1,12 @@
 # Operating the provisioner
 
-[Back to the README](../README.md) · [Upgrade and restore](upgrading.md) · [LED signals](leds.md)
+[Back to the README](../README.md) · [Upgrade and restore](upgrading.md) · [LED signals](leds.md) · [USB provisioning](usb-provisioning.md) · [Local console](local-console.md)
 
 Detailed behaviour of the project options and stand controls. Start with the [installation guide](../README.md#quick-start) if this is a new server.
+
+For a CM4 that cannot enter normal network boot, use [USB provisioning](usb-provisioning.md).
+For direct diagnosis on a target's screen and keyboard, use its [tty2 console](local-console.md).
+The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connectors and USB roles.
 
 - [First-boot OS check](#first-boot-os-check)
 - [Image download and write recovery](#image-download-and-write-recovery)

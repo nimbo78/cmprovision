@@ -4433,13 +4433,11 @@ Write the outputs of steps 2–4 into the ledger. No commit (nothing changed).
 
 ### Task 13: On the user's word only — the provisioner, the live check, the release
 
-Stop here and ask the user. Nothing in this task runs without their explicit word, step by step: building on wlanpi-da2, installing there, the live check on sensor1, merging, tagging, pushing, the GitHub settings and the GitHub Release.
+Order clarified by the user on 20 October 2026: finish the tests first, fix any failures and assess the results;
+release only if the agreed checks succeed. The dev package is already installed on wlanpi-da2 under the earlier
+deployment authorisation. Do not create a stable release commit/tag or merge for release while acceptance is incomplete.
 
-When the user says go, the order they set for releases:
-1. The final review's findings, minors included, fixed on stage2.
-2. Release commit: `debian/changelog` 2.7.0 (the dev entry's text, version `2.7.0`, today's date), ROADMAP «2.7.0 вышла …». Local `git merge --no-ff stage2` into main, local tag `v2.7.0`.
-3. The tree of the tag to wlanpi-da2 as a tar checked by SHA256 on both sides (docs/deploy-to-provisioner.md), `dpkg-buildpackage -b -us -uc -d`, `dpkg -i`. Then check: the link, `tftp-root`, the rpiboot unit, Settings → Utility OS, Service status.
-4. The live check on sensor1 under the new OS (switched in Settings), as the spec lists:
+1. Complete the live checks under the new OS (switched in Settings), as the spec lists:
    - the module stays the same CMs row. The start parameters of both OSes match in nginx's access log on da2 (`serial`, `model`, `storagesize`, `mac`, `memorysize`, `cid`, `csd`, `bootmode`, `inversejumper`; `temp` close);
    - a write with verify;
    - EEPROM «identical», then «written» with a harmless setting (`DHCP_TIMEOUT=45000`) and back;
@@ -4447,13 +4445,23 @@ When the user says go, the order they set for releases:
    - the OS check;
    - the resume after a PoE restart on a project with pieces;
    - the time from power-on to the script's start, next to the same measurement under the legacy OS.
-   Then switch to the legacy OS and run once more. USB boot through rpiboot only if a CM4 that can boot over USB is at hand; else mark it unchecked, and the tty2 shell too (sensor1 has no screen or keyboard).
-5. Push main, stage2 and the tag only after the install and the live check are fine. Then the GitHub Release `utility-os-<version>` with the `legal-info` archive. The user enables Actions in the fork and allows them to create PRs.
+   Then switch to the legacy OS and run once more. Remaining USB, tty2, visual LED and multi-module checks are tracked in
+   [the remaining acceptance checklist](2026-10-20-usb-tty2-acceptance.md). The M4+ target has HDMI and BOOT/OTG controls;
+   the relevant cables, keyboard and carrier setup must be physically prepared. Missing observations stay unchecked.
+2. Fix failures and run the checks appropriate to each change; update the hardware report with results and limits.
+   The completed whole-branch review and its fixes are recorded in the ledger; do not describe it as pending work.
+3. Only after acceptance succeeds: commit the final documentation, integrate utility-os into stage2 and make the release
+   commit (`debian/changelog` 2.7.0, today's date, and ROADMAP reflecting the accepted result).
+   Merge stage2 into main and create local tag `v2.7.0`.
+4. Send the tagged tree to wlanpi-da2 as a SHA256-checked tar (docs/deploy-to-provisioner.md), build and install the final
+   package. Check the link, tftp-root, rpiboot unit, Settings, Service status and final installed package before publication.
+5. Publish main, stage2 and the tag after the final installation checks succeed. Publish the GitHub Release
+   `utility-os-<version>` with legal-info; verify Actions and its automatic-PR permissions in the fork.
 
 Development stand checks, 19 October 2026: network-boot/write/verify/OS-check cycles completed on the authorised CM4;
 the SPI/LED handoff fix passed on both kernels. EEPROM written/restore, split resume after an actual PoE interruption,
 all LED modes through sysfs, Identify/Stop/expiry and a full legacy cycle passed. Power-on to the script: 29 s for the
 new OS, 33 s for legacy in one paired observation. Original project/EEPROM restored, new OS selected, other 78 CMs unchanged.
 See [the hardware report](2026-10-19-utility-os-hardware-check.md) for package hashes, timings, evidence and limits:
-USB, tty2, human visual LED observation and a multi-module start were not tested. Merging/publishing the release remains
-a separate user-authorised step.
+USB, tty2, human visual LED observation and a multi-module start were not tested. The 20 October instruction above
+places their acceptance before release preparation and publication.
