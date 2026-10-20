@@ -131,6 +131,7 @@ GitHub выключает расписание после 60 дней без к�
 В ОС — программы под GPL (ядро, BusyBox и другие). Исходники всех компонентов и тексты лицензий собирает
 `make legal-info` (`$UOS_WORK/output/legal-info`). Архив публикуется GitHub Release `utility-os-<версия>`, а CI кладёт
 его в артефакты каждого прогона.
+Для 2026.10 — [исходники и лицензии в GitHub Release](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10).
 
 `build.sh` дополняет стандартный вывод через `tools/utility-os/legal_info.py`: в нём остаются исходный архив Buildroot,
 наши рецепты и соответствующие исходники, патчи и лицензии Bootlin SDK. Компоненты определяются по `summary.csv` внутри
