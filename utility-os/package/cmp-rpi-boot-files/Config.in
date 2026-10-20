@@ -1,0 +1,8 @@
+config BR2_PACKAGE_CMP_RPI_BOOT_FILES
+	bool "cmp-rpi-boot-files"
+	help
+	  start4.elf and fixup4.dat of a raspberrypi/firmware release
+	  (UOS_FIRMWARE_TAG of utility-os/versions.env), for the TFTP
+	  directory of the cmprovision utility OS.
+
+	  https://github.com/raspberrypi/firmware

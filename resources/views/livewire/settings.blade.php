@@ -109,6 +109,20 @@
         </div>
         <div class="mt-5 md:mt-0 md:col-span-2"><livewire:reprovision-accounts /></div>
 
+        <div class="md:col-span-1" id="utility-os">
+            <div class="px-4 sm:px-0">
+                <h3 class="text-lg font-medium text-fg">Utility OS</h3>
+                <p class="mt-1 text-sm text-fg-muted">
+                    The system a module boots from the network or over USB to be provisioned. The package has two: ours,
+                    built from current versions (64-bit), and the legacy one from 2022 (32-bit). A switch takes effect for
+                    the next file a module asks for.
+                </p>
+            </div>
+        </div>
+        <div class="mt-5 md:mt-0 md:col-span-2">
+            <livewire:utility-os-settings />
+        </div>
+
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
                 <h3 class="text-lg font-medium text-fg">Service status</h3>
@@ -179,6 +193,16 @@
                     <td>
                         <button wire:click="viewLogUplinkSpare()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
                     </td>
+                </tr>
+                <tr>
+                    <td>
+                        <ul class="list-outside list-disc ml-6">
+                            <li @if ($utilityOs !== 'none') class="text-pos" @else class="text-neg" @endif>
+                                <span class="text-fg"> utility OS: {{ $utilityOs }}</span>
+                            </li>
+                        </ul>
+                    </td>
+                    <td></td>
                 </tr>
                 <tr>
                     <td>

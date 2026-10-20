@@ -38,6 +38,9 @@ class ModuleLedsTest extends TestCase
                 file_put_contents($this->dir.'/leds/'.$led.'/'.$file, $value);
         }
         mkdir($this->dir.'/driver/leds', 0755, true);
+        touch($this->dir.'/driver/bind');
+        touch($this->dir.'/driver/unbind');
+        mkdir($this->dir.'/spi-driver');
         mkdir($this->dir.'/bin');
         mkdir($this->dir.'/tmp');
         /* a stand-in for the helper: notes the pattern it was started with, then runs until killed */
@@ -88,6 +91,7 @@ class ModuleLedsTest extends TestCase
         file_put_contents($this->dir.'/leds.sh', $script."\n".$commands."\n".'[ -n "$LED_PID" ] && kill "$LED_PID"'."\n");
         exec('cd '.escapeshellarg($this->dir).' && PATH='.escapeshellarg($this->dir.'/bin').':"$PATH"'
              .' LEDS='.escapeshellarg($this->dir.'/leds').' LEDS_DRIVER='.escapeshellarg($this->dir.'/driver')
+             .' LED_SPI_DRIVER='.escapeshellarg($this->dir.'/spi-driver')
              .' LED_TMP='.escapeshellarg($this->dir.'/tmp').' LED_IDENTIFY_POLL_SECONDS=0 LED_POLL_SECONDS=0 sh leds.sh 2>&1', $out);
         return implode("\n", $out);
     }
@@ -125,6 +129,48 @@ class ModuleLedsTest extends TestCase
 
         $this->assertSame('leds', trim(file_get_contents($this->dir.'/driver/unbind')));
         $this->assertSame('leds', trim(file_get_contents($this->dir.'/driver/bind')));
+    }
+
+    public function test_spi_pins_are_released_even_when_the_led_driver_failed_to_bind_at_boot()
+    {
+        rmdir($this->dir.'/driver/leds');
+        mkdir($this->dir.'/spi-driver/fe204000.spi');
+
+        $this->sh('led_take_act');
+
+        $this->assertFileExists($this->dir.'/spi-driver/unbind');
+        $this->assertSame('fe204000.spi', trim(file_get_contents($this->dir.'/spi-driver/unbind')));
+        $this->assertSame('leds', trim(file_get_contents($this->dir.'/driver/bind')));
+        $this->assertSame('', file_get_contents($this->dir.'/driver/unbind'), 'an unbound LED driver cannot be unbound again');
+    }
+
+    public function test_failed_spi_release_does_not_bind_the_leds_or_mark_the_handoff_complete()
+    {
+        mkdir($this->dir.'/spi-driver/fe204000.spi');
+        mkdir($this->dir.'/spi-driver/unbind');
+
+        $this->sh('led_take_act');
+
+        $this->assertSame('', file_get_contents($this->dir.'/driver/bind'));
+        $this->assertFileDoesNotExist($this->dir.'/tmp/led-act-taken');
+    }
+
+    public function test_handoff_discovers_new_led_names_and_recovers_a_helper_rejected_before_the_leds_existed()
+    {
+        $this->fakeCurl('', true);
+        file_put_contents($this->dir.'/helper', "#!/bin/sh\n"
+            .'[ "$1" = check ] && { [ -d "'.$this->dir.'/leds/ACT" ] && [ -d "'.$this->dir.'/leds/PWR" ]; exit $?; }'."\n"
+            .'echo "$1" >> '.$this->dir.'/patterns'."\nexec sleep 30\n");
+
+        $out = $this->sh('led_init; [ -e "$LEDPATTERN" ] && echo premature-helper; '
+            .'mv "$LEDS/led0" "$LEDS/ACT"; mv "$LEDS/led1" "$LEDS/PWR"; '
+            .'led_take_act; echo "paths=$LED_ACT,$LED_PWR"; led_mode done; sleep 0.2');
+
+        $this->assertStringNotContainsString('premature-helper', $out);
+        $this->assertStringContainsString('paths='.$this->dir.'/leds/ACT,'.$this->dir.'/leds/PWR', $out);
+        $this->assertFileExists($this->dir.'/tmp/ledpattern');
+        $this->assertSame(['done'], $this->patterns());
+        $this->assertSame('timer', $this->led('ACT', 'trigger'), 'the recovered ACT shows write/verify progress');
     }
 
     public function test_without_the_helper_the_final_states_use_kernel_triggers()

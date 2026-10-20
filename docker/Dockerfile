@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nginx sqlite3 composer git unzip ca-certificates curl rsync xz-utils bzip2 util-linux \
         php${PHPV}-cli php${PHPV}-fpm php${PHPV}-sqlite3 php${PHPV}-bcmath php${PHPV}-mbstring \
         php${PHPV}-xml php${PHPV}-zip php${PHPV}-snmp php${PHPV}-curl \
-        dpkg-dev debhelper build-essential fakeroot \
+        dpkg-dev debhelper build-essential fakeroot python3 dosfstools mtools \
     && rm -rf /var/lib/apt/lists/*
 
 # App files are bind-mounted from the host and owned by this uid, so php-fpm and composer run as it.

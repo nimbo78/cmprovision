@@ -1,0 +1,127 @@
+# The utility OS (docs/utility-os.md): built and checked on demand and on every pull request that changes it; once a month
+# with the newest versions, which then come as a pull request to stage2 (adopted only after a live check on the bench).
+name: utility-os
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 1 * *'
+  pull_request:
+    paths:
+      - 'utility-os/**'
+      - 'tools/utility-os/**'
+      - '.github/workflows/utility-os.yml'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      UOS_WORK: ${{ runner.temp }}/uos-work
+      UOS_CACHE: ${{ runner.temp }}/uos-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'stage2' || github.ref }}
+
+      - name: Anything new
+        id: check
+        if: github.event_name == 'schedule'
+        run: |
+          set -o pipefail
+          set +e
+          sh tools/utility-os/update.sh --check | tee "$RUNNER_TEMP/check.txt"
+          rc=$?
+          set -e
+          if [ "$rc" = 10 ]; then echo "new=yes" >> "$GITHUB_OUTPUT"; elif [ "$rc" = 0 ]; then echo "new=no" >> "$GITHUB_OUTPUT"; else exit 1; fi
+
+      - name: Host packages and disk space
+        if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential bc cpio rsync unzip file wget git python3 perl patch xz-utils bzip2 qemu-system-arm
+          df -h /
+
+      - uses: actions/cache@v4
+        if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
+        with:
+          path: ${{ runner.temp }}/uos-cache
+          key: uos-${{ github.run_id }}
+          restore-keys: uos-
+
+      - name: The newest versions
+        if: github.event_name == 'schedule' && steps.check.outputs.new == 'yes'
+        run: sh tools/utility-os/update.sh | tee "$RUNNER_TEMP/update.txt"
+
+      - name: Build
+        if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
+        run: sh tools/utility-os/build.sh
+
+      - name: Check
+        if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
+        run: |
+          set -o pipefail
+          sh tools/utility-os/test.sh | tee "$RUNNER_TEMP/test.txt"
+
+      - name: The built OS
+        if: always() && (github.event_name != 'schedule' || steps.check.outputs.new == 'yes')
+        uses: actions/upload-artifact@v4
+        with:
+          name: utility-os-${{ github.run_id }}
+          path: |
+            scriptexecute64
+            scriptexecute/usb
+            scriptexecute/MANIFEST
+            tests/fixtures/utility-os/messages.txt
+          retention-days: 30
+
+      - name: legal-info archive
+        if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
+        run: |
+          test -s "$UOS_WORK/output/legal-info/source-complete.json"
+          tar czf "$RUNNER_TEMP/legal-info.tar.gz" -C "$UOS_WORK/output" legal-info
+
+      - name: The sources and licences
+        if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: legal-info-${{ github.run_id }}
+          path: ${{ runner.temp }}/legal-info.tar.gz
+          retention-days: 30
+
+      - name: Pull request to stage2
+        if: github.event_name == 'schedule' && steps.check.outputs.new == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          . utility-os/versions.env
+          branch="utility-os/$UOS_VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add utility-os/versions.env scriptexecute64 scriptexecute/usb scriptexecute/MANIFEST tests/fixtures/utility-os/messages.txt
+          git commit -m "Utility OS $UOS_VERSION: the newest versions"
+          git push origin "$branch"
+          {
+            echo "The newest versions for the utility OS, built and checked by CI ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID, artifacts there)."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/update.txt"
+            echo '```'
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/test.txt"
+            echo '```'
+            echo
+            echo "Adopt it only after the live check on the provisioner (docs/utility-os.md, «Выпуск новой версии ОС»)."
+          } > "$RUNNER_TEMP/pr.md"
+          gh pr create --base stage2 --head "$branch" --title "Utility OS $UOS_VERSION" --body-file "$RUNNER_TEMP/pr.md"

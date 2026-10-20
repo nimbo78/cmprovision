@@ -57,4 +57,8 @@ return [
 
     'split_space_factor' => 1.25,
 
+    /* Utility OS directories and the link followed by dnsmasq and rpiboot (2.7.0). */
+    'boot_root' => env('CMPROVISION_BOOT_ROOT', base_path()),
+    'boot_link' => env('CMPROVISION_BOOT_LINK', base_path('etc/boot')),
+
 ];

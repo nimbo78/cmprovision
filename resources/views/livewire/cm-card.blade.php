@@ -143,6 +143,7 @@
                     <td>{{ $cm->memory_in_gb }} GiB &middot; {{ $cm->storage ? round($cm->storage / 1000 / 1000 / 1000).' GB' : 'no storage' }}</td>
                 </tr>
                 <tr><td class="text-fg-muted">Temperature</td><td>{{ $cm->temp1 }} at the start @if ($cm->temp2) &middot; {{ $cm->temp2 }} at the end @endif</td></tr>
+                <tr><td class="text-fg-muted">Utility OS</td><td>{{ $cm->utilityOsLabel() }}</td></tr>
                 <tr><td class="text-fg-muted">eMMC CID, CSD</td><td class="text-xs font-mono">{{ $cm->cid }} {{ $cm->csd }}</td></tr>
                 <tr><td class="text-fg-muted">First seen</td><td>{{ $cm->created_at ? $cm->created_at->local()->format('d.m.Y H:i:s') : '' }}</td></tr>
             </table>

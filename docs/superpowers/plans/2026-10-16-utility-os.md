@@ -104,11 +104,11 @@ The research of 2026-10-16 (raspberrypi/linux at `stable_20260911`, raspberrypi/
 
 No repository changes. This proves the switch idea on the bench before anything relies on it: dnsmasq must serve the link's current target without a restart.
 
-- [ ] **Step 1: Keep the bench awake for the session**
+- [x] **Step 1: Keep the bench awake for the session**
 
 Run (Bash, `run_in_background: true`): `MSYS_NO_PATHCONV=1 wsl.exe -d cmprov-trixie -u root -- sleep 43200`
 
-- [ ] **Step 2: Space, cores and host packages**
+- [x] **Step 2: Space, cores and host packages**
 
 Run:
 ```bash
@@ -127,7 +127,7 @@ EOF
 ```
 Expected: at least 40G available on `/root` (buildroot output about 20 GB plus caches), several cores, no `MISSING` line, `host-ready`. With less space, stop and tell the user. The build cannot run there.
 
-- [ ] **Step 3: dnsmasq serves the link's target, and switching needs no restart**
+- [x] **Step 3: dnsmasq serves the link's target, and switching needs no restart**
 
 Run:
 ```bash
@@ -147,7 +147,7 @@ EOF
 ```
 Expected: `first: A`, then `after the switch: B`. If the second line is still `A`, dnsmasq resolved its root at start. Record a ledger ruling then: Task 3's `UtilityOs::switchTo()` must restart dnsmasq after replacing the link, through the existing `config('cmprovision.dnsmasq_restart')` (the sudo rule allows it). Add a test to Task 3 that the command runs.
 
-- [ ] **Step 4: Ledger**
+- [x] **Step 4: Ledger**
 
 Write the free space, the core count and the result of step 3 into the ledger.
 
@@ -165,7 +165,7 @@ Write the free space, the core count and the result of step 3 into the ledger.
 - Consumes: —
 - Produces: `/usr/lib/cmprovision/boot-link fix <app>` and `boot-link legacy <app>`. Exit 0 on success, 1 when `<app>/etc/boot` is a real directory, 2 on a wrong call. After `fix`, `<app>/etc/boot` is a relative link to `../scriptexecute` or `../scriptexecute64`, and `tftp-root=<app>/scriptexecute` in `<app>/etc/dnsmasq.conf` reads `tftp-root=<app>/etc/boot`.
 
-- [ ] **Step 1: The dev version first**
+- [x] **Step 1: The dev version first**
 
 Add at the top of `debian/changelog`:
 ```
@@ -185,7 +185,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
 Run: `git add debian/changelog && git commit -q -F "$SP/commit-270-t0.txt"`
 
-- [ ] **Step 2: Write the failing test of the helper**
+- [x] **Step 2: Write the failing test of the helper**
 
 Create `tests/Unit/BootLinkTest.php`:
 ```php
@@ -324,12 +324,12 @@ class BootLinkTest extends TestCase
 }
 ```
 
-- [ ] **Step 3: Run it to see it fail**
+- [x] **Step 3: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'BootLinkTest'`
 Expected: `phpunit exit 1`, the tests fail (sh cannot open `tools/boot-link`).
 
-- [ ] **Step 4: Write the helper**
+- [x] **Step 4: Write the helper**
 
 Create `tools/boot-link`:
 ```sh
@@ -382,12 +382,12 @@ case "$CMD" in
 esac
 ```
 
-- [ ] **Step 5: Run the helper's test again**
+- [x] **Step 5: Run the helper's test again**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'BootLinkTest'`
 Expected: `phpunit exit 0`, `OK (9 tests, …)`.
 
-- [ ] **Step 6: Write the failing packaging tests**
+- [x] **Step 6: Write the failing packaging tests**
 
 Append to `tests/Unit/PackagingTest.php`, before the closing `}` of the class:
 ```php
@@ -437,12 +437,12 @@ Append to `tests/Unit/PackagingTest.php`, before the closing `}` of the class:
     }
 ```
 
-- [ ] **Step 7: Run them to see them fail**
+- [x] **Step 7: Run them to see them fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'PackagingTest'`
 Expected: `phpunit exit 1`, the four new tests fail and the old ones pass.
 
-- [ ] **Step 8: Wire the helper into the package**
+- [x] **Step 8: Wire the helper into the package**
 
 In `debian/rules`, `override_dh_install`, after the `wifi-networks` line:
 ```make
@@ -493,12 +493,12 @@ if [ -x /usr/lib/cmprovision/boot-link ]; then
 fi
 ```
 
-- [ ] **Step 9: Run the packaging and helper tests**
+- [x] **Step 9: Run the packaging and helper tests**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'PackagingTest|BootLinkTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 10: Shell syntax**
+- [x] **Step 10: Shell syntax**
 
 Run:
 ```bash
@@ -508,7 +508,7 @@ EOF
 ```
 Expected: five `ok` lines.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 Write `$SP/commit-270-t1.txt`:
 ```
@@ -541,7 +541,7 @@ This is the fix rpiboot needs now. On da2, `rpiboot 20261005` finds no BCM2711 s
 - Consumes: —
 - Produces: `sh tools/utility-os/manifest.sh <dir> key=value…` writes `<dir>/MANIFEST`: a `#` comment line, the `key=value` arguments in their order, then `file=<sha256> <size> <path>` for every file under `<dir>` except `MANIFEST`, sorted by path (`LC_ALL=C`), paths relative to `<dir>` with `/`. The legacy keys: `version=legacy`, `bits=32`, `kernel=Linux 5.4`, `built=2022-11`, `source=raspberrypi/scriptexecutor (buildroot 2019.11.1)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Unit/UtilityOsFilesTest.php`:
 ```php
@@ -666,12 +666,12 @@ class UtilityOsFilesTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsFilesTest'`
 Expected: `phpunit exit 1`, no `scriptexecute/MANIFEST`, no `bootfiles.bin`, no `manifest.sh`.
 
-- [ ] **Step 3: The MANIFEST writer**
+- [x] **Step 3: The MANIFEST writer**
 
 Create `tools/utility-os/manifest.sh`:
 ```sh
@@ -695,7 +695,7 @@ shift
 mv "$DIR/MANIFEST.new" "$DIR/MANIFEST"
 ```
 
-- [ ] **Step 4: `bootfiles.bin` for the legacy directory, and its MANIFEST**
+- [x] **Step 4: `bootfiles.bin` for the legacy directory, and its MANIFEST**
 
 Add to `.gitattributes`, after `*.bin binary`:
 ```
@@ -715,12 +715,12 @@ Expected: `scriptexecute/bootfiles.bin: OK`. The MANIFEST head is the comment, t
 
 (Git Bash on Windows has `sha256sum`, `find`, `sort` and `wc`; `manifest.sh` gives the same bytes there as on Linux because `.gitattributes` keeps every file of the directory LF or binary.)
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsFilesTest|PackagingTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t2.txt`:
 ```
@@ -762,7 +762,7 @@ Run: `git add .gitattributes scriptexecute/bootfiles.bin scriptexecute/MANIFEST 
   - Config: `cmprovision.boot_root` (default `base_path()`), `cmprovision.boot_link` (default `base_path('etc/boot')`).
   - Test trait `Tests\Support\UtilityOsTree`: `makeTree(): void`, `$this->tree` (the root), `osDir(string $dir, string $manifestLines)`.
 
-- [ ] **Step 1: Write the test tree and the failing test**
+- [x] **Step 1: Write the test tree and the failing test**
 
 Create `tests/Support/UtilityOsTree.php`:
 ```php
@@ -903,12 +903,12 @@ class UtilityOsTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsTest'`
 Expected: `phpunit exit 2` or `1`: `Class "App\Services\UtilityOs" not found`.
 
-- [ ] **Step 3: The configuration**
+- [x] **Step 3: The configuration**
 
 In `config/cmprovision.php`, before the closing `];`:
 ```php
@@ -927,7 +927,7 @@ In `config/cmprovision.php`, before the closing `];`:
     'boot_link' => env('CMPROVISION_BOOT_LINK', base_path('etc/boot')),
 ```
 
-- [ ] **Step 4: The service**
+- [x] **Step 4: The service**
 
 Create `app/Services/UtilityOs.php`:
 ```php
@@ -1049,14 +1049,14 @@ class UtilityOs
 }
 ```
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsTest'`
 Expected: `phpunit exit 0`, `OK (6 tests, …)`.
 
 If Task 0 step 3 showed that dnsmasq does not follow a switched link, add to `switchTo()` after the rename: `exec(config('cmprovision.dnsmasq_restart'), $out, $rc);`, plus a test that sets `cmprovision.dnsmasq_restart` to `touch <tree>/restarted` and asserts the file. Ledger the ruling.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t3.txt`:
 ```
@@ -1085,7 +1085,7 @@ Run: `git add app/Services/UtilityOs.php config/cmprovision.php tests/Support/Ut
 - Consumes: `App\Services\UtilityOs` (Task 3): `systems()`, `current()`, `manifest()`, `switchTo()`, `link()`, `tftpRoot()`, `tftpRootFollowsLink()`, `label()`; `Tests\Support\UtilityOsTree`.
 - Produces: Livewire component `utility-os-settings` with the action `serve(string $dir)`; `Settings::$utilityOs` (string label).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/UtilityOsSettingsTest.php`:
 ```php
@@ -1173,12 +1173,12 @@ class UtilityOsSettingsTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsSettingsTest'`
 Expected: `phpunit exit 1` or `2`: `Class "App\Http\Livewire\UtilityOsSettings" not found`.
 
-- [ ] **Step 3: The component and its view**
+- [x] **Step 3: The component and its view**
 
 Create `app/Http/Livewire/UtilityOsSettings.php`:
 ```php
@@ -1275,7 +1275,7 @@ Create `resources/views/livewire/utility-os-settings.blade.php`:
 </div>
 ```
 
-- [ ] **Step 4: The section on the Settings page and the status row**
+- [x] **Step 4: The section on the Settings page and the status row**
 
 In `resources/views/livewire/settings.blade.php`, insert before the line `        <div class="md:col-span-1">` that opens the «Service status» heading block:
 ```blade
@@ -1316,12 +1316,12 @@ In `app/Http/Livewire/Settings.php`, add `$utilityOs` to the first `public` line
         $this->utilityOs = \App\Services\UtilityOs::label($current ? $os->manifest($current) : null);
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsSettingsTest|ServiceStatusTest|StaticIpSettingsTest|TokenGuardTest|PageLayoutTest|OverlayLayerTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t4.txt`:
 ```
@@ -1353,7 +1353,7 @@ Run: `git add app/Http/Livewire/UtilityOsSettings.php resources/views/livewire/u
 - Consumes: the `uos=` start parameter of the new OS (Task 6's `cmdline.txt`).
 - Produces: column `cms.utility_os` (string 32, nullable); `Cm::utilityOsLabel(): string` («2026.10» or «legacy»); `ScriptExecuteController::utilityOsOf(Request): ?string` (protected static).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/UtilityOsModuleTest.php`:
 ```php
@@ -1439,12 +1439,12 @@ class UtilityOsModuleTest extends TestCase
 ```
 (`CmCard::mount($serial)` takes the serial; the project without an image makes the start end with «No image to write.».)
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsModuleTest'`
 Expected: `phpunit exit 1`: no column `utility_os`, and the start line has no «Utility OS».
 
-- [ ] **Step 3: The column**
+- [x] **Step 3: The column**
 
 Create `database/migrations/2026_10_17_100000_add_utility_os_to_cms.php`:
 ```php
@@ -1473,7 +1473,7 @@ return new class extends Migration
 };
 ```
 
-- [ ] **Step 4: The model**
+- [x] **Step 4: The model**
 
 In `app/Models/Cm.php`, add `'utility_os'` to `$fillable` (on the line with `'durable_bytes', 'durable_image_id', 'durable_at', 'progress_base',`), and add the method next to `canIdentify()`:
 ```php
@@ -1484,7 +1484,7 @@ In `app/Models/Cm.php`, add `'utility_os'` to `$fillable` (on the line with `'du
     }
 ```
 
-- [ ] **Step 5: The start, the resume and the parameter**
+- [x] **Step 5: The start, the resume and the parameter**
 
 In `app/Http/Controllers/ScriptExecuteController.php`:
 
@@ -1519,19 +1519,19 @@ In `resumeProvisioning()`, the log call becomes:
 
 In `tests/Feature/ImageResumeStartTest.php:148`, the expected line becomes `'Provisioning resumed: the module restarted during the write; continuing from 0.0 GB of 0.0 GB. Utility OS: legacy.'`.
 
-- [ ] **Step 6: The card**
+- [x] **Step 6: The card**
 
 In `resources/views/livewire/cm-card.blade.php`, after the `<tr>` of «Temperature» (line 142):
 ```blade
                 <tr><td class="text-fg-muted">Utility OS</td><td>{{ $cm->utilityOsLabel() }}</td></tr>
 ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsModuleTest|ImageResumeStartTest|ModuleCardTest|ResolveBoardsTest|ProvisioningLogTest|ScriptExecuteRobustnessTest|StandNetworkTest|UpgradeMigrationsTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 Write `$SP/commit-270-t5.txt`:
 ```
@@ -1563,7 +1563,7 @@ The init is written and tested before any build: under the bench's `busybox sh` 
   - environment `UOS_PROC`, `UOS_SYS`, `UOS_TMP` (defaults `/proc`, `/sys`, `/tmp`);
   - `cmdline.txt` and `config.txt` templates with `@UOS_VERSION@` (only in `cmdline.txt`), which `post-image.sh` (Task 7) fills in.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/UtilityOsInitTest.php`:
 ```php
@@ -1830,12 +1830,12 @@ class UtilityOsInitTest extends TestCase
     }
 }
 ```
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsInitTest'`
 Expected: `phpunit exit 1`. The template files and the init are missing (`file_get_contents(...cmdline.txt): Failed to open stream`).
 
-- [ ] **Step 3: The templates**
+- [x] **Step 3: The templates**
 
 Create `utility-os/board/cmprovision/cmdline.txt` (one line, then a newline):
 ```
@@ -1859,7 +1859,7 @@ dtparam=audio=off
 dtoverlay=spi-gpio40-45
 ```
 
-- [ ] **Step 4: The init**
+- [x] **Step 4: The init**
 
 Create `utility-os/board/cmprovision/rootfs-overlay/etc/init.d/S99scriptexec`:
 ```sh
@@ -1973,12 +1973,12 @@ say "the script ended with exit code $?: nothing more to do"
 ```
 Run: `git update-index --add --chmod=+x utility-os/board/cmprovision/rootfs-overlay/etc/init.d/S99scriptexec` after `git add`, in step 7.
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsInitTest'`
 Expected: `phpunit exit 0`, `OK (11 tests, …)`.
 
-- [ ] **Step 6: Syntax under dash too**
+- [x] **Step 6: Syntax under dash too**
 
 Run:
 ```bash
@@ -1989,7 +1989,7 @@ EOF
 ```
 Expected: `dash-ok`, `busybox-ok`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Write `$SP/commit-270-t6.txt`:
 ```
@@ -2042,7 +2042,7 @@ Facts this task rests on (research of 2026-10-16, buildroot 2025.02.18 sources):
 - buildroot's BusyBox config already has 253 of the 255 legacy applets: `tc` is off and `sysctl` is `CONFIG_BB_SYSCTL=y`. BusyBox's package installs `S50crond` when `CONFIG_CROND=y`. The legacy OS started no cron daemon, so `post-build.sh` removes that script.
 - `BR2_LINUX_KERNEL_INTREE_DTSO_NAMES` builds `overlays/<name>.dtbo` and puts it flat into `images/`. The kernel's own `make all` builds every overlay into the build directory as well, and `post-image.sh` falls back to that.
 
-- [ ] **Step 1: Write the failing test of the tree**
+- [x] **Step 1: Write the failing test of the tree**
 
 Create `tests/Unit/UtilityOsTreeTest.php`:
 ```php
@@ -2224,12 +2224,12 @@ class UtilityOsTreeTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsTreeTest'`
 Expected: `phpunit exit 1` or `2`: `utility-os/versions.env` is missing.
 
-- [ ] **Step 3: The pins and the external tree**
+- [x] **Step 3: The pins and the external tree**
 
 Create `utility-os/versions.env`:
 ```
@@ -2281,7 +2281,7 @@ endef
 LINUX_POST_EXTRACT_HOOKS += CMPROVISION_LINUX_GPL_TEXT
 ```
 
-- [ ] **Step 4: The packages**
+- [x] **Step 4: The packages**
 
 Create `utility-os/package/cmp-rpi-boot-files/Config.in`:
 ```
@@ -2415,7 +2415,7 @@ add_subdirectory(../vcgencmd vcgencmd)
 add_subdirectory(../vcmailbox vcmailbox)
 ```
 
-- [ ] **Step 5: The configuration, the fragments, the post scripts**
+- [x] **Step 5: The configuration, the fragments, the post scripts**
 
 Create `utility-os/configs/cmprovision_defconfig`:
 ```
@@ -2557,7 +2557,7 @@ sh "$EXT/../tools/utility-os/manifest.sh" "$OUT" "version=$UOS_VERSION" bits=64 
 echo "post-image: $OUT"
 ```
 
-- [ ] **Step 6: The legacy command list, the hash files, the build**
+- [x] **Step 6: The legacy command list, the hash files, the build**
 
 Create `tools/utility-os/legacy_commands.py`:
 ```python
@@ -2718,12 +2718,12 @@ echo "build.sh: done: $REPO/scriptexecute64 ($(du -sh "$REPO/scriptexecute64" | 
 Run: `cd "$REPO" && git add -N utility-os tools/utility-os && git update-index --chmod=+x tools/utility-os/build.sh tools/utility-os/hashes.sh tools/utility-os/legacy_commands.py utility-os/board/cmprovision/post-build.sh utility-os/board/cmprovision/post-image.sh`
 (The `-N` keeps the new files listed by `git ls-files`, which the bench sync reads.)
 
-- [ ] **Step 7: Run the tree test**
+- [x] **Step 7: Run the tree test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsTreeTest|UtilityOsInitTest|UtilityOsFilesTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 8: The bench helpers**
+- [x] **Step 8: The bench helpers**
 
 Create `$SP/wsl-bench/32-uos-in.sh`:
 ```sh
@@ -2784,7 +2784,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -d cmprov-trixie -u root -- ls /root/bench/ | tr '\n'
 ```
 Expected: the listing has the four new scripts.
 
-- [ ] **Step 9: The first build**
+- [x] **Step 9: The first build**
 
 Run:
 ```bash
@@ -2811,7 +2811,7 @@ When the build stops, read the lines above `build.sh exit` and fix by kind; ledg
 
 After a fix: push the tree again (`32-uos-in.sh`) and run `33-uos-build.sh` again. It builds only what changed; a changed fragment reconfigures its package.
 
-- [ ] **Step 10: Commit the tree (the built files follow in Task 8, after their checks)**
+- [x] **Step 10: Commit the tree (the built files follow in Task 8, after their checks)**
 
 Write `$SP/commit-270-t7.txt`:
 ```
@@ -2851,7 +2851,7 @@ Add any file a fix of step 9 changed.
 - Consumes: Task 7's build (`$UOS_WORK/output`, `scriptexecute64/` in the source tree, `UOS_*` of `versions.env`), Task 6's init and `cmdline.txt`, `public/tools/ledpattern`.
 - Produces: `sh tools/utility-os/test.sh` (one `ok`/`FAIL` line per check, exit 0 only when all pass; files in `$UOS_WORK/smoke`, QEMU's console in `$UOS_WORK/qemu.log`); the fixture `tests/fixtures/utility-os/messages.txt`. Its format: two `#` lines, then sections `[name]` followed by the text. The sections are `gz-cut`, `gz-garbage`, `xz-cut`, `xz-garbage`, `bz2-cut`, `bz2-garbage`, `dd-full`, `dd-records`, `sha256-mismatch`, `flashrom-strings`.
 
-- [ ] **Step 1: The test server, the check script and the verifier**
+- [x] **Step 1: The test server, the check script and the verifier**
 
 Create `tools/utility-os/smoke/server.py`:
 ```python
@@ -3140,7 +3140,7 @@ if all(text.get(name) for name in MESSAGES):
 sys.exit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: `test.sh`**
+- [x] **Step 2: `test.sh`**
 
 Create `tools/utility-os/test.sh`:
 ```sh
@@ -3245,7 +3245,7 @@ echo "test.sh: $FAILS check(s) failed"
 exit 1
 ```
 
-- [ ] **Step 3: Write the failing messages test**
+- [x] **Step 3: Write the failing messages test**
 
 Create `tests/Unit/UtilityOsMessagesTest.php`:
 ```php
@@ -3323,12 +3323,12 @@ class UtilityOsMessagesTest extends TestCase
 }
 ```
 
-- [ ] **Step 4: Run it to see it fail**
+- [x] **Step 4: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsMessagesTest'`
 Expected: `phpunit exit 1` or `2`: `file(…/messages.txt): Failed to open stream`.
 
-- [ ] **Step 5: Run the checks on the bench**
+- [x] **Step 5: Run the checks on the bench**
 
 Push the tree again (the build in `/root/uos/work` stays) and run `test.sh`:
 ```bash
@@ -3354,7 +3354,7 @@ When a line says FAIL, fix by kind, and record a ledger ruling for each:
 - `start: …` or `tools: …` — the init (Task 6) or a package. Fix it there with a test first.
 - `messages: …` empty — `check.sh` did not get there; see `result.txt` in `/root/uos/work/smoke`.
 
-- [ ] **Step 6: The built files into the repository**
+- [x] **Step 6: The built files into the repository**
 
 Run:
 ```bash
@@ -3364,13 +3364,13 @@ ls scriptexecute64 scriptexecute64/overlays; cat scriptexecute64/cmdline.txt; he
 ```
 Expected: `bcm2711-rpi-4-b.dtb bcm2711-rpi-400.dtb bcm2711-rpi-cm4.dtb bootfiles.bin cmdline.txt config.txt fixup4.dat kernel8.img MANIFEST overlays scriptexecute.img start4.elf` and `dwc2.dtbo spi-gpio40-45.dtbo`. The cmdline ends in `&uos=2026.10`, the MANIFEST names `version=2026.10`, and the fixture starts with its two comment lines and `[gz-cut]`.
 
-- [ ] **Step 7: Run the messages test**
+- [x] **Step 7: Run the messages test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsMessagesTest'`
 Expected: `phpunit exit 0`.
 If a case fails, the server does not recognise a message of the new OS. Add the message to the matching pattern of `ScriptExecuteController::WRITE_FAILURE_HINTS` (or `FailureAdvice::eepromAdvice()`), run `ImageWriteDiagnosticsTest|ModuleCardTest|UtilityOsMessagesTest`, and ledger it.
 
-- [ ] **Step 8: The OS in the package, and its files test**
+- [x] **Step 8: The OS in the package, and its files test**
 
 In `debian/install`, after `scriptexecute var/lib/cmprovision`:
 ```
@@ -3404,7 +3404,7 @@ In `tests/Unit/UtilityOsFilesTest.php`, `dirs()` becomes `return [['scriptexecut
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsFilesTest|UtilityOsMessagesTest|UtilityOsTreeTest|PackagingTest|UtilityOsInitTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 Write `$SP/commit-270-t8.txt`:
 ```
@@ -3442,7 +3442,7 @@ Add to `git add` any file changed in steps 5 or 7 (`linux.fragment`, `cmprovisio
   - Without `--check`: the same lines, then the downloads and hashes, then `versions.env` rewritten in one `mv` with `UOS_VERSION` raised. Exit 0, or 1 with the file untouched.
   - Environment: `UOS_VERSIONS_ENV` (the file, default `utility-os/versions.env`), `UOS_TODAY` (`YYYY-MM-DD`, default today in UTC).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Unit/UtilityOsUpdateTest.php`:
 ```php
@@ -3670,12 +3670,12 @@ class UtilityOsUpdateTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsUpdateTest'`
 Expected: `phpunit exit 1`: sh cannot open `tools/utility-os/update.sh`.
 
-- [ ] **Step 3: Write `update.sh`**
+- [x] **Step 3: Write `update.sh`**
 
 Create `tools/utility-os/update.sh`:
 ```sh
@@ -3822,12 +3822,12 @@ echo "update.sh: versions.env rewritten, the OS is now $V_OS: build.sh, then tes
 ```
 `fetch` runs in a command substitution: its `fail` prints the message and ends that subshell with 1, and `set -e` then ends the script at the assignment. So `versions.env.new` never appears.
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsUpdateTest'`
 Expected: `phpunit exit 0`, `OK (10 tests, …)`.
 
-- [ ] **Step 5: Once against the real world, read-only**
+- [x] **Step 5: Once against the real world, read-only**
 
 Run:
 ```bash
@@ -3837,7 +3837,7 @@ EOF
 ```
 Expected: five lines, each `(newest)` or a `->` to a newer version, then `check exit 0` or `check exit 10`. Write the output into the ledger. Do not run the update itself here: adopting new versions is the monthly PR's job.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t9.txt`:
 ```
@@ -3867,7 +3867,7 @@ Run: `git add tools/utility-os/update.sh tests/Unit/UtilityOsUpdateTest.php && g
 
 Facts (docs.github.com, 2026-10-16): the standard runner has 4 CPUs, 16 GB RAM and a 6-hour job limit. Scheduled runs use the workflow file of the default branch. Workflows in a fork run only after they are enabled in its Actions tab. A PR created with `GITHUB_TOKEN` starts its own `pull_request` run only after someone approves it. The cache is 10 GB per repository, and entries unused for 7 days go, so a monthly run usually starts cold.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Unit/UtilityOsWorkflowTest.php`:
 ```php
@@ -3909,12 +3909,12 @@ class UtilityOsWorkflowTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsWorkflowTest'`
 Expected: `phpunit exit 1` or `2` (no workflow file).
 
-- [ ] **Step 3: The workflow**
+- [x] **Step 3: The workflow**
 
 Create `.github/workflows/utility-os.yml`:
 ```yaml
@@ -4038,12 +4038,12 @@ jobs:
           gh pr create --base stage2 --head "$branch" --title "Utility OS $UOS_VERSION" --body-file "$RUNNER_TEMP/pr.md"
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsWorkflowTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 5: The YAML parses**
+- [x] **Step 5: The YAML parses**
 
 Run:
 ```bash
@@ -4054,7 +4054,7 @@ EOF
 ```
 Expected: `['pull_request', 'schedule', 'workflow_dispatch'] 11`. (PyYAML reads the key `on` as `True`.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Write `$SP/commit-270-t10.txt`:
 ```
@@ -4082,7 +4082,7 @@ Run: `git add .github/workflows/utility-os.yml tests/Unit/UtilityOsWorkflowTest.
 - Consumes: everything above (names of scripts, files, keys, texts).
 - Produces: —
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Unit/UtilityOsDocsTest.php`:
 ```php
@@ -4127,12 +4127,12 @@ class UtilityOsDocsTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsDocsTest'`
 Expected: `phpunit exit 1` (no `docs/utility-os.md`, CLAUDE.md still has «исходников в репозитории нет»).
 
-- [ ] **Step 3: The guide**
+- [x] **Step 3: The guide**
 
 Create `docs/utility-os.md` (Russian, like `docs/leds.md`):
 ```markdown
@@ -4244,7 +4244,7 @@ GitHub выключает расписание после 60 дней без к�
   получил тестовый сервер.
 ```
 
-- [ ] **Step 4: CLAUDE.md**
+- [x] **Step 4: CLAUDE.md**
 
 Edit these places in `CLAUDE.md`:
 
@@ -4294,7 +4294,7 @@ Edit these places in `CLAUDE.md`:
   `legal-info`.
 ```
 
-- [ ] **Step 5: README and ROADMAP**
+- [x] **Step 5: README and ROADMAP**
 
 In `README.md`, before the heading `## The OS check after the first boot ##`, add:
 ```markdown
@@ -4325,12 +4325,12 @@ In `debian/changelog`, the dev entry's bullet becomes:
     exits.
 ```
 
-- [ ] **Step 6: Run the test**
+- [x] **Step 6: Run the test**
 
 Run: `bash "$SP/wsl-bench/tests-ok.sh" 'UtilityOsDocsTest|LedDocsTest'`
 Expected: `phpunit exit 0`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Write `$SP/commit-270-t11.txt`:
 ```
@@ -4350,12 +4350,12 @@ Run: `git add docs/utility-os.md CLAUDE.md README.md ROADMAP.md debian/changelog
 - Consumes: the whole branch.
 - Produces: a ledger record of the rehearsal.
 
-- [ ] **Step 1: The whole suite**
+- [x] **Step 1: The whole suite**
 
 Run: `bash "$SP/wsl-bench/suite-ok.sh"`
 Expected: last line `php rc=0 js rc=0`.
 
-- [ ] **Step 2: Build 2.6.2 (the version to go back to) and the branch**
+- [x] **Step 2: Build 2.6.2 (the version to go back to) and the branch**
 
 Run:
 ```bash
@@ -4371,7 +4371,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -d cmprov-trixie -u root -- sh /root/bench/13-build-w
 ```
 Expected: `built 2.6.2: …`, `2.6.2`, then `built 2.7.0~dev1: … bytes` (about 15 MB larger than 2.6.2).
 
-- [ ] **Step 3: 2.6.2 installed, a snapshot of it, then the branch over it**
+- [x] **Step 3: 2.6.2 installed, a snapshot of it, then the branch over it**
 
 Run:
 ```bash
@@ -4399,7 +4399,7 @@ Expected:
 - 2.6.2: `link: readlink: … No such file or directory`, `tftp-root: tftp-root=/var/lib/cmprovision/scriptexecute`, `rpiboot: … -d /var/lib/cmprovision/scriptexecute`, `helper: … No such file`, one dir, `bootfiles: 0`; a snapshot directory named `…-2.6.2`.
 - 2.7.0~dev1: `link: ../scriptexecute owner www-data`, `tftp-root: tftp-root=/var/lib/cmprovision/etc/boot`, `rpiboot: ExecStart=/usr/bin/rpiboot -l -d /var/lib/cmprovision/etc/boot`, `helper: 755 root`, both dirs, `bootfiles: 2`.
 
-- [ ] **Step 4: The switch as the web app does it, the downgrade, the upgrade again, a data-only restore of the 2.6.2 snapshot**
+- [x] **Step 4: The switch as the web app does it, the downgrade, the upgrade again, a data-only restore of the 2.6.2 snapshot**
 
 Run:
 ```bash
@@ -4425,7 +4425,7 @@ Expected:
 - `== up to 2.7.0~dev1: link ../scriptexecute, tftp-root=/var/lib/cmprovision/etc/boot`;
 - `== data-only restore …: link ../scriptexecute, tftp-root=/var/lib/cmprovision/etc/boot` (the snapshot brought the old line, restore moved it back to the link).
 
-- [ ] **Step 5: Ledger**
+- [x] **Step 5: Ledger**
 
 Write the outputs of steps 2–4 into the ledger. No commit (nothing changed).
 
@@ -4433,13 +4433,11 @@ Write the outputs of steps 2–4 into the ledger. No commit (nothing changed).
 
 ### Task 13: On the user's word only — the provisioner, the live check, the release
 
-Stop here and ask the user. Nothing in this task runs without their explicit word, step by step: building on wlanpi-da2, installing there, the live check on sensor1, merging, tagging, pushing, the GitHub settings and the GitHub Release.
+Order clarified by the user on 20 October 2026: finish the tests first, fix any failures and assess the results;
+release only if the agreed checks succeed. The dev package is already installed on wlanpi-da2 under the earlier
+deployment authorisation. Do not create a stable release commit/tag or merge for release while acceptance is incomplete.
 
-When the user says go, the order they set for releases:
-1. The final review's findings, minors included, fixed on stage2.
-2. Release commit: `debian/changelog` 2.7.0 (the dev entry's text, version `2.7.0`, today's date), ROADMAP «2.7.0 вышла …». Local `git merge --no-ff stage2` into main, local tag `v2.7.0`.
-3. The tree of the tag to wlanpi-da2 as a tar checked by SHA256 on both sides (docs/deploy-to-provisioner.md), `dpkg-buildpackage -b -us -uc -d`, `dpkg -i`. Then check: the link, `tftp-root`, the rpiboot unit, Settings → Utility OS, Service status.
-4. The live check on sensor1 under the new OS (switched in Settings), as the spec lists:
+1. Complete the live checks under the new OS (switched in Settings), as the spec lists:
    - the module stays the same CMs row. The start parameters of both OSes match in nginx's access log on da2 (`serial`, `model`, `storagesize`, `mac`, `memorysize`, `cid`, `csd`, `bootmode`, `inversejumper`; `temp` close);
    - a write with verify;
    - EEPROM «identical», then «written» with a harmless setting (`DHCP_TIMEOUT=45000`) and back;
@@ -4447,5 +4445,30 @@ When the user says go, the order they set for releases:
    - the OS check;
    - the resume after a PoE restart on a project with pieces;
    - the time from power-on to the script's start, next to the same measurement under the legacy OS.
-   Then switch to the legacy OS and run once more. USB boot through rpiboot only if a CM4 that can boot over USB is at hand; else mark it unchecked, and the tty2 shell too (sensor1 has no screen or keyboard).
-5. Push main, stage2 and the tag only after the install and the live check are fine. Then the GitHub Release `utility-os-<version>` with the `legal-info` archive. The user enables Actions in the fork and allows them to create PRs.
+   Then switch to the legacy OS and run once more. Remaining USB, tty2, visual LED and multi-module checks are tracked in
+   [the remaining acceptance checklist](2026-10-20-usb-tty2-acceptance.md). The M4+ target has HDMI and BOOT/OTG controls;
+   the relevant cables, keyboard and carrier setup must be physically prepared. Missing observations stay unchecked.
+2. Fix failures and run the checks appropriate to each change; update the hardware report with results and limits.
+   The completed whole-branch review and its fixes are recorded in the ledger; do not describe it as pending work.
+3. Only after acceptance succeeds: commit the final documentation, integrate utility-os into stage2 and make the release
+   commit (`debian/changelog` 2.7.0, today's date, and ROADMAP reflecting the accepted result).
+   Merge stage2 into main and create local tag `v2.7.0`.
+4. Send the tagged tree to wlanpi-da2 as a SHA256-checked tar (docs/deploy-to-provisioner.md), build and install the final
+   package. Check the link, tftp-root, rpiboot unit, Settings, Service status and final installed package before publication.
+5. Publish main, stage2 and the tag after the final installation checks succeed. Publish the GitHub Release
+   `utility-os-<version>` with legal-info; verify Actions and its automatic-PR permissions in the fork.
+
+Development stand checks, 19 October 2026: network-boot/write/verify/OS-check cycles completed on the authorised CM4;
+the SPI/LED handoff fix passed on both kernels. EEPROM written/restore, split resume after an actual PoE interruption,
+all LED modes through sysfs, Identify/Stop/expiry and a full legacy cycle passed. Power-on to the script: 29 s for the
+new OS, 33 s for legacy in one paired observation. Original project/EEPROM restored, new OS selected, other 78 CMs unchanged.
+See [the hardware report](2026-10-19-utility-os-hardware-check.md) for package hashes, timings, evidence and limits:
+USB, tty2, human visual LED observation and a multi-module start were not tested. The 20 October instruction above
+places their acceptance before release preparation and publication.
+
+Acceptance completed, 20 October 2026: USB boot/write/SHA256 and subsequent eMMC boot, physical tty2 with HDMI and
+USB keyboard, and the operator's visual LED assessment passed. The interval while the written WLAN Pi OS boots has
+no distinct cmprovision LED pattern; the operator accepted that limit. Four simultaneous re-provision cycles passed
+with SHA256 and OS check on every sensor (6:00–6:15; 6:49 from dispatch to the last Done). The 20 October
+[acceptance checklist](2026-10-20-usb-tty2-acceptance.md) links the individual reports and evidence. Release preparation
+is now authorised; the earlier 19 October untested items above describe that historical snapshot.

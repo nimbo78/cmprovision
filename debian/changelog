@@ -1,3 +1,22 @@
+cmprovision4 (2.7.0) unstable; urgency=medium
+
+  * Our own utility OS, built with buildroot from current versions
+    (64-bit kernel, BusyBox, curl, e2fsprogs, flashrom), next to the
+    legacy one; Settings → Utility OS picks the one modules get.
+  * Restore CM4 USB boot with a dedicated FAT32 boot.img ramdisk in
+    each utility OS. rpiboot follows etc/boot/usb; network boot keeps
+    its original files. Verify both USB payloads in the build and tests.
+  * Release the EEPROM SPI controller before taking ACT/PWR back on
+    newer kernels, bind LEDs after a failed initial probe and recover
+    the helper and LED paths once the pins become available.
+  * Pin source versions and hashes, provide complete Buildroot/Bootlin
+    sources and licences, and build/test monthly update PRs in Actions.
+  * Document USB programming, local tty2 and WLAN Pi M4+ BOOT/OTG wiring.
+    Accept network/USB write and SHA256, EEPROM, PoE resume, legacy
+    fallback, keyboard/HDMI, LED modes and four concurrent CM4 cycles.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Tue, 20 Oct 2026 17:20:00 +0300
+
 cmprovision4 (2.6.4) unstable; urgency=medium
 
   * Keep Identify/Stop available after the first-boot OS check, until

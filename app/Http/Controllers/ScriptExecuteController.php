@@ -54,7 +54,7 @@ class ScriptExecuteController extends Controller
         '/curl exit code 23\b/'            => 'the decompressor stopped accepting data; see its message below',
         '/curl exit code 6\b/'             => 'the provisioning server name could not be resolved',
         '/(invalid magic|not in gzip format|File format not recognized|unsupported compression|Not a bzip2 file)/i' => 'the downloaded data is not a valid compressed image (wrong file type, or an HTTP error page instead of the image)',
-        '/(unexpected end of (file|input)|corrupt|crc error|data integrity)/i' => 'the compressed image is truncated or corrupted (interrupted download or a bad upload)',
+        '/(unexpected end of (file|input)|bunzip error -3\b|corrupt|crc error|data integrity)/i' => 'the compressed image is truncated or corrupted (interrupted download or a bad upload)',
         '/(No space left on device|cannot open .*mmcblk|No such file or directory)/i' => 'the storage device could not be written (missing, too small or failing eMMC/SD card)',
         '/Input\/output error/i' => 'the storage device reported an I/O error (failing eMMC/SD card or power problem)',
     ];
@@ -320,7 +320,7 @@ exit 1
         $this->cm->setPhase(count($preinstall_scripts) ? 'preinstall' : ($image ? 'write' : 'postinstall'))->save();
         CmProvisioningStarted::dispatch($this->cm);
 
-        $msg = "Provisioning started.";
+        $msg = "Provisioning started. Utility OS: ".$this->cm->utilityOsLabel().".";
         if ($this->cm->os_check === 'skipped')
             $msg .= " OS check skipped: the module booted over USB.";
         if ($project->label_moment == 'preinstall' && $project->label)
@@ -381,6 +381,7 @@ exit 1
         $this->cm->save();
         $this->logInfo('Provisioning resumed: the module restarted during the write; continuing from '
             .ImagePieces::gb($from).' of '.ImagePieces::gb($total).'.'
+            .' Utility OS: '.$this->cm->utilityOsLabel().'.'
             .($this->cm->os_check === 'skipped' ? ' OS check skipped: the module booted over USB.' : ''));
 
         $this->lookUpBoardLater();
@@ -420,12 +421,20 @@ exit 1
             'cid' => $req->query('cid'),
             'csd' => $req->query('csd'),
             'temp1' => $req->query('temp'),
+            'utility_os' => self::utilityOsOf($req),
             'provisioning_board' => $board,
             'switch_id' => null,
             'switch_name' => null,
             'switch_port' => null,
             'board_pending_since' => $lookUp ? now() : null,
         ];
+    }
+
+    /* Ours sends uos=<version>; the legacy utility OS sends nothing. */
+    protected static function utilityOsOf(Request $req): ?string
+    {
+        $uos = $req->query()['uos'] ?? null;
+        return is_string($uos) && preg_match('/^[0-9A-Za-z.-]{1,32}$/D', $uos) ? $uos : null;
     }
 
     /* The project's post-install scripts, the generated SHA256 verification first when the project verifies */

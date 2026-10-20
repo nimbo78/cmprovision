@@ -1,0 +1,13 @@
+# cmprovision utility OS (utility-os/): the legacy config.txt, with the 64-bit kernel said outright
+arm_64bit=1
+
+# Set the pull ups for jumper reading
+gpio=5,13,21=pu
+
+initramfs scriptexecute.img followkernel
+
+[pi4]
+dtoverlay=dwc2
+# For flashrom
+dtparam=audio=off
+dtoverlay=spi-gpio40-45

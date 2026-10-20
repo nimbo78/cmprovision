@@ -145,7 +145,7 @@ class ImageResumeStartTest extends TestCase
         $this->assertSame(['BUILD_TIMESTAMP=1700000000', 'flashed'], [$cm->eeprom_before, $cm->pre_script_output]);
         Event::assertDispatchedTimes(CmProvisioningStarted::class, 1);
         $this->assertTrue(Cmlog::where('cm', self::SERIAL)
-            ->where('msg', 'Provisioning resumed: the module restarted during the write; continuing from 0.0 GB of 0.0 GB.')->exists());
+            ->where('msg', 'Provisioning resumed: the module restarted during the write; continuing from 0.0 GB of 0.0 GB. Utility OS: legacy.')->exists());
 
         $copy = $project->image->fresh();
         $offsets = $copy->splitOffsets();
