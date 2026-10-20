@@ -74,6 +74,8 @@ jobs:
               free -m
               df -h "$RUNNER_TEMP"
               ps -eo pid,ppid,etime,pcpu,rss,stat,comm --sort=-pcpu | head -n 16 || true
+              echo 'Latest build output:'
+              tail -n 5 "$RUNNER_TEMP/utility-os-build.log" || true
               if [ -d "$UOS_WORK/output/build/linux-custom" ]; then
                 echo 'Newest kernel objects:'
                 find "$UOS_WORK/output/build/linux-custom" -name '*.o' -printf '%T@ %p\n' | sort -n | tail -n 3
@@ -83,7 +85,10 @@ jobs:
           ) &
           monitor_pid=$!
           trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
-          sh tools/utility-os/build.sh
+          status=0
+          sh tools/utility-os/build.sh > "$RUNNER_TEMP/utility-os-build.log" 2>&1 || status=$?
+          tail -n 80 "$RUNNER_TEMP/utility-os-build.log"
+          exit "$status"
 
       - name: Check
         if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
@@ -108,6 +113,16 @@ jobs:
         run: |
           test -s "$UOS_WORK/output/legal-info/source-complete.json"
           tar czf "$RUNNER_TEMP/legal-info.tar.gz" -C "$UOS_WORK/output" legal-info
+
+      - name: Build diagnostics
+        if: always() && (github.event_name != 'schedule' || steps.check.outputs.new == 'yes')
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/utility-os-build.log
+            ${{ env.UOS_WORK }}/output/build/build-time.log
+          retention-days: 30
 
       - name: The sources and licences
         if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
