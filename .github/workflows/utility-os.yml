@@ -24,13 +24,15 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
-    env:
-      UOS_WORK: ${{ runner.temp }}/uos-work
-      UOS_CACHE: ${{ runner.temp }}/uos-cache
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'schedule' && 'stage2' || github.ref }}
+
+      - name: Working directories
+        run: |
+          echo "UOS_WORK=$RUNNER_TEMP/uos-work" >> "$GITHUB_ENV"
+          echo "UOS_CACHE=$RUNNER_TEMP/uos-cache" >> "$GITHUB_ENV"
 
       - name: Anything new
         id: check
