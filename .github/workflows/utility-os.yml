@@ -53,11 +53,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential bc cpio rsync unzip file wget git python3 perl patch xz-utils bzip2 qemu-system-arm
           df -h /
 
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
         with:
           path: ${{ runner.temp }}/uos-cache
-          key: uos-${{ github.run_id }}
+          key: uos-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: uos-
 
       - name: The newest versions
@@ -66,7 +66,29 @@ jobs:
 
       - name: Build
         if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
-        run: sh tools/utility-os/build.sh
+        run: |
+          echo "Build host: $(nproc) CPUs"
+          (
+            while sleep 60; do
+              echo "::group::Build health $(date -u +%FT%TZ)"
+              free -m
+              df -h "$RUNNER_TEMP"
+              ps -eo pid,ppid,etime,pcpu,rss,stat,comm --sort=-pcpu | head -n 16 || true
+              echo 'Latest build output:'
+              tail -n 5 "$RUNNER_TEMP/utility-os-build.log" || true
+              if [ -d "$UOS_WORK/output/build/linux-custom" ]; then
+                echo 'Newest kernel objects:'
+                find "$UOS_WORK/output/build/linux-custom" -name '*.o' -printf '%T@ %p\n' | sort -n | tail -n 3
+              fi
+              echo '::endgroup::'
+            done
+          ) &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
+          status=0
+          sh tools/utility-os/build.sh > "$RUNNER_TEMP/utility-os-build.log" 2>&1 || status=$?
+          tail -n 80 "$RUNNER_TEMP/utility-os-build.log"
+          exit "$status"
 
       - name: Check
         if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
@@ -92,6 +114,16 @@ jobs:
           test -s "$UOS_WORK/output/legal-info/source-complete.json"
           tar czf "$RUNNER_TEMP/legal-info.tar.gz" -C "$UOS_WORK/output" legal-info
 
+      - name: Build diagnostics
+        if: always() && (github.event_name != 'schedule' || steps.check.outputs.new == 'yes')
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/utility-os-build.log
+            ${{ env.UOS_WORK }}/output/build/build-time.log
+          retention-days: 30
+
       - name: The sources and licences
         if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
         uses: actions/upload-artifact@v4
@@ -99,6 +131,13 @@ jobs:
           name: legal-info-${{ github.run_id }}
           path: ${{ runner.temp }}/legal-info.tar.gz
           retention-days: 30
+
+      - name: Save downloads and compiler cache
+        if: always() && (github.event_name != 'schedule' || steps.check.outputs.new == 'yes')
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/uos-cache
+          key: uos-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Pull request to stage2
         if: github.event_name == 'schedule' && steps.check.outputs.new == 'yes'
