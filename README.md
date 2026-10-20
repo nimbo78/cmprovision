@@ -116,6 +116,19 @@ For carrier-board and boot-mode setup, see Raspberry Pi's [Using the Compute Mod
 > [!NOTE]
 > First-boot checks need a systemd-based image with `curl`, an ext4 second partition and a boot order that tries eMMC before the network. USB-booted modules are not checked. The target network has no internet: include package dependencies in the image or upload them too. See [first-boot checks](docs/operations.md#first-boot-os-check).
 
+## Utility OS
+
+Modules are provisioned from a small OS they boot over the network or over USB. Since 2.7.0 the package ships two: ours
+(`scriptexecute64/`, built with buildroot from current versions, 64-bit) and the legacy one (`scriptexecute/`, 2022,
+32-bit). Settings → Utility OS picks the one modules get; switching back is the same button. How the OS is built and
+updated: [docs/utility-os.md](docs/utility-os.md).
+
+USB boot can start a CM4 whose installed system or boot order prevents network boot;
+Ethernet still carries the script and image. A local shell on **tty2**, reached with a
+monitor and keyboard on the target, helps diagnose boot and network problems. See
+[USB provisioning](docs/usb-provisioning.md), [local console](docs/local-console.md)
+and the [WLAN Pi M4+ connections](docs/hardware/wlanpi-m4-plus.md).
+
 ## Upgrading
 
 > [!IMPORTANT]
@@ -138,6 +151,9 @@ The [upgrade and restore guide](docs/upgrading.md) covers snapshots, rollback, P
 | Interrupted downloads and power loss | [Image recovery](docs/operations.md#image-download-and-write-recovery) |
 | Wi-Fi networks and a spare radio | [Wi-Fi management](docs/operations.md#wi-fi-networks) · [Cold spare](docs/operations.md#built-in-wi-fi-as-a-cold-spare) |
 | Find a module's port or restart it | [Switches and PoE](docs/operations.md#switches-and-poe-restart) |
+| Start CM4 provisioning through its USB port | [USB provisioning](docs/usb-provisioning.md) |
+| Diagnose a target with a monitor and keyboard | [Local console (tty2)](docs/local-console.md) |
+| Connect WLAN Pi M4+ as server and target | [M4+ hardware and BOOT/OTG](docs/hardware/wlanpi-m4-plus.md) |
 | Read the module's LEDs | [LED signals](docs/leds.md) |
 | Restrict access to the stand | [Network access](docs/operations.md#network-access) |
 | Back up or roll back a server | [Upgrade and restore](docs/upgrading.md) |

@@ -1,9 +1,14 @@
 # The app runs on Linux and ships shell scripts (debian/, scriptexecute, blade-rendered shell):
 # keep LF in the working tree on every platform.
 * text=auto eol=lf
+
+# Unified patches prefix context lines with a space, including blank/tab-indented C lines.
+*.patch whitespace=-blank-at-eol,-space-before-tab
 # the version and commit of a package: git archive fills them in (App\Support\AppVersion)
 config/version.php export-subst
 *.bin binary
+# Utility OS inventories hash the committed bytes on every platform.
+MANIFEST text eol=lf
 *.img binary
 *.dtb binary
 *.dtbo binary

@@ -1,0 +1,12 @@
+# cmprovision utility OS: what the arm64 bcm2711_defconfig of raspberrypi/linux lacks, or has as a module (the OS ships
+# no modules, CONFIG_MODULES stays on: without it every =m of the defconfig would be built in). tools/utility-os/test.sh
+# checks the whole list the OS needs.
+CONFIG_LOCALVERSION="-cmprovision"
+# flashrom writes the EEPROM through spidev on the SPI bus of overlay spi-gpio40-45
+CONFIG_SPI_BCM2835=y
+CONFIG_SPI_SPIDEV=y
+# pinctrl reads the jumpers through /dev/gpiomem (it falls back to /dev/mem)
+CONFIG_RASPBERRYPI_GPIOMEM=y
+# the QEMU check of tools/utility-os/test.sh boots this very kernel: virtio-mmio and its network card
+CONFIG_VIRTIO_MMIO=y
+CONFIG_VIRTIO_NET=y

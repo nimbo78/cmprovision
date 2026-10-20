@@ -1,0 +1,8 @@
+config BR2_PACKAGE_CMP_USBBOOT_BOOTFILES
+	bool "cmp-usbboot-bootfiles"
+	help
+	  bootfiles.bin of raspberrypi/usbboot (UOS_USBBOOT_TAG of
+	  utility-os/versions.env): rpiboot takes the second stage of a
+	  CM4 (2711/bootcode4.bin) from it.
+
+	  https://github.com/raspberrypi/usbboot

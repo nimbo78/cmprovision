@@ -47,7 +47,7 @@ class Cm extends Model
         'switch_id', 'switch_name', 'switch_port', 'board_pending_since',
         'timeline', 'polled_at', 'identify_until',
         'os_check', 'hostname', 'os_state', 'os_failed_units', 'os_checked_at', 'os_check_output',
-        'durable_bytes', 'durable_image_id', 'durable_at', 'progress_base',
+        'durable_bytes', 'durable_image_id', 'durable_at', 'progress_base', 'utility_os',
     ];
 
     protected $casts = [
@@ -73,6 +73,12 @@ class Cm extends Model
     {
         return in_array($this->phase, ['done', 'failed'], true) && $this->polled_at
             && $this->polled_at->getTimestamp() >= now()->getTimestamp() - self::ON_BENCH_SECONDS;
+    }
+
+    /** The utility OS of the last start: our version, or the legacy system. */
+    public function utilityOsLabel(): string
+    {
+        return $this->utility_os ?? 'legacy';
     }
 
     public function isIdentifying()

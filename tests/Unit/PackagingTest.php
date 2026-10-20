@@ -189,4 +189,51 @@ class PackagingTest extends TestCase
         $this->assertStringContainsString("case 'r':", $this->file('tools/ledpattern/ledpattern.c'));
         $this->assertStringContainsString('usage: ledpattern done|ready|fail|identify|check', $this->file('public/tools/ledpattern'));
     }
+
+    public function test_the_utility_os_link_is_set_up_as_the_web_user_before_dnsmasq_starts()
+    {
+        // etc/ is the web user's directory: root reading and writing there would follow a symlink it planted
+        $postinst = $this->file('debian/postinst');
+        $this->assertStringContainsString('runuser -u www-data -- /usr/lib/cmprovision/boot-link fix /var/lib/cmprovision ||', $postinst);
+        $this->assertLessThan(strpos($postinst, 'boot-link fix'), strpos($postinst, 'fix_ownership ||'), 'etc/ is the web user\'s first');
+        $this->assertLessThan(strpos($postinst, 'deb-systemd-invoke restart cmprovision-dnsmasq'), strpos($postinst, 'boot-link fix'),
+            'an upgrade restarts dnsmasq with the new tftp-root');
+        $this->assertLessThan(strpos($postinst, '#DEBHELPER#'), strpos($postinst, 'boot-link fix'));
+        $this->assertStringContainsString("\tinstall -D -m 755 tools/boot-link debian/cmprovision4/usr/lib/cmprovision/boot-link\n",
+            $this->file('debian/rules'));
+    }
+
+    public function test_dnsmasq_and_rpiboot_follow_the_link_and_the_shipped_conffile_stays()
+    {
+        $this->assertStringContainsString("scriptexecute var/lib/cmprovision\nscriptexecute64 var/lib/cmprovision\n", $this->file('debian/install'));
+        // the application edits dnsmasq.conf (dhcp-host=): a changed shipped copy would stop an upgrade at dpkg's question,
+        // so postinst moves tftp-root in the live file instead
+        $this->assertStringContainsString("tftp-root=/var/lib/cmprovision/scriptexecute\n", $this->file('etc/dnsmasq.conf'));
+        $rpiboot = $this->file('debian/cmprovision-rpiboot.service');
+        $this->assertStringContainsString("ExecStart=/usr/bin/rpiboot -l -d /var/lib/cmprovision/etc/boot/usb\n", $rpiboot);
+        // rpiboot exits on a file it cannot serve (since 20261002 a CM4 asks for one the old directory lacked)
+        $this->assertStringContainsString("Restart=on-failure\nRestartSec=2\n", $rpiboot);
+    }
+
+    public function test_going_below_2_7_points_the_link_at_the_legacy_os_and_purge_removes_it()
+    {
+        // the older package has no scriptexecute64/, and tftp-root stays on the link
+        $prerm = $this->file('debian/prerm');
+        $this->assertStringContainsString('dpkg --compare-versions "$2" lt "2.7.0~"', $prerm);
+        $this->assertStringContainsString('runuser -u www-data -- /usr/lib/cmprovision/boot-link legacy /var/lib/cmprovision || true', $prerm);
+        $this->assertLessThan(strpos($prerm, '#DEBHELPER#'), strpos($prerm, 'boot-link legacy'));
+        $this->assertStringContainsString('rm -f /var/lib/cmprovision/etc/boot', $this->file('debian/postrm'));
+    }
+
+    public function test_restore_sets_the_link_up_like_postinst()
+    {
+        // a snapshot of 2.6 or older names scriptexecute/ in tftp-root, and --data-only puts no link back; a snapshot's older
+        // package (restore reinstalls it first) has no boot-link, and its own tftp-root is right for it
+        $restore = $this->file('tools/restore.sh');
+        $this->assertStringContainsString("if [ -x /usr/lib/cmprovision/boot-link ]; then\n    runuser -u www-data -- /usr/lib/cmprovision/boot-link fix \"\$APP\"", $restore);
+        $this->assertLessThan(strpos($restore, 'boot-link fix'), strpos($restore, 'chown -R -h www-data:www-data'), 'after the owners are set');
+        $this->assertLessThan(strpos($restore, "systemctl restart 'php*-fpm' nginx cmprovision-dnsmasq"), strpos($restore, 'boot-link fix'),
+            'before dnsmasq starts again');
+    }
+
 }

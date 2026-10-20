@@ -78,6 +78,10 @@ chown -h www-data:www-data "$APP/database"
 for f in "$APP/.env" "$APP"/database/database.sqlite*; do
     if [ -f "$f" ] && [ ! -L "$f" ]; then chown -h www-data:www-data "$f"; fi
 done
+# A restored 2.6 package has no boot-link; keep its own TFTP root in that case.
+if [ -x /usr/lib/cmprovision/boot-link ]; then
+    runuser -u www-data -- /usr/lib/cmprovision/boot-link fix "$APP" || echo "could not set up the utility OS link $APP/etc/boot"
+fi
 # artisan runs as the web user: the database is in WAL, and -wal and -shm files root created would lock it out
 if [ "$DATA_ONLY" = 1 ]; then
     # the snapshot may come from an older version

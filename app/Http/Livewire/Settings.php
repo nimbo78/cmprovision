@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Validator;
 #[Title('Settings')]
 class Settings extends Component
 {
-    public $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $uplinkSpareRunning, $logOutput, $logTitle;
+    public $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $uplinkSpareRunning, $utilityOs, $logOutput, $logTitle;
     public $ip, $mac, $detectedMacs;
     public $hosts;
     public $logModalOpen = false, $staticModalOpen = false;
@@ -23,6 +23,9 @@ class Settings extends Component
         $this->queueRunning = $this->isActive('cmprovision-queue');
         $this->imagesQueueRunning = $this->isActive('cmprovision-queue-images');
         $this->uplinkSpareRunning = $this->isActive('cmprovision-uplink.timer');
+        $os = app(\App\Services\UtilityOs::class);
+        $current = $os->current();
+        $this->utilityOs = \App\Services\UtilityOs::label($current ? $os->manifest($current) : null);
         $this->hosts = Host::orderBy('ip')->get();
 
         return view('livewire.settings');

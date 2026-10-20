@@ -1,0 +1,47 @@
+#!/bin/sh
+# cmprovision (2.7.0): the utility OS modules get. <app>/etc/boot points at scriptexecute/ (the legacy OS) or
+# scriptexecute64/ (ours, see docs/utility-os.md); dnsmasq's tftp-root and rpiboot -d follow it, so a switch needs no
+# restart.
+#   boot-link fix <app>      make the link if there is none and point it back at the legacy OS if it points anywhere but
+#                            an OS of the package; turn tftp-root=<app>/scriptexecute in <app>/etc/dnsmasq.conf into
+#                            tftp-root=<app>/etc/boot (the shipped conffile keeps the old line: a changed one would stop
+#                            an upgrade at dpkg's question)
+#   boot-link legacy <app>   point the link at the legacy OS (going back below 2.7, whose package has no scriptexecute64/)
+# postinst, prerm and cmprovision-restore run it as the web user (runuser -u www-data): etc/ is its directory, and root
+# reading or writing there would follow whatever link the web user planted.
+set -eu
+
+usage() { echo "usage: boot-link fix|legacy <application directory>" >&2; exit 2; }
+[ $# -eq 2 ] || usage
+CMD=$1
+APP=$2
+[ -d "$APP/etc" ] || usage
+LINK=$APP/etc/boot
+
+if [ -d "$LINK" ] && [ ! -L "$LINK" ]; then
+    echo "boot-link: $LINK is a directory, not the link to the utility OS: move it away" >&2
+    exit 1
+fi
+
+# -n: replace the link itself, never follow it into the directory it points at
+point() { ln -sfn "../$1" "$LINK"; }
+
+case "$CMD" in
+    fix)
+        target=$(readlink "$LINK" 2>/dev/null || true)
+        case "$target" in
+            ../scriptexecute|../scriptexecute64) [ -d "$APP/${target#../}" ] || point scriptexecute ;;
+            *) point scriptexecute ;;
+        esac
+        CONF=$APP/etc/dnsmasq.conf
+        if [ -f "$CONF" ] && grep -qxF "tftp-root=$APP/scriptexecute" "$CONF"; then
+            sed -i "s#^tftp-root=$APP/scriptexecute\$#tftp-root=$LINK#" "$CONF"
+        fi
+        ;;
+    legacy)
+        point scriptexecute
+        ;;
+    *)
+        usage
+        ;;
+esac
