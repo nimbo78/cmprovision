@@ -20,7 +20,7 @@ class UtilityOsBuildTest extends TestCase
             mkdir($this->dir.'/'.$path, 0755, true);
         mkdir($this->dir.'/repo/utility-os/configs');
         $root = dirname(__DIR__, 2);
-        foreach (['build.sh', 'hashes.sh', 'legal_info.py', 'manifest.sh'] as $file)
+        foreach (['build.sh', 'hashes.sh', 'legal_info.py', 'manifest.sh', 'usb_image.py'] as $file)
             copy($root.'/tools/utility-os/'.$file, $this->dir.'/repo/tools/utility-os/'.$file);
         mkdir($this->dir.'/repo/utility-os/package/cmp-rpi-utils', 0755, true);
         foreach (['CMakeLists.txt', 'cmp-rpi-utils.mk'] as $file)

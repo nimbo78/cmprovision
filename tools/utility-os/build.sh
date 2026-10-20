@@ -54,7 +54,7 @@ INPUTS=$WORK/cmprovision-build-inputs
     find utility-os -type f ! -name '*.pyc' ! -path '*/__pycache__/*' | LC_ALL=C sort | while IFS= read -r file; do
         sha256sum "$file"
     done
-    sha256sum tools/utility-os/build.sh tools/utility-os/hashes.sh tools/utility-os/manifest.sh tools/utility-os/legal_info.py
+    sha256sum tools/utility-os/build.sh tools/utility-os/hashes.sh tools/utility-os/manifest.sh tools/utility-os/legal_info.py tools/utility-os/usb_image.py
 ) > "$INPUTS"
 # Buildroot's linux-custom name stays the same when its tarball changes. Reconfigure does not
 # re-extract it, and a new Buildroot/toolchain also requires a fresh output. Keep download/ccache.
@@ -95,5 +95,6 @@ python3 "$REPO/tools/utility-os/legal_info.py" prepare "$REPO" "$WORK" "$CACHE"
 make -C "$OUT" legal-info > /dev/null
 python3 "$REPO/tools/utility-os/legal_info.py" collect "$REPO" "$WORK" "$CACHE"
 
+PATH="$OUT/host/bin:$OUT/host/sbin:$PATH" python3 "$REPO/tools/utility-os/usb_image.py" "$REPO/scriptexecute"
 rsync -a --checksum --delete "$OUT/images/scriptexecute64/" "$REPO/scriptexecute64/"
 echo "build.sh: done: $REPO/scriptexecute64 ($(du -sh "$REPO/scriptexecute64" | cut -f1)), legal-info in $OUT/legal-info"

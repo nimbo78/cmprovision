@@ -24,6 +24,7 @@ done
 cp "$IMAGES/rpi-boot/start4.elf" "$IMAGES/rpi-boot/fixup4.dat" "$IMAGES/bootfiles.bin" "$OUT/"
 cp "$EXT/board/cmprovision/config.txt" "$OUT/config.txt"
 sed "s/@UOS_VERSION@/$UOS_VERSION/" "$EXT/board/cmprovision/cmdline.txt" > "$OUT/cmdline.txt"
+python3 "$EXT/../tools/utility-os/usb_image.py" "$OUT"
 sh "$EXT/../tools/utility-os/manifest.sh" "$OUT" "version=$UOS_VERSION" bits=64 \
     "kernel=Linux $UOS_LINUX_VERSION (raspberrypi/linux $UOS_LINUX_TAG)" "built=$(date -u +%Y-%m-%d)" \
     "buildroot=$UOS_BUILDROOT_VERSION" "firmware=$UOS_FIRMWARE_TAG" "rpi_utils=$UOS_RPI_UTILS_COMMIT" "usbboot=$UOS_USBBOOT_TAG"

@@ -29,7 +29,7 @@ class UtilityOsWorkflowTest extends TestCase
         $this->assertStringContainsString("ref: \${{ github.event_name == 'schedule' && 'stage2' || github.ref }}", $w);
         foreach (['sh tools/utility-os/update.sh |', 'sh tools/utility-os/build.sh', 'sh tools/utility-os/test.sh'] as $step)
             $this->assertStringContainsString($step, $w);
-        $this->assertStringContainsString('git add utility-os/versions.env scriptexecute64 tests/fixtures/utility-os/messages.txt', $w);
+        $this->assertStringContainsString('git add utility-os/versions.env scriptexecute64 scriptexecute/usb scriptexecute/MANIFEST tests/fixtures/utility-os/messages.txt', $w);
         $this->assertStringContainsString('gh pr create --base stage2', $w);
         $this->assertStringContainsString('GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}', $w);
     }

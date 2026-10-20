@@ -158,7 +158,7 @@ class UtilityOsTreeTest extends TestCase
             sort($names);
             $this->assertSame(['MANIFEST', 'bcm2711-rpi-4-b.dtb', 'bcm2711-rpi-400.dtb', 'bcm2711-rpi-cm4.dtb', 'bootfiles.bin', 'cmdline.txt',
                                'config.txt', 'fixup4.dat', 'kernel8.img', 'overlays/dwc2.dtbo', 'overlays/spi-gpio40-45.dtbo',
-                               'scriptexecute.img', 'start4.elf'], $names);
+                               'scriptexecute.img', 'start4.elf', 'usb/boot.img', 'usb/bootfiles.bin', 'usb/config.txt'], $names);
             $v = $this->versions();
             $this->assertSame('content of Image.gz', file_get_contents("$out64/kernel8.img"));
             $this->assertSame('content of rootfs.cpio.xz', file_get_contents("$out64/scriptexecute.img"));

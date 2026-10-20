@@ -79,6 +79,8 @@ jobs:
           name: utility-os-${{ github.run_id }}
           path: |
             scriptexecute64
+            scriptexecute/usb
+            scriptexecute/MANIFEST
             tests/fixtures/utility-os/messages.txt
           retention-days: 30
 
@@ -106,7 +108,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git add utility-os/versions.env scriptexecute64 tests/fixtures/utility-os/messages.txt
+          git add utility-os/versions.env scriptexecute64 scriptexecute/usb scriptexecute/MANIFEST tests/fixtures/utility-os/messages.txt
           git commit -m "Utility OS $UOS_VERSION: the newest versions"
           git push origin "$branch"
           {

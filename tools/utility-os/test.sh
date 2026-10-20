@@ -74,6 +74,15 @@ present=$(cd "$TFTP" && find . -type f ! -name MANIFEST | sed 's#^\./##' | LC_AL
     printf '%s %s %s\n' "$f" "$(sha256sum "$f" | cut -d' ' -f1)" "$(wc -c < "$f" | tr -d ' ')"; done)
 if [ "$listed" = "$present" ]; then ok "manifest: lists exactly the files"; else fail "manifest: differs from the files"; fi
 
+# --- USB uses the same OS without changing its network boot files.
+for directory in scriptexecute64 scriptexecute; do
+    if PATH="$OUT/host/bin:$OUT/host/sbin:$PATH" python3 "$REPO/tools/utility-os/usb_image.py" --check "$REPO/$directory"; then
+        ok "USB: $directory ramdisk matches its kernel, initramfs and boot configuration"
+    else
+        fail "USB: $directory ramdisk differs from the utility OS"
+    fi
+done
+
 # --- qemu
 SMOKE=$WORK/smoke
 rm -rf "$SMOKE" && mkdir -p "$SMOKE"

@@ -210,7 +210,7 @@ class PackagingTest extends TestCase
         // so postinst moves tftp-root in the live file instead
         $this->assertStringContainsString("tftp-root=/var/lib/cmprovision/scriptexecute\n", $this->file('etc/dnsmasq.conf'));
         $rpiboot = $this->file('debian/cmprovision-rpiboot.service');
-        $this->assertStringContainsString("ExecStart=/usr/bin/rpiboot -l -d /var/lib/cmprovision/etc/boot\n", $rpiboot);
+        $this->assertStringContainsString("ExecStart=/usr/bin/rpiboot -l -d /var/lib/cmprovision/etc/boot/usb\n", $rpiboot);
         // rpiboot exits on a file it cannot serve (since 20261002 a CM4 asks for one the old directory lacked)
         $this->assertStringContainsString("Restart=on-failure\nRestartSec=2\n", $rpiboot);
     }

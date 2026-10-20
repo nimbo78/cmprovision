@@ -109,6 +109,7 @@ This ordinary boot does not turn a completed USB run's **OS check: skipped** int
 | No USB discovery | Device routing, a data-capable cable, the programming port and target power |
 | Repeated disconnects before transfer finishes | Power supply, hub capacity and cable |
 | `Failed to open second stage bootloader` | The selected utility OS directory must contain a valid `bootfiles.bin`; see [Utility OS](utility-os.md) |
+| Transfer stops after `start4.elf` / `fixup4.dat`, before the kernel | Check that the packaged rpiboot service serves `etc/boot/usb`; its `config.txt` and `boot.img` provide the CM4 USB boot ramdisk |
 | Files transfer but no new run appears | Target Ethernet, DHCP and connectivity to the provisioner (`172.20.0.1` by default) |
 | A card asks to confirm the current project | Follow the [re-provision project confirmation](operations.md#re-provision-an-installed-sensor), then restart the waiting target |
 | Verification fails | Inspect the module log before repeating; USB file transfer alone does not prove a successful image write |

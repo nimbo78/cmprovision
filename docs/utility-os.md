@@ -9,7 +9,7 @@
 | `scriptexecute/` | старая: готовые файлы raspberrypi/scriptexecutor 2022 года, 32 бита. Уйдёт отдельным выпуском |
 
 Какую получают модули, задаёт ссылка `/var/lib/cmprovision/etc/boot` (`../scriptexecute` или `../scriptexecute64`):
-по ней идут `tftp-root` у dnsmasq и `rpiboot -d`. Переключатель — Settings → Utility OS. Он заменяет ссылку сразу, без
+по ней идут `tftp-root` у dnsmasq и `rpiboot -d /var/lib/cmprovision/etc/boot/usb`. Переключатель — Settings → Utility OS. Он заменяет ссылку сразу, без
 перезапуска служб, и пишет в журнал Laravel, кто переключил. Переключайте, когда ни один модуль не грузится: модуль,
 который грузится в эту секунду, может взять файлы обеих.
 
@@ -24,6 +24,14 @@
 В обоих каталогах лежит `bootfiles.bin` из usbboot. С usbboot 20261002 `rpiboot` не несёт `bootcode4.bin` в себе, а с
 28 сентября 2026 usbboot держит его только внутри `bootfiles.bin` (член `2711/bootcode4.bin` вместе с нужными ему
 файлами). Найдя `bootfiles.bin` в каталоге `-d`, `rpiboot` берёт вторую ступень оттуда, а остальное — из каталога.
+
+Для USB в каждом варианте есть отдельный каталог `usb/`: его `config.txt` включает `boot_ramdisk=1`,
+а `boot.img` содержит FAT32 с теми же ядром, initramfs, DTB, overlays и настройками, что используются по сети.
+На стенде передача отдельных файлов останавливалась после `start4.elf` и `fixup4.dat`; единый `boot.img`
+позволил загрузить Linux. Такой способ [рекомендует Raspberry Pi для CM4](https://github.com/raspberrypi/usbboot#booting-linux).
+Файлы сетевой загрузки остаются в корне каталога ОС. `tools/utility-os/usb_image.py` собирает USB-образ,
+не монтируя файловую систему и не требуя root; `--check` извлекает его файлы и сравнивает с исходными.
+В MANIFEST входят и USB-файлы, поэтому повреждённый USB-образ также исключает ОС из переключателя.
 
 `MANIFEST` каждого каталога говорит, что это за ОС (версия, ядро, разрядность, дата сборки), и перечисляет файлы с SHA256.
 Settings показывает его, а тесты сверяют с файлами.
@@ -85,7 +93,8 @@ xz-utils bzip2`; для проверок — `qemu-system-arm`.
 - состав: все команды из `legacy-commands.txt` есть, модулей ядра нет, нет служб входа по сети;
 - QEMU (`qemu-system-aarch64 -M virt`) грузит тот же `kernel8.img` и `scriptexecute.img`, init получает скрипт от
   тестового сервера после ответа 502 и возвращает параметры старта, версии программ и их сообщения;
-- размер и `MANIFEST`.
+- размер и `MANIFEST`;
+- USB-образы обеих ОС: ядро, initramfs и настройки внутри FAT совпадают с файлами выбранной ОС.
 
 Сообщения программ ложатся в `tests/fixtures/utility-os/messages.txt`. PHPUnit (`UtilityOsMessagesTest`) сверяет их с
 шаблонами, по которым сервер объясняет сбои. Специфику Pi (светодиоды, SPI и flashrom, `vcgencmd`, перемычки, eMMC)

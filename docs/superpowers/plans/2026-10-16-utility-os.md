@@ -4465,3 +4465,10 @@ new OS, 33 s for legacy in one paired observation. Original project/EEPROM resto
 See [the hardware report](2026-10-19-utility-os-hardware-check.md) for package hashes, timings, evidence and limits:
 USB, tty2, human visual LED observation and a multi-module start were not tested. The 20 October instruction above
 places their acceptance before release preparation and publication.
+
+Acceptance completed, 20 October 2026: USB boot/write/SHA256 and subsequent eMMC boot, physical tty2 with HDMI and
+USB keyboard, and the operator's visual LED assessment passed. The interval while the written WLAN Pi OS boots has
+no distinct cmprovision LED pattern; the operator accepted that limit. Four simultaneous re-provision cycles passed
+with SHA256 and OS check on every sensor (6:00–6:15; 6:49 from dispatch to the last Done). The 20 October
+[acceptance checklist](2026-10-20-usb-tty2-acceptance.md) links the individual reports and evidence. Release preparation
+is now authorised; the earlier 19 October untested items above describe that historical snapshot.

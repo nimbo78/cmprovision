@@ -3,7 +3,7 @@ Description=rpiboot
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/rpiboot -l -d /var/lib/cmprovision/etc/boot
+ExecStart=/usr/bin/rpiboot -l -d /var/lib/cmprovision/etc/boot/usb
 Restart=on-failure
 RestartSec=2
 

@@ -8,7 +8,7 @@ use RuntimeException;
 /* The utility OS modules boot to be provisioned (2.7.0). The package ships two in the application directory, each with a
    MANIFEST (tools/utility-os/manifest.sh): scriptexecute64/ (ours, buildroot, docs/utility-os.md) and scriptexecute/ (the
    legacy one from raspberrypi/scriptexecutor). The link etc/boot picks the one modules get: dnsmasq's tftp-root and
-   rpiboot -d follow it on every file, so a switch is replacing the link and takes effect at once. */
+   rpiboot -d (the usb/ ramdisk beneath it) follow it on every file, so a switch replaces the link and takes effect at once. */
 class UtilityOs
 {
     /** the directories an OS of the package lives in, in the order the page lists them */
