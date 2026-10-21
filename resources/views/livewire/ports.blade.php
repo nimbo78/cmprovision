@@ -78,25 +78,30 @@
                             <p class="ports-empty">{{ $sw['placeholder'] }}</p>
                         @endif
                         @foreach ($sw['part']['blocks'] ?? [] as $block)
-                            @if ($block['rows'] === 1)
-                                <div class="ports-block one-row {{ $block['uplinks'] ? 'uplinks' : '' }}" style="grid-template-columns: repeat({{ count($block['tiles']) }}, 50px)">
-                                    @foreach ($block['tiles'] as $t)<span class="ports-num">{{ $t['number'] }}</span>@endforeach
-                                    @foreach ($block['tiles'] as $t)@include('livewire.ports-tile', ['t' => $t])@endforeach
-                                </div>
-                            @else
-                                <div class="ports-block {{ $block['uplinks'] ? 'uplinks' : '' }}">
-                                    @foreach (array_chunk($block['tiles'], 2) as $pair)
-                                        <span class="ports-num">{{ $pair[0]['number'] }}</span>
-                                        @include('livewire.ports-tile', ['t' => $pair[0]])
-                                        @if (isset($pair[1]))
-                                            @include('livewire.ports-tile', ['t' => $pair[1]])
-                                            <span class="ports-num">{{ $pair[1]['number'] }}</span>
-                                        @else
-                                            <span></span><span></span>
-                                        @endif
-                                    @endforeach
-                                </div>
-                            @endif
+                            <div class="ports-block {{ $block['uplinks'] ? 'uplinks' : '' }}">
+                                {{-- groups of four ports: on a narrow panel a group wraps as a whole (app.css) --}}
+                                @foreach (array_chunk($block['tiles'], 4) as $group)
+                                    @if ($block['rows'] === 1)
+                                        <div class="ports-group one-row" style="grid-template-columns: repeat({{ count($group) }}, var(--tile))">
+                                            @foreach ($group as $t)<span class="ports-num">{{ $t['number'] }}</span>@endforeach
+                                            @foreach ($group as $t)@include('livewire.ports-tile', ['t' => $t])@endforeach
+                                        </div>
+                                    @else
+                                        <div class="ports-group">
+                                            @foreach (array_chunk($group, 2) as $pair)
+                                                <span class="ports-num">{{ $pair[0]['number'] }}</span>
+                                                @include('livewire.ports-tile', ['t' => $pair[0]])
+                                                @if (isset($pair[1]))
+                                                    @include('livewire.ports-tile', ['t' => $pair[1]])
+                                                    <span class="ports-num">{{ $pair[1]['number'] }}</span>
+                                                @else
+                                                    <span></span><span></span>
+                                                @endif
+                                            @endforeach
+                                        </div>
+                                    @endif
+                                @endforeach
+                            </div>
                         @endforeach
                     </div>
                 </div>

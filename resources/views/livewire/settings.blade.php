@@ -32,26 +32,28 @@
                     <div class="block text-fg text-sm font-bold mb-2">Static IP assignments:</div>
                 </div>
 
-                <table class="cmp-table min-w-full">
-                    <thead>
-                        <tr>
-                            <th>IP</th>
-                            <th>MAC</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse($hosts as $h)
-                        <tr>
-                            <td >{{ $h->ip }}</td>
-                            <td >{{ $h->mac }}</td>
-                            <td ><button wire:click="deleteStaticIP({{ $h->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button></td>
-                        </tr>
-                        @empty
-                        <tr><td  colspan="3">No entries</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+                <div class="cmp-card-scroll">
+                    <table class="cmp-table min-w-full">
+                        <thead>
+                            <tr>
+                                <th>IP</th>
+                                <th>MAC</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($hosts as $h)
+                            <tr>
+                                <td >{{ $h->ip }}</td>
+                                <td >{{ $h->mac }}</td>
+                                <td ><button wire:click="deleteStaticIP({{ $h->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button></td>
+                            </tr>
+                            @empty
+                            <tr><td  colspan="3">No entries</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
                 <button wire:click="addStaticIP()" class="cmp-btn my-3">Add new assignment</button>
             </div>
         </div>
@@ -133,90 +135,92 @@
         </div>
         <div class="mt-5 md:mt-0 md:col-span-2">
             <div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md">
-                <table class="cmp-table">
-                <tr>
-                    <td>
-                        <ul class="list-outside list-disc ml-6">
-                            <li @if ($dnsmasqRunning) class="text-pos" @else class="text-neg" @endif>
-                                <span class="text-fg"> dnsmasq (DHCP server)</span>
-                            </li>
-                        </ul>
-                    </td>
-                    <td>
-                        <button wire:click="viewLogDnsmasq()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        <ul class="list-outside list-disc ml-6">
-                        <li @if ($rpibootRunning) class="text-pos" @else class="text-neg" @endif>
-                                <span class="text-fg"> rpiboot (USB file server)</span>
-                            </li>
-                        </ul>
-                    </td>
-                    <td>
-                        <button wire:click="viewLogRpiboot()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>                                
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        <ul class="list-outside list-disc ml-6">
-                            <li @if ($queueRunning) class="text-pos" @else class="text-neg" @endif>
-                                <span class="text-fg"> queue worker (switch ports, notifications)</span>
-                            </li>
-                        </ul>
-                    </td>
-                    <td>
-                        <button wire:click="viewLogQueue()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        <ul class="list-outside list-disc ml-6">
-                            <li @if ($imagesQueueRunning) class="text-pos" @else class="text-neg" @endif>
-                                <span class="text-fg"> queue worker (image checksums)</span>
-                            </li>
-                        </ul>
-                    </td>
-                    <td>
-                        <button wire:click="viewLogImagesQueue()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        <ul class="list-outside list-disc ml-6">
-                            <li @if ($uplinkSpareRunning) class="text-pos" @else class="text-neg" @endif>
-                                <span class="text-fg"> uplink cold spare (built-in Wi-Fi)</span>
-                            </li>
-                        </ul>
-                    </td>
-                    <td>
-                        <button wire:click="viewLogUplinkSpare()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        <ul class="list-outside list-disc ml-6">
-                            <li @if ($utilityOs !== 'none') class="text-pos" @else class="text-neg" @endif>
-                                <span class="text-fg"> utility OS: {{ $utilityOs }}</span>
-                            </li>
-                        </ul>
-                    </td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td>
-                        <ul class="list-outside list-disc ml-6">
-                            <li class="text-pos">
-                                <span class="text-fg"> web interface</span>
-                            </li>
-                        </ul>
-                    </td>
-                    <td>
-                        <button wire:click="viewLogLaravel()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>                                
-                    </td>
-                </tr>
-                </table>
+                <div class="cmp-card-scroll">
+                    <table class="cmp-table">
+                    <tr>
+                        <td>
+                            <ul class="list-outside list-disc ml-6">
+                                <li @if ($dnsmasqRunning) class="text-pos" @else class="text-neg" @endif>
+                                    <span class="text-fg"> dnsmasq (DHCP server)</span>
+                                </li>
+                            </ul>
+                        </td>
+                        <td>
+                            <button wire:click="viewLogDnsmasq()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <ul class="list-outside list-disc ml-6">
+                            <li @if ($rpibootRunning) class="text-pos" @else class="text-neg" @endif>
+                                    <span class="text-fg"> rpiboot (USB file server)</span>
+                                </li>
+                            </ul>
+                        </td>
+                        <td>
+                            <button wire:click="viewLogRpiboot()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>                                
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <ul class="list-outside list-disc ml-6">
+                                <li @if ($queueRunning) class="text-pos" @else class="text-neg" @endif>
+                                    <span class="text-fg"> queue worker (switch ports, notifications)</span>
+                                </li>
+                            </ul>
+                        </td>
+                        <td>
+                            <button wire:click="viewLogQueue()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <ul class="list-outside list-disc ml-6">
+                                <li @if ($imagesQueueRunning) class="text-pos" @else class="text-neg" @endif>
+                                    <span class="text-fg"> queue worker (image checksums)</span>
+                                </li>
+                            </ul>
+                        </td>
+                        <td>
+                            <button wire:click="viewLogImagesQueue()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <ul class="list-outside list-disc ml-6">
+                                <li @if ($uplinkSpareRunning) class="text-pos" @else class="text-neg" @endif>
+                                    <span class="text-fg"> uplink cold spare (built-in Wi-Fi)</span>
+                                </li>
+                            </ul>
+                        </td>
+                        <td>
+                            <button wire:click="viewLogUplinkSpare()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <ul class="list-outside list-disc ml-6">
+                                <li @if ($utilityOs !== 'none') class="text-pos" @else class="text-neg" @endif>
+                                    <span class="text-fg"> utility OS: {{ $utilityOs }}</span>
+                                </li>
+                            </ul>
+                        </td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <ul class="list-outside list-disc ml-6">
+                                <li class="text-pos">
+                                    <span class="text-fg"> web interface</span>
+                                </li>
+                            </ul>
+                        </td>
+                        <td>
+                            <button wire:click="viewLogLaravel()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>                                
+                        </td>
+                    </tr>
+                    </table>
+                </div>
             </div>
 
             @if (isset($actions))

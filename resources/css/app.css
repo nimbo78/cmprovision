@@ -251,19 +251,24 @@ body { background: var(--page); color: var(--text); }
     src: url('../fonts/jetbrains-mono-800.woff2') format('woff2');
 }
 .ports-serial { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.ports-chassis { background: #2b2f36; border-radius: 8px; padding: 10px 12px 12px; display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; }
+.ports-chassis { --tile: 50px; background: #2b2f36; border-radius: 8px; padding: 10px 12px 12px; display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; }
 .ports-model { width: 100%; display: flex; justify-content: space-between; gap: 12px; color: #c9ced6; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .ports-model .ports-line { text-transform: none; letter-spacing: normal; font-size: 12px; }
 .ports-silent { color: #f2c94c; }
 .ports-empty { width: 100%; margin: 0; color: #c9ced6; font-size: 13px; }
-.ports-block { display: grid; grid-auto-flow: column; grid-template-rows: auto 50px 50px auto; gap: 4px 5px; }
-.ports-block.one-row { grid-auto-flow: row; grid-template-rows: auto 50px; }
-.ports-block.uplinks { padding-left: 14px; border-left: 1px solid #454b55; }
+@media (max-width: 480px) { .ports-chassis { --tile: 46px; } }
+/* a block is a line of groups of four ports: upright on a phone the groups wrap as a whole, on a wide panel
+   (a phone on its side, a desktop) they stay on one line; the uplinks sit on their own tinted plate, which
+   reads the same wrapped or not */
+.ports-block { display: flex; flex-wrap: wrap; gap: 8px 5px; max-width: 100%; }
+.ports-group { display: grid; grid-auto-flow: column; grid-template-rows: auto var(--tile) var(--tile) auto; gap: 4px 5px; }
+.ports-group.one-row { grid-auto-flow: row; grid-template-rows: auto var(--tile); }
+.ports-block.uplinks { padding: 6px 8px; border-radius: 6px; background: #343a44; }
 .ports-num { color: #c9ced6; font: 700 10px 'JetBrains Mono', ui-monospace, monospace; text-align: center; }
-.ports-tile { position: relative; width: 50px; height: 50px; border-radius: 6px; border: 2px solid transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; cursor: pointer; transition: opacity .15s ease, filter .15s ease; }
+.ports-tile { position: relative; width: var(--tile); height: var(--tile); border-radius: 6px; border: 2px solid transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; cursor: pointer; transition: opacity .15s ease, filter .15s ease; }
 .ports-tile.cage { border-radius: 3px; border-style: dashed; }
 .ports-tile .short { font: 800 13px/1 'JetBrains Mono', ui-monospace, monospace; letter-spacing: .02em; }
-.ports-tile .mark { font-weight: 800; font-size: 10px; line-height: 1; max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ports-tile .mark { font-weight: 800; font-size: 10px; line-height: 1; max-width: calc(var(--tile) - 4px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ports-tile .bolt { position: absolute; top: 2px; right: 3px; font-size: 10px; line-height: 1; }
 /* a combo port: its RJ45 is the tile, its SFP cage the dashed box in the corner, filled when an SFP is in */
 .ports-tile .combo-cage { position: absolute; top: 3px; left: 3px; width: 11px; height: 8px; border: 1.5px dashed currentColor; border-radius: 1px; }

@@ -183,22 +183,24 @@
                 <div class="mb-2">MAC table read with <span class="font-semibold">{{ $result['method'] }}</span>: {{ count($result['rows']) }} addresses.</div>
             @endif
             @if ($result['rows'])
-                <table class="cmp-table mb-2">
-                    <thead><tr>
-                        <th>Port</th><th>MAC</th>
-                        <th>VLAN</th><th>Module</th>
-                    </tr></thead>
-                    <tbody>
-                    @foreach ($result['rows'] as $row)
-                        <tr>
-                            <td >{{ $row['port'] }}</td>
-                            <td class="font-mono">{{ $row['mac'] }}</td>
-                            <td >{{ $row['vlan'] }}</td>
-                            <td class="font-mono">{{ $row['serial'] }}</td>
-                        </tr>
-                    @endforeach
-                    </tbody>
-                </table>
+                <div class="cmp-card-scroll">
+                    <table class="cmp-table mb-2">
+                        <thead><tr>
+                            <th>Port</th><th>MAC</th>
+                            <th>VLAN</th><th>Module</th>
+                        </tr></thead>
+                        <tbody>
+                        @foreach ($result['rows'] as $row)
+                            <tr>
+                                <td >{{ $row['port'] }}</td>
+                                <td class="font-mono">{{ $row['mac'] }}</td>
+                                <td >{{ $row['vlan'] }}</td>
+                                <td class="font-mono">{{ $row['serial'] }}</td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
             @endif
             <div class="text-xs text-fg-muted">
                 @foreach ($result['tried'] as $method => $answer)

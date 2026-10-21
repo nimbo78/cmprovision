@@ -21,43 +21,45 @@
         <button wire:click="newBatch()" class="cmp-btn cmp-btn-secondary {{ $small }}" title="Close the current batch; bots open a new thread for the next module">Start a new batch</button>
     </div>
 
-    <table class="cmp-table text-sm">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Events</th>
-                <th>Status</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-        @forelse ($channels as $c)
-            <tr wire:key="channel-{{ $c->id }}">
-                <td >{{ $c->name }}@if (!$c->enabled) <span class="text-fg-muted">(off)</span>@endif</td>
-                <td >{{ $c->typeLabel() }}@if (in_array($c->type, \App\Models\NotificationChannel::TLS_TYPES, true) && $c->setting('tls_insecure')) <span class="text-neg">· any certificate</span>@elseif (in_array($c->type, \App\Models\NotificationChannel::TLS_TYPES, true) && $c->setting('tls_ca')) <span class="text-fg-muted">· own certificate</span>@endif</td>
-                <td >{{ collect($c->events)->map(function ($e) { return \App\Models\NotificationChannel::EVENTS[$e] ?? $e; })->implode(', ') }}</td>
-                <td class="text-xs">
-                    @if ($c->last_error)
-                        <span class="text-neg">{{ \Illuminate\Support\Str::limit($c->last_error, 160) }}</span>
-                    @elseif ($c->last_sent_at)
-                        <span class="text-pos">sent {{ $c->last_sent_at->local()->format('d.m H:i') }}</span>
-                    @else
-                        <span class="text-fg-muted">nothing sent yet</span>
-                    @endif
-                </td>
-                <td >
-                    <button wire:click="test({{ $c->id }})" class="cmp-btn cmp-btn-secondary {{ $small }}">Test</button>
-                    <button wire:click="edit({{ $c->id }})" class="cmp-btn cmp-btn-secondary {{ $small }}">Edit</button>
-                    <button wire:click="toggle({{ $c->id }})" class="cmp-btn cmp-btn-secondary {{ $small }}">{{ $c->enabled ? 'Turn off' : 'Turn on' }}</button>
-                    <button wire:click="delete({{ $c->id }})" onclick="confirm('Delete {{ addslashes($c->name) }}?') || event.stopImmediatePropagation()" class="cmp-btn cmp-btn-danger {{ $small }}">Delete</button>
-                </td>
-            </tr>
-        @empty
-            <tr><td class="text-fg-muted" colspan="5">No channels. Add Mattermost, Telegram or a webhook to hear about every module.</td></tr>
-        @endforelse
-        </tbody>
-    </table>
+    <div class="cmp-card-scroll">
+        <table class="cmp-table text-sm">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Events</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            @forelse ($channels as $c)
+                <tr wire:key="channel-{{ $c->id }}">
+                    <td >{{ $c->name }}@if (!$c->enabled) <span class="text-fg-muted">(off)</span>@endif</td>
+                    <td >{{ $c->typeLabel() }}@if (in_array($c->type, \App\Models\NotificationChannel::TLS_TYPES, true) && $c->setting('tls_insecure')) <span class="text-neg">· any certificate</span>@elseif (in_array($c->type, \App\Models\NotificationChannel::TLS_TYPES, true) && $c->setting('tls_ca')) <span class="text-fg-muted">· own certificate</span>@endif</td>
+                    <td >{{ collect($c->events)->map(function ($e) { return \App\Models\NotificationChannel::EVENTS[$e] ?? $e; })->implode(', ') }}</td>
+                    <td class="text-xs">
+                        @if ($c->last_error)
+                            <span class="text-neg [overflow-wrap:anywhere]">{{ \Illuminate\Support\Str::limit($c->last_error, 160) }}</span>
+                        @elseif ($c->last_sent_at)
+                            <span class="text-pos">sent {{ $c->last_sent_at->local()->format('d.m H:i') }}</span>
+                        @else
+                            <span class="text-fg-muted">nothing sent yet</span>
+                        @endif
+                    </td>
+                    <td >
+                        <button wire:click="test({{ $c->id }})" class="cmp-btn cmp-btn-secondary {{ $small }}">Test</button>
+                        <button wire:click="edit({{ $c->id }})" class="cmp-btn cmp-btn-secondary {{ $small }}">Edit</button>
+                        <button wire:click="toggle({{ $c->id }})" class="cmp-btn cmp-btn-secondary {{ $small }}">{{ $c->enabled ? 'Turn off' : 'Turn on' }}</button>
+                        <button wire:click="delete({{ $c->id }})" onclick="confirm('Delete {{ addslashes($c->name) }}?') || event.stopImmediatePropagation()" class="cmp-btn cmp-btn-danger {{ $small }}">Delete</button>
+                    </td>
+                </tr>
+            @empty
+                <tr><td class="text-fg-muted" colspan="5">No channels. Add Mattermost, Telegram or a webhook to hear about every module.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+    </div>
 
     @if (!$formOpen)
         <button wire:click="add()" class="cmp-btn my-3">Add channel</button>
