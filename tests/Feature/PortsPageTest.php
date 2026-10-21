@@ -77,6 +77,28 @@ class PortsPageTest extends TestCase
             'phase_started_at' => now()->subMinute(), 'polled_at' => now()]);
     }
 
+    public function test_the_verified_panel_keeps_sfp_selection_on_its_logical_interface()
+    {
+        $switch = SwitchRow::put(['ip' => '192.0.2.10', 'snmp_community' => 'public']);
+        $table = [SwitchSnapshot::OID_SYSDESCR.'.0' => 'WS-C2960CX-8PC-L', SwitchSnapshot::OID_SYSNAME.'.0' => 'sw-cx'];
+        for ($i = 1; $i <= 12; $i++)
+        {
+            $index = 10100 + $i;
+            $table += [SwitchSnapshot::OID_IFNAME.'.'.$index => 'Gi0/'.$i, SwitchSnapshot::OID_IFTYPE.'.'.$index => 6,
+                       SwitchSnapshot::OID_IFCONNECTOR.'.'.$index => 1, SwitchSnapshot::OID_IFOPERSTATUS.'.'.$index => 2,
+                       SwitchSnapshot::OID_IFHIGHSPEED.'.'.$index => 1000];
+        }
+        $fake = new FakeSnmp(['' => $table]);
+        $this->app->bind(SnmpClient::class, fn () => $fake);
+        $this->actingAs(User::factory()->create());
+        Livewire::test(Ports::class)
+            ->assertSee('Front panel · view from the front')
+            ->assertSeeHtml('aria-label="sw-cx front panel"')
+            ->assertSeeHtml('ports-bank one-row uplinks')
+            ->call('select', 's'.$switch->id.'p10111')
+            ->assertViewHas('tile', fn ($tile) => $tile['name'] === 'Gi0/11' && $tile['ifIndex'] === 10111 && $tile['panel_number'] === 1);
+    }
+
     public function test_the_page_is_in_the_top_bar_and_behind_the_login()
     {
         $this->get('/ports')->assertRedirect('/login');

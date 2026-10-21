@@ -15,7 +15,7 @@ An independently maintained fork of [raspberrypi/cmprovision](https://github.com
 ## From image to checked device
 
 - **Prepare a project.** Choose a compressed OS image, EEPROM firmware, scripts and a label template, then make the project active for the stand.
-- **Follow the batch.** See each module's phase, progress, transfer rate, time remaining and errors. Use the Ports page to locate modules on configured SNMP switches.
+- **Follow the batch.** See each module's phase, progress, transfer rate, time remaining and errors. Use the Ports page to locate modules on configured SNMP switches, with [physical front panels](docs/switch-front-panels.md) for verified models.
 - **Recover interrupted writes.** Downloads resume after connection loss. Enable image splitting to continue after a restart from the last verified 512 MB piece; enable verification to check the whole image.
 - **Check the installed system.** First-boot checks can install uploaded `.deb` packages, run scripts and report the hostname before labels and notifications are sent.
 - **Operate the stand.** Use Identify to find a finished module, including after its first-boot OS check until the next reboot. Restart eligible modules through PoE, manage Wi-Fi networks and keep the built-in radio as a cold spare when another adapter provides the uplink.
