@@ -48,9 +48,15 @@ class Cm extends Model
         'timeline', 'polled_at', 'identify_until',
         'os_check', 'hostname', 'os_state', 'os_failed_units', 'os_checked_at', 'os_check_output',
         'durable_bytes', 'durable_image_id', 'durable_at', 'progress_base', 'utility_os',
+        'diagnostics_token', 'storage_diagnostics', 'storage_diagnostics_at', 'diagnostics_requested_at',
     ];
 
+    protected $hidden = ['diagnostics_token'];
+
     protected $casts = [
+        'storage_diagnostics' => 'array',
+        'storage_diagnostics_at' => 'datetime',
+        'diagnostics_requested_at' => 'datetime',
         'provisioning_started_at' => 'datetime',
         'provisioning_complete_at' => 'datetime',
         'phase_started_at' => 'datetime',
@@ -67,6 +73,14 @@ class Cm extends Model
         'durable_at' => 'datetime',
         'progress_base' => 'integer',
     ];
+
+    /* Only a current utility-OS script that already sent a snapshot understands the request. */
+    public function canCollectStorageDiagnostics(): bool
+    {
+        return $this->diagnostics_token && $this->storage_diagnostics_at && $this->os_checked_at === null
+            && in_array($this->phase, ['done', 'failed'], true) && $this->polled_at
+            && $this->polled_at->gt(now()->subSeconds(self::ON_BENCH_SECONDS));
+    }
 
     /* A module that finished and still asks the server whether to blink, i.e. is still on the bench */
     public function canIdentify()

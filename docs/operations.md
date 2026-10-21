@@ -106,3 +106,7 @@ Connect the provisioner's `eth0` only to the isolated provisioning switch. Use W
 The modules' `/scriptexecute` endpoint has no login: it accepts only clients on `172.20.0.0/16` and the server itself. Other networks receive HTTP 403. Keep nginx connected directly to the clients; do not put a reverse proxy in front of this endpoint or configure nginx `set_real_ip_from` / `real_ip_header`, which would make the client address depend on a forwarded header.
 
 Files under `/uploads`, including OS images and packages, can be downloaded by anyone who can reach the provisioner's web server. Keep secrets out of these files and restrict access to the server.
+
+## Storage diagnostics
+
+For missing or unresponsive storage, open the module card's **Storage diagnostics** section. It shows kernel evidence, power flags, device facts and suggested checks, and can collect a fresh snapshot while the target waits in the utility OS. See [Storage diagnostics](storage-diagnostics.md) for interpretation and limitations.

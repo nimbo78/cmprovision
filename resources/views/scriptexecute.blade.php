@@ -7,6 +7,9 @@ export STORAGE="{{ $storage }}"
 export PART1="{{ $part1 }}"
 export PART2="{{ $part2 }}"
 
+@include('scriptexecute.diagnostics', ['serial' => $cm->serial])
+cmp_diag_report startup
+
 # Deliver a report (log, EEPROM version, completion) to the provisioning server, retrying for up to
 # 10 minutes: the server or the network may be unavailable for a moment, and a lost report leaves
 # the operator with a silent module.
@@ -142,6 +145,12 @@ led_mode progress
 
 @if ($image_url)
 @include('scriptexecute.write')
+# A missing device must not turn into a regular file under /dev through dd's of= argument.
+if [ ! -b "$STORAGE" ]; then
+    echo "Configured storage device $STORAGE is not present" > /tmp/storage-preflight.log
+    report -F 'log=@/tmp/storage-preflight.log' "http://{{ $server }}/scriptexecute?serial={{ $cm->serial }}&retcode=1&phase=storage"
+    finish fail
+fi
 write_image
 RETCODE=$?
 if [ $RETCODE -eq 0 ]; then

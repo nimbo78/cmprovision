@@ -52,6 +52,17 @@ class FailureAdvice
                 ? self::eepromAdvice((string) $cm->pre_script_output)
                 : self::scriptAdvice('Pre-install', $failedStep, $code).' Fix the script, then restart the module.'];
 
+        if (Str::contains($reason, ['Missing eMMC/SD card', 'Error during storage'])
+            || (Str::startsWith($reason, 'Error during dd') && Str::contains($reason, ['storage device could not be written', 'storage device reported an I/O error'])))
+        {
+            $diagnosis = StorageDiagnostics::summary($cm->storage_diagnostics);
+            if ($diagnosis && $diagnosis['issues'])
+                return ['step' => Str::startsWith($reason, 'Error during storage') ? 'Checking storage' : $step,
+                    'advice' => $diagnosis['title'].'. '.$diagnosis['issues'][0]['advice'].' See Storage diagnostics below.'];
+            if (Str::startsWith($reason, 'Error during storage'))
+                return ['step' => 'Checking storage', 'advice' => 'The configured storage device is missing. Check the project storage path and module hardware before retrying.'];
+        }
+
         if (Str::startsWith($reason, 'Error during dd'))
         {
             $what = preg_match('/Diagnosis: (.*?)\.?$/s', $reason, $m) ? ': '.$m[1] : '; the log entry below has the output of curl, the decompressor and dd';

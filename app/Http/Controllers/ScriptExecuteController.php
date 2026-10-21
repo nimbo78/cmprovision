@@ -21,6 +21,7 @@ use App\Models\Setting;
 use App\Services\EepromImage;
 use App\Services\LabelPrinter;
 use App\Support\ImagePieces;
+use App\Support\StorageDiagnostics;
 use App\Services\ModuleOperationLock;
 use App\Services\Sensor\ReprovisionAgent;
 use App\Services\Sensor\ProvisionerKey;
@@ -70,6 +71,10 @@ class ScriptExecuteController extends Controller
         $this->serial = $req->query('serial');
         if (!$this->serial)
             abort(401);
+
+        // Bad or stale diagnostic uploads must never fail or restart a provisioning run.
+        if ($req->query('diagnostics') === '1')
+            return $this->registerStorageDiagnostics($req);
 
         try
         {
@@ -151,6 +156,8 @@ exit 1
             'message' => $message,
             'server' => $this->moduleServer($req),
             'serial' => $this->serial,
+            'storage' => $this->cm?->provisioning_storage ?: '/dev/mmcblk0',
+            'diagnosticsToken' => $this->cm?->diagnostics_token,
         ])->header('Content-Type', 'text/plain');
     }
 
@@ -215,6 +222,10 @@ exit 1
         $this->cm = Cm::updateOrCreate(['serial' => $this->serial], array_merge($this->moduleFields($req, $lookUp), [
             'serial' => $this->serial,
             'firmware' => $project ? $project->eeprom_firmware : null,
+            'diagnostics_token' => Str::random(40),
+            'storage_diagnostics' => null,
+            'storage_diagnostics_at' => null,
+            'diagnostics_requested_at' => null,
             'pre_script_output' => null,
             'post_script_output' => null,
             'script_return_code' => null,
@@ -524,8 +535,14 @@ exit 1
         $firstboot_scripts = $osCheck ? $project->scripts()->where('script_type','firstboot')->orderBy('priority')->orderBy('id')->get() : collect();
         $packages = $osCheck ? $project->packages()->orderBy('packages.id')->get() : collect();
 
+        if (!$this->cm->diagnostics_token)
+        {
+            $this->cm->diagnostics_token = Str::random(40);
+            $this->cm->save();
+        }
         $response = response()->view('scriptexecute', array_merge($write, [
             'cm' => $this->cm,
+            'diagnosticsToken' => $this->cm->diagnostics_token,
             'project' => $project,
             'storage' => $storage,
             'part1' => $part1,
@@ -717,7 +734,7 @@ exit 1
 
         if ($retcode)
         {
-            if ($phase == "dd" || $phase == "preinstall") {
+            if ($phase == "dd" || $phase == "preinstall" || $phase == "storage") {
                 /* Failed before or during image write. Clear image fields in database */
                 $this->cm->image_filename = null;
                 $this->cm->image_sha256 = null;
@@ -794,6 +811,11 @@ exit 1
         if (!$this->cm)
             return '';
 
+        // New diagnostic-capable loops carry their run token; a previous run cannot revive this one.
+        if ($req->query->has('diagnostics_token') && (!is_string($req->query('diagnostics_token'))
+            || !$this->cm->diagnostics_token || !hash_equals($this->cm->diagnostics_token, $req->query('diagnostics_token'))))
+            return '';
+
         // New-system loops belong to one run. Older utility OS scripts have no run parameter.
         if ($req->query->has('identify_run') && $req->query('identify_run') !== (string) $this->cm->provisioning_started_at?->getTimestamp())
             return '';
@@ -803,7 +825,48 @@ exit 1
             $this->cm->polled_at = now();
             $this->cm->save();
         }
-        return $this->cm->isIdentifying() ? 'identify' : '';
+        if ($this->cm->isIdentifying())
+            return 'identify';
+        if ($req->query->has('diagnostics_token') && $this->cm->canCollectStorageDiagnostics()
+            && $this->cm->diagnostics_requested_at?->gt(now()->subSeconds(StorageDiagnostics::REQUEST_SECONDS)))
+            return 'diagnostics';
+        return '';
+    }
+
+    /* A read-only snapshot from the current utility-OS script. The per-run token rejects late reports. */
+    public function registerStorageDiagnostics(Request $req)
+    {
+        abort_unless($req->isMethod('POST'), 405);
+        return ModuleOperationLock::run([$this->serial], function () use ($req) {
+            $cm = Cm::where('serial', $this->serial)->firstOrFail();
+            $token = $req->input('diagnostics_token');
+            abort_unless(is_string($token) && $cm->diagnostics_token && hash_equals($cm->diagnostics_token, $token), 403);
+            $file = $req->file('diagnostics');
+            abort_unless($file instanceof \Illuminate\Http\UploadedFile && $file->isValid(), 422);
+            abort_if($file->getSize() > StorageDiagnostics::MAX_BYTES, 413);
+            try
+            {
+                $report = StorageDiagnostics::parse($file->get(), $cm);
+            }
+            catch (\InvalidArgumentException $e)
+            {
+                abort(422, $e->getMessage());
+            }
+            $previousReport = $cm->storage_diagnostics;
+            $summary = StorageDiagnostics::summary($report);
+            if ($report['context'] === 'failure' && $summary['issues'] && $previousReport !== $report)
+            {
+                $issue = $summary['issues'][0];
+                Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'ip' => $req->ip(),
+                    'loglevel' => 'error', 'msg' => 'Storage diagnostics: '.$issue['title'].'. '.
+                        ($issue['evidence'] ? $issue['evidence']."\n" : '').$issue['advice']]);
+            }
+            $cm->storage_diagnostics = $report;
+            $cm->storage_diagnostics_at = now();
+            $cm->diagnostics_requested_at = null;
+            $cm->save();
+            return response('', 204);
+        });
     }
 
     /* ?progress=<phase>[&detail=<script name>][&sectors=<n>]: where the module is, sent every few seconds
