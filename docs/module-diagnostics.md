@@ -62,6 +62,9 @@ A new run clears the previous snapshot; its failure diagnosis remains in History
 
 ## When no report is available
 
+For a new board shown as **Unrecognized / UNR** on Ports, use the
+[discovery troubleshooting guide](unrecognized-devices.md) before changing its boot setup.
+
 The target must boot Linux and reach cmprovision over Ethernet, including when
 [booted over USB](usb-provisioning.md). USB device-descriptor failures, lack of
 power, and failures before Linux or DHCP cannot produce a target snapshot. Missing
@@ -77,3 +80,26 @@ and the stand IPv4 configuration, not environment variables, project script
 output or EEPROM configuration credentials. Review it before sharing publicly.
 Reports are bounded to 32 KiB. Available sensors depend on the utility OS and
 hardware; no utility OS image rebuild is needed for the server-generated collector.
+
+## Planned USB fallback
+
+USB report delivery is not implemented yet. Its intended policy is **Ethernet
+first, USB only when the Ethernet report cannot be obtained**, regardless of how
+the utility OS was booted.
+
+- A successful Ethernet report needs no duplicate USB collection.
+- If the expected Ethernet report does not arrive within a bounded wait, or a
+  requested network collection times out, try the USB diagnostic channel when
+  connected. Otherwise offer the operator a USB diagnostic/recovery path.
+- Use the same collector and report format for both channels. Show the source
+  (`Ethernet` or `USB`) and collection time, and keep reports tied to the correct
+  module and boot/run. A late report must not overwrite a newer run's snapshot.
+- Switching the report channel must not itself restart a module or interrupt
+  provisioning. A USB recovery boot is a separate operator action.
+
+The collector will need to be built into the utility OS and run before its wait
+for Ethernet/DHCP, so an unavailable network cannot prevent local collection.
+Transferring that snapshot over USB is the fallback. This requires an updated
+utility OS and a USB receiver on the provisioner; the current server-generated
+collector alone cannot provide it. Missing Ethernet telemetry is a reason to
+try another channel, not proof of defective hardware.

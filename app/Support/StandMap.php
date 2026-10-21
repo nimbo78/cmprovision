@@ -352,7 +352,7 @@ class StandMap
             'filters' => $state === 'module' ? array_values(array_unique(array_map([self::class, 'moduleState'], $modules))) : [$filter],
             'modules' => $state === 'module' ? $modules : [],
             'short' => $state === 'module' ? strtoupper(substr($modules[0]->serial, -4))
-                : (isset($links[$key]) ? '→' : (['uplink' => 'UP', 'foreign' => 'MAC', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? '')),
+                : (isset($links[$key]) ? '→' : (['uplink' => 'UP', 'foreign' => 'UNR', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? '')),
         ];
     }
 

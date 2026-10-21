@@ -129,7 +129,7 @@ class CmCard extends Component
         if (!$tile)
             $blocker = Stand::notSeen($stand);
         elseif (!PoeControl::writable($state['config']))
-            $blocker = 'no write access on '.$tile['switch'].' (Settings в†’ Ethernet switches)';
+            $blocker = 'no write access on '.$tile['switch'].' (Settings → Ethernet switches)';
         elseif (!Stand::answering($state))
             $blocker = $tile['switch'].' does not answer';
         else

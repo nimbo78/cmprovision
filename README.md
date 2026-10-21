@@ -154,6 +154,7 @@ The [upgrade and restore guide](docs/upgrading.md) covers snapshots, rollback, P
 | Start CM4 provisioning through its USB port | [USB provisioning](docs/usb-provisioning.md) |
 | Diagnose a target with a monitor and keyboard | [Local console (tty2)](docs/local-console.md) |
 | Diagnose storage, power, temperature, memory and Ethernet | [Module diagnostics](docs/module-diagnostics.md) |
+| Investigate a new board shown as Unrecognized / UNR | [Discovery troubleshooting](docs/unrecognized-devices.md) |
 | Connect WLAN Pi M4+ as server and target | [M4+ hardware and BOOT/OTG](docs/hardware/wlanpi-m4-plus.md) |
 | Read the module's LEDs | [LED signals](docs/leds.md) |
 | Restrict access to the stand | [Network access](docs/operations.md#network-access) |

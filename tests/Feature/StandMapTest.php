@@ -171,7 +171,7 @@ class StandMapTest extends TestCase
         $t = $map['tiles'];
         $this->assertSame(['module', 'ok', '110C', '✓'], [$t['s1p1']['state'], $t['s1p1']['filter'], $t['s1p1']['short'], $t['s1p1']['mark']]);
         $this->assertSame(['boot', '···'], [$t['s1p2']['state'], $t['s1p2']['short']]);
-        $this->assertSame(['foreign', 'MAC'], [$t['s1p3']['state'], $t['s1p3']['short']]);
+        $this->assertSame(['foreign', 'UNR'], [$t['s1p3']['state'], $t['s1p3']['short']]);
         $this->assertSame('free', $t['s1p4']['state'], 'no link: free, even though the MAC is still in the switch table');
         $this->assertSame([], $t['s1p4']['modules']);
         $this->assertSame(['uplink', 'UP', true], [$t['s1p30']['state'], $t['s1p30']['short'], $t['s1p30']['sfp']]);

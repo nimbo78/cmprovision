@@ -107,6 +107,16 @@ The modules' `/scriptexecute` endpoint has no login: it accepts only clients on 
 
 Files under `/uploads`, including OS images and packages, can be downloaded by anyone who can reach the provisioner's web server. Keep secrets out of these files and restrict access to the server.
 
+## Unrecognized devices
+
+On Ports, **Unrecognized** / **UNR** means that a MAC has not been matched to a
+module serial. A new module is added automatically when its utility OS requests
+the provisioning script; no manual registration is needed. The initial booting
+window is 180 seconds for recognized Raspberry Pi MACs with a known link age.
+The later unrecognized state does not prove a hardware fault. Follow the
+[discovery troubleshooting guide](unrecognized-devices.md) to check the switch,
+DHCP, boot-file delivery, HTTP and console evidence on wlanpi-da2.
+
 ## Module diagnostics
 
 Open the module card's **Module diagnostics** section for storage, power and temperature, RAM availability, Ethernet and boot information. It shows measurements, kernel evidence and suggested checks, and can collect a fresh snapshot while the target waits in the utility OS. See [Module diagnostics](module-diagnostics.md) for interpretation and limitations.
