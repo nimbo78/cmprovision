@@ -53,6 +53,7 @@ class Cm extends Model
 
     protected $hidden = ['diagnostics_token'];
 
+    // The original storage_diagnostics columns also hold the extended module snapshot.
     protected $casts = [
         'storage_diagnostics' => 'array',
         'storage_diagnostics_at' => 'datetime',
@@ -75,7 +76,7 @@ class Cm extends Model
     ];
 
     /* Only a current utility-OS script that already sent a snapshot understands the request. */
-    public function canCollectStorageDiagnostics(): bool
+    public function canCollectModuleDiagnostics(): bool
     {
         return $this->diagnostics_token && $this->storage_diagnostics_at && $this->os_checked_at === null
             && in_array($this->phase, ['done', 'failed'], true) && $this->polled_at

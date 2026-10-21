@@ -151,7 +151,7 @@
             </div>
         </div>
 
-        @include('livewire.storage-diagnostics')
+        @include('livewire.module-diagnostics')
 
         <div class="cmp-card px-4 py-3">
             <div class="font-bold">Last run</div>

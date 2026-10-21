@@ -11,7 +11,7 @@ use App\Services\Switch\Stand;
 use App\Support\FailureAdvice;
 use App\Support\RunTimeline;
 use App\Support\StandMap;
-use App\Support\StorageDiagnostics;
+use App\Support\ModuleDiagnostics;
 use App\Services\ModuleOperationLock;
 use Livewire\Component;
 
@@ -72,16 +72,16 @@ class CmCard extends Component
         $this->dispatch('poe-outages-changed');   // a port left off shows in the banner at once
     }
 
-    public function collectStorageDiagnostics()
+    public function collectModuleDiagnostics()
     {
         ModuleOperationLock::run([$this->serial], function () {
             $cm = Cm::where('serial', $this->serial)->firstOrFail();
-            if (!$cm->canCollectStorageDiagnostics())
+            if (!$cm->canCollectModuleDiagnostics())
             {
                 $this->diagnosticsMessage = 'The module must be online in the current utility OS to collect a new snapshot.';
                 return;
             }
-            if (!$cm->diagnostics_requested_at || $cm->diagnostics_requested_at->lte(now()->subSeconds(StorageDiagnostics::REQUEST_SECONDS)))
+            if (!$cm->diagnostics_requested_at || $cm->diagnostics_requested_at->lte(now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS)))
             {
                 $cm->diagnostics_requested_at = now();
                 $cm->save();
@@ -90,12 +90,12 @@ class CmCard extends Component
         });
     }
 
-    public function downloadStorageDiagnostics()
+    public function downloadModuleDiagnostics()
     {
         $cm = Cm::where('serial', $this->serial)->firstOrFail();
         abort_unless($cm->storage_diagnostics, 404);
-        $text = StorageDiagnostics::text($cm);
-        return response()->streamDownload(fn () => print($text), 'cm-'.$cm->id.'-storage-diagnostics.txt', ['Content-Type' => 'text/plain; charset=UTF-8']);
+        $text = ModuleDiagnostics::text($cm);
+        return response()->streamDownload(fn () => print($text), 'cm-'.$cm->id.'-module-diagnostics.txt', ['Content-Type' => 'text/plain; charset=UTF-8']);
     }
 
     public function render()
@@ -104,9 +104,9 @@ class CmCard extends Component
 
         return view('livewire.cm-card', [
             'cm' => $cm,
-            'storageDiagnosis' => StorageDiagnostics::summary($cm->storage_diagnostics),
-            'diagnosticsAvailable' => $cm->canCollectStorageDiagnostics(),
-            'diagnosticsPending' => $cm->diagnostics_requested_at?->gt(now()->subSeconds(StorageDiagnostics::REQUEST_SECONDS)) ?? false,
+            'moduleDiagnosis' => ModuleDiagnostics::summary($cm->storage_diagnostics),
+            'diagnosticsAvailable' => $cm->canCollectModuleDiagnostics(),
+            'diagnosticsPending' => $cm->diagnostics_requested_at?->gt(now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS)) ?? false,
             'steps' => RunTimeline::steps($cm),
             'advice' => FailureAdvice::for($cm),
             'resumeFrom' => $cm->resumableFrom(),

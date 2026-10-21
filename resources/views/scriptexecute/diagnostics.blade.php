@@ -1,7 +1,8 @@
 {{-- Read-only utility-OS snapshot; paths can be replaced by the shell fixture tests. --}}
 DIAG_SYS=${CMP_DIAG_SYS:-/sys}
 DIAG_PROC=${CMP_DIAG_PROC:-/proc}
-DIAG_FILE=${CMP_DIAG_TMP:-/tmp}/cmprovision-storage-diagnostics.txt
+DIAG_ETC=${CMP_DIAG_ETC:-/etc}
+DIAG_FILE=${CMP_DIAG_TMP:-/tmp}/cmprovision-module-diagnostics.txt
 DIAG_SERIAL={!! escapeshellarg($serial) !!}
 DIAG_TARGET={!! escapeshellarg($storage ?: '/dev/mmcblk0') !!}
 DIAG_TOKEN={!! escapeshellarg($diagnosticsToken ?? '') !!}
@@ -46,6 +47,41 @@ cmp_diag_collect() (
         echo "serial=$DIAG_SERIAL"
         echo "target=$DIAG_TARGET"
         echo "kernel=$(uname -r)"
+        echo "architecture=$(uname -m)"
+        echo "utility_os=$(cmp_diag_text "$DIAG_ETC/cmprovision-uos")"
+        echo "bootloader_version=$(cmp_diag_text "$DIAG_PROC/device-tree/chosen/bootloader/version")"
+        diag_boot=$(od -An -tx1 -N4 "$DIAG_PROC/device-tree/chosen/bootloader/boot-mode" 2>/dev/null | tr -d ' \n')
+        echo "boot_mode=$diag_boot"
+        echo "uptime_seconds=$(awk '{printf "%.0f", $1}' "$DIAG_PROC/uptime" 2>/dev/null)"
+        echo "mem_total_kb=$(awk '$1 == "MemTotal:" {print $2; exit}' "$DIAG_PROC/meminfo" 2>/dev/null)"
+        echo "mem_available_kb=$(awk '$1 == "MemAvailable:" {print $2; exit}' "$DIAG_PROC/meminfo" 2>/dev/null)"
+        # Only a named CPU/SoC sensor; do not mistake a peripheral sensor for CPU temperature.
+        for diag_zone in "$DIAG_SYS"/class/thermal/thermal_zone*; do
+            diag_sensor=$(cmp_diag_text "$diag_zone/type")
+            case "$diag_sensor" in cpu-thermal|soc-thermal|cpu_thermal) ;; *) continue;; esac
+            echo "thermal_sensor=$diag_sensor"
+            echo "temperature_mc=$(cmp_diag_text "$diag_zone/temp")"
+            diag_trip=
+            for diag_trip_file in "$diag_zone"/trip_point_*_temp; do
+                case "$(cmp_diag_text "${diag_trip_file%_temp}_type")" in passive|hot|critical) ;; *) continue;; esac
+                diag_trip_value=$(cmp_diag_text "$diag_trip_file")
+                case "$diag_trip_value" in ''|*[!0-9]*) continue;; esac
+                if [ "$diag_trip_value" -gt 0 ] && { [ -z "$diag_trip" ] || [ "$diag_trip_value" -lt "$diag_trip" ]; }; then
+                    diag_trip=$diag_trip_value
+                fi
+            done
+            echo "thermal_trip_mc=$diag_trip"
+            break
+        done
+        diag_eth=$DIAG_SYS/class/net/eth0
+        if [ -d "$diag_eth" ]; then echo ethernet=present; else echo ethernet=missing; fi
+        for diag_field in carrier operstate speed duplex; do
+            case "$diag_field" in speed) diag_key=eth_speed_mbps;; *) diag_key=eth_$diag_field;; esac
+            echo "$diag_key=$(cmp_diag_text "$diag_eth/$diag_field" 2>/dev/null)"
+        done
+        for diag_field in rx_errors tx_errors rx_dropped tx_dropped; do
+            echo "eth_$diag_field=$(cmp_diag_text "$diag_eth/statistics/$diag_field")"
+        done
         echo "model=$(cmp_diag_text "$DIAG_PROC/device-tree/model")"
         echo "block=$diag_block"
         echo "host=$diag_host"
@@ -63,9 +99,12 @@ cmp_diag_collect() (
         echo '[mmc_ios]'
         [ -z "$diag_host" ] || head -c 2048 "$DIAG_SYS/kernel/debug/$diag_host/ios" 2>/dev/null
         echo
+        echo '[network]'
+        { ip -4 addr show dev eth0 2>/dev/null; ip -4 route show dev eth0 2>/dev/null; } | head -c 2048
+        echo
         echo '[kernel]'
         dmesg 2>/dev/null | grep -Ev 'Kernel command line:|Command line:' \
-            | grep -Ei 'mmc[0-9]|mmcblk|sdhci|nvme|I/O error|under.?voltage|Voltage normal|usb.*(error|disconnect|reset)|sd [0-9]:' \
+            | grep -Ei 'mmc[0-9]|mmcblk|sdhci|nvme|I/O error|under.?voltage|Voltage normal|usb.*(error|disconnect|reset)|sd [0-9]:|thermal|overheat|Out of memory: Killed process|oom-kill:|invoked oom-killer|NETDEV WATCHDOG:|eth0.*(link|error|timeout|timed out)' \
             | tail -n 80 | cut -c1-240 || true
     } > "$DIAG_FILE" || return 1
     return 0
@@ -76,6 +115,6 @@ cmp_diag_report() {
     cmp_diag_collect "$1" || return 0
     curl --silent --show-error --fail --connect-timeout 2 --max-time 5 -g \
         --form-string "diagnostics_token=$DIAG_TOKEN" -F "diagnostics=@$DIAG_FILE" "$DIAG_URL" \
-        || echo 'Storage diagnostics could not be delivered; the local snapshot is in /tmp/cmprovision-storage-diagnostics.txt'
+        || echo 'Module diagnostics could not be delivered; the local snapshot is in /tmp/cmprovision-module-diagnostics.txt'
     return 0
 }

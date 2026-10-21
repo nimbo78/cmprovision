@@ -107,6 +107,6 @@ The modules' `/scriptexecute` endpoint has no login: it accepts only clients on 
 
 Files under `/uploads`, including OS images and packages, can be downloaded by anyone who can reach the provisioner's web server. Keep secrets out of these files and restrict access to the server.
 
-## Storage diagnostics
+## Module diagnostics
 
-For missing or unresponsive storage, open the module card's **Storage diagnostics** section. It shows kernel evidence, power flags, device facts and suggested checks, and can collect a fresh snapshot while the target waits in the utility OS. See [Storage diagnostics](storage-diagnostics.md) for interpretation and limitations.
+Open the module card's **Module diagnostics** section for storage, power and temperature, RAM availability, Ethernet and boot information. It shows measurements, kernel evidence and suggested checks, and can collect a fresh snapshot while the target waits in the utility OS. See [Module diagnostics](module-diagnostics.md) for interpretation and limitations.

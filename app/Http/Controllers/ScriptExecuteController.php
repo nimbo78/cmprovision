@@ -21,7 +21,7 @@ use App\Models\Setting;
 use App\Services\EepromImage;
 use App\Services\LabelPrinter;
 use App\Support\ImagePieces;
-use App\Support\StorageDiagnostics;
+use App\Support\ModuleDiagnostics;
 use App\Services\ModuleOperationLock;
 use App\Services\Sensor\ReprovisionAgent;
 use App\Services\Sensor\ProvisionerKey;
@@ -74,7 +74,7 @@ class ScriptExecuteController extends Controller
 
         // Bad or stale diagnostic uploads must never fail or restart a provisioning run.
         if ($req->query('diagnostics') === '1')
-            return $this->registerStorageDiagnostics($req);
+            return $this->registerModuleDiagnostics($req);
 
         try
         {
@@ -827,14 +827,14 @@ exit 1
         }
         if ($this->cm->isIdentifying())
             return 'identify';
-        if ($req->query->has('diagnostics_token') && $this->cm->canCollectStorageDiagnostics()
-            && $this->cm->diagnostics_requested_at?->gt(now()->subSeconds(StorageDiagnostics::REQUEST_SECONDS)))
+        if ($req->query->has('diagnostics_token') && $this->cm->canCollectModuleDiagnostics()
+            && $this->cm->diagnostics_requested_at?->gt(now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS)))
             return 'diagnostics';
         return '';
     }
 
     /* A read-only snapshot from the current utility-OS script. The per-run token rejects late reports. */
-    public function registerStorageDiagnostics(Request $req)
+    public function registerModuleDiagnostics(Request $req)
     {
         abort_unless($req->isMethod('POST'), 405);
         return ModuleOperationLock::run([$this->serial], function () use ($req) {
@@ -843,23 +843,23 @@ exit 1
             abort_unless(is_string($token) && $cm->diagnostics_token && hash_equals($cm->diagnostics_token, $token), 403);
             $file = $req->file('diagnostics');
             abort_unless($file instanceof \Illuminate\Http\UploadedFile && $file->isValid(), 422);
-            abort_if($file->getSize() > StorageDiagnostics::MAX_BYTES, 413);
+            abort_if($file->getSize() > ModuleDiagnostics::MAX_BYTES, 413);
             try
             {
-                $report = StorageDiagnostics::parse($file->get(), $cm);
+                $report = ModuleDiagnostics::parse($file->get(), $cm);
             }
             catch (\InvalidArgumentException $e)
             {
                 abort(422, $e->getMessage());
             }
             $previousReport = $cm->storage_diagnostics;
-            $summary = StorageDiagnostics::summary($report);
+            $summary = ModuleDiagnostics::summary($report);
             if ($report['context'] === 'failure' && $summary['issues'] && $previousReport !== $report)
             {
-                $issue = $summary['issues'][0];
-                Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'ip' => $req->ip(),
-                    'loglevel' => 'error', 'msg' => 'Storage diagnostics: '.$issue['title'].'. '.
-                        ($issue['evidence'] ? $issue['evidence']."\n" : '').$issue['advice']]);
+                foreach ($summary['issues'] as $issue)
+                    Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'ip' => $req->ip(),
+                        'loglevel' => 'error', 'msg' => 'Module diagnostics: '.$issue['title'].'. '.
+                            ($issue['evidence'] ? $issue['evidence']."\n" : '').$issue['advice']]);
             }
             $cm->storage_diagnostics = $report;
             $cm->storage_diagnostics_at = now();
