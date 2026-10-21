@@ -28,48 +28,50 @@
             @if($isOpen)
                 @include('livewire.addimage')
             @endif
-            <table class="cmp-table min-w-full">
-                <thead>
-                    <tr>
-                        <th>Filename</th>
-                        <th>Size</th>
-                        <th>SHA256</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse($images as $i)
-                    <tr>
-                        <td><span style="word-break: break-all;">{{ $i->filename }}</span> (added {{ $i->created_at->local()->format("d-M-Y") }})</td>
-                        <td>
-                            @if ($i->filesize() === null)
-                            <nobr class="text-neg font-bold">file missing on disk</nobr><br>
-                            @else
-                            <nobr>Comp.: {{ number_format($i->filesize()/1000000000,1) }} GB</nobr><br>
-                            @endif
-                            <nobr>Uncomp.: {{ $i->uncompressed_size ? number_format($i->uncompressed_size/1000000000,1) : 'unknown' }} GB</nobr>
-                            @if ($i->split_filename || $i->split_queued_at || $i->split_error || $i->splitNeeded())
-                            <br><nobr>Pieces: {{ $i->splitState() }}</nobr>
-                            @endif
-                        </td>
-                        <td>
-                            {{ $i->sha256 ? $i->sha256 : "...still computing hash..." }}<br>
-                            {{ $i->uncompressed_sha256 ? $i->uncompressed_sha256 : "" }}
-                        </td>
-                        <td>
-                            <button wire:click="delete({{ $i->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
-                            @if (($i->split_filename || $i->split_error) && !$i->splitPreparing() && !$i->splitNeeded())
-                            <button wire:click="removeSplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Remove pieces</button>
-                            @elseif (!$i->splitReady() && !$i->splitPreparing() && $i->splitNeeded())
-                            <button wire:click="retrySplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Retry pieces</button>
-                            @endif
-                        </td>
-                    </tr>
-                    @empty
-                    <tr><td colspan="4">No entries</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
+            <div class="cmp-card-scroll">
+                <table class="cmp-table min-w-full">
+                    <thead>
+                        <tr>
+                            <th>Filename</th>
+                            <th>Size</th>
+                            <th>SHA256</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($images as $i)
+                        <tr>
+                            <td><span style="word-break: break-all;">{{ $i->filename }}</span> (added {{ $i->created_at->local()->format("d-M-Y") }})</td>
+                            <td>
+                                @if ($i->filesize() === null)
+                                <nobr class="text-neg font-bold">file missing on disk</nobr><br>
+                                @else
+                                <nobr>Comp.: {{ number_format($i->filesize()/1000000000,1) }} GB</nobr><br>
+                                @endif
+                                <nobr>Uncomp.: {{ $i->uncompressed_size ? number_format($i->uncompressed_size/1000000000,1) : 'unknown' }} GB</nobr>
+                                @if ($i->split_filename || $i->split_queued_at || $i->split_error || $i->splitNeeded())
+                                <br><nobr>Pieces: {{ $i->splitState() }}</nobr>
+                                @endif
+                            </td>
+                            <td class="break-all">
+                                {{ $i->sha256 ? $i->sha256 : "...still computing hash..." }}<br>
+                                {{ $i->uncompressed_sha256 ? $i->uncompressed_sha256 : "" }}
+                            </td>
+                            <td>
+                                <button wire:click="delete({{ $i->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
+                                @if (($i->split_filename || $i->split_error) && !$i->splitPreparing() && !$i->splitNeeded())
+                                <button wire:click="removeSplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Remove pieces</button>
+                                @elseif (!$i->splitReady() && !$i->splitPreparing() && $i->splitNeeded())
+                                <button wire:click="retrySplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Retry pieces</button>
+                                @endif
+                            </td>
+                        </tr>
+                        @empty
+                        <tr><td colspan="4">No entries</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 <script src="{{ asset('js/upload-progress.js') }}?v={{ filemtime(public_path('js/upload-progress.js')) }}"></script>

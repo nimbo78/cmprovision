@@ -21,24 +21,26 @@
                 <a class="underline" href="https://github.com/raspberrypi/rpi-eeprom/blob/master/firmware-2711/release-notes.md" target="_blank" rel="noopener">rpi-eeprom</a>
                 (release notes). Downloaded images are kept even after Raspberry Pi retires them, so projects stay pinned to the image they were configured with.
             </p>
-            <table class="cmp-table min-w-full">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Channel</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse($firmware as $f)
-                    <tr>
-                        <td>{{ $f->name }}</td>
-                        <td>{{ $f->channel }}</td>
-                    </tr>
-                    @empty
-                    <tr><td colspan="2">No entries</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
+            <div class="cmp-card-scroll">
+                <table class="cmp-table min-w-full">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Channel</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($firmware as $f)
+                        <tr>
+                            <td>{{ $f->name }}</td>
+                            <td>{{ $f->channel }}</td>
+                        </tr>
+                        @empty
+                        <tr><td colspan="2">No entries</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
