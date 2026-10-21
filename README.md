@@ -163,7 +163,7 @@ The `/scriptexecute` endpoint is restricted to the stand network and the server 
 
 ## Development
 
-The application uses **Laravel 13, Livewire 3, Tailwind CSS 3.4 and SQLite**, with PHP **8.3+**. Provisioning and service management depend on Linux tools; the [Debian 13 test bench](docker/README.md) provides nginx and PHP 8.4 in the installed package layout.
+The application uses **Laravel 13, Livewire 3, Tailwind CSS 3.4 and SQLite**, with patched PHP **8.3.36+, 8.4.27+ or 8.5.12+**, according to the branch. See [PHP security updates](docs/upgrading.md#php-security-updates). Provisioning and service management depend on Linux tools; the [Debian 13 test bench](docker/README.md) provides nginx and PHP 8.4 in the installed package layout.
 
 ```sh
 composer install

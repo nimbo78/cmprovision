@@ -18,6 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         dpkg-dev debhelper build-essential fakeroot python3 dosfstools mtools \
     && rm -rf /var/lib/apt/lists/*
 
+# Check the installed interpreter, not Composer's simulated config.platform.php.
+# Cached images must be rebuilt to pick up the PHP security fixes.
+COPY composer.json composer.lock /tmp/cmprovision-platform/
+RUN php${PHPV} /usr/bin/composer --no-plugins check-platform-reqs --lock --no-dev --working-dir=/tmp/cmprovision-platform \
+    && rm /tmp/cmprovision-platform/composer.json /tmp/cmprovision-platform/composer.lock \
+    && rmdir /tmp/cmprovision-platform
+
 # App files are bind-mounted from the host and owned by this uid, so php-fpm and composer run as it.
 RUN groupadd -g ${GID} app && useradd -m -u ${UID} -g ${GID} -s /bin/bash app
 

@@ -8,7 +8,7 @@
     ],
     "license": "MIT",
     "require": {
-        "php": "^8.3",
+        "php": "~8.3.36 || ~8.4.27 || ^8.5.12",
         "guzzlehttp/guzzle": "^7.8",
         "laravel/framework": "^13.0",
         "laravel/jetstream": "^5.5",
@@ -27,7 +27,7 @@
         "preferred-install": "dist",
         "sort-packages": true,
         "platform": {
-            "php": "8.3.0"
+            "php": "8.3.36"
         }
     },
     "extra": {
@@ -50,6 +50,9 @@
     "minimum-stability": "dev",
     "prefer-stable": true,
     "scripts": {
+        "pre-install-cmd": [
+            "@composer --no-plugins check-platform-reqs --lock --no-dev"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"
