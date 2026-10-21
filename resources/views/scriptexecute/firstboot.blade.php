@@ -1,5 +1,5 @@
 #!/bin/sh
-# cmprovision: the OS check after the first boot (2.6.0, docs/superpowers/specs/2026-10-15-os-check-design.md).
+# cmprovision: the OS check after the first boot (2.6.0, docs/operations.md#first-boot-os-check).
 # The provisioning server's last post-install step put this here with cmprovision-firstboot.service. It runs once, as
 # root: waits for the boot to finish, installs the project's packages, runs its first-boot scripts, reports the host
 # name and the result to the server, removes itself and shows the result/Identify until the next boot.

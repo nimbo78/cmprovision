@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/* The switches of the stand (docs/superpowers/specs/2026-10-14-multi-switch-design.md). The 2.3 settings become the
+/* The switches of the stand (docs/operations.md#switches-and-poe-restart). The 2.3 settings become the
    first one and stay where they were: a 2.3.x installed back over this database still finds its switch. */
 return new class extends Migration
 {

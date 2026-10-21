@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\IpUtils;
 
 /**
  * The modules' endpoint takes no login, so it answers only the stand network and this server itself
- * (docs/superpowers/specs/2026-10-15-stand-only-scriptexecute-design.md). The client is the connection's own address:
+ * (docs/operations.md#network-access). The client is the connection's own address:
  * a forwarded header never counts, and the office cannot fake a TCP source, since the answer to its SYN would go to the
  * stand. The address a request came to proves nothing (Linux takes a packet for any of its addresses on any
  * interface), and IPv6 link-local is refused: the Wi-Fi uplinks have it too.

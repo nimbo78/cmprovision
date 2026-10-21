@@ -15,9 +15,9 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * The stand by its switches' ports (docs/superpowers/specs/2026-10-11-ports-page-design.md,
- * 2026-10-14-multi-switch-design.md): each switch's front panel with its line and the module in each port, one
- * summary of the stand, the status filter (Alpine, in the browser) and one port's details.
+ * The stand by its switches' ports (docs/operations.md#switches-and-poe-restart): each switch's front panel with
+ * its line and the module in each port, one summary of the stand, the status filter (Alpine, in the browser)
+ * and one port's details.
  */
 #[Title('Ports')]
 class Ports extends Component

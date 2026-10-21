@@ -7,7 +7,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * The built-in Wi-Fi as a cold spare (tools/uplink-spare, docs/superpowers/specs/2026-10-15-uplink-cold-spare-design.md),
+ * The built-in Wi-Fi as a cold spare (tools/uplink-spare, docs/operations.md#built-in-wi-fi-as-a-cold-spare),
  * run the way root runs it: under sh, with stand-ins for nmcli, ip, systemd-run, systemctl and logger that record what
  * they were asked, and a made-up /sys/class/net, state directory, switch and clock.
  */

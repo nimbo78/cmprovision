@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-/* A switch of the stand (docs/superpowers/specs/2026-10-14-multi-switch-design.md): how to reach it by SNMP, read and
+/* A switch of the stand (docs/operations.md#switches-and-poe-restart): how to reach it by SNMP, read and
    write, and what it last said about itself */
 class EthernetSwitch extends Model
 {

@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 
 /**
- * PoE restart of modules (docs/superpowers/specs/2026-10-12-poe-restart-design.md). One at a time on each switch of
+ * PoE restart of modules (docs/operations.md#switches-and-poe-restart). One at a time on each switch of
  * the stand, only on ports with nothing but our modules or a booting Pi (StandMap::restartBlocker()), each switch
  * checked on its fresh snapshot. Each port gets a poe_outages row before its PoE goes off, then OFF_SECONDS of
  * darkness for all of them, then each switch's ports are switched on one after the other (STAGGER_MS apart, three

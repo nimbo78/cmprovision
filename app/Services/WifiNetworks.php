@@ -3,7 +3,7 @@
 namespace App\Services;
 
 /**
- * The provisioner's Wi-Fi networks (2.5.3, docs/superpowers/specs/2026-10-15-wifi-networks-design.md), for the section
+ * The provisioner's Wi-Fi networks (2.5.3, docs/operations.md#wi-fi-networks), for the section
  * of the settings page: read the way the web server user can (nmcli without secrets, /sys/class/net, /proc/net/route,
  * the cold spare's state file) and changed by the root helper tools/wifi-networks through sudo, the input on stdin. A
  * network password goes to the helper once and is never read back.

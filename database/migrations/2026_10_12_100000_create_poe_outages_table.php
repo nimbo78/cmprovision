@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/* PoE restarts (docs/superpowers/specs/2026-10-12-poe-restart-design.md): a row per port before cmprovision switches
+/* PoE restarts (docs/operations.md#switches-and-poe-restart): a row per port before cmprovision switches
    its PoE off, closed (on_at) once it is on again or the operator forgot it; an open row with an error, or older
    than a restart takes, is a port left off */
 class CreatePoeOutagesTable extends Migration

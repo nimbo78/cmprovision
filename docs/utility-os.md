@@ -49,9 +49,6 @@ Settings показывает его, а тесты сверяют с файла
 - [WLAN Pi M4+](hardware/wlanpi-m4-plus.md): провижинер и сенсор на одинаковой
   платформе, разъёмы двух исполнений Mcuzone, BOOT/OTG и питание.
 
-Чек-лист нашего конкретного стенда и незавершённые проверки перед выпуском —
-[USB/tty2 acceptance](superpowers/plans/2026-10-20-usb-tty2-acceptance.md).
-
 ## Устройство
 
 - `utility-os/` — BR2_EXTERNAL-дерево `CMPROVISION`: `configs/cmprovision_defconfig`, `board/cmprovision/` (фрагменты

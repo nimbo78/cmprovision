@@ -19,3 +19,7 @@ yarn-error.log
 /.superpowers/
 /.remember/
 /.codex-remote-attachments/
+
+# Local design notes and bench acceptance records
+/docs/superpowers/
+/docs/leds/build_acceptance_card.py

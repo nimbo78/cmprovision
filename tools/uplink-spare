@@ -1,5 +1,5 @@
 #!/bin/sh
-# The built-in Wi-Fi as a cold spare (cmprovision 2.5.2, docs/superpowers/specs/2026-10-15-uplink-cold-spare-design.md).
+# The built-in Wi-Fi as a cold spare (cmprovision 2.5.2, docs/operations.md#built-in-wi-fi-as-a-cold-spare).
 # The built-in Wi-Fi (the wireless device on the SDIO bus) stays disconnected while another device carries an IPv4
 # default route, connects when there has been none for LOST_SECONDS, and leaves again once the other route has held
 # for STABLE_SECONDS. Every run decides from the state of the system, not from what started it: NetworkManager's
