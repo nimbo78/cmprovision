@@ -1,5 +1,5 @@
 #!/bin/sh
-# The provisioner's Wi-Fi networks from the web UI (cmprovision 2.5.3, docs/superpowers/specs/2026-10-15-wifi-networks-design.md).
+# The provisioner's Wi-Fi networks from the web UI (cmprovision 2.5.3, docs/operations.md#wi-fi-networks).
 # www-data runs it through sudo (debian/010_cmprovision: the command and no arguments); the rest comes on stdin as
 # key=value lines and is checked here, whatever the web app checked before.
 #   wifi-networks save     uuid (none: a new network) ssid security hidden password by   ->  uuid=<uuid>

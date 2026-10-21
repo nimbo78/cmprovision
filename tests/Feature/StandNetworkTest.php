@@ -18,7 +18,7 @@ use Tests\TestCase;
 /**
  * /scriptexecute takes no login and the provisioner is reachable from the office over Wi-Fi, so the endpoint answers
  * only the stand network 172.20.0.0/16 and this server itself
- * (docs/superpowers/specs/2026-10-15-stand-only-scriptexecute-design.md).
+ * (docs/operations.md#network-access).
  */
 class StandNetworkTest extends TestCase
 {

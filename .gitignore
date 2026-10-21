@@ -12,3 +12,14 @@ Homestead.yaml
 npm-debug.log
 yarn-error.log
 .playwright-mcp/
+
+# Local tool state (editors, assistants, agents)
+/.vscode/
+/.serena/
+/.superpowers/
+/.remember/
+/.codex-remote-attachments/
+
+# Local design notes and bench acceptance records
+/docs/superpowers/
+/docs/leds/build_acceptance_card.py

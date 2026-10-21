@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/* 2.6.0, the OS check after the first boot (docs/superpowers/specs/2026-10-15-os-check-design.md): the project's
+/* 2.6.0, the OS check after the first boot (docs/operations.md#first-boot-os-check): the project's
    switch, a script type and a label moment for it, and what the module's new system reports.
    scripts.script_type and projects.label_moment were enums, a CHECK constraint in SQLite: they become strings (the app
    validates them), so a new value never again needs a rebuilt table. ->change() rebuilds both tables: Laravel switches

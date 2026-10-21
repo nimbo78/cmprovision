@@ -7,7 +7,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * The provisioner's Wi-Fi networks (tools/wifi-networks, docs/superpowers/specs/2026-10-15-wifi-networks-design.md),
+ * The provisioner's Wi-Fi networks (tools/wifi-networks, docs/operations.md#wi-fi-networks),
  * run the way root runs it: under sh, with tests/Support/fake-nmcli.php for NetworkManager, stand-ins for ip, logger
  * and uplink-spare that record what they were asked, and a made-up keyfile directory, /run and /sys.
  */
