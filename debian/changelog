@@ -1,3 +1,13 @@
+cmprovision4 (2.7.1~dev1) unstable; urgency=high
+
+  * Require patched PHP CLI and FPM packages: 8.3.36, 8.4.27 or 8.5.12
+    for their respective branches (CVE-2026-109618, CVE-2026-109619).
+  * Align Composer's PHP constraint and resolution target, check the
+    real PHP in Docker builds, and document the security upgrade.
+  * Keep Upload Progress and the image upload limits unchanged.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Wed, 21 Oct 2026 18:02:05 +0300
+
 cmprovision4 (2.7.0) unstable; urgency=medium
 
   * Our own utility OS, built with buildroot from current versions

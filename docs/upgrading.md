@@ -44,6 +44,52 @@ If you deliberately accept upgrading without an automatic rollback snapshot, the
 sudo CMPROVISION_NO_SNAPSHOT=1 apt install ./cmprovision4_*_all.deb
 ```
 
+## PHP security updates
+
+CVE-2026-109618 and CVE-2026-109619 affect PHP itself. Use the fixed patch release
+for each supported branch:
+
+| Branch | Minimum version |
+| --- | --- |
+| PHP 8.3 | 8.3.36 |
+| PHP 8.4 | 8.4.27 |
+| PHP 8.5 | 8.5.12 |
+
+See the [PHP security announcement](https://www.php.net/archive/2026.php) and
+the advisories for [CVE-2026-109618](https://github.com/php/php-src/security/advisories/GHSA-w8hw-w9fx-j79w)
+and [CVE-2026-109619](https://github.com/php/php-src/security/advisories/GHSA-6wmf-4rv5-p3rp).
+The package requires fixed versions of the real CLI and FPM packages; the generic
+`php-cli` and `php-fpm` metapackage versions cannot enforce these patch levels.
+Install or upgrade with `apt`, which resolves these dependencies, after refreshing
+the package index. Both CLI and FPM must be patched.
+
+On Debian 13 / Raspberry Pi OS Trixie, update PHP 8.4 with no provisioning in progress:
+
+```sh
+sudo apt update
+sudo apt install --only-upgrade php8.4-cli php8.4-fpm
+sudo systemctl restart php8.4-fpm cmprovision-queue cmprovision-queue-images
+php -v
+php-fpm8.4 -v
+```
+
+APT also upgrades the installed extensions tied to the PHP common package.
+Restarting the queue workers replaces their long-running PHP processes.
+Check **Settings → Service status** and reload the interface afterwards.
+
+Composer accepts the fixed branches. Its `config.platform.php` value of `8.3.36`
+is a dependency-resolution target. A pre-install check validates the actual CLI
+before Composer installs dependencies. You can also run the check separately:
+
+```sh
+composer check-platform-reqs --lock --no-dev
+```
+
+This checks CLI; confirm FPM's version separately. Rebuild existing Docker bench
+images to pick up the update. The image build checks the installed PHP against
+the lock file. Upload Progress and the image-upload size limits remain unchanged;
+disabling Upload Progress is not required once these fixes are installed.
+
 ## PHP and queue workers
 
 From 2.5, the web interface has its own PHP-FPM pool, intended for batches of 40–48 modules starting together. The pool is configured in `/etc/php/<version>/fpm/pool.d/cmprovision.conf` and uses `/run/php/cmprovision-fpm.sock`.

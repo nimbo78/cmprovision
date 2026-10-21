@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Целевая среда — Raspberry Pi OS на Pi 4: пакет `cmprovision4` ставится в `/var/lib/cmprovision` и работает поверх nginx + php-fpm, dnsmasq, rpiboot и systemd. Код вызывает Linux-утилиты (`systemctl`, `journalctl`, `sudo`, `bash`, `gzip`/`xz`/`bunzip2`, `sha256sum`), поэтому страница Settings и подсчёт хешей образов работают только на Linux, а сквозной провижининг проверяется только на Pi с подключёнными модулями.
 
-С 2.0 приложение требует PHP 8.3 и новее и ставится только на Debian 13 / Raspberry Pi OS Trixie (в `debian/control` зависимости `php-*` с эпохой: `>= 2:8.3`). `composer.json` закрепляет `config.platform.php = 8.3.0`, чтобы lock подходил и для 8.3, и для 8.4. Ветка 1.6.x (Laravel 8, PHP 7.4) заморожена на теге `v1.6.11`; рабочий провижинер пользователя — Raspberry Pi OS Trixie (Debian 13, PHP 8.4, NetworkManager) на WLAN Pi M4+ с версией 2.7.0.
+Приложение требует исправленных версий PHP: 8.3.36+ для ветки 8.3, 8.4.27+ для 8.4, 8.5.12+ для 8.5 (CVE-2026-109618/109619), и ставится на Debian 13 / Raspberry Pi OS Trixie. `debian/control` требует реальные версионированные пакеты CLI и FPM: версия метапакета `php-fpm` не отражает патч PHP. `composer.json` закрепляет `config.platform.php = 8.3.36`, чтобы lock подходил для поддерживаемых веток; `composer check-platform-reqs --lock --no-dev` проверяет фактический CLI, и сборка Docker выполняет эту проверку. Upload Progress остаётся с настройкой PHP по умолчанию; исправление обеспечивает обновлённый PHP. Ветка 1.6.x (Laravel 8, PHP 7.4) заморожена на теге `v1.6.11`; рабочий провижинер пользователя — Raspberry Pi OS Trixie (Debian 13, PHP 8.4, NetworkManager) на WLAN Pi M4+ с версией 2.7.0.
 
 ## Команды
 
