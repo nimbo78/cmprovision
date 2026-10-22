@@ -160,7 +160,7 @@ class ImageSourcesPageTest extends TestCase
 
     protected function window(): \Livewire\Features\SupportTesting\Testable
     {
-        return Livewire::test(ImageSources::class);
+        return Livewire::test(ImageSources::class)->set('tab', 'url');
     }
 
     public function test_a_checked_address_shows_what_it_is_and_what_it_takes()
