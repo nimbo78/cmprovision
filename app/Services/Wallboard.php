@@ -13,6 +13,8 @@ class Wallboard
     public function settings(): array
     {
         $data = json_decode((string) @file_get_contents(self::CONFIG), true);
+        if (is_array($data) && isset($data['palette']) && is_string($data['palette']))
+            $data['palette'] = ['phosphor' => 'warm', 'mono' => 'neutral'][$data['palette']] ?? $data['palette'];
         return is_array($data) ? array_intersect_key($data, self::DEFAULTS) + self::DEFAULTS : self::DEFAULTS;
     }
 

@@ -21,6 +21,12 @@ def snapshot():
 
 
 class SettingsTest(unittest.TestCase):
+    def test_old_palettes_preserve_unattended_auto_on_upgrade(self):
+        for old, new in [('phosphor', 'warm'), ('mono', 'neutral')]:
+            data = w.valid_config(dict(w.DEFAULTS, mode='auto', palette=old))
+            self.assertEqual(new, data['palette'])
+            self.assertTrue(w.wanted(data, True))
+
     def test_off_auto_on_and_both_connectors(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -73,6 +79,44 @@ class SettingsTest(unittest.TestCase):
 
 
 class RenderingTest(unittest.TestCase):
+    def test_web_css_is_the_palette_source_and_alpha_text_is_composited(self):
+        path = Path(__file__).resolve().parents[2] / 'resources/css/app.css'
+        expected = {'warm': ((255, 138, 61), (0, 0, 0)), 'warm-light': ((226, 104, 28), (255, 255, 255)),
+                    'neutral': ((129, 140, 248), (11, 17, 32)), 'neutral-light': ((99, 102, 241), (243, 244, 246))}
+        for name, (accent, bg) in expected.items():
+            palette = w.web_palette(name, path)
+            self.assertEqual(accent, palette['accent'])
+            self.assertEqual(bg, palette['bg'])
+        self.assertEqual((230, 230, 230), w.web_palette('warm', path)['fg'])
+        self.assertEqual((138, 138, 138), w.web_palette('warm', path)['dim'])
+        self.assertEqual((51, 51, 51), w.web_palette('warm-light', path)['fg'])
+        with tempfile.TemporaryDirectory() as directory:
+            changed = Path(directory) / 'app.css'
+            changed.write_text(path.read_text().replace('--accent: #ff8a3d;', '--accent: #e37021;'))
+            self.assertEqual((227, 112, 33), w.web_palette('warm', changed)['accent'], 'future web changes must reach HDMI')
+
+    def test_linux_palette_keeps_exact_rgb_without_bold_selecting_other_slots(self):
+        rgb = w.web_palette('warm', Path(__file__).resolve().parents[2] / 'resources/css/app.css')
+        with patch.object(w.curses, 'has_colors', return_value=True), patch.object(w.curses, 'start_color'), \
+                patch.object(w.curses, 'can_change_color', return_value=True), patch.object(w, 'web_palette', return_value=rgb), \
+                patch.object(w.curses, 'init_color') as init, patch.object(w.curses, 'init_pair') as pairs, \
+                patch.object(w.curses, 'color_pair', side_effect=lambda number: number << 8):
+            inks = w.colors('warm')
+        slots = {call.args[0]: tuple(c * 255 // 1000 for c in call.args[1:]) for call in init.call_args_list}
+        self.assertEqual(8, len(slots))
+        self.assertEqual(rgb['accent'], slots[3])
+        self.assertEqual(rgb['bg'], slots[0])
+        for index, name in enumerate(('fg', 'dim', 'accent', 'good', 'run', 'fail', 'warn', 'board'), 1):
+            self.assertEqual(index << 8, inks[name], 'bold must not bypass our RGB slot')
+            self.assertEqual(rgb[name], slots[pairs.call_args_list[index - 1].args[1]])
+
+    def test_non_programmable_terminal_keeps_readable_fallback(self):
+        with patch.object(w.curses, 'has_colors', return_value=True), patch.object(w.curses, 'start_color'), \
+                patch.object(w.curses, 'can_change_color', return_value=False), patch.object(w.curses, 'init_color') as init, \
+                patch.object(w.curses, 'init_pair'), patch.object(w.curses, 'color_pair', return_value=1):
+            self.assertIn('accent', w.colors('neutral-light'))
+            init.assert_not_called()
+
     def test_escape_sequences_and_unicode_cannot_control_the_terminal(self):
         self.assertNotIn('\x1b', w.safe('\x1b[2J\u009b2J\nmodule\t\u202e'))
         self.assertTrue(all(32 <= ord(c) < 127 for c in w.safe('עברית\n\x1b[31m')))

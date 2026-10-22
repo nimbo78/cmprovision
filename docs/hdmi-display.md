@@ -14,6 +14,9 @@ This is separate from the target module's [tty2 troubleshooting console](local-c
 3. Select **Auto**, choose a screen and colors, and save. The display starts within a few seconds.
 4. Use **Alt+F1** for the normal system console and **Alt+F8** to return to the stand display. SSH remains available.
 
+After saving Auto once, no keyboard or login is needed: the enabled watcher starts at boot, detects HDMI and switches
+to the display automatically. Connecting HDMI later also starts it. The saved mode survives package updates and reboots.
+
 The default is **Off**. **Auto** starts the renderer and its application data reader only while a DRM HDMI connector
 reports `connected`. Disconnecting the cable stops both. **On** renders regardless of HDMI detection, useful for
 testing a connector whose detection is unreliable. Neither mode changes a module, project, PoE state or provisioning
@@ -23,6 +26,14 @@ A TV in standby, a KVM or an HDMI adapter can keep reporting `connected`. Detect
 whether someone is watching or whether the TV has selected this input. Use Off when this distinction matters.
 
 ## Screens and navigation
+
+The four display themes match the web UI: **Warm / Dark**, **Warm / Light**, **Neutral / Dark**, and **Neutral / Light**.
+The renderer reads the same `resources/css/app.css` tokens for the page, text, muted text, accent and status colors.
+Warm dark uses the web's `#ff8a3d` orange; neutral dark uses `#818cf8` indigo. Alpha text colors are composited over the
+page background. On the Linux console, the eight palette entries are redefined to these RGB values without changing
+other virtual terminals; stopping the display resets tty8's palette. A terminal without programmable colors falls back
+to basic ANSI colors. The HDMI theme is a shared setting; browser appearance is selected independently per browser.
+The earlier Phosphor/Monochrome choices migrate to Warm dark/Neutral dark when read, preserving Auto and other settings.
 
 - **Stand console:** switch front panels, selected module and a table of modules on the stand.
 - **All device cards:** several cards at once, with additional pages for larger batches.
@@ -81,3 +92,4 @@ required for enabling, changing or disabling the display.
 
 Implementation references: [systemd terminal service settings](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html),
 [Python curses](https://docs.python.org/3/library/curses.html), [Linux DRM interface](https://docs.kernel.org/gpu/drm-uapi.html).
+Palette programming: [Linux console controls](https://man7.org/linux/man-pages/man4/console_codes.4.html).

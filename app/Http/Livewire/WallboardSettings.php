@@ -18,7 +18,7 @@ class WallboardSettings extends Component
     public function save(Wallboard $wallboard)
     {
         abort_unless(Auth::check(), 403);
-        $settings = $this->validate(['mode' => 'required|in:off,auto,on', 'palette' => 'required|in:warm,phosphor,mono',
+        $settings = $this->validate(['mode' => 'required|in:off,auto,on', 'palette' => 'required|in:warm,warm-light,neutral,neutral-light',
             'view' => 'required|in:auto,desk,flow,engineer', 'rotation' => 'required|integer|min:5|max:60']);
         $settings['rotation'] = (int) $settings['rotation'];
         try {

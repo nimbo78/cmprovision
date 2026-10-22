@@ -12,6 +12,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import selectors
 import signal
 import subprocess
@@ -25,7 +26,11 @@ RUNTIME = Path('/run/cmprovision-wallboard')
 UNIT = 'cmprovision-wallboard-display.service'
 TTY = '/dev/tty8'
 DEFAULTS = dict(mode='off', palette='warm', view='auto', rotation=12)
-CHOICES = dict(mode=('off', 'auto', 'on'), palette=('warm', 'phosphor', 'mono'),
+WEB_THEMES = {'warm': ('warm', 'dark'), 'warm-light': ('warm', 'light'),
+              'neutral': ('neutral', 'dark'), 'neutral-light': ('neutral', 'light')}
+PALETTE_ALIASES = {'phosphor': 'warm', 'mono': 'neutral'}
+WEB_CSS = Path('/var/lib/cmprovision/resources/css/app.css')
+CHOICES = dict(mode=('off', 'auto', 'on'), palette=tuple(WEB_THEMES),
                view=('auto', 'desk', 'flow', 'engineer'))
 STOP = False
 
@@ -33,6 +38,9 @@ STOP = False
 def valid_config(data):
     if not isinstance(data, dict) or set(data) != set(DEFAULTS):
         raise ValueError('Expected mode, palette, view and rotation.')
+    data = dict(data)
+    if isinstance(data['palette'], str):
+        data['palette'] = PALETTE_ALIASES.get(data['palette'], data['palette'])
     for key, choices in CHOICES.items():
         if data[key] not in choices:
             raise ValueError('Invalid ' + key)
@@ -143,6 +151,7 @@ def release():
     try:
         interval = int(Path('/sys/module/kernel/parameters/consoleblank').read_text())
         with open(TTY, 'w') as tty:
+            tty.write('\x1b[0m\x1b]R')  # restore tty8's system palette even after a killed renderer
             tty.write('\x1b[9;%d]' % min(60, math.ceil(interval / 60)))
         previous = (RUNTIME / 'previous-vt').read_text().strip()
         if active_vt() == 'tty8' and previous.startswith('tty') and previous[3:].isdigit() and 1 <= int(previous[3:]) <= 63:
@@ -453,7 +462,8 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
         c.text(0, rows - 4, ('! %d unrecognized/quiet ports. Open Ports in the web UI.' % unknown) if unknown else 'READ ONLY / ' + safe(data.get('clock')), 'warn' if unknown else 'dim')
     c.text(0, rows - 2, ('PAUSED' if paused else 'AUTO ROTATION') + ' / CARD %d/%d / %s' %
            ((selected % len(modules)) + 1 if modules else 0, len(modules), view.upper()), 'dim')
-    c.text(max(0, cols - 57), rows - 1, 'Alt+F1 console / Alt+F8 board / <- -> / Space pause / V view', 'dim')
+    keys = 'Alt+F1 console / Alt+F8 board / <- -> / Space pause / V view'
+    c.text(max(0, cols - len(keys)), rows - 1, keys, 'dim')
     return c
 
 
@@ -505,19 +515,56 @@ class Reader:
             self.buffer = b''
 
 
+def web_palette(palette, path=WEB_CSS):
+    """The web CSS is the source of truth, read only when a palette is selected.
+
+    Console cells cannot have alpha: composite text/muted over the selected page.
+    Seven foreground colors plus a background fit even TERM=linux's eight slots.
+    """
+    style, mode = WEB_THEMES[palette]
+    selector = ':root[data-style="%s"][data-mode="%s"]' % (style, mode)
+    block = re.search(re.escape(selector) + r'\s*\{([^}]*)\}', path.read_text(encoding='utf-8'))
+    if not block:
+        raise ValueError('Missing web theme: ' + palette)
+    tokens = dict(re.findall(r'--([\w-]+):\s*([^;]+);', block[1]))
+
+    def rgb(token, background=(0, 0, 0)):
+        value = tokens[token].strip()
+        if re.fullmatch(r'#[0-9a-fA-F]{6}', value):
+            return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+        match = re.fullmatch(r'rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)', value)
+        if not match:
+            raise ValueError('Unsupported web color: ' + token)
+        alpha = float(match[4])
+        return tuple(int(int(match[i + 1]) * alpha + background[i] * (1 - alpha) + .5) for i in range(3))
+
+    bg = rgb('page')
+    result = {name: rgb(token, bg) for name, token in dict(fg='text', dim='muted', accent='accent',
+              good='pos-text', run='info-text', fail='neg-text', warn='warn-text').items()}
+    return dict(result, bg=bg, board=result['accent'])
+
+
 def colors(palette):
     if not curses.has_colors():
         return dict.fromkeys(['fg', 'dim', 'accent', 'good', 'run', 'fail', 'warn', 'board'], 0)
     curses.start_color()
-    colors = dict(fg=7, dim=7, accent=3, good=2, run=6, fail=1, warn=3, board=5)
-    if palette == 'mono':
-        colors = dict.fromkeys(colors, 7)
-    elif palette == 'phosphor':
-        colors['accent'] = colors['board'] = 2
+    slots = dict(fg=7, dim=6, accent=3, good=2, run=4, fail=1, warn=5, board=3)
+    custom = curses.can_change_color()
+    if custom:
+        rgb = web_palette(palette)
+        for name, slot in dict(slots, bg=0).items():
+            if name == 'board':
+                continue
+            # linux's initc terminfo multiplies by 255/1000 with integer division.
+            # Round up here so every original 8-bit CSS channel survives exactly.
+            curses.init_color(slot, *((channel * 1000 + 254) // 255 for channel in rgb[name]))
+    else:
+        slots = dict(fg=7, dim=7, accent=3, good=2, run=6, fail=1, warn=3, board=3)
     result = {}
-    for index, (name, color) in enumerate(colors.items(), 1):
+    for index, (name, color) in enumerate(slots.items(), 1):
         curses.init_pair(index, color, 0)
-        result[name] = curses.color_pair(index) | (0 if name == 'dim' else curses.A_BOLD)
+        # A_BOLD selects a different, bright palette entry on Linux consoles.
+        result[name] = curses.color_pair(index) | (curses.A_BOLD if not custom and name != 'dim' else 0)
     return result
 
 
@@ -528,6 +575,7 @@ def display(screen):
     reader = Reader()
     data = dict(version=1, generated_at=0, modules=[], switches=[], counts={})
     selected, tick, last_rotation, paused, view_override = 0, 0, time.monotonic(), False, None
+    palette_name, inks = None, None
     try:
         while not STOP:
             config = read_config()
@@ -543,7 +591,11 @@ def display(screen):
             rows, cols = screen.getmaxyx()
             width, height = min(cols, 180), min(rows, 54)
             canvas = frame(data, width, height, selected, view_override or config['view'], tick=tick, paused=paused)
-            inks = colors(config['palette'])
+            if config['palette'] != palette_name:
+                inks = colors(config['palette'])
+                palette_name = config['palette']
+                screen.bkgd(' ', inks['fg'])
+                screen.clearok(True)
             ox, oy = max(0, (cols - width) // 2), max(0, (rows - height) // 2)
             screen.erase()
             for y, row in enumerate(canvas.cells):
@@ -600,7 +652,14 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: globals().__setitem__('STOP', True))
     signal.signal(signal.SIGINT, lambda *_: globals().__setitem__('STOP', True))
     if args.action == 'display':
-        curses.wrapper(display)
+        try:
+            curses.wrapper(display)
+        finally:
+            # Reset only this terminal, not the global console palette (PIO_CMAP).
+            reset = curses.tigetstr('oc')
+            if reset:
+                sys.stdout.buffer.write(reset)
+                sys.stdout.buffer.flush()
     else:
         {'watch': watch, 'claim': claim, 'release': release}[args.action]()
     return 0

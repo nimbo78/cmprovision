@@ -78,9 +78,14 @@ class WallboardTest extends TestCase
         $service->shouldReceive('settings')->andReturn(Wallboard::DEFAULTS);
         $service->shouldReceive('status')->andReturn(['state' => 'off', 'connected' => false]);
         $service->shouldReceive('save')->once()->with(['mode' => 'auto', 'palette' => 'warm', 'view' => 'auto', 'rotation' => 12]);
-        Livewire::actingAs(User::factory()->create())->test(WallboardSettings::class)
+        $component = Livewire::actingAs(User::factory()->create())->test(WallboardSettings::class)
             ->set('mode', 'shell')->call('save')->assertHasErrors('mode')
             ->set('mode', 'auto')->set('rotation', 0)->call('save')->assertHasErrors('rotation')
             ->set('rotation', 12)->call('save')->assertHasNoErrors()->assertSee('Saved.');
+        foreach (['warm-light', 'neutral', 'neutral-light'] as $palette) {
+            $service->shouldReceive('save')->once()->with(['mode' => 'auto', 'palette' => $palette, 'view' => 'auto', 'rotation' => 12]);
+            $component->set('palette', $palette)->call('save')->assertHasNoErrors();
+        }
+        $component->set('palette', 'invalid')->call('save')->assertHasErrors('palette');
     }
 }
