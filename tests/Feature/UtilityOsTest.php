@@ -99,6 +99,56 @@ class UtilityOsTest extends TestCase
         $this->assertNull($os->tftpRoot());
     }
 
+    /* the service with a count of the files it reads whole: SHA256 of tens of megabytes is what made Settings take seconds */
+    protected function counting(): UtilityOs
+    {
+        return new class extends UtilityOs {
+            public int $hashes = 0;
+
+            protected function hash(string $file): string|false
+            {
+                $this->hashes++;
+                return parent::hash($file);
+            }
+        };
+    }
+
+    public function test_the_files_are_hashed_once_while_they_stay_as_they_are()
+    {
+        $os = $this->counting();
+        $os->systems();
+        $first = $os->hashes;
+        $this->assertGreaterThan(0, $first);
+        $os->systems();
+        $os->current();
+        $os->manifest('scriptexecute64');
+        $this->assertSame($first, $os->hashes, 'a page load must not read the files again');
+    }
+
+    public function test_a_replaced_file_is_hashed_again_and_a_damaged_one_is_refused()
+    {
+        $os = $this->counting();
+        $os->systems();
+        $before = $os->hashes;
+        $file = $this->tree.'/scriptexecute64/kernel8.img';
+        file_put_contents($file, 'KERNEL OF SCRIPTEXECUTE64');   // the same size, other bytes
+        touch($file, time() + 5);                                   // and another time, as a replaced file has
+        $this->assertNull($os->manifest('scriptexecute64'));
+        $this->assertGreaterThan($before, $os->hashes);
+    }
+
+    public function test_switching_never_trusts_the_remembered_check()
+    {
+        $os = $this->counting();
+        $os->systems();   // remembered
+        $file = $this->tree.'/scriptexecute64/kernel8.img';
+        $time = filemtime($file);
+        file_put_contents($file, 'KERNEL OF SCRIPTEXECUTE64');   // the same size and, below, the same time: a stat cannot see it
+        touch($file, $time);
+        $this->expectException(\InvalidArgumentException::class);
+        $os->switchTo('scriptexecute64');
+    }
+
     public static function brokenSystems(): array
     {
         return array_map(fn ($case) => [$case], ['missing-file', 'wrong-size', 'wrong-hash', 'empty-version',
