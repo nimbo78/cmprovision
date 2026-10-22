@@ -10,6 +10,12 @@ cmprovision4 (2.7.2~dev1) unstable; urgency=medium
     operation lock and is written only to the run that sent it, the
     card's request is lock-free, the USB receiver survives a failing
     device (termios errors) and the API list hides the snapshot.
+  * Review minors: the USB receiver asks the application about an unchanged
+    'skip' once per 30 s, an unanswered snapshot request expires after
+    15 minutes, the collector tolerates a BusyBox without fractional
+    sleep and the diagnostics agent no longer exits on a failed open of
+    its gadget device; the last two reach modules with the next utility
+    OS build. The collector is also tested under BusyBox ash.
 
  -- nimbo78 <igor.sin.78@gmail.com>  Thu, 22 Oct 2026 03:00:00 +0300
 

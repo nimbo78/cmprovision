@@ -11,6 +11,8 @@ class ModuleDiagnostics
 {
     const MAX_BYTES = 32768;
     const REQUEST_SECONDS = 90;
+    /* A request nobody answered stops counting: the card stops warning about it and USB no longer collects for it. */
+    const REQUEST_EXPIRES_SECONDS = 900;
     const FACTS = ['serial', 'kernel', 'model', 'target', 'block', 'controller', 'host', 'card_type',
         'card_name', 'cid', 'csd', 'manfid', 'oemid', 'fwrev', 'life_time', 'pre_eol_info', 'sectors', 'readonly', 'throttled',
         'boot_id', 'event_id', 'mac', 'network_stage', 'last_http_code', 'last_curl_exit',

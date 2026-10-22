@@ -170,12 +170,25 @@ def application(app, payload):
     return reply
 
 
-def inspect(device, app, call=application):
+SKIP_SECONDS = 30
+SKIPS = {}   # serial -> (what the module announced, until): an unchanged 'skip' is not asked of the application again
+
+
+def inspect(device, app, call=application, now=time.monotonic):
     try:
         with Channel(device.path) as channel:
             status = hello(channel, device)
+            # age and collected change every time; the rest says whether anything new could be decided.
+            announced = (status['boot_id'], status['event_id'], status['context'], status['token'])
+            known = SKIPS.get(device.serial)
+            if known and known[0] == announced and now() < known[1]:
+                return 'skip'
             # HELLO is metadata only. The full snapshot is requested only after this application decision.
             decision = call(app, dict(operation='status', status=status))
+            if decision['action'] == 'skip':
+                SKIPS[device.serial] = (announced, now() + SKIP_SECONDS)   # one php process per device is costly on a Pi 4
+            else:
+                SKIPS.pop(device.serial, None)
             if decision['action'] != 'collect':
                 return decision['action']
             report, token = receive(channel, status, decision)

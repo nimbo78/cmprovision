@@ -20,7 +20,8 @@ class UsbDiagnostics
         if ($cm && $m['token'] !== '-' && !$current)
             return ['action' => 'skip', 'reason' => 'obsolete run'];
         if ($current && $cm->diagnostics_requested_at && $cm->os_checked_at === null && in_array($cm->phase, ['done', 'failed'], true)
-            && $cm->diagnostics_requested_at->lte(now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS)))
+            && $cm->diagnostics_requested_at->lte(now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS))
+            && $cm->diagnostics_requested_at->gt(now()->subSeconds(ModuleDiagnostics::REQUEST_EXPIRES_SECONDS)))
         {
             $id = substr(hash('sha256', $cm->diagnostics_requested_at->toISOString().$m['boot_id']), 0, 32);
             $id = substr($id, 0, 8).'-'.substr($id, 8, 4).'-'.substr($id, 12, 4).'-'.substr($id, 16, 4).'-'.substr($id, 20);

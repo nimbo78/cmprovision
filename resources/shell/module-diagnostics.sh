@@ -14,9 +14,13 @@ cmp_diag_power() (
     : > "$diag_power_file" || return 0
     vcgencmd get_throttled > "$diag_power_file" 2>/dev/null &
     diag_power_pid=$!
+    # Two seconds in all. A BusyBox built without fractional sleep rejects 0.1 at once, which would end the wait
+    # immediately and kill a firmware query that is merely slow: it then waits in whole seconds.
+    diag_nap=0.1; diag_limit=20
+    sleep 0.1 2>/dev/null || { diag_nap=1; diag_limit=2; }
     diag_ticks=0
-    while kill -0 "$diag_power_pid" 2>/dev/null && [ "$diag_ticks" -lt 20 ]; do
-        sleep 0.1
+    while kill -0 "$diag_power_pid" 2>/dev/null && [ "$diag_ticks" -lt "$diag_limit" ]; do
+        sleep "$diag_nap"
         diag_ticks=$((diag_ticks + 1))
     done
     if kill -0 "$diag_power_pid" 2>/dev/null; then

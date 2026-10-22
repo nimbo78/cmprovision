@@ -134,6 +134,8 @@ class RealAgentTest(unittest.TestCase):
     @unittest.skipUnless((ROOT/'vendor/autoload.php').exists(), 'Application dependencies required')
     def test_real_cli_stores_a_usb_report_without_registering_or_flashing_a_module(self):
         import sqlite3
+        if (ROOT/'bootstrap/cache/config.php').exists():
+            self.skipTest('A cached configuration ignores the test environment and would migrate the real database.')
         keys=['DB_CONNECTION','DB_DATABASE','APP_ENV','CACHE_DRIVER']
         previous={k:os.environ.get(k) for k in keys}
         database=self.root/'isolated.sqlite'; database.touch()
@@ -149,6 +151,40 @@ class RealAgentTest(unittest.TestCase):
             for key,value in previous.items():
                 if value is None: os.environ.pop(key,None)
                 else: os.environ[key]=value
+
+class SkipCacheTest(unittest.TestCase):
+    """An idle device is not a php process every ten seconds."""
+    class Stub:
+        def __init__(self, path): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+    def run_cycles(self, statuses, decisions, times):
+        receiver.SKIPS.clear()
+        device = receiver.Device('/dev/ttyACM0', SERIAL, '1-1')
+        calls = []
+        def app(path, data):
+            calls.append(data['operation']); return decisions[len(calls) - 1] if len(calls) <= len(decisions) else dict(action='skip')
+        clock = iter(times)
+        with mock.patch.object(receiver, 'Channel', self.Stub), mock.patch.object(receiver, 'hello', side_effect=statuses):
+            results = [receiver.inspect(device, '/unused', app, now=lambda: next(clock)) for _ in statuses]
+        return results, calls
+    def status(self, **over):
+        base = dict(serial=SERIAL, boot_id=BOOT, event_id=EVENT, context='failure', age=10, collected=5, token='t'*40)
+        return base | over
+    def test_an_unchanged_skip_is_remembered_for_a_while_and_then_asked_again(self):
+        # cycle 1 asks (clock 0); cycle 2 (clock 10, age moved on) is answered from memory; cycle 3 (clock 40, past 30 s) asks again
+        results, calls = self.run_cycles([self.status(), self.status(age=20), self.status(age=50)],
+                                         [dict(action='skip', reason='x')] * 3, [0, 10, 40, 40])
+        self.assertEqual(['skip', 'skip', 'skip'], results)
+        self.assertEqual(['status', 'status'], calls)
+    def test_a_new_event_or_token_is_asked_at_once(self):
+        results, calls = self.run_cycles([self.status(), self.status(event_id='bbbbbbbb-cccc-dddd-eeee-ffffffffffff'), self.status(token='u'*40)],
+                                         [dict(action='skip', reason='x')] * 3, [0, 1, 2])
+        self.assertEqual(['status', 'status', 'status'], calls)
+    def test_a_wait_or_collect_decision_is_never_remembered(self):
+        results, calls = self.run_cycles([self.status(), self.status(age=20)], [dict(action='wait'), dict(action='wait')], [])
+        self.assertEqual(['wait', 'wait'], results)
+        self.assertEqual(['status', 'status'], calls)
 
 class IsolationTest(unittest.TestCase):
     """One misbehaving device costs that device, never the whole cycle."""

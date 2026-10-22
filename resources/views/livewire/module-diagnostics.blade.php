@@ -17,7 +17,7 @@
     @endif
     @if ($diagnosticsPending)
         <p class="text-sm text-fg-muted mt-2" role="status">Waiting for the module to send a new snapshot…</p>
-    @elseif ($cm->diagnostics_requested_at)
+    @elseif ($cm->diagnostics_requested_at?->gt(now()->subSeconds(\App\Support\ModuleDiagnostics::REQUEST_EXPIRES_SECONDS)))
         <p class="text-sm text-warn mt-2" role="status">No Ethernet snapshot arrived within 90 seconds. A connected USB diagnostic agent can provide the fallback report; otherwise check module power and connectivity.</p>
     @endif
     @if ($diagnosticsMessage)<p class="text-sm text-warn mt-2" role="status">{{ $diagnosticsMessage }}</p>@endif

@@ -126,6 +126,19 @@ class UsbDiagnosticsTest extends TestCase
         $this->assertSame('manual', $cm->fresh()->storage_diagnostics['context']);
     }
 
+    public function test_an_unanswered_manual_request_expires_for_usb_and_for_the_card()
+    {
+        $cm = $this->cm();
+        $cm->update(['diagnostics_requested_at' => now()->subSeconds(ModuleDiagnostics::REQUEST_EXPIRES_SECONDS + 60), 'storage_diagnostics_at' => now()->subHour(),
+            'storage_diagnostics' => ModuleDiagnostics::parse($this->bytes($this->metadata()), $cm) + ['source' => 'ethernet']]);
+        $m = $this->metadata(['token' => $cm->diagnostics_token, 'context' => 'idle', 'event_id' => '-']);
+        $this->assertSame('skip', app(UsbDiagnostics::class)->status($m)['action']);
+        $this->actingAs(User::factory()->create());
+        $this->get(route('cm', $cm->serial))->assertOk()->assertDontSee('No Ethernet snapshot arrived');
+        $cm->update(['diagnostics_requested_at' => now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS + 30)]);
+        $this->get(route('cm', $cm->serial))->assertOk()->assertSee('No Ethernet snapshot arrived');
+    }
+
     public function test_mismatched_descriptors_boots_events_or_contexts_are_rejected()
     {
         $receiver = app(UsbDiagnostics::class);

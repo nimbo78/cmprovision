@@ -106,12 +106,13 @@ gadget_setup() {
 while :; do
     if gadget_setup; then
         device=${CMP_DIAG_DEVICE:-/dev/ttyGS0}
-        # Opening can wait for the host. This daemon is independent of provisioning.
-        if exec 3<> "$device"; then
+        # Opening can wait for the host. This daemon is independent of provisioning. The open is in a subshell:
+        # a failed redirection of the special builtin exec ends a non-interactive ash, and with it this daemon.
+        (
+            exec 3<> "$device" || exit 0
             stty raw -echo <&3 2>/dev/null
             while IFS= read -r -n 256 command <&3; do dispatch "$command" >&3; done
-            exec 3>&-
-        fi
+        )
     fi
     sleep 2
 done

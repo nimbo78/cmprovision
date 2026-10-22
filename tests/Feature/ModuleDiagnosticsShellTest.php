@@ -49,14 +49,26 @@ class ModuleDiagnosticsShellTest extends TestCase
         chmod($this->dir.'/bin/'.$name, 0755);
     }
 
+    /* The shell that runs the generated script, and what precedes it. The module runs it under BusyBox ash, see the
+       subclass; bash is where the pipefail regression below is checked. */
+    protected function shell(): array
+    {
+        return ['/bin/bash'];
+    }
+
+    protected function shellHeader(): string
+    {
+        return "#!/bin/bash\nset -o pipefail\n";
+    }
+
     protected function execute($commands, $leds = false): string
     {
         $vars = ['serial' => self::SERIAL, 'server' => 'test.invalid', 'storage' => $this->dir.'/mmcblk0', 'diagnosticsToken' => str_repeat('d', 40)];
-        $script = "#!/bin/bash\nset -o pipefail\n".view('scriptexecute.diagnostics', $vars)->render()."\n";
+        $script = $this->shellHeader().view('scriptexecute.diagnostics', $vars)->render()."\n";
         if ($leds)
             $script .= view('scriptexecute.leds', $vars)->render()."\n";
         file_put_contents($this->dir.'/collect.sh', $script.$commands."\n");
-        $process = new Process(['/bin/bash', $this->dir.'/collect.sh'], $this->dir, [
+        $process = new Process([...$this->shell(), $this->dir.'/collect.sh'], $this->dir, [
             'PATH' => $this->dir.'/bin:'.getenv('PATH'), 'CMP_DIAG_SYS' => $this->dir.'/sys',
             'CMP_DIAG_ETC' => $this->dir.'/etc', 'CMP_DIAG_PROC' => $this->dir.'/proc', 'CMP_DIAG_TMP' => $this->dir.'/tmp',
         ]);
@@ -117,7 +129,9 @@ class ModuleDiagnosticsShellTest extends TestCase
         file_put_contents($this->dir.'/kernel.log', str_repeat('[3.7] mmc0: '.str_repeat('x', 1000)."\n", 500));
         $this->execute('cmp_diag_report failure');
         $text = file_get_contents($this->dir.'/uploaded.txt');
-        $this->assertLessThan(ModuleDiagnostics::MAX_BYTES, strlen($text));
+        // The USB agent and the receiver refuse more than MAX_BYTES, and the agent is part of the utility OS image: a new fact
+        // or section must not eat the margin without somebody noticing here.
+        $this->assertLessThan(ModuleDiagnostics::MAX_BYTES - 2048, strlen($text));
         $this->assertSame(80, substr_count($text, '[3.7] mmc0:'));
     }
 
