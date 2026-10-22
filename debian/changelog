@@ -9,6 +9,15 @@ cmprovision4 (2.7.2~dev1) unstable; urgency=medium
 
  -- nimbo78 <igor.sin.78@gmail.com>  Thu, 22 Oct 2026 03:00:00 +0300
 
+cmprovision4 (2.7.1~dev2) unstable; urgency=medium
+
+  * Draw verified front panels for Catalyst 2960CX, fixed-uplink C9200L
+    and MikroTik CRS309, preserving interface keys and port selection.
+  * Keep physical banks on one panel with horizontal scrolling; label
+    unverified and incomplete snapshots as automatic port order.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Wed, 21 Oct 2026 20:42:42 +0300
+
 cmprovision4 (2.7.1~dev1) unstable; urgency=high
 
   * Require patched PHP CLI and FPM packages: 8.3.36, 8.4.27 or 8.5.12

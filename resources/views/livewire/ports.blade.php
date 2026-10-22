@@ -77,6 +77,12 @@
                         @if ($sw['placeholder'])
                             <p class="ports-empty">{{ $sw['placeholder'] }}</p>
                         @endif
+                        @if (!empty($sw['part']['blocks']))
+                            <div class="ports-layout-label">{{ $sw['part']['panel'] ? 'Front panel · view from the front' : 'Automatic port order' }}</div>
+                        @endif
+                        @if ($sw['part']['panel'] ?? null)
+                            @include('livewire.ports-panel')
+                        @else
                         @foreach ($sw['part']['blocks'] ?? [] as $block)
                             <div class="ports-block {{ $block['uplinks'] ? 'uplinks' : '' }}">
                                 {{-- groups of four ports: on a narrow panel a group wraps as a whole (app.css) --}}
@@ -103,6 +109,7 @@
                                 @endforeach
                             </div>
                         @endforeach
+                        @endif
                     </div>
                 </div>
             </section>
