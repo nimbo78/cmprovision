@@ -13,9 +13,7 @@
         <h2 class="font-semibold text-xl text-fg leading-tight">{{ $logTitle }}</h2>
         <br>
 
-        <div style="height: 100%">
-        <textarea wrap="off" class="min-w-full h-96">{{ $logOutput }}</textarea>
-        </div>
+        <livewire:service-log :source="$logSource" :key="'log-'.$logSource" />
 
       </div>
  

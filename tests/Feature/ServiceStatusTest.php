@@ -37,8 +37,7 @@ class ServiceStatusTest extends TestCase
         if (!$seen)
             $this->markTestSkipped('the journal does not take logger lines here');
 
-        $log = Livewire::test(Settings::class)->call('viewLogUplinkSpare')->get('logOutput');
-
-        $this->assertStringContainsString($marker, $log);
+        // the window reads the journal itself now (ServiceLog); its first render holds the line
+        Livewire::test(Settings::class)->call('viewLogUplinkSpare')->assertSet('logSource', 'uplink-spare')->assertSee($marker);
     }
 }
