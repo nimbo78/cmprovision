@@ -6,6 +6,10 @@ cmprovision4 (2.7.2~dev1) unstable; urgency=medium
     per-boot identity checks and separate reports for unregistered boards.
   * Include the dedicated CDC ACM agent and shared read-only collector
     in utility OS 2026.10.1; retain legacy Ethernet provisioning.
+  * Review fixes: an Ethernet snapshot no longer takes the module
+    operation lock and is written only to the run that sent it, the
+    card's request is lock-free, the USB receiver survives a failing
+    device (termios errors) and the API list hides the snapshot.
 
  -- nimbo78 <igor.sin.78@gmail.com>  Thu, 22 Oct 2026 03:00:00 +0300
 

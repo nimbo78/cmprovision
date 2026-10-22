@@ -833,28 +833,35 @@ exit 1
         return '';
     }
 
-    /* A read-only snapshot from the current utility-OS script. The per-run token rejects late reports. */
+    /* A read-only snapshot from the current utility-OS script. The per-run token rejects late reports.
+       Telemetry does not take the module operation lock: a start, a PoE restart or an SSH re-provision of the same
+       module would be refused as busy, or the snapshot lost. The write is bound to the run token instead, so a run
+       that started meanwhile (new token) keeps its own state. */
     public function registerModuleDiagnostics(Request $req)
     {
         abort_unless($req->isMethod('POST'), 405);
-        return ModuleOperationLock::run([$this->serial], function () use ($req) {
-            $cm = Cm::where('serial', $this->serial)->firstOrFail();
-            $token = $req->input('diagnostics_token');
-            abort_unless(is_string($token) && $cm->diagnostics_token && hash_equals($cm->diagnostics_token, $token), 403);
-            $file = $req->file('diagnostics');
-            abort_unless($file instanceof \Illuminate\Http\UploadedFile && $file->isValid(), 422);
-            abort_if($file->getSize() > ModuleDiagnostics::MAX_BYTES, 413);
-            try
-            {
-                $report = ModuleDiagnostics::parse($file->get(), $cm);
-                $report['source'] = 'ethernet';
-            }
-            catch (\InvalidArgumentException $e)
-            {
-                abort(422, $e->getMessage());
-            }
-            $previousReport = $cm->storage_diagnostics;
-            $summary = ModuleDiagnostics::summary($report);
+        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        $token = $req->input('diagnostics_token');
+        abort_unless(is_string($token) && $cm->diagnostics_token && hash_equals($cm->diagnostics_token, $token), 403);
+        $file = $req->file('diagnostics');
+        abort_unless($file instanceof \Illuminate\Http\UploadedFile && $file->isValid(), 422);
+        abort_if($file->getSize() > ModuleDiagnostics::MAX_BYTES, 413);
+        try
+        {
+            $report = ModuleDiagnostics::parse($file->get(), $cm);
+            $report['source'] = 'ethernet';
+        }
+        catch (\InvalidArgumentException $e)
+        {
+            abort(422, $e->getMessage());
+        }
+        $previousReport = $cm->storage_diagnostics;
+        $summary = ModuleDiagnostics::summary($report);
+        $stored = \Illuminate\Support\Facades\DB::transaction(function () use ($cm, $token, $report, $previousReport, $summary, $req) {
+            $rows = Cm::whereKey($cm->id)->where('diagnostics_token', $token)->update([
+                'storage_diagnostics' => $report, 'storage_diagnostics_at' => now(), 'diagnostics_requested_at' => null]);
+            if ($rows !== 1)
+                return false;
             if ($report['context'] === 'failure' && $summary['issues'] && $previousReport !== $report)
             {
                 foreach ($summary['issues'] as $issue)
@@ -862,12 +869,10 @@ exit 1
                         'loglevel' => 'error', 'msg' => 'Module diagnostics: '.$issue['title'].'. '.
                             ($issue['evidence'] ? $issue['evidence']."\n" : '').$issue['advice']]);
             }
-            $cm->storage_diagnostics = $report;
-            $cm->storage_diagnostics_at = now();
-            $cm->diagnostics_requested_at = null;
-            $cm->save();
-            return response('', 204);
+            return true;
         });
+        abort_unless($stored, 409);   // the run changed while the report was parsed
+        return response('', 204);
     }
 
     /* ?progress=<phase>[&detail=<script name>][&sectors=<n>]: where the module is, sent every few seconds

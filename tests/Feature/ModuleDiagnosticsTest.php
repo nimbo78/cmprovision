@@ -4,14 +4,17 @@ namespace Tests\Feature;
 
 use App\Http\Livewire\CmCard;
 use App\Models\Cm;
+use App\Models\Cmlog;
 use App\Models\Image;
 use App\Models\Project;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\ModuleOperationLock;
 use App\Support\FailureAdvice;
 use App\Support\ModuleDiagnostics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Laravel\Sanctum\Sanctum;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -282,6 +285,59 @@ class ModuleDiagnosticsTest extends TestCase
         $this->assertSame([], ModuleDiagnostics::summary($report)['issues']);
         $report['sections']['kernel'] = '[4.2] NETDEV WATCHDOG: eth0 (bcmgenet): transmit queue 0 timed out';
         $this->assertSame('ethernet_timeout', ModuleDiagnostics::summary($report)['issues'][0]['code']);
+    }
+
+    public function test_a_snapshot_is_stored_while_another_operation_holds_the_module_lock()
+    {
+        $this->start();
+        ModuleOperationLock::run([self::SERIAL], function () {
+            // A PoE restart or an SSH re-provision of this module is running: telemetry must not be refused or lost.
+            $this->upload($this->snapshot())->assertNoContent();
+        });
+        $this->assertSame('failure', $this->cm()->storage_diagnostics['context']);
+    }
+
+    public function test_the_card_requests_a_snapshot_while_another_operation_holds_the_module_lock()
+    {
+        $this->onlineSnapshot();
+        $this->actingAs(User::factory()->create());
+        ModuleOperationLock::run([self::SERIAL], function () {
+            Livewire::test(CmCard::class, ['serial' => self::SERIAL])->call('collectModuleDiagnostics')->assertHasNoErrors();
+        });
+        $this->assertNotNull($this->cm()->diagnostics_requested_at);
+    }
+
+    public function test_a_snapshot_for_a_run_that_ended_while_it_was_parsed_is_dropped_not_written_to_the_new_run()
+    {
+        $this->start();
+        $old = $this->cm()->diagnostics_token;
+        $logged = Cmlog::count();
+        $fired = false;
+        // The module restarts (a new run token) right after the controller has read the row: the write is bound to
+        // the token the report arrived with, so it touches nothing of the new run.
+        Cm::retrieved(function (Cm $cm) use (&$fired) {
+            if (!$fired)
+            {
+                $fired = true;
+                Cm::whereKey($cm->id)->update(['diagnostics_token' => 'new-run-token']);
+            }
+        });
+        $this->upload($this->snapshot(), $old)->assertStatus(409);
+        $cm = Cm::where('serial', self::SERIAL)->firstOrFail();
+        $this->assertSame('new-run-token', $cm->diagnostics_token);
+        $this->assertNull($cm->storage_diagnostics);
+        $this->assertSame($logged, Cmlog::count());   // a dropped snapshot writes no finding into the log either
+    }
+
+    public function test_the_api_list_of_modules_has_neither_the_run_token_nor_the_snapshot()
+    {
+        $this->onlineSnapshot();
+        $this->assertNotNull($this->cm()->storage_diagnostics);
+        Sanctum::actingAs(User::factory()->create(), ['read']);
+        $row = $this->getJson('/api/cms')->assertOk()->json(0);
+        $this->assertSame(self::SERIAL, $row['serial']);
+        $this->assertArrayNotHasKey('diagnostics_token', $row);
+        $this->assertArrayNotHasKey('storage_diagnostics', $row);
     }
 
 }

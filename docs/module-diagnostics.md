@@ -164,3 +164,7 @@ Artisan ingestion against a separate temporary SQLite database. The PHP
 `UsbDiagnosticsTest` covers run ownership, concurrent Ethernet delivery and the web
 page. Utility OS checks additionally validate the built kernel/image and boot it in
 QEMU; physical USB enumeration still needs a connected CM4 and a stand acceptance check.
+
+## Trust model
+
+The per-run token binds a snapshot to one provisioning run so that a late report cannot overwrite a newer run. It is not a credential: the module sends it as a query parameter, so it can appear in the provisioner's web server log, and the USB agent announces it to the USB host. Any host on the stand network that learns it can replace that run's snapshot, which is the same trust the stand already places in its network (`/scriptexecute` is open to the stand and the server itself only). A device on the provisioner's USB port can likewise create reports under any serial or MAC; they show only as a USB report on the card and port panel and never change the module's provisioning state.

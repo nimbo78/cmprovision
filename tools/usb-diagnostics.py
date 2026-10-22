@@ -183,9 +183,18 @@ def inspect(device, app, call=application):
             if reply['action'] == 'stored':
                 logging.info('USB fallback report received for %s', device.serial)
             return reply['action']
-    except (OSError, ValueError, EOFError, TimeoutError, subprocess.SubprocessError) as error:
-        # Device bytes and run tokens never enter logs or shell command lines.
+    except (OSError, ValueError, EOFError, TimeoutError, subprocess.SubprocessError, termios.error, KeyError, TypeError) as error:
+        # Device bytes and run tokens never enter logs or shell command lines. termios.error is not an OSError:
+        # a cable pulled between open() and tcsetattr() must cost one device, not the whole cycle.
         logging.warning('USB diagnostics %s: %s', device.serial, type(error).__name__)
+        return 'error'
+
+
+def inspect_safely(device, app):
+    try:
+        return inspect(device, app)
+    except Exception as error:   # whatever one device does, the others and the next cycle go on
+        logging.warning('USB diagnostics %s: unexpected %s', device.serial, type(error).__name__)
         return 'error'
 
 
@@ -198,7 +207,7 @@ def main():
     with ThreadPoolExecutor(max_workers=2) as pool:
         while True:
             devices = discover()
-            list(pool.map(lambda d: inspect(d, args.app), devices))
+            list(pool.map(lambda d: inspect_safely(d, args.app), devices))
             if args.once:
                 return
             time.sleep(10)

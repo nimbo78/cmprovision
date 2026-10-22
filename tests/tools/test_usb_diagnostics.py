@@ -8,8 +8,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import termios
 import tty
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('usb_receiver', ROOT / 'tools/usb-diagnostics.py')
@@ -147,5 +149,28 @@ class RealAgentTest(unittest.TestCase):
             for key,value in previous.items():
                 if value is None: os.environ.pop(key,None)
                 else: os.environ[key]=value
+
+class IsolationTest(unittest.TestCase):
+    """One misbehaving device costs that device, never the whole cycle."""
+    def test_termios_error_is_an_error_for_that_device(self):
+        master, slave = pty.openpty()
+        try:
+            device = receiver.Device(os.ttyname(slave), SERIAL, '1-1')
+            with mock.patch.object(receiver.termios, 'tcsetattr', side_effect=termios.error(5, 'Input/output error')):
+                self.assertEqual('error', receiver.inspect(device, '/unused', lambda *args: self.fail('the application must not be called')))
+        finally:
+            os.close(master); os.close(slave)
+    def test_a_malformed_application_answer_is_an_error_for_that_device(self):
+        class Stub:
+            def __init__(self, path): pass
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+        device = receiver.Device('/dev/ttyACM0', SERIAL, '1-1')
+        with mock.patch.object(receiver, 'Channel', Stub), mock.patch.object(receiver, 'hello', return_value={}):
+            self.assertEqual('error', receiver.inspect(device, '/unused', lambda app, data: {}))
+    def test_an_unexpected_exception_does_not_escape_the_cycle(self):
+        device = receiver.Device('/dev/ttyACM0', SERIAL, '1-1')
+        with mock.patch.object(receiver, 'inspect', side_effect=RuntimeError('boom')):
+            self.assertEqual('error', receiver.inspect_safely(device, '/unused'))
 
 if __name__=='__main__': unittest.main()

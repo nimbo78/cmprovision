@@ -51,7 +51,8 @@ class Cm extends Model
         'diagnostics_token', 'storage_diagnostics', 'storage_diagnostics_at', 'diagnostics_requested_at',
     ];
 
-    protected $hidden = ['diagnostics_token'];
+    // The snapshot is up to 32 KiB per module with kernel output: it is read through the card and its download, not the API.
+    protected $hidden = ['diagnostics_token', 'storage_diagnostics'];
 
     // The original storage_diagnostics columns also hold the extended module snapshot.
     protected $casts = [

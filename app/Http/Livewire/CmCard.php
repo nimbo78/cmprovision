@@ -12,7 +12,6 @@ use App\Support\FailureAdvice;
 use App\Support\RunTimeline;
 use App\Support\StandMap;
 use App\Support\ModuleDiagnostics;
-use App\Services\ModuleOperationLock;
 use Livewire\Component;
 
 /* The module card (/cms/<serial>): the last run step by step, the bootloader before and after, the
@@ -74,20 +73,18 @@ class CmCard extends Component
 
     public function collectModuleDiagnostics()
     {
-        ModuleOperationLock::run([$this->serial], function () {
-            $cm = Cm::where('serial', $this->serial)->firstOrFail();
-            if (!$cm->canCollectModuleDiagnostics())
-            {
-                $this->diagnosticsMessage = 'The module must be online in the current utility OS to collect a new snapshot.';
-                return;
-            }
-            if (!$cm->diagnostics_requested_at || $cm->diagnostics_requested_at->lte(now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS)))
-            {
-                $cm->diagnostics_requested_at = now();
-                $cm->save();
-            }
-            $this->diagnosticsMessage = null;
-        });
+        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        if (!$cm->canCollectModuleDiagnostics())
+        {
+            $this->diagnosticsMessage = 'The module must be online in the current utility OS to collect a new snapshot.';
+            return;
+        }
+        // No operation lock: this only marks a request, and a module that is busy must not turn the button into an error.
+        $cutoff = now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS);
+        Cm::whereKey($cm->id)
+            ->where(fn ($q) => $q->whereNull('diagnostics_requested_at')->orWhere('diagnostics_requested_at', '<=', $cutoff))
+            ->update(['diagnostics_requested_at' => now()]);
+        $this->diagnosticsMessage = null;
     }
 
     public function downloadModuleDiagnostics()
