@@ -263,14 +263,14 @@ def port_mark(port, modules):
 def banks(switch, width):
     """Keep columns of verified banks in their physical order, splitting only between columns."""
     result = []
-    max_columns = max(1, (width - 2) // 9)
+    max_columns = max(1, width // 10)
     for block in switch.get('blocks', []):
         rows = max(1, min(2, int(block['rows'])))
         ports = block['ports']
         for start in range(0, len(ports), max_columns * rows):
             part = ports[start:start + max_columns * rows]
             result.append(dict(label=block['label'], rows=rows, ports=part,
-                               width=math.ceil(len(part) / rows) * 9, height=2 + rows * 3))
+                               width=math.ceil(len(part) / rows) * 10, height=2 + rows * 3))
     return result
 
 
@@ -287,6 +287,10 @@ def port_pages(switch, width, height):
         line_height = max(line_height, bank['height'])
     if page:
         pages.append(page)
+    # Single-row uplink banks sit at the bottom of the physical front panel.
+    # Align each wrapped line independently, retaining the column order.
+    pages = [[(x, y + max(b['height'] for _, by, b in page if by == y) - bank['height'], bank)
+              for x, y, bank in page] for page in pages]
     return pages or [[]]
 
 
@@ -305,12 +309,12 @@ def ports(c, x, y, width, height, switches, modules, tick):
     for bx, by, bank in pages[page_no]:
         c.text(x + 2 + bx, y + 2 + by, bank['label'], 'dim', bank['width'])
         for i, port in enumerate(bank['ports']):
-            px, py = x + 2 + bx + (i // bank['rows']) * 9, y + 3 + by + (i % bank['rows']) * 3
+            px, py = x + 2 + bx + (i // bank['rows']) * 10, y + 3 + by + (i % bank['rows']) * 3
             mark, ink = port_mark(port, modules)
             number = str(port.get('number') if port.get('number') is not None else port['name'])
-            c.text(px, py, '.------.', 'dim')
-            c.text(px, py + 1, '|%s|' % (number + ' ' + mark)[:6].ljust(6), ink)
-            c.text(px, py + 2, "'------'", 'dim')
+            c.text(px, py, '.-------.', 'dim')
+            c.text(px, py + 1, '|%s|' % (number + ' ' + mark)[:7].ljust(7), ink)
+            c.text(px, py + 2, "'-------'", 'dim')
     if len(pages) > 1 or len(switches) > 1:
         c.text(x + 2, y + height - 2, 'SWITCH %d/%d / PORT PAGE %d/%d' %
                (tick % len(switches) + 1, len(switches), page_no + 1, len(pages)), 'dim', width - 4)

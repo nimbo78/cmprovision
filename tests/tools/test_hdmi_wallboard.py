@@ -106,6 +106,22 @@ class RenderingTest(unittest.TestCase):
         # Adjacent entries occupy a column: 1 above 2, then 3 above 4.
         self.assertEqual([1, 2, 3, 4], [p['number'] for p in pages[0][0][2]['ports'][:4]])
 
+    def test_cisco_uplinks_align_with_bottom_row_and_double_digit_labels_fit(self):
+        ports = [dict(number=i, name='Gi0/' + str(i), serials=[], state='free') for i in range(1, 13)]
+        switch = dict(name='Cisco', model='2960CX', answering=True, blocks=[
+            dict(label='RJ45', rows=2, ports=ports[:4]),
+            dict(label='RJ45', rows=2, ports=ports[4:8]),
+            dict(label='RJ45 uplinks', rows=1, ports=ports[8:10]),
+            dict(label='SFP', rows=1, ports=ports[10:]),
+        ])
+        page = w.port_pages(switch, 90, 12)[0]
+        self.assertEqual([0, 0, 3, 3], [y for _, y, _ in page])
+        c = w.Canvas(100, 20)
+        w.ports(c, 0, 0, 100, 20, [switch], [], 0)
+        lines = c.plain().splitlines()
+        self.assertTrue(any('|2 FREE ' in line and '|10 FREE|' in line for line in lines))
+        self.assertTrue(any('|1 FREE ' in line and '|10 FREE|' not in line for line in lines))
+
 
 if __name__ == '__main__':
     unittest.main()
