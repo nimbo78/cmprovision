@@ -25,7 +25,7 @@ class Stand
         snapshot is null until its switch has answered once, the map until one of them has; checked_at: when the switch
         was last asked), or null without a switch. $notOlderThan and $wait go to SnapshotCache::current(); $extra:
         modules the database does not hold yet (one at its start) */
-    public static function current(?int $notOlderThan = null, ?float $wait = null, iterable $extra = []): ?array
+    public static function current(?int $notOlderThan = null, ?float $wait = null, iterable $extra = [], ?int $maxAge = null): ?array
     {
         $switches = EthernetSwitch::orderBy('id')->get();
         if ($switches->isEmpty())
@@ -36,7 +36,7 @@ class Stand
             $config = $switch->config();
             $state = (new SnapshotCache($config['host'], function () use ($config) {
                 return SwitchSnapshot::forConfig($config)->take();
-            }))->current($notOlderThan, $wait ?? SnapshotCache::LOCK_WAIT);
+            }))->current($notOlderThan, $wait ?? SnapshotCache::LOCK_WAIT, $maxAge);
             if ($state['snapshot'] && !$state['error'])
                 self::remember($switch, $state['snapshot']);
             $states[$switch->id] = ['switch' => $switch, 'config' => $switch->config(), 'snapshot' => $state['snapshot'],

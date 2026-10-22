@@ -34,11 +34,12 @@ class SnapshotCache
 
     /** ['snapshot' => the last good one or null, 'error' => null or ['message', 'since'], 'checked_at' => unix time or null].
         $notOlderThan: a snapshot taken before this unix time is taken again (unless the switch is in its pause after an
-        error); $wait: how long to wait for another request's poll before taking the stored state */
-    public function current(?int $notOlderThan = null, float $wait = self::LOCK_WAIT): array
+        error); $wait: how long to wait for another request's poll before taking the stored state; $maxAge: seconds a
+        stored snapshot stays good for this reader (a display that may be a little behind), at least the usual life */
+    public function current(?int $notOlderThan = null, float $wait = self::LOCK_WAIT, ?int $maxAge = null): array
     {
         $state = $this->stored();
-        if ($this->fresh($state, $notOlderThan))
+        if ($this->fresh($state, $notOlderThan, $maxAge))
             return $state;
 
         $lock = Cache::lock('switch-snapshot-lock:'.$this->id, self::LOCK_SECONDS);
@@ -53,7 +54,7 @@ class SnapshotCache
         try
         {
             $state = $this->stored();
-            return $this->fresh($state, $notOlderThan) ? $state : $this->poll($state);
+            return $this->fresh($state, $notOlderThan, $maxAge) ? $state : $this->poll($state);
         }
         finally
         {
@@ -100,13 +101,13 @@ class SnapshotCache
 
     /* Checked less than FRESH_SECONDS ago, or twice the poll's duration (the good one's or the last attempt's) for a slow
        switch, and not before $notOlderThan; a failed poll holds ERROR_SECONDS at least */
-    protected function fresh(array $state, ?int $notOlderThan = null): bool
+    protected function fresh(array $state, ?int $notOlderThan = null, ?int $maxAge = null): bool
     {
         if (!$state['checked_at'])
             return false;
         $age = Carbon::now()->getTimestamp() - $state['checked_at'];
         $duration = max((float) ($state['snapshot']['duration'] ?? 0), (float) ($state['took'] ?? 0));
-        $life = $duration > self::SLOW_POLL ? 2 * $duration : self::FRESH_SECONDS;
+        $life = max($duration > self::SLOW_POLL ? 2 * $duration : self::FRESH_SECONDS, $maxAge ?? 0);
         if ($state['error'])
             return $age < max(self::ERROR_SECONDS, $life);
         if ($notOlderThan !== null && $state['checked_at'] < $notOlderThan)

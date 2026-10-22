@@ -1,3 +1,14 @@
+cmprovision4 (2.7.4) unstable; urgency=medium
+
+  * HDMI display review fixes: the PHP data reader starts in its own session,
+    so tty8 stays with the renderer alone, and the display takes the shared
+    switch cache up to 15 seconds old instead of asking every switch every
+    few seconds around the clock.
+  * Show the modules that are on the bench when no switch has answered yet,
+    and report snapshot errors to the Laravel log.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 22 Oct 2026 19:50:00 +0300
+
 cmprovision4 (2.7.3) unstable; urgency=high
 
   * Add an optional HDMI stand display with automatic monitor detection,

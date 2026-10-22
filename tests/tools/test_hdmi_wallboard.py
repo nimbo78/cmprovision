@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -19,6 +21,20 @@ def device(serial='1000000000000001', state='run', phase='write'):
 def snapshot():
     return dict(version=1, generated_at=1000, host='wlanpi-da2', project='Test project', clock='12:00 UTC',
                 modules=[device()], switches=[], counts=dict(done=0, running=1, failed=0, stale=0))
+
+
+class ReaderTest(unittest.TestCase):
+    def test_the_php_reader_has_its_own_session_and_no_controlling_terminal(self):
+        read_end, write_end = os.pipe()
+        fake = SimpleNamespace(stdout=os.fdopen(read_end, 'rb', buffering=0))
+        try:
+            with patch.object(w.subprocess, 'Popen', return_value=fake) as popen:
+                reader = w.Reader()
+                reader.poll()
+            self.assertTrue(popen.call_args.kwargs['start_new_session'], 'tty8 must stay with the renderer alone')
+            self.assertEqual(subprocess.DEVNULL, popen.call_args.kwargs['stdin'])
+        finally:
+            reader.selector.close(); fake.stdout.close(); os.close(write_end)
 
 
 class SettingsTest(unittest.TestCase):
