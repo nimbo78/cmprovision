@@ -1,6 +1,6 @@
 <div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md" wire:poll.10s>
     <form wire:submit="save" class="space-y-4">
-        <p class="text-sm text-fg-muted">HDMI: {{ !empty($status['connected']) ? 'connected' : 'not detected' }} · Display: {{ $status['state'] }}</p>
+        <p class="text-sm text-fg-muted">HDMI: {{ !empty($status['connected']) ? 'connected' : 'not detected' }} · Display: {{ $status['state'] }}@if(!empty($status['resolution'])) · {{ $status['resolution'] }}@endif</p>
         <div>
             <label for="wallboard-mode" class="block text-sm text-fg mb-2">Display mode</label>
             <select id="wallboard-mode" wire:model="mode" class="cmp-field w-full">

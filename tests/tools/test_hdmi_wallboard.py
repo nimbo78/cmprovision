@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -69,6 +70,7 @@ class SettingsTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory, patch.object(w, 'RUNTIME', Path(directory)), \
                 patch.object(w, 'read_config', return_value=dict(w.DEFAULTS, mode='auto')), \
+                patch.object(w, 'configure_console', return_value={'resolution': '1920x1080'}), \
                 patch.object(w, 'hdmi_connected', side_effect=lambda: next(states, False)), \
                 patch.object(w, 'systemctl', side_effect=systemctl), patch.object(w.time, 'sleep', side_effect=sleep):
             w.STOP = False
@@ -76,6 +78,62 @@ class SettingsTest(unittest.TestCase):
             w.STOP = False
         self.assertEqual(1, calls.count(('start',)))
         self.assertGreaterEqual(calls.count(('stop',)), 1)
+
+
+class ScalingTest(unittest.TestCase):
+    def test_full_hd_ultrawide_and_4k_preserve_readable_rows_and_use_screen_width(self):
+        for pixels, cell, grid in [((1920, 1080), (14, 28), (137, 38)),
+                                  ((3440, 1440), (20, 36), (172, 40)),
+                                  ((3840, 2160), (28, 56), (137, 38))]:
+            font = w.font_candidates(pixels)[0]
+            self.assertEqual(cell, (font['width'], font['height']))
+            self.assertEqual(grid, (pixels[0] // font['width'], pixels[1] // font['height']))
+            width, height, ox, oy = w.viewport(*grid)
+            self.assertGreaterEqual(width / grid[0], .95)
+            self.assertGreaterEqual(height, 36)
+            data = snapshot()
+            data['modules'][0].update(state='fail', phase='failed', advice='Reseat the module')
+            rendered = w.frame(data, width, height, view='engineer', now=1001).plain()
+            self.assertIn('NEXT: Reseat the module', rendered)
+            self.assertIn('V view', rendered)
+            self.assertIn('| cm |', rendered)
+            self.assertIn('cmprovision', rendered)
+
+    def test_tall_font_rejection_falls_back_without_retries_or_changing_active_console(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ['Lat15-Terminus28x14.psf.gz', 'Lat15-Terminus32x16.psf.gz']:
+                (root / name).touch()
+            with patch.object(w, 'RUNTIME', root), patch.object(w, 'FONTS', root), \
+                    patch.object(w.subprocess, 'run', side_effect=lambda args, **kw: SimpleNamespace(returncode=int('-d' in args))) as run:
+                layout = w.configure_console((3840, 2160))
+                self.assertEqual([16, 32], layout['cell'])
+                calls = run.call_count
+                self.assertGreater(calls, 1)
+                self.assertEqual(layout, w.configure_console((3840, 2160)))
+                self.assertEqual(calls, run.call_count, 'a failed tall font must not be retried every poll')
+                w.configure_console((1920, 1080))
+                self.assertGreater(run.call_count, calls, 'a resolution change must select a new font')
+                self.assertTrue(all(c.args[0][:3] == ['/usr/bin/setfont', '-C', '/dev/tty8'] for c in run.call_args_list))
+
+    def test_framebuffer_uses_visible_geometry_instead_of_virtual_buffer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'fb'
+            path.touch()
+            def ioctl(fd, request, info):
+                w.struct.pack_into('=4I', info, 0, 1920, 1080, 1920, 2160)
+            with patch.object(w.fcntl, 'ioctl', side_effect=ioctl):
+                self.assertEqual((1920, 1080), w.framebuffer_size(path))
+            with patch.object(w.fcntl, 'ioctl', side_effect=OSError):
+                self.assertIsNone(w.framebuffer_size(path))
+
+    def test_ultrawide_shows_three_cards_and_full_hd_shows_two(self):
+        data = snapshot()
+        data['modules'] = [dict(device(str(i)), name='DEVICE%d' % i) for i in range(1, 7)]
+        for width, columns in [(133, 2), (168, 3)]:
+            lines = w.frame(data, width, 38, view='flow', now=1001).plain().splitlines()
+            first = next(line for line in lines if 'DEVICE1' in line)
+            self.assertEqual(columns, first.count('DEVICE'))
 
 
 class RenderingTest(unittest.TestCase):
@@ -165,6 +223,14 @@ class RenderingTest(unittest.TestCase):
         lines = c.plain().splitlines()
         self.assertTrue(any('|2 FREE ' in line and '|10 FREE|' in line for line in lines))
         self.assertTrue(any('|1 FREE ' in line and '|10 FREE|' not in line for line in lines))
+        data = snapshot()
+        data['switches'] = [switch]
+        data['modules'] = []
+        for cols, rows in [(133, 36), (168, 38)]:
+            rendered = w.frame(data, cols, rows, view='desk', now=1001).plain()
+            for number in (9, 10, 11, 12):
+                self.assertIn('|%s|' % (str(number) + ' FREE').ljust(7), rendered)
+            self.assertIn('DEVICE CARD', rendered)
 
 
 if __name__ == '__main__':

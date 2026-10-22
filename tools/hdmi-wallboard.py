@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import selectors
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,7 @@ CONFIG = Path('/etc/default/cmprovision-wallboard.json')
 RUNTIME = Path('/run/cmprovision-wallboard')
 UNIT = 'cmprovision-wallboard-display.service'
 TTY = '/dev/tty8'
+FONTS = Path('/usr/share/consolefonts')
 DEFAULTS = dict(mode='off', palette='warm', view='auto', rotation=12)
 WEB_THEMES = {'warm': ('warm', 'dark'), 'warm-light': ('warm', 'light'),
               'neutral': ('neutral', 'dark'), 'neutral-light': ('neutral', 'light')}
@@ -113,6 +115,9 @@ def watch():
                 last_check = time.monotonic()
             state = dict(state='displaying' if active else ('error' if desired else ('off' if config['mode'] == 'off' else 'waiting for HDMI')),
                          connected=connected, mode=config['mode'])
+            if active and desired:
+                layout = configure_console(framebuffer_size())
+                state['resolution'] = layout['resolution']
             if state != last_state:
                 atomic_json(RUNTIME / 'status.json', state)
                 print('HDMI wallboard: ' + state['state'], flush=True)
@@ -130,17 +135,69 @@ def active_vt():
         return ''
 
 
+def framebuffer_size(device=Path('/dev/fb0')):
+    """Visible pixels, not virtual_size, which can include offscreen buffers."""
+    try:
+        with device.open('rb', buffering=0) as fb:
+            info = bytearray(160)  # struct fb_var_screeninfo
+            fcntl.ioctl(fb.fileno(), 0x4600, info)  # FBIOGET_VSCREENINFO, read only
+        width, height = struct.unpack_from('=2I', info)
+        return (width, height) if 320 <= width <= 16384 and 240 <= height <= 16384 else None
+    except OSError:
+        return None
+
+
+def font_candidates(pixels):
+    # Keep >=38 text rows and >=100 columns for diagnostics plus the footer.
+    # Prefer native glyphs over doubled ones of the same height.
+    base = [(6, 12), (8, 14), (8, 16), (10, 18), (10, 20), (11, 22), (12, 24), (14, 28), (16, 32)]
+    choices = []
+    for width, height in base:
+        name = 'Lat15-Terminus%d%s.psf.gz' % (height, ('x%d' % width) if height not in (14, 16) else '')
+        for scale in (1, 2):
+            fw, fh = width * scale, height * scale
+            if (pixels and pixels[0] // fw >= 100 and pixels[1] // fh >= 38) or (not pixels and fh <= 28):
+                choices.append(dict(name=name, double=scale == 2, width=fw, height=fh))
+    return sorted(choices, key=lambda f: (-f['height'], f['double'], -f['width']))
+
+
+def configure_console(pixels, force=False):
+    """Root watcher adjusts only tty8's font; never switches the active VT here."""
+    resolution = '%dx%d' % pixels if pixels else 'unknown'
+    path = RUNTIME / 'layout.json'
+    try:
+        previous = json.loads(path.read_text())
+        if not force and isinstance(previous, dict) and previous.get('resolution') == resolution:
+            return previous
+    except (OSError, ValueError):
+        pass
+    result = dict(resolution=resolution, font='system default')
+    for font in font_candidates(pixels):
+        file = FONTS / font['name']
+        if not file.is_file():
+            continue
+        command = ['/usr/bin/setfont', '-C', TTY] + (['-d'] if font['double'] else []) + [str(file)]
+        try:
+            applied = subprocess.run(command, capture_output=True, timeout=5).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            applied = False
+        if applied:
+            result.update(font=font['name'], double=font['double'], cell=[font['width'], font['height']])
+            break
+    # Remember a fallback too: older kernels rejecting tall fonts must not be
+    # retried every two seconds. A new connection/resolution retries selection.
+    atomic_json(path, result)
+    print('HDMI layout: ' + json.dumps(result), flush=True)
+    return result
+
+
 def claim():
     RUNTIME.mkdir(mode=0o755, exist_ok=True)
     previous = active_vt()
     if previous.startswith('tty') and previous[3:].isdigit() and previous != 'tty8':
         (RUNTIME / 'previous-vt').write_text(previous, encoding='ascii')
     # Font is local to tty8; other virtual terminals retain the administrator's font.
-    for name in ('Lat15-Terminus28x14.psf.gz', 'Lat15-TerminusBold28x14.psf.gz', 'Lat15-TerminusBold32x16.psf.gz'):
-        font = Path('/usr/share/consolefonts') / name
-        if font.is_file():
-            subprocess.run(['/usr/bin/setfont', '-C', TTY, str(font)], check=False, timeout=5)
-            break
+    configure_console(framebuffer_size(), force=True)
     subprocess.run(['/usr/bin/chvt', '8'], check=True, timeout=5)
     # Keep the unattended display from blanking; restore the kernel's configured interval on release.
     with open(TTY, 'w') as tty:
@@ -240,8 +297,12 @@ def phase(module):
 def header(c, data, now):
     counts = data.get('counts', {})
     if c.cols >= 100:
-        for row in range(3):
-            c.text(0, row, ' '.join(SMALL[ch][row] for ch in 'CMPROVISION'), 'accent')
+        # Six columns by three rows are roughly square in a console font.
+        # Keep the web mark's simple cm tile; the name is ordinary readable text.
+        for row, line in enumerate(['.----.', '| cm |', "'----'"]):
+            c.text(0, row, line, 'accent')
+        c.text(9, 1, 'cmprovision', 'fg')
+        c.text(9, 2, 'PROVISIONING STAND', 'dim')
         x = max(48, c.cols - 36)
         c.text(x, 0, safe(data.get('host')) + ' / HDMI', 'dim')
         c.text(x, 1, 'ON STAND %02d   DONE %02d' % (len(data.get('modules', [])), counts.get('done', 0)), 'good')
@@ -250,7 +311,7 @@ def header(c, data, now):
         c.text(c.cols - 30, 4, 'UPDATED ' + age(data.get('generated_at'), now), 'dim')
         c.line(5)
         return 7
-    c.text(0, 0, 'cmprovision // ' + safe(data.get('host', 'HDMI')), 'accent')
+    c.text(0, 0, '[cm] cmprovision // ' + safe(data.get('host', 'HDMI')), 'accent')
     c.text(0, 1, 'PROJECT: ' + safe(data.get('project') or 'none active'), 'dim')
     c.text(0, 2, 'ON STAND %d / DONE %d / RUN %d / FAIL %d / STALE %d' %
            (len(data.get('modules', [])), counts.get('done', 0), counts.get('running', 0), counts.get('failed', 0), counts.get('stale', 0)), 'warn')
@@ -353,7 +414,11 @@ def detail(c, x, y, width, module, now):
 
 def desk(c, data, module, now, tick):
     y = header(c, data, now)
-    width = max(30, round(c.cols * 0.60))
+    switches = data.get('switches', [])
+    # Fit compact physical panels beside a readable card; larger banks paginate.
+    natural = max((sum(math.ceil(len(b['ports']) / max(1, b['rows'])) * 10 for b in s['blocks'])
+                   + max(0, len(s['blocks']) - 1) + 4 for s in switches), default=0)
+    width = max(30, min(c.cols - 42, max(round(c.cols * 0.60), natural)))
     height = min(17, max(11, c.rows - y - 10))
     if c.cols < 100:
         ports(c, 0, y, c.cols, height, data.get('switches', []), data.get('modules', []), tick)
@@ -379,7 +444,7 @@ def flow(c, data, module, now, tick):
     y = header(c, data, now)
     c.text(0, y, '[ WLAN Pi M4+ ] ---> [ SWITCH / PoE ] ---> [ CM4 SENSOR FLEET ]', 'accent')
     modules = data.get('modules', [])
-    columns = 2 if c.cols >= 90 else 1
+    columns = 3 if c.cols >= 150 else (2 if c.cols >= 90 else 1)
     width = (c.cols - (columns - 1) * 2) // columns
     card_height = 8
     rows = max(1, (c.rows - y - 7) // (card_height + 1))
@@ -568,6 +633,14 @@ def colors(palette):
     return result
 
 
+def viewport(cols, rows):
+    # Small safe margins, then use the available screen. Caps apply only to
+    # unusually large/fallback consoles, not ordinary Full HD/ultrawide/4K.
+    width = min(cols - 4 if cols >= 80 else cols, 240)
+    height = min(rows - 2 if rows >= 28 else rows, 60)
+    return width, height, max(0, (cols - width) // 2), max(0, (rows - height) // 2)
+
+
 def display(screen):
     curses.curs_set(0)
     screen.timeout(1000)
@@ -589,14 +662,13 @@ def display(screen):
                 tick += 1
                 last_rotation = time.monotonic()
             rows, cols = screen.getmaxyx()
-            width, height = min(cols, 180), min(rows, 54)
+            width, height, ox, oy = viewport(cols, rows)
             canvas = frame(data, width, height, selected, view_override or config['view'], tick=tick, paused=paused)
             if config['palette'] != palette_name:
                 inks = colors(config['palette'])
                 palette_name = config['palette']
                 screen.bkgd(' ', inks['fg'])
                 screen.clearok(True)
-            ox, oy = max(0, (cols - width) // 2), max(0, (rows - height) // 2)
             screen.erase()
             for y, row in enumerate(canvas.cells):
                 x = 0

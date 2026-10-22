@@ -27,6 +27,17 @@ whether someone is watching or whether the TV has selected this input. Use Off w
 
 ## Screens and navigation
 
+The console automatically sizes its font from the current visible HDMI resolution. With the bundled Terminus fonts,
+1920×1080 uses 14×28-pixel cells, 3440×1440 uses 20×36 cells, and 3840×2160 uses 28×56 cells. This keeps about 38–40 rows
+of readable text instead of shrinking the entire interface at high resolution. The watcher adjusts tty8 when the HDMI
+mode changes; it does not switch away from a console you selected manually. No provisioning service is restarted.
+Older kernels that reject tall fonts fall back to a smaller supported font. Selection is recorded in
+`/run/cmprovision-wallboard/layout.json`; Settings also shows the detected resolution.
+
+The layout uses the available width with small margins. Ultrawide screens fit three cards per row; ordinary Full HD
+and 4K fit two. A compact switch front panel stays together when it fits beside the device card. The header uses a
+small `cm` tile and a plain-text project name, rather than a large word drawn from hash characters.
+
 The four display themes match the web UI: **Warm / Dark**, **Warm / Light**, **Neutral / Dark**, and **Neutral / Light**.
 The renderer reads the same `resources/css/app.css` tokens for the page, text, muted text, accent and status colors.
 Warm dark uses the web's `#ff8a3d` orange; neutral dark uses `#818cf8` indigo. Alpha text colors are composited over the
@@ -93,3 +104,5 @@ required for enabling, changing or disabling the display.
 Implementation references: [systemd terminal service settings](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html),
 [Python curses](https://docs.python.org/3/library/curses.html), [Linux DRM interface](https://docs.kernel.org/gpu/drm-uapi.html).
 Palette programming: [Linux console controls](https://man7.org/linux/man-pages/man4/console_codes.4.html).
+Font scaling: [setfont](https://kbd-project.org/manpages/man8/setfont.8.html),
+[framebuffer geometry](https://docs.kernel.org/fb/api.html).
