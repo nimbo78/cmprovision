@@ -33,7 +33,7 @@ class ModuleDiagnosticsShellTest extends TestCase
         $this->binary('vcgencmd', "echo throttled=0x0");
         $this->binary('dmesg', 'cat '.escapeshellarg($this->dir.'/kernel.log'));
         $this->binary('curl', 'case "$*" in *identify=poll*) echo diagnostics;; *) cp '.escapeshellarg($this->dir.'/tmp/cmprovision-module-diagnostics.txt')
-            .' '.escapeshellarg($this->dir.'/uploaded.txt').';; esac');
+            .' '.escapeshellarg($this->dir.'/uploaded.txt').'; echo 204;; esac');
     }
 
     protected function tearDown(): void
@@ -94,6 +94,22 @@ class ModuleDiagnosticsShellTest extends TestCase
         $this->execute('cmp_diag_report startup');
         $this->assertLessThan(4, microtime(true) - $started);
         $this->assertStringContainsString('throttled=unknown', file_get_contents($this->dir.'/uploaded.txt'));
+    }
+
+    public function test_only_the_actual_ingestion_acknowledgement_suppresses_usb_fallback()
+    {
+        mkdir($this->dir.'/proc/sys/kernel/random', 0755, true);
+        file_put_contents($this->dir.'/proc/sys/kernel/random/uuid', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+        file_put_contents($this->dir.'/proc/uptime', '123.0 0.0');
+        $this->binary('curl', 'echo 302');
+        $this->execute('cmp_diag_report failure');
+        $state = $this->dir.'/tmp/cmprovision-diagnostics';
+        $this->assertFileExists($state.'/pending');
+        $this->assertFileDoesNotExist($state.'/ethernet-event');
+        $this->binary('curl', 'echo 204');
+        $this->execute('cmp_diag_report failure');
+        $this->assertFileDoesNotExist($state.'/pending');
+        $this->assertFileExists($state.'/ethernet-event');
     }
 
     public function test_repeated_or_long_kernel_errors_produce_a_bounded_report()

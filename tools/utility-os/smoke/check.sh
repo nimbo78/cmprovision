@@ -13,6 +13,18 @@ cat /etc/cmprovision-uos >> "$R"
 section kernel
 uname -r >> "$R"
 
+# Run the shipped agent with this image's BusyBox and tools, without a physical USB controller in QEMU.
+section usb-agent
+diag_proc=/tmp/diagnostic-proc
+mkdir -p "$diag_proc/device-tree" "$diag_proc/sys/kernel/random"
+printf '1000000000000001\000' > "$diag_proc/device-tree/serial-number"
+cp /proc/sys/kernel/random/boot_id "$diag_proc/sys/kernel/random/boot_id"
+for fact in uptime meminfo partitions; do ln -s "/proc/$fact" "$diag_proc/$fact"; done
+diag_boot=$(cat "$diag_proc/sys/kernel/random/boot_id")
+diag_nonce=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+printf 'CMPDIAG1 HELLO %s\nCMPDIAG1 REPORT %s %s discovery\n' "$diag_nonce" "$diag_nonce" "$diag_boot" \
+    | CMP_DIAG_PROC="$diag_proc" CMP_DIAG_STATE=/tmp/diagnostic-state /usr/sbin/cmprovision-diagnostics-agent --stdio >> "$R" 2>/dev/null
+
 # every tool starts: a missing library or a wrong binary shows as 126, 127, 132, 134 or 139, or in the first line
 section versions
 while read -r name args; do

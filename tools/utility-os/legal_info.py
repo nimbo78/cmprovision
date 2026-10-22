@@ -212,7 +212,7 @@ def collect(repo, work, cache, transport=fetch, vendor=checkout):
             return None
         return info
     with tarfile.open(recipe, 'w:gz') as archive:
-        for path in ['utility-os', 'tools/utility-os', 'docs/utility-os.md', 'LICENSE']:
+        for path in ['utility-os', 'tools/utility-os', 'resources/shell', 'docs/utility-os.md', 'LICENSE']:
             archive.add(repo/path, arcname=path, filter=recipe_file)
     record = {'bootlin_buildroot_commit': commit, 'sdk_archive': archive_name, 'files': inventory,
               'note': 'Supplements the original Buildroot README warnings with Buildroot and Bootlin sources, patches, licenses and build recipes.'}

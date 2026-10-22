@@ -5,7 +5,7 @@ startup, after a failure, and at completion when the target stays in that OS.
 Open **CMs → serial number → Module diagnostics** for a summary of storage, power
 and temperature, memory, Ethernet, and boot/system information. Expand **Device
 facts and kernel output** for evidence. **Download report** saves a text copy;
-failure findings are also retained in module History and the dashboard log.
+failure findings from registered modules are also retained in module History and the dashboard log.
 
 ## What is collected
 
@@ -65,12 +65,16 @@ A new run clears the previous snapshot; its failure diagnosis remains in History
 For a new board shown as **Unrecognized / UNR** on Ports, use the
 [discovery troubleshooting guide](unrecognized-devices.md) before changing its boot setup.
 
-The target must boot Linux and reach cmprovision over Ethernet, including when
-[booted over USB](usb-provisioning.md). USB device-descriptor failures, lack of
-power, and failures before Linux or DHCP cannot produce a target snapshot. Missing
-telemetry alone is not evidence of failed hardware. Inspect the provisioner's
-rpiboot log, USB cable, power and boot controls in that case. This section does not
-yet collect host-side rpiboot/USB logs or diagnose the provisioner itself.
+The target must boot Linux. Ethernet delivery works with either network or
+[USB boot](usb-provisioning.md); USB report delivery additionally needs utility OS
+**2026.10.1** and a USB data connection in Device mode. The legacy utility OS and
+older already-running scripts/images do not gain the USB agent from a server-only
+upgrade. Missing telemetry alone is not evidence of failed hardware.
+
+A target stuck before Linux or USB enumeration cannot send its own report. Inspect
+rpiboot/USB events on the provisioner and, where available, HDMI or hardware UART.
+The USB receiver's journal describes transport failures; it does not replace a
+complete provisioner hardware diagnosis.
 
 The collector is part of the provisioning script served by cmprovision, so an
 already running older script needs a new boot to gain new readings. The snapshot
@@ -79,27 +83,84 @@ is also left on the target at `/tmp/cmprovision-module-diagnostics.txt` for a
 and the stand IPv4 configuration, not environment variables, project script
 output or EEPROM configuration credentials. Review it before sharing publicly.
 Reports are bounded to 32 KiB. Available sensors depend on the utility OS and
-hardware; no utility OS image rebuild is needed for the server-generated collector.
+hardware. The Ethernet collector is server-generated; the USB agent and its drivers are included in utility OS 2026.10.1.
 
-## Planned USB fallback
+## Automatic USB fallback
 
-USB report delivery is not implemented yet. Its intended policy is **Ethernet
-first, USB only when the Ethernet report cannot be obtained**, regardless of how
-the utility OS was booted.
+The policy is **Ethernet first, USB only when the expected Ethernet report cannot
+be obtained**. Booting through USB does not itself select USB report delivery.
+The operator must provide a USB Device-mode data connection; the fallback does
+not move jumpers, change USB routing, restart a target or interrupt a flash.
 
-- A successful Ethernet report needs no duplicate USB collection.
-- If the expected Ethernet report does not arrive within a bounded wait, or a
-  requested network collection times out, try the USB diagnostic channel when
-  connected. Otherwise offer the operator a USB diagnostic/recovery path.
-- Use the same collector and report format for both channels. Show the source
-  (`Ethernet` or `USB`) and collection time, and keep reports tied to the correct
-  module and boot/run. A late report must not overwrite a newer run's snapshot.
-- Switching the report channel must not itself restart a module or interrupt
-  provisioning. A USB recovery boot is a separate operator action.
+1. The utility OS starts a dedicated CDC ACM diagnostic agent before waiting for
+   `eth0`, carrier or DHCP. It exposes a serial interface named **cmprovision
+   diagnostics**, without a shell/login or mass-storage function.
+2. A receiver on the provisioner exchanges small identity/status messages. It
+   requests the full snapshot only after **90 seconds** without the expected
+   Ethernet delivery. Device polling and transfer add a small delay.
+3. Before any provisioning script is obtained, USB can collect a discovery
+   snapshot with the last recorded network stage. If a script's diagnostic upload
+   failed, USB retrieves the original cached snapshot. A timed-out manual network
+   request can instead collect a fresh snapshot through USB while still in the
+   utility OS.
+4. The receiver checks the USB descriptor serial, challenge, boot ID, snapshot ID,
+   bounded size and SHA256. The application checks the current run token and
+   rechecks delivery before saving. If Ethernet has already delivered that report,
+   no USB copy is requested; if it arrives during transfer, the late USB copy is
+   ignored. Duplicate events and obsolete run tokens do not replace current data.
 
-The collector will need to be built into the utility OS and run before its wait
-for Ethernet/DHCP, so an unavailable network cannot prevent local collection.
-Transferring that snapshot over USB is the fallback. This requires an updated
-utility OS and a USB receiver on the provisioner; the current server-generated
-collector alone cannot provide it. Missing Ethernet telemetry is a reason to
-try another channel, not proof of defective hardware.
+### Where to see reports
+
+Open **Diagnostics** in the navigation bar. It lists USB reports and lets you
+inspect or download a snapshot. Reports identify their source as **USB** or
+**Ethernet**; USB snapshots show their approximate collection time derived from
+boot uptime, separately from server receipt time. A module card links to its USB
+report, and an unrecognized port links to a recent report with a matching Ethernet
+MAC when one is available. These links are observations, not proof that an old
+report describes the device currently in that port.
+
+A USB report can arrive **before a module has ever contacted cmprovision over
+Ethernet**. It is kept separately by serial and boot/snapshot ID, without creating
+a provisioning run or a successful batch result. For a report with a matching
+current run token, only the diagnostic snapshot/request fields are updated;
+provisioning progress, phase and result are unchanged. Failure findings are also
+retained in that module's History. USB report history is bounded to 14 days and
+2,000 snapshots; the page lists the latest 50.
+
+### Provisioner service
+
+The package installs **cmprovision-usb-diagnostics**. Settings → Service status
+shows it and opens its journal. For a command-line check on the provisioner:
+
+```sh
+systemctl status cmprovision-usb-diagnostics --no-pager
+sudo journalctl -u cmprovision-usb-diagnostics --since '15 minutes ago' --no-pager
+```
+
+The receiver runs as `www-data`, with `dialout` membership confined to that service
+and device access restricted to CDC ACM. It only opens devices advertising the
+dedicated cmprovision product, so an ordinary USB console or Raspberry Pi
+mass-storage gadget is ignored. It sends no shell commands, performs no disk
+operations, and passes bounded JSON to the application over a local stdin channel.
+The normal authenticated web interface provides access to saved reports.
+
+The service orders itself after `modprobe@cdc_acm.service`, so the device group is
+available when its access rule is installed, including before the first hotplug.
+This follows the [systemd DeviceAllow guidance](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html#DeviceAllow=).
+The transport uses the [Linux USB serial gadget](https://docs.kernel.org/usb/gadget_serial.html).
+
+A service restart or reconnect does not repeat an already saved snapshot. If no
+compatible USB device is present, the receiver waits and Ethernet provisioning
+continues normally. Both paths use the same read-only collector. The USB agent
+belongs to the temporary utility OS and disappears when the installed OS boots.
+
+### Development checks
+
+On Linux with BusyBox, `python3 -m unittest discover -s tests/tools -p test_usb_diagnostics.py -v`
+exercises the real shell agent and receiver through a pseudo-terminal, including
+failed Ethernet delivery, framing/identity checks and original snapshot retention.
+With the application's development dependencies installed, it also runs the local
+Artisan ingestion against a separate temporary SQLite database. The PHP
+`UsbDiagnosticsTest` covers run ownership, concurrent Ethernet delivery and the web
+page. Utility OS checks additionally validate the built kernel/image and boot it in
+QEMU; physical USB enumeration still needs a connected CM4 and a stand acceptance check.

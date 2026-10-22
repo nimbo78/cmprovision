@@ -1,0 +1,26 @@
+[Unit]
+Description=cmprovision USB diagnostic fallback receiver
+# DeviceAllow needs the ttyACM device group to exist before the service cgroup is set up.
+Wants=modprobe@cdc_acm.service
+After=local-fs.target modprobe@cdc_acm.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+SupplementaryGroups=dialout
+ExecStart=/usr/bin/python3 /usr/lib/cmprovision/usb-diagnostics.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+DevicePolicy=closed
+DeviceAllow=char-ttyACM rw
+
+[Install]
+WantedBy=multi-user.target

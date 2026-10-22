@@ -10,7 +10,10 @@ OS into RAM through `rpiboot`, then writes the active project's image to its sto
 **Ethernet is still required.** USB carries the boot files; the utility OS obtains
 its DHCP lease, provisioning script and image through the target's Ethernet port.
 This workflow does not expose the target as a USB drive and does not use Raspberry
-Pi Imager or the installed system's USB Ethernet gadget.
+Pi Imager or the installed system's USB Ethernet gadget. Utility OS 2026.10.1 also
+provides a [USB diagnostic fallback](module-diagnostics.md#automatic-usb-fallback)
+when its Ethernet report cannot be obtained; this does not replace Ethernet for
+provisioning scripts or images.
 
 These instructions cover CM4 targets. For two WLAN Pi M4+ units, use the
 [carrier-board guide](hardware/wlanpi-m4-plus.md) to identify their connectors and BOOT/OTG controls.

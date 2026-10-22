@@ -32,7 +32,8 @@ class PhoneMenuTest extends TestCase
         $bar = $this->links($html, 'class="cmp-nav');
         $phone = $this->links($html, 'data-menu="phone"');
 
-        $this->assertCount(9, $bar);
+        $this->assertCount(10, $bar);
+        $this->assertArrayHasKey(route('diagnostics'), $bar);
         $this->assertSame(array_keys($bar), array_keys($phone), 'the same pages in the same order');
         $this->assertSame([route('firmware')], array_keys(array_filter($bar)), 'the bar marks the current page');
         $this->assertSame([route('firmware')], array_keys(array_filter($phone)), 'and so does the phone menu, only it');

@@ -104,6 +104,7 @@ class CmCard extends Component
 
         return view('livewire.cm-card', [
             'cm' => $cm,
+            'usbReport' => \App\Models\UsbDiagnosticReport::where('serial', $cm->serial)->orderByDesc('received_at')->first(),
             'moduleDiagnosis' => ModuleDiagnostics::summary($cm->storage_diagnostics),
             'diagnosticsAvailable' => $cm->canCollectModuleDiagnostics(),
             'diagnosticsPending' => $cm->diagnostics_requested_at?->gt(now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS)) ?? false,

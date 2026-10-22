@@ -26,6 +26,7 @@ CONFIG_MMC_BCM2835 CONFIG_EXT4_FS CONFIG_VFAT_FS CONFIG_NLS_CODEPAGE_437 CONFIG_
 CONFIG_UNIX CONFIG_INET CONFIG_FB CONFIG_FB_BCM2708 CONFIG_FRAMEBUFFER_CONSOLE CONFIG_VT CONFIG_VT_CONSOLE CONFIG_USB
 CONFIG_USB_DWC2 CONFIG_USB_XHCI_HCD CONFIG_USB_XHCI_PCI CONFIG_PCIE_BRCMSTB CONFIG_USB_HID CONFIG_HID_GENERIC CONFIG_DEVTMPFS
 CONFIG_BLK_DEV_INITRD CONFIG_RD_XZ CONFIG_COMPAT CONFIG_DEBUG_FS CONFIG_BCM2835_WDT CONFIG_BCM2711_THERMAL CONFIG_VIRTIO_MMIO
+CONFIG_USB_GADGET CONFIG_CONFIGFS_FS CONFIG_USB_LIBCOMPOSITE CONFIG_USB_CONFIGFS CONFIG_USB_CONFIGFS_ACM CONFIG_USB_F_ACM CONFIG_USB_U_SERIAL
 CONFIG_VIRTIO_NET CONFIG_ARM_PSCI_FW CONFIG_SERIAL_AMBA_PL011 CONFIG_SERIAL_AMBA_PL011_CONSOLE"
 CONFIG=$OUT/build/linux-custom/.config
 if [ -f "$CONFIG" ]; then
@@ -62,6 +63,27 @@ case " $SCRIPTS " in
 esac
 if grep -qx 'CONFIG_TELNETD=y' "$OUT"/build/busybox-*/.config; then fail "contents: BusyBox has telnetd"; else ok "contents: no telnetd"; fi
 
+# Verify shipped initramfs bytes as well as the staging tree: a stale image must not pass.
+for file in usr/lib/cmprovision/module-diagnostics.sh usr/sbin/cmprovision-diagnostics-agent etc/init.d/S98diagnostics; do
+    case "$file" in
+        usr/lib/*) source=$REPO/resources/shell/module-diagnostics.sh ;;
+        *) source=$REPO/utility-os/board/cmprovision/rootfs-overlay/$file ;;
+    esac
+    extracted=$(mktemp)
+    if xz -dc "$TFTP/scriptexecute.img" | cpio --quiet -i --to-stdout "./$file" "$file" > "$extracted" 2>/dev/null \
+        && cmp -s "$source" "$extracted"; then
+        ok "USB diagnostics: shipped $file matches its source"
+    else
+        fail "USB diagnostics: shipped $file is missing or stale"
+    fi
+    rm -f "$extracted"
+done
+if [ -x "$TARGET/etc/init.d/S98diagnostics" ] && [ -x "$TARGET/usr/sbin/cmprovision-diagnostics-agent" ]; then
+    ok "USB diagnostics: init and agent are executable"
+else
+    fail "USB diagnostics: init or agent is not executable"
+fi
+
 # --- size
 size=$(( $(wc -c < "$TFTP/kernel8.img") + $(wc -c < "$TFTP/scriptexecute.img") ))
 mib=$(( (size + 1048575) / 1048576 ))
@@ -89,8 +111,19 @@ rm -rf "$SMOKE" && mkdir -p "$SMOKE"
 python3 "$REPO/tools/utility-os/smoke/server.py" "$SMOKE" "$REPO/tools/utility-os/smoke/check.sh" "$REPO/public/tools/ledpattern" \
     > "$SMOKE/server.log" 2>&1 &
 SERVER=$!
-for i in $(seq 50); do [ -s "$SMOKE/port" ] && break; sleep 0.2; done
+for i in $(seq 50); do
+    [ -s "$SMOKE/port" ] && break
+    kill -0 "$SERVER" 2>/dev/null || break
+    sleep 0.2
+done
 PORT=$(cat "$SMOKE/port" 2>/dev/null)
+case "$PORT" in
+    ''|*[!0-9]*)
+        fail "qemu: smoke server did not start, see $SMOKE/server.log"
+        kill "$SERVER" 2>/dev/null
+        exit 1
+        ;;
+esac
 APPEND="console=ttyAMA0 $(sed "s#http://172.20.0.1/#http://10.0.2.2:$PORT/#" "$TFTP/cmdline.txt")"
 timeout 900 qemu-system-aarch64 -M virt -cpu cortex-a72 -smp 2 -m 1024 -nographic -no-reboot \
     -kernel "$TFTP/kernel8.img" -initrd "$TFTP/scriptexecute.img" -append "$APPEND" \

@@ -44,3 +44,5 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/labels', Labels::class)->name('labels');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/firmware', Firmwares::class)->name('firmware');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/settings', Settings::class)->name('settings');
+
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/diagnostics/{id?}', \App\Http\Livewire\UsbDiagnostics::class)->whereNumber('id')->name('diagnostics');

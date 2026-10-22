@@ -54,11 +54,20 @@ mount -t debugfs none "$SYS/kernel/debug" 2>/dev/null
 echo "Note: shell is available on tty2 for debugging purposes"
 getty -L tty2 0 vt100 &
 
+# The USB agent can report this stage even if no network/script is ever obtained.
+diag_stage() {
+    diag_state=${CMP_DIAG_STATE:-$TMP/cmprovision-diagnostics}
+    mkdir -p "$diag_state"
+    printf '%s\n' "$1" > "$diag_state/network-stage"
+}
+diag_stage waiting_interface
 say "waiting for eth0 to appear"
 while [ ! -e "$SYS/class/net/eth0" ]; do sleep 1; done
 ip link set eth0 up
+diag_stage waiting_link
 say "waiting for the network link"
 while [ "$(text "$SYS/class/net/eth0/carrier")" != 1 ]; do sleep 1; done
+diag_stage dhcp
 say "obtaining a DHCP lease"
 udhcpc -i eth0   # it goes to the background with the lease and renews it
 
@@ -97,9 +106,12 @@ fill jumper "$JUMPER"
 # 200 is the script (the server answers its own refusals with a script too); no connection or 5xx (php-fpm restarting
 # under a package upgrade) is tried again; any other answer stops the module, since running it would do no good
 while :; do
+    diag_stage script_download
     say "downloading the script from $URL"
     CODE=$(curl -g --retry 10 --retry-connrefused -o "$TMP/script" -w '%{http_code}' "$URL")
     CURL_EXIT=$?
+    printf '%s\n' "$CODE" > "$diag_state/http-code"
+    printf '%s\n' "$CURL_EXIT" > "$diag_state/curl-exit"
     # A response may start with 200 and then end early. Only a complete download is executable.
     if [ "$CURL_EXIT" -ne 0 ]; then
         say "download failed (HTTP $CODE), curl exit $CURL_EXIT: trying again in 10 seconds"
@@ -113,6 +125,7 @@ while :; do
     esac
     sleep 10
 done
+diag_stage script_running
 say "executing the script"
 sh "$TMP/script"
 # the script ends in finish and waits for the operator; one that returns is not run again (a second run would write again)

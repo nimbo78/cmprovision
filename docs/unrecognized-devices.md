@@ -89,17 +89,22 @@ HTTP codes and module errors for comparison; review logs before sharing them.
 
 The [local console](local-console.md) can show whether Linux booted and whether
 `eth0`, its carrier and a DHCP address exist. A [USB recovery boot](usb-provisioning.md)
-can bypass a boot-order problem. Currently, USB provisioning still needs
-Ethernet for its script/image and automatic diagnostic upload.
+can bypass a boot-order problem. USB provisioning still needs Ethernet for its script and image; diagnostic
+reports can instead use the automatic USB fallback in utility OS 2026.10.1.
 
 A manual USB serial report is possible when the loaded USB image provides a
 serial gadget, as with Raspberry Pi's mass-storage gadget. It is a separate
 workflow from the packaged cmprovision USB boot image. A missing eMMC block
 device does not itself prevent a RAM-based Linux diagnostic report.
 
-The planned [USB report fallback](module-diagnostics.md#planned-usb-fallback)
-will use Ethernet first and USB only when the network report is unavailable.
-It requires an updated utility OS and a receiver on the provisioner; it is not
-implemented yet. If Linux never starts or USB cannot enumerate, the target
-cannot send its own report. Host-side USB/rpiboot events can still narrow the
-stopping point, while earlier kernel failures may require HDMI or hardware UART.
+The [automatic USB report fallback](module-diagnostics.md#automatic-usb-fallback)
+uses Ethernet first, then USB after 90 seconds without the expected network
+report. It requires utility OS 2026.10.1, a Device-mode USB data connection and
+the receiver service on the provisioner. Open **Diagnostics** even if the board
+has no provisioning record yet; a USB snapshot does not start a flash or mark
+the board done. An unrecognized port links to a recent matching-MAC USB report
+when possible.
+
+If Linux never starts or USB cannot enumerate, the target cannot send its own
+report. Host-side USB/rpiboot events can still narrow the stopping point, while
+earlier kernel failures may require HDMI or hardware UART.

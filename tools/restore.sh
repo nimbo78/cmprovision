@@ -41,7 +41,7 @@ fi
 
 # The web server too: in WAL every connection opens -wal and -shm by name, and one left open across the swap would mix
 # the old files into the restored database. Everything is started again at the end.
-systemctl stop nginx 'php*-fpm' cmprovision-queue cmprovision-queue-images cmprovision-dnsmasq 2>/dev/null || true
+systemctl stop nginx 'php*-fpm' cmprovision-queue cmprovision-queue-images cmprovision-dnsmasq cmprovision-usb-diagnostics 2>/dev/null || true
 
 if [ "$DATA_ONLY" = 1 ]; then
     echo "restoring the data into $APP"
@@ -100,5 +100,6 @@ systemctl restart 'php*-fpm' nginx cmprovision-dnsmasq cmprovision-queue cmprovi
     || echo "not every service restarted, see their states:"
 # 2.5 and later: the image checksum worker (a snapshot's older package has none)
 systemctl restart cmprovision-queue-images 2>/dev/null || true
+systemctl restart cmprovision-usb-diagnostics 2>/dev/null || true
 systemctl is-active nginx cmprovision-dnsmasq cmprovision-queue cmprovision-queue-images cmprovision-rpiboot | tr '\n' ' '; echo
 echo "restored from $SRC; installed package: $(dpkg-query -W -f='${Version}' cmprovision4)"

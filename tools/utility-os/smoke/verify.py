@@ -1,6 +1,8 @@
 """What the QEMU run of tools/utility-os/test.sh left in its directory: one ok/FAIL line per check; the tools' messages
 go to the fixture tests/Unit/UtilityOsMessagesTest.php reads. Exit 1 when a check failed.
     verify.py <smoke dir> <expected OS version> <fixture> [expected Linux version]"""
+import base64
+import hashlib
 import os
 import re
 import sys
@@ -56,6 +58,23 @@ check('-cmprovision' in text.get('kernel', ''), 'os: the kernel is ours (-cmprov
 if LINUX is not None:
     check(bool(re.fullmatch(re.escape(LINUX) + r'-cmprovision(?:[+-].*)?', text.get('kernel', ''))),
           'os: Linux version matches the pinned ' + LINUX)
+agent = sections.get('usb-agent', [])
+agent_ok = False
+try:
+    status, header = agent[0].split(), agent[1].split()
+    nonce = 'a' * 64
+    assert len(status) == 10 and status[:4] == ['CMPDIAG1', 'STATUS', nonce, '1000000000000001']
+    assert status[5] == status[4] and status[6] == 'discovery' and status[9] == '-'
+    assert len(header) == 8 and header[:5] == ['CMPDIAG1', 'BEGIN', nonce, status[3], status[4]]
+    assert agent[-1] == 'CMPDIAG1 END ' + nonce
+    snapshot = base64.b64decode(''.join(agent[2:-1]), validate=True)
+    assert len(snapshot) == int(header[5]) and hashlib.sha256(snapshot).hexdigest() == header[6]
+    assert b'utility_os=' + VERSION.encode() + b'\n' in snapshot and b'context=discovery\n' in snapshot
+    agent_ok = True
+except (AssertionError, IndexError, ValueError):
+    pass
+check(agent_ok, 'USB diagnostics: shipped agent exchanges a valid snapshot with the built OS tools')
+
 tools = sections.get('versions', [])
 check(len(tools) == 21, 'tools: 21 tools answered')
 for line in tools:

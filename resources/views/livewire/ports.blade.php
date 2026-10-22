@@ -158,6 +158,12 @@
                     @if ($tile['state'] === 'foreign')
                         <div class="mb-3">
                             <p class="font-semibold mb-1">Unrecognized device</p>
+                            @if ($usbReport)
+                                <p class="mb-2"><a href="{{ route('diagnostics', $usbReport->id) }}" class="text-link hover:underline">USB diagnostic report: {{ $usbReport->serial }}</a>
+                                    · {{ $usbReport->received_at->local()->format('H:i:s') }}</p>
+                            @else
+                                <p class="mb-2"><a href="{{ route('diagnostics') }}" class="text-link hover:underline">USB diagnostic reports</a></p>
+                            @endif
                             <p class="mb-2">The switch reports these MAC addresses, but none is matched to a module serial in cmprovision:
                                 <span class="ports-serial break-all">{{ implode(', ', $tile['macs']) }}</span></p>
                             @if ($tile['changed'] !== null && $tile['changed'] > \App\Support\StandMap::BOOT_SECONDS)

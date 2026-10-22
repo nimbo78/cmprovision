@@ -13,12 +13,13 @@ class ModuleDiagnostics
     const REQUEST_SECONDS = 90;
     const FACTS = ['serial', 'kernel', 'model', 'target', 'block', 'controller', 'host', 'card_type',
         'card_name', 'cid', 'csd', 'manfid', 'oemid', 'fwrev', 'life_time', 'pre_eol_info', 'sectors', 'readonly', 'throttled',
+        'boot_id', 'event_id', 'mac', 'network_stage', 'last_http_code', 'last_curl_exit',
         'architecture', 'utility_os', 'boot_mode', 'bootloader_version', 'temperature_mc', 'thermal_sensor', 'thermal_trip_mc',
         'mem_total_kb', 'mem_available_kb', 'uptime_seconds', 'ethernet', 'eth_carrier', 'eth_operstate', 'eth_speed_mbps',
         'eth_duplex', 'eth_rx_errors', 'eth_tx_errors', 'eth_rx_dropped', 'eth_tx_dropped'];
-    const CONTEXTS = ['startup', 'failure', 'complete', 'manual'];
+    const CONTEXTS = ['discovery', 'startup', 'failure', 'complete', 'manual'];
 
-    public static function parse(string $text, Cm $cm): array
+    public static function parse(string $text, ?Cm $cm = null): array
     {
         if (strlen($text) > self::MAX_BYTES)
             throw new InvalidArgumentException('Diagnostics exceed the size limit.');
@@ -52,17 +53,29 @@ class ModuleDiagnostics
             elseif (in_array($key, self::FACTS, true))
                 $facts[$key] = mb_substr(trim($value), 0, 160);
         }
-        if (($facts['serial'] ?? '') !== $cm->serial
-            || ($facts['target'] ?? '') !== ($cm->provisioning_storage ?: '/dev/mmcblk0')
+        if (!preg_match('/^[0-9a-f]{16}$/D', $facts['serial'] ?? '')
+            || ($facts['serial'] ?? '') === str_repeat('0', 16)
+            || ($cm && (($facts['serial'] ?? '') !== $cm->serial
+                || ($facts['target'] ?? '') !== ($cm->provisioning_storage ?: '/dev/mmcblk0')))
+            || (!$cm && !preg_match('#^/dev/(?:mmcblk[0-9]+|sd[a-z]+|nvme[0-9]+n[0-9]+)$#D', $facts['target'] ?? ''))
             || !in_array($context, self::CONTEXTS, true))
             throw new InvalidArgumentException('Diagnostics do not describe this run.');
+        foreach (['boot_id', 'event_id'] as $key)
+            if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D', $facts[$key] ?? ''))
+                $facts[$key] = '';
+        if (!preg_match('/^(?:[a-f0-9]{2}:){5}[a-f0-9]{2}$/Di', $facts['mac'] ?? ''))
+            $facts['mac'] = '';
+        else
+            $facts['mac'] = strtolower($facts['mac']);
+        if (!in_array($facts['network_stage'] ?? '', ['waiting_interface', 'waiting_link', 'dhcp', 'script_download', 'script_running', 'script_ended'], true))
+            $facts['network_stage'] = '';
         foreach (['block', 'controller', 'ethernet'] as $key)
             if (!in_array($facts[$key] ?? '', ['present', 'missing', 'unknown'], true))
                 $facts[$key] = 'unknown';
         if (!preg_match('/^0x[0-9a-f]{1,8}$/i', $facts['throttled'] ?? ''))
             $facts['throttled'] = 'unknown';
         // Missing, malformed and unsupported readings stay unknown, never zero/healthy.
-        foreach (['temperature_mc' => [-40000, 200000], 'thermal_trip_mc' => [1, 200000],
+        foreach (['last_http_code' => [0, 599], 'last_curl_exit' => [0, 255], 'temperature_mc' => [-40000, 200000], 'thermal_trip_mc' => [1, 200000],
             'mem_total_kb' => [1, 1000000000000], 'mem_available_kb' => [0, 1000000000000],
             'uptime_seconds' => [0, 10000000000], 'eth_speed_mbps' => [1, 1000000],
             'eth_rx_errors' => [0, PHP_INT_MAX], 'eth_tx_errors' => [0, PHP_INT_MAX],
@@ -152,6 +165,10 @@ class ModuleDiagnostics
         if (preg_match('/^.*(?:NETDEV WATCHDOG:.*\beth0\b|\beth0\b.*(?:timed out|tx timeout)).*$/mi', $kernel, $match))
             $add('ethernet_timeout', 'warning', 'The kernel reported a network transmit timeout',
                 'Inspect the interface, driver, power and switch port. Retain the report for comparison with another module.', trim($match[0]), 'network');
+        if ($report['context'] === 'discovery' && in_array($facts['network_stage'] ?? '', ['dhcp', 'script_download'], true))
+            $add('network_boot_wait', 'warning', $facts['network_stage'] === 'dhcp' ? 'DHCP has not completed' : 'The provisioning script has not been obtained',
+                'Check DHCP/TFTP and HTTP service logs on the provisioner. This is the last boot stage recorded by the utility OS, not a hardware-failure verdict.',
+                'stage='.$facts['network_stage'].'; HTTP='.($facts['last_http_code'] ?? 'not reported').'; curl='.($facts['last_curl_exit'] ?? 'not reported'), 'network');
         $preEol = preg_match('/^0x0[0-3]$/i', $facts['pre_eol_info'] ?? '') ? hexdec($facts['pre_eol_info']) : 0;
         preg_match_all('/0x([0-9a-f]{2})/i', $facts['life_time'] ?? '', $life);
         $worn = array_filter($life[1], fn ($value) => hexdec($value) >= 10 && hexdec($value) <= 11);
@@ -222,10 +239,16 @@ class ModuleDiagnostics
 
     public static function text(Cm $cm): string
     {
-        $report = $cm->storage_diagnostics;
-        $text = "cmprovision module diagnostics\nSerial: ".$cm->serial."\nReceived: ".$cm->storage_diagnostics_at?->toIso8601String()."\n";
-        $text .= 'Context: '.$report['context']."\n";
-        $text .= 'EEPROM before: '.($cm->eepromVersionBefore() ?? 'not reported')."\nEEPROM after: ".($cm->eepromVersionAfter() ?? 'not reported')."\n";
+        return self::format($cm->storage_diagnostics, $cm->serial, $cm->storage_diagnostics_at?->toIso8601String(),
+            $cm->eepromVersionBefore(), $cm->eepromVersionAfter());
+    }
+
+    public static function format(array $report, string $serial, ?string $received, ?string $before = null, ?string $after = null): string
+    {
+        $text = "cmprovision module diagnostics\nSerial: ".$serial."\nReceived: ".$received."\n";
+        $text .= 'Source: '.($report['source'] ?? 'ethernet')."\nContext: ".$report['context']."\n";
+        if (isset($report['collected_at'])) $text .= 'Collected (approx.): '.$report['collected_at']."\n";
+        $text .= 'EEPROM before: '.($before ?? 'not reported')."\nEEPROM after: ".($after ?? 'not reported')."\n";
         foreach ($report['facts'] as $key => $value)
             $text .= $key.'='.$value."\n";
         foreach ($report['sections'] as $key => $value)

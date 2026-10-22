@@ -1,0 +1,14 @@
+#!/bin/sh
+# Start independently of S99's wait for eth0/DHCP. Nothing here reboots or writes storage.
+pidfile=/run/cmprovision-diagnostics.pid
+case "$1" in
+ start)
+    if [ -r "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then exit 0; fi
+    /usr/sbin/cmprovision-diagnostics-agent >/dev/console 2>&1 &
+    echo $! > "$pidfile"
+    ;;
+ stop)
+    if [ -r "$pidfile" ]; then kill "$(cat "$pidfile")" 2>/dev/null; rm -f "$pidfile"; fi
+    ;;
+esac
+exit 0

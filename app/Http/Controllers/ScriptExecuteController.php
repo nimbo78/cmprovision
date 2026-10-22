@@ -847,6 +847,7 @@ exit 1
             try
             {
                 $report = ModuleDiagnostics::parse($file->get(), $cm);
+                $report['source'] = 'ethernet';
             }
             catch (\InvalidArgumentException $e)
             {
