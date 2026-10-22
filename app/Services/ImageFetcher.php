@@ -59,6 +59,46 @@ class ImageFetcher
     }
 
     /**
+     * A small text file (a published checksum), through the same checks and redirects as an image.
+     *
+     * @throws ImageSourceException when it is not there or larger than $max bytes
+     */
+    public function text(string $url, int $max = 65536): string
+    {
+        $url = trim($url);
+        for ($hop = 0; $hop <= self::MAX_REDIRECTS; $hop++) {
+            $body = '';
+            $tooLarge = false;
+            $sink = function (string $chunk) use (&$body, &$tooLarge, $max): int {
+                $body .= $chunk;
+                if (strlen($body) > $max) {
+                    $tooLarge = true;
+
+                    return 0;
+                }
+
+                return strlen($chunk);
+            };
+            $r = $this->hop($this->guard->check($url), [], $sink, null);
+            if ($next = $this->redirect($url, $r)) {
+                $url = $next;
+                continue;
+            }
+            if ($tooLarge) {
+                throw new ImageSourceException('The file at '.ImageUrlGuard::redact($url).' is too large to be a checksum.', true);
+            }
+            $this->requireAnswer($r, $url, [200]);
+            if ($r['errno'] !== 0) {
+                throw $this->curlError($r, $url);
+            }
+
+            return $body;
+        }
+
+        throw new ImageSourceException('Too many redirects.', true);
+    }
+
+    /**
      * Fetches into $part from the byte it already has until the file is whole, $deadline (a slice) or the callback says stop.
      * A server that does not resume, or a file that changed, starts the file again. A transfer that breaks keeps what arrived.
      *

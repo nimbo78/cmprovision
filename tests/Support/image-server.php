@@ -82,6 +82,14 @@ switch (true) {
         usleep(200000);
         echo str_repeat('y', 100);
         break;
+    case $path === '/sum.sha256':
+        header('Content-Type: text/plain');
+        echo str_repeat('c', 64)."  os.img.gz\n";
+        break;
+    case $path === '/big-text':
+        header('Content-Type: text/plain');
+        echo str_repeat('z', 200000);
+        break;
     case $path === '/loop':
         header('Location: /loop', true, 302);
         break;

@@ -41,6 +41,21 @@ class FakeImageFetcher extends ImageFetcher
         return $this->probeAnswer;
     }
 
+    /** @var string|\Throwable what text() answers (a published checksum file) */
+    public $textAnswer = '';
+    /** @var string[] the addresses text() was asked for */
+    public $texts = [];
+
+    public function text(string $url, int $max = 65536): string
+    {
+        $this->texts[] = $url;
+        if ($this->textAnswer instanceof \Throwable) {
+            throw $this->textAnswer;
+        }
+
+        return $this->textAnswer;
+    }
+
     /** a slice that appends $bytes to the part and is not the last */
     public static function writes(int $bytes, bool $done = false): \Closure
     {

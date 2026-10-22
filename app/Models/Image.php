@@ -76,10 +76,61 @@ class Image extends Model
         return 'Image '.$this->filename.' failed to download: '.($this->download_error ?: 'see the Images page');
     }
 
-    /* 544 MB, 1.6 GB */
+    /* 800 kB, 544 MB, 1.6 GB */
     static function size(int $bytes): string
     {
-        return $bytes >= 1000000000 ? number_format($bytes / 1000000000, 1).' GB' : number_format($bytes / 1000000).' MB';
+        if ($bytes >= 1000000000)
+            return number_format($bytes / 1000000000, 1).' GB';
+
+        return $bytes >= 1000000 ? number_format($bytes / 1000000).' MB' : number_format($bytes / 1000).' kB';
+    }
+
+    /* " · 12 MB/s · 4 min left" for a fetch that runs at $speed bytes a second; '' while the speed is not known */
+    function downloadRate(?float $speed): string
+    {
+        if (!$speed || $speed <= 0)
+            return '';
+        $seconds = (int) ceil(max(0, (int) $this->download_total - (int) $this->download_bytes) / $speed);
+        if ($seconds < 90)
+            $left = $seconds.' s';
+        elseif ($seconds < 5400)
+            $left = round($seconds / 60).' min';
+        else
+            $left = intdiv($seconds, 3600).' h '.round(($seconds % 3600) / 60).' min';
+
+        return ' · '.self::size((int) $speed).'/s · '.$left.' left';
+    }
+
+    /* where an image came from, for the page: "WLAN-Pi/pi-gen 26.10-DeadEye", "Raspberry Pi OS catalog", "example.org"; null for an uploaded one */
+    function sourceLabel(): ?string
+    {
+        if ($this->source_type === null)
+            return null;
+        $source = json_decode((string) $this->source, true) ?: [];
+        switch ($this->source_type)
+        {
+            case 'github':
+                return trim(($source['repo'] ?? 'GitHub').' '.($source['tag'] ?? ''));
+            case 'raspberrypi':
+                return 'Raspberry Pi OS catalog'.(isset($source['name']) ? ': '.$source['name'] : '');
+        }
+
+        return (isset($source['url']) ? parse_url($source['url'], PHP_URL_HOST) : null) ?: 'a link';
+    }
+
+    /* how the file is checked against what its source published */
+    function checksumLabel(): ?string
+    {
+        $labels = [
+            'github-digest' => 'verified against the GitHub digest',
+            'sums-file' => 'verified against the release checksum list',
+            'sha256-file' => 'verified against the published .sha256 file',
+            'catalog' => 'verified against the Raspberry Pi catalog',
+            'user' => 'verified against the checksum you gave',
+            'none' => 'no published checksum',
+        ];
+
+        return $labels[$this->checksum_source] ?? null;
     }
 
     function imagepath()

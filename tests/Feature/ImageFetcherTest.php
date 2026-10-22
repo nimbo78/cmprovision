@@ -180,6 +180,25 @@ class ImageFetcherTest extends TestCase
         $this->assertSame($this->bytes(), file_get_contents($this->dir.'/p.part'));
     }
 
+    // --- a small text file (a published checksum)
+
+    public function test_a_small_text_file_comes_back_as_text_through_the_same_checks()
+    {
+        $this->assertSame(str_repeat('c', 64)."  os.img.gz\n", $this->fetcher()->text($this->url('/sum.sha256'), 65536));
+    }
+
+    public function test_a_text_file_over_the_limit_or_behind_a_private_redirect_is_refused()
+    {
+        foreach (['/big-text' => 'too large', '/to-private' => 'not allowed', '/status/404' => '404'] as $path => $text) {
+            try {
+                $this->fetcher()->text($this->url($path), 65536);
+                $this->fail($path);
+            } catch (ImageSourceException $e) {
+                $this->assertStringContainsString($text, $e->getMessage(), $path);
+            }
+        }
+    }
+
     // --- download
 
     public function test_a_file_comes_whole()
