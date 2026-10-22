@@ -164,6 +164,14 @@
                     <tr>
                         <td>
                             <ul class="list-outside list-disc ml-6">
+                                <li class="{{ $usbDiagnosticsRunning ? 'text-pos' : 'text-neg' }}"><span class="text-fg">USB diagnostic fallback receiver</span></li>
+                            </ul>
+                        </td>
+                        <td><button wire:click="viewLogUsbDiagnostics" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button></td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <ul class="list-outside list-disc ml-6">
                                 <li @if ($queueRunning) class="text-pos" @else class="text-neg" @endif>
                                     <span class="text-fg"> queue worker (switch ports, notifications)</span>
                                 </li>

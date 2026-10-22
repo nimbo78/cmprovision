@@ -27,6 +27,8 @@ class UtilityOsBuildTest extends TestCase
             file_put_contents($this->dir.'/repo/utility-os/package/cmp-rpi-utils/'.$file, 'original '.$file);
         copy($root.'/utility-os/versions.env', $this->versionsPath());
         copy($root.'/utility-os/configs/cmprovision_defconfig', $this->dir.'/repo/utility-os/configs/cmprovision_defconfig');
+        mkdir($this->dir.'/repo/resources/shell', 0755, true);
+        copy($root.'/resources/shell/module-diagnostics.sh', $this->dir.'/repo/resources/shell/module-diagnostics.sh');
         $config = $this->dir.'/work/buildroot-2025.02.18/utils/config';
         // The pinned Buildroot helper uses ':' as the sed delimiter when replacing existing strings.
         file_put_contents($config, <<<'SH'

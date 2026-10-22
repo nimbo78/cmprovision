@@ -97,6 +97,8 @@ Settings → Wi-Fi networks lists the networks the provisioner connects to, the 
 
 Settings → Ethernet switches lists the switches of the stand; **Add switch** takes a switch's address and SNMP read access (a community for v2c, a user for v3). With them a module gets its switch and port as its board, `sw01 Gi0/3` (the switch's sysName before the first dot, then the port's description or name), and the Ports page shows each switch's front panel port by port. A port that leads to another switch of the list is a link, never a module's port: it shows that switch's own MAC (its base MAC, the MAC of its VLAN interface, or the MAC of its address in the provisioner's ARP cache). The same switch cannot be added twice under two addresses. Two switches with the same sysName give boards that look the same: Settings and the Ports page warn about it, rename one on the switch.
 
+Verified switch models use the physical positions and printed port numbers of their front panel. On a phone, scroll the panel sideways to keep that order. Other models show **Automatic port order**. Supported panels and manufacturer references: [Switch front panels](switch-front-panels.md).
+
 Write access is optional, set for each switch, and only used to restart modules over PoE: a write community for v2c, or a user of its own for v3. **Check write access** writes one PoE port's current value back, so it changes nothing. With write access, the module card, the Ports page and the dashboard get a **Restart** button: the switch turns the port's PoE off for 5 seconds and on again. It is offered only on ports with one of the provisioner's modules (or a Raspberry Pi still booting) and nothing else, and not while the module writes its bootloader EEPROM. A port that does not come back on is listed on the dashboard, the Ports page and the module card with **Power on** until it does.
 
 ## Network access
@@ -106,3 +108,17 @@ Connect the provisioner's `eth0` only to the isolated provisioning switch. Use W
 The modules' `/scriptexecute` endpoint has no login: it accepts only clients on `172.20.0.0/16` and the server itself. Other networks receive HTTP 403. Keep nginx connected directly to the clients; do not put a reverse proxy in front of this endpoint or configure nginx `set_real_ip_from` / `real_ip_header`, which would make the client address depend on a forwarded header.
 
 Files under `/uploads`, including OS images and packages, can be downloaded by anyone who can reach the provisioner's web server. Keep secrets out of these files and restrict access to the server.
+
+## Unrecognized devices
+
+On Ports, **Unrecognized** / **UNR** means that a MAC has not been matched to a
+module serial. A new module is added automatically when its utility OS requests
+the provisioning script; no manual registration is needed. The initial booting
+window is 180 seconds for recognized Raspberry Pi MACs with a known link age.
+The later unrecognized state does not prove a hardware fault. Follow the
+[discovery troubleshooting guide](unrecognized-devices.md) to check the switch,
+DHCP, boot-file delivery, HTTP and console evidence on wlanpi-da2.
+
+## Module diagnostics
+
+Open the module card's **Module diagnostics** section for storage, power and temperature, RAM availability, Ethernet and boot information. It shows measurements, kernel evidence and suggested checks, and can collect a fresh snapshot while the target waits in the utility OS. See [Module diagnostics](module-diagnostics.md) for interpretation and limitations.

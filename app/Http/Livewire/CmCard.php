@@ -11,6 +11,7 @@ use App\Services\Switch\Stand;
 use App\Support\FailureAdvice;
 use App\Support\RunTimeline;
 use App\Support\StandMap;
+use App\Support\ModuleDiagnostics;
 use Livewire\Component;
 
 /* The module card (/cms/<serial>): the last run step by step, the bootloader before and after, the
@@ -23,6 +24,7 @@ class CmCard extends Component
     public $serial;
     public $restartMessage = null, $restartError = false;
     public $powerLoaded = false;
+    public $diagnosticsMessage = null;
 
     public function mount($serial)
     {
@@ -69,12 +71,40 @@ class CmCard extends Component
         $this->dispatch('poe-outages-changed');   // a port left off shows in the banner at once
     }
 
+    public function collectModuleDiagnostics()
+    {
+        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        if (!$cm->canCollectModuleDiagnostics())
+        {
+            $this->diagnosticsMessage = 'The module must be online in the current utility OS to collect a new snapshot.';
+            return;
+        }
+        // No operation lock: this only marks a request, and a module that is busy must not turn the button into an error.
+        $cutoff = now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS);
+        Cm::whereKey($cm->id)
+            ->where(fn ($q) => $q->whereNull('diagnostics_requested_at')->orWhere('diagnostics_requested_at', '<=', $cutoff))
+            ->update(['diagnostics_requested_at' => now()]);
+        $this->diagnosticsMessage = null;
+    }
+
+    public function downloadModuleDiagnostics()
+    {
+        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        abort_unless($cm->storage_diagnostics, 404);
+        $text = ModuleDiagnostics::text($cm);
+        return response()->streamDownload(fn () => print($text), 'cm-'.$cm->id.'-module-diagnostics.txt', ['Content-Type' => 'text/plain; charset=UTF-8']);
+    }
+
     public function render()
     {
         $cm = Cm::where('serial', $this->serial)->firstOrFail();
 
         return view('livewire.cm-card', [
             'cm' => $cm,
+            'usbReport' => \App\Models\UsbDiagnosticReport::where('serial', $cm->serial)->orderByDesc('received_at')->first(),
+            'moduleDiagnosis' => ModuleDiagnostics::summary($cm->storage_diagnostics),
+            'diagnosticsAvailable' => $cm->canCollectModuleDiagnostics(),
+            'diagnosticsPending' => $cm->diagnostics_requested_at?->gt(now()->subSeconds(ModuleDiagnostics::REQUEST_SECONDS)) ?? false,
             'steps' => RunTimeline::steps($cm),
             'advice' => FailureAdvice::for($cm),
             'resumeFrom' => $cm->resumableFrom(),

@@ -192,6 +192,11 @@ EOF
     # the metrics by device (2.5.3): NetworkManager reads its conf.d again, connections take them when they connect
     nmcli general reload conf >/dev/null 2>&1 || true
 
+    # Read the dedicated diagnostic-device rule on the next hotplug; do not retrigger other USB devices.
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules >/dev/null 2>&1 || true
+    fi
+
   ;;
 esac
 

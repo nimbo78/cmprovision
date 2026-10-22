@@ -201,6 +201,8 @@ class UtilityOsUpdateTest extends TestCase
 
     public function test_update_rewrites_the_pins_and_raises_the_version()
     {
+        // Keep this release-number fixture independent of the currently committed utility OS.
+        file_put_contents($this->dir.'/versions.env', preg_replace('/^UOS_VERSION=.*$/m', 'UOS_VERSION=2026.10', file_get_contents($this->dir.'/versions.env')));
         $this->world(['linux' => [self::KERNEL_NEW."\trefs/tags/stable_20261009"]]);
         $this->serve('raw.githubusercontent.com/raspberrypi/linux/'.self::KERNEL_NEW.'/Makefile',
             "# SPDX-License-Identifier: GPL-2.0\nVERSION = 6\nPATCHLEVEL = 18\nSUBLEVEL = 60\nEXTRAVERSION =\n");

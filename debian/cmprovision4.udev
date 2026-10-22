@@ -1,0 +1,2 @@
+# Dedicated read-only CDC ACM function; do not let modem probing consume its protocol.
+SUBSYSTEM=="tty", ATTRS{manufacturer}=="cmprovision", ATTRS{product}=="cmprovision diagnostics", ENV{ID_MM_DEVICE_IGNORE}="1", GROUP="dialout", MODE="0660"

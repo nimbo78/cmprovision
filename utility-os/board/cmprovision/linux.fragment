@@ -10,3 +10,12 @@ CONFIG_RASPBERRYPI_GPIOMEM=y
 # the QEMU check of tools/utility-os/test.sh boots this very kernel: virtio-mmio and its network card
 CONFIG_VIRTIO_MMIO=y
 CONFIG_VIRTIO_NET=y
+
+# Read-only diagnostics over CDC ACM. The image has no loadable modules.
+CONFIG_CONFIGFS_FS=y
+CONFIG_USB_GADGET=y
+CONFIG_USB_LIBCOMPOSITE=y
+CONFIG_USB_CONFIGFS=y
+CONFIG_USB_CONFIGFS_ACM=y
+CONFIG_USB_F_ACM=y
+CONFIG_USB_U_SERIAL=y

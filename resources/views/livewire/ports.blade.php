@@ -1,7 +1,7 @@
 <div wire:poll.5s
      x-data="{ filter: [], toggle(s) { this.filter = this.filter.includes(s) ? this.filter.filter(x => x !== s) : this.filter.concat([s]) }, dim(states, never) { return this.filter.length > 0 && (never || !states.some(s => this.filter.includes(s))) } }">
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)
-@php($words = ['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'silent', 'unknown' => 'unknown', 'boot' => 'booting', 'foreign' => 'foreign', 'free' => 'free'])
+@php($words = ['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'silent', 'unknown' => 'unknown', 'boot' => 'booting', 'foreign' => 'unrecognized', 'free' => 'free'])
 <div class="cmp-page">
     <livewire:poe-outages />
     @if ($restartMessage)
@@ -77,6 +77,12 @@
                         @if ($sw['placeholder'])
                             <p class="ports-empty">{{ $sw['placeholder'] }}</p>
                         @endif
+                        @if (!empty($sw['part']['blocks']))
+                            <div class="ports-layout-label">{{ $sw['part']['panel'] ? 'Front panel · view from the front' : 'Automatic port order' }}</div>
+                        @endif
+                        @if ($sw['part']['panel'] ?? null)
+                            @include('livewire.ports-panel')
+                        @else
                         @foreach ($sw['part']['blocks'] ?? [] as $block)
                             <div class="ports-block {{ $block['uplinks'] ? 'uplinks' : '' }}">
                                 {{-- groups of four ports: on a narrow panel a group wraps as a whole (app.css) --}}
@@ -103,6 +109,7 @@
                                 @endforeach
                             </div>
                         @endforeach
+                        @endif
                     </div>
                 </div>
             </section>
@@ -156,7 +163,22 @@
                         </div>
                     @endforeach
                     @if ($tile['state'] === 'foreign')
-                        <p class="mb-2">Not a module: <span class="ports-serial">{{ implode(', ', $tile['macs']) }}</span></p>
+                        <div class="mb-3">
+                            <p class="font-semibold mb-1">Unrecognized device</p>
+                            @if ($usbReport)
+                                <p class="mb-2"><a href="{{ route('diagnostics', $usbReport->id) }}" class="text-link hover:underline">USB diagnostic report: {{ $usbReport->serial }}</a>
+                                    · {{ $usbReport->received_at->local()->format('H:i:s') }}</p>
+                            @else
+                                <p class="mb-2"><a href="{{ route('diagnostics') }}" class="text-link hover:underline">USB diagnostic reports</a></p>
+                            @endif
+                            <p class="mb-2">The switch reports these MAC addresses, but none is matched to a module serial in cmprovision:
+                                <span class="ports-serial break-all">{{ implode(', ', $tile['macs']) }}</span></p>
+                            @if ($tile['changed'] !== null && $tile['changed'] > \App\Support\StandMap::BOOT_SECONDS)
+                                <p class="mb-2 text-fg-muted">The initial 3-minute discovery window has passed. This does not prove a hardware fault.</p>
+                            @endif
+                            <p class="mb-2">A new module is added automatically when its utility OS reports its serial and MAC. No manual registration is needed.</p>
+                            <p class="text-fg-muted">The device may have booted its installed OS or stopped before reaching the provisioning server. Check DHCP and boot-file delivery on the provisioner, then the target console or USB recovery if needed.</p>
+                        </div>
                     @elseif ($tile['state'] === 'boot' && $tile['macs'])
                         <p class="mb-2">A Raspberry Pi is on this port and has not asked the server yet: <span class="ports-serial">{{ implode(', ', $tile['macs']) }}</span></p>
                     @elseif ($tile['state'] === 'boot')

@@ -82,7 +82,7 @@ class StandMap
         foreach ($this->parts as $id => $part)
         {
             $mine = array_filter($ports, function ($p) use ($id) { return $p['switch'] === $id; });
-            [$blocks, $main, $aside, $withPoe] = $this->layout($mine, $owners, $links, $uplinks);
+            [$blocks, $main, $aside, $withPoe, $panel] = $this->layout($mine, $owners, $links, $uplinks, $part['snapshot']['model'] ?? null);
             foreach (array_merge($main, $aside) as $tile)
                 $tiles[$tile['key']] = $tile;
             $allMain = array_merge($allMain, $main);
@@ -90,7 +90,7 @@ class StandMap
             foreach ($mine as $key => $p)
                 if (isset($links[$key]))
                     $found[$p['port']['ifIndex']] = $links[$key];
-            $switches[$id] = ['id' => $id, 'name' => $part['name'], 'blocks' => $blocks,
+            $switches[$id] = ['id' => $id, 'name' => $part['name'], 'blocks' => $blocks, 'panel' => $panel,
                               'composition' => $main || $aside ? $this->composition($main, $aside, $withPoe) : '', 'links' => $found];
         }
         $first = reset($switches);
@@ -184,8 +184,8 @@ class StandMap
         return ($p['port']['mac_count'] ?? count($p['macs'])) - $modules;
     }
 
-    /* One switch laid out like its front panel: PoE ports (or copper) in blocks of BLOCK, the rest beside them */
-    protected function layout(array $mine, array $owners, array $links, array $uplinks): array
+    /* Verified models keep the case's geometry. Otherwise group PoE ports (or copper) in blocks of BLOCK. */
+    protected function layout(array $mine, array $owners, array $links, array $uplinks, ?string $model): array
     {
         uasort($mine, function ($a, $b) { return strnatcasecmp($a['port']['name'], $b['port']['name']); });
         $withPoe = (bool) array_filter($mine, function ($p) { return $p['port']['poe'] !== null; });
@@ -210,6 +210,28 @@ class StandMap
                 $main[] = $tile;
         }
 
+        $panel = SwitchFrontPanel::resolve($model, array_merge($main, $aside));
+        if ($panel)
+        {
+            $main = $aside = [];
+            $blocks = $panel['blocks'];
+            foreach ($blocks as &$block)
+                foreach ($block['tiles'] as &$tile)
+                {
+                    $tile['aside'] = $block['uplinks'];
+                    $tile['media'] = $block['media'];
+                    $tile['sfp'] = $tile['media'] === 'sfp';
+                    $tile['combo'] = false;
+                    $tile['mark'] = $this->mark($tile);
+                    if ($tile['aside'])
+                        $aside[] = $tile;
+                    else
+                        $main[] = $tile;
+                }
+            unset($block, $tile);
+            return [$blocks, $main, $aside, $withPoe, ['model' => $panel['model']]];
+        }
+
         $rows = count($main) > self::BLOCK ? 2 : 1;
         $blocks = [];
         foreach ($rows === 1 ? [$main] : array_chunk($main, self::BLOCK) as $chunk)
@@ -217,7 +239,7 @@ class StandMap
                 $blocks[] = ['uplinks' => false, 'rows' => $rows, 'tiles' => $chunk];
         if ($aside)
             $blocks[] = ['uplinks' => true, 'rows' => $rows, 'tiles' => $aside];
-        return [$blocks, $main, $aside, $withPoe];
+        return [$blocks, $main, $aside, $withPoe, null];
     }
 
     /* What the dashboard says about a module, in one word */
@@ -352,7 +374,7 @@ class StandMap
             'filters' => $state === 'module' ? array_values(array_unique(array_map([self::class, 'moduleState'], $modules))) : [$filter],
             'modules' => $state === 'module' ? $modules : [],
             'short' => $state === 'module' ? strtoupper(substr($modules[0]->serial, -4))
-                : (isset($links[$key]) ? '→' : (['uplink' => 'UP', 'foreign' => 'MAC', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? '')),
+                : (isset($links[$key]) ? '→' : (['uplink' => 'UP', 'foreign' => 'UNR', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? '')),
         ];
     }
 

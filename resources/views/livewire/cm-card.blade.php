@@ -151,6 +151,8 @@
             </div>
         </div>
 
+        @include('livewire.module-diagnostics')
+
         <div class="cmp-card px-4 py-3">
             <div class="font-bold">Last run</div>
             <div class="text-sm text-fg-muted mb-2">Times in {{ $zone }}</div>

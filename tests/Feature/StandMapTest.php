@@ -171,7 +171,7 @@ class StandMapTest extends TestCase
         $t = $map['tiles'];
         $this->assertSame(['module', 'ok', '110C', '✓'], [$t['s1p1']['state'], $t['s1p1']['filter'], $t['s1p1']['short'], $t['s1p1']['mark']]);
         $this->assertSame(['boot', '···'], [$t['s1p2']['state'], $t['s1p2']['short']]);
-        $this->assertSame(['foreign', 'MAC'], [$t['s1p3']['state'], $t['s1p3']['short']]);
+        $this->assertSame(['foreign', 'UNR'], [$t['s1p3']['state'], $t['s1p3']['short']]);
         $this->assertSame('free', $t['s1p4']['state'], 'no link: free, even though the MAC is still in the switch table');
         $this->assertSame([], $t['s1p4']['modules']);
         $this->assertSame(['uplink', 'UP', true], [$t['s1p30']['state'], $t['s1p30']['short'], $t['s1p30']['sfp']]);
@@ -371,6 +371,43 @@ class StandMapTest extends TestCase
         $t = $map['tiles'];
         $this->assertSame([true, false, false, ''], [$t['s1p10109']['aside'], $t['s1p10109']['sfp'], $t['s1p10109']['combo'], $t['s1p10109']['mark']], 'a copper uplink');
         $this->assertSame([true, 'SFP'], [$t['s1p10111']['sfp'], $t['s1p10111']['mark']], 'an empty cage');
+    }
+
+    public function test_verified_panel_preserves_ownership_keys_and_main_port_count_even_without_poe_tables()
+    {
+        $ports = [];
+        $cm = $this->module('10000000000000ab', 'e4:5f:01:00:00:ab');
+        for ($i = 1; $i <= 12; $i++)
+            $ports[] = $this->port(10100 + $i, 'Gi0/'.$i, $i === 3, $i === 3 ? [$cm->mac] : []);
+        $snapshot = $this->snapshot($ports);
+        $snapshot['model'] = 'WS-C2960CX-8PC-L';
+        $map = (new StandMap([['id' => 7, 'name' => 'sw01', 'snapshot' => $snapshot]], [$cm], self::SERVER))->build();
+        $this->assertSame(['model' => 'WS-C2960CX-8PC-L'], $map['switches'][7]['panel']);
+        $this->assertSame([2, 2, 1, 1], array_column($map['switches'][7]['blocks'], 'rows'));
+        $this->assertSame(8, $map['summary']['ports']);
+        $this->assertCount(12, $map['tiles']);
+        $this->assertSame('s7p10103', $map['owners'][$cm->mac]['key']);
+        $this->assertSame('sw01 Gi0/3', $map['tiles']['s7p10103']['board']);
+        $this->assertSame([1, 11, 'sw01 Gi0/11', true, true, 'SFP'],
+            [$map['tiles']['s7p10111']['panel_number'], $map['tiles']['s7p10111']['number'], $map['tiles']['s7p10111']['label'],
+             $map['tiles']['s7p10111']['sfp'], $map['tiles']['s7p10111']['aside'], $map['tiles']['s7p10111']['mark']]);
+    }
+
+    public function test_verified_fiber_switch_counts_all_nine_ports_and_does_not_invent_poe_output()
+    {
+        $cm = $this->module('10000000000000ac', 'e4:5f:01:00:00:ac');
+        $ports = [$this->port(1, 'ether1', false)];
+        for ($i = 1; $i <= 8; $i++)
+            $ports[] = $this->port($i + 1, 'sfp-sfpplus'.$i, $i === 1, $i === 1 ? [$cm->mac] : [], null, 10000);
+        $snapshot = $this->snapshot($ports);
+        $snapshot['model'] = 'RouterOS CRS309-1G-8S+';
+        $map = (new StandMap([['id' => 1, 'name' => 'sw01', 'snapshot' => $snapshot]], [$cm], self::SERVER))->build();
+        $this->assertNotNull($map['switches'][1]['panel']);
+        $this->assertSame([9, 1], [$map['summary']['ports'], $map['summary']['modules']]);
+        $this->assertSame('s1p2', $map['owners'][$cm->mac]['key']);
+        $this->assertSame('no PoE on sw01 sfp-sfpplus1', StandMap::restartBlocker($map['tiles']['s1p2']));
+        $this->assertNull($map['tiles']['s1p1']['poe'], 'PoE in is not PoE output');
+        $this->assertFalse($map['tiles']['s1p1']['aside']);
     }
 
     public function test_the_usual_speed_is_what_the_names_say_then_what_the_links_run_at()

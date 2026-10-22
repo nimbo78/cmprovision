@@ -20,8 +20,14 @@ class UtilityOsSmokeTest extends TestCase
             .'&inversejumper=&memorysize=1000000&temp=&cid=&csd=&bootmode=&uos=2026.10');
         file_put_contents($this->dir.'/requests', "/scriptexecute?\n/scriptexecute?\n");
         file_put_contents($this->dir.'/image.sha256', str_repeat('a', 64));
+        $nonce = str_repeat('a', 64);
+        $boot = '11111111-2222-3333-4444-555555555555';
+        $snapshot = "context=discovery\nutility_os=2026.10\n";
         $sections = [
             'uos' => '2026.10', 'kernel' => '6.18.50-cmprovision',
+            'usb-agent' => "CMPDIAG1 STATUS $nonce 1000000000000001 $boot $boot discovery 123 0 -\n"
+                ."CMPDIAG1 BEGIN $nonce 1000000000000001 $boot ".strlen($snapshot).' '.hash('sha256', $snapshot)." -\n"
+                .base64_encode($snapshot)."\nCMPDIAG1 END $nonce",
             'versions' => implode("\n", array_map(fn ($n) => 'tool'.$n.' rc=0 version', range(1, 21))),
             'gz-whole' => str_repeat('a', 64), 'xz-whole' => str_repeat('a', 64), 'bz2-whole' => str_repeat('a', 64),
             'od' => '3', 'base64' => 'hello', 'zeros' => '0', 'awk' => '1099511627777',

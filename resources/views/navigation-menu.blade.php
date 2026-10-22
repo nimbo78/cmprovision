@@ -1,5 +1,5 @@
 {{-- The top bar (layout A): the mark and the pages; the open batch, the uplink, Appearance and the account on the right --}}
-@php($pages = [['dashboard', 'Dashboard'], ['cms', 'CMs'], ['ports', 'Ports'], ['images', 'Images'], ['projects', 'Projects'], ['scripts', 'Scripts'], ['labels', 'Labels'], ['firmware', 'Firmware'], ['settings', 'Settings']])
+@php($pages = [['dashboard', 'Dashboard'], ['cms', 'CMs'], ['ports', 'Ports'], ['diagnostics', 'Diagnostics'], ['images', 'Images'], ['projects', 'Projects'], ['scripts', 'Scripts'], ['labels', 'Labels'], ['firmware', 'Firmware'], ['settings', 'Settings']])
 <nav x-data="{ open: false }" class="cmp-topbar">
     <div class="cmp-topbar-row">
         <a href="{{ route('dashboard') }}" class="shrink-0" aria-label="Dashboard">

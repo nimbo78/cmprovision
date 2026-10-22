@@ -88,6 +88,8 @@ class Ports extends Component
             'asOf' => self::asOf($stand['switches']),
             'map' => $stand['map'],
             'tile' => $tile,
+            'usbReport' => $tile && $tile['macs'] ? \App\Models\UsbDiagnosticReport::whereIn('mac', $tile['macs'])
+                ->where('received_at', '>', now()->subMinutes(15))->orderByDesc('received_at')->first() : null,
             'now' => $now,
             'writable' => $writable,
             'failed' => $writable && $stand['map'] ? count(self::failedOnStand($stand)) : 0,

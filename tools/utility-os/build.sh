@@ -54,6 +54,7 @@ INPUTS=$WORK/cmprovision-build-inputs
     find utility-os -type f ! -name '*.pyc' ! -path '*/__pycache__/*' | LC_ALL=C sort | while IFS= read -r file; do
         sha256sum "$file"
     done
+    sha256sum resources/shell/module-diagnostics.sh
     sha256sum tools/utility-os/build.sh tools/utility-os/hashes.sh tools/utility-os/manifest.sh tools/utility-os/legal_info.py tools/utility-os/usb_image.py
 ) > "$INPUTS"
 # Buildroot's linux-custom name stays the same when its tarball changes. Reconfigure does not
@@ -74,6 +75,12 @@ PATCH_DIRS="$EXT/patches $WORK/hashes"
     --set-str BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION "$KERNEL_URL" \
     --set-str BR2_GLOBAL_PATCH_DIR "$PATCH_DIRS" \
     --set-str BR2_WGET "wget -nd -t 3 --connect-timeout=10 --read-timeout=60"
+# A host-side scheduling limit; it does not change target features.
+if [ -n "${UOS_JOBS:-}" ]; then
+    case "$UOS_JOBS" in ''|*[!0-9]*) echo "build.sh: invalid UOS_JOBS" >&2; exit 1;; esac
+    [ "$UOS_JOBS" -ge 1 ] && [ "$UOS_JOBS" -le 64 ] || { echo "build.sh: UOS_JOBS must be 1..64" >&2; exit 1; }
+    "$BR/utils/config" --file "$OUT/.config" --set-val BR2_JLEVEL "$UOS_JOBS"
+fi
 make -C "$OUT" olddefconfig > /dev/null
 grep -Fxq "BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"$KERNEL_URL\"" "$OUT/.config" || {
     echo "build.sh: kernel URL was not applied to the configuration" >&2; exit 1;

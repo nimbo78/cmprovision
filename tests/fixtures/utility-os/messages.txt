@@ -1,4 +1,4 @@
-# The messages of the tools of the utility OS 2026.10, recorded under QEMU by tools/utility-os/test.sh;
+# The messages of the tools of the utility OS 2026.10.1, recorded under QEMU by tools/utility-os/test.sh;
 # tests/Unit/UtilityOsMessagesTest.php checks that the server recognises them. Do not edit: run test.sh.
 [gz-cut]
 gzip: unexpected end of file

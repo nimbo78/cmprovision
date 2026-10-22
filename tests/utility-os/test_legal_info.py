@@ -31,11 +31,12 @@ class LegalInfoTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.base = Path(self.temporary.name)
         self.repo, self.work, self.cache = (self.base/name for name in ['repo', 'work', 'cache'])
-        for path in ['repo/utility-os', 'repo/tools/utility-os', 'repo/docs', 'work/hashes/linux',
+        for path in ['repo/utility-os', 'repo/tools/utility-os', 'repo/resources/shell', 'repo/docs', 'work/hashes/linux',
                      'work/hashes/cmp-rpi-utils', 'cache/dl/linux', 'cache/dl/cmp-rpi-utils']:
             (self.base/path).mkdir(parents=True)
         (self.repo/'docs/utility-os.md').write_text('build guide')
         (self.repo/'LICENSE').write_text('BSD license')
+        (self.repo/'resources/shell/module-diagnostics.sh').write_text('shared collector source')
         self.values = {'UOS_LINUX_COMMIT': 'a'*40, 'UOS_RPI_UTILS_COMMIT': 'b'*40, 'UOS_BUILDROOT_VERSION': '2025.02.18'}
         for package, filename, key, files in [
             ('linux', 'linux-'+'a'*40+'.tar.gz', 'UOS_LINUX_SHA256', {'linux/LICENSES/preferred/GPL-2.0': b'GPL-2.0'}),
@@ -119,6 +120,8 @@ class LegalInfoTest(unittest.TestCase):
         self.assertEqual(self.commit, record['bootlin_buildroot_commit'])
         self.assertEqual(self.source, (self.out/'bootlin/sources/gcc-final-13.3.0/gcc-13.3.0.tar.xz').read_bytes())
         self.assertTrue((self.out/'cmprovision-build-recipe.tar.gz').is_file())
+        with tarfile.open(self.out/'cmprovision-build-recipe.tar.gz') as recipe:
+            self.assertEqual(b'shared collector source', recipe.extractfile('resources/shell/module-diagnostics.sh').read())
         self.assertEqual(self.br_data, (self.out/'sources/buildroot-2025.02.18.tar.gz').read_bytes())
 
     def test_wrong_source_bytes_cannot_claim_completeness(self):

@@ -15,6 +15,7 @@ LEDPATTERN=$LED_TMP/ledpattern
 LED_POLL_SECONDS=${LED_POLL_SECONDS:-5}
 LED_IDENTIFY_POLL_SECONDS=${LED_IDENTIFY_POLL_SECONDS:-2}
 LED_PID=""
+LED_POLL_URL={!! escapeshellarg('http://'.$server.'/scriptexecute?serial='.rawurlencode($serial).'&identify=poll'.(!empty($diagnosticsToken) ? '&diagnostics_token='.$diagnosticsToken : '')) !!}
 led_paths() {
     LED_ACT=$LEDS/led0; [ -e "$LEDS/ACT" ] && LED_ACT=$LEDS/ACT
     LED_PWR=$LEDS/led1; [ -e "$LEDS/PWR" ] && LED_PWR=$LEDS/PWR
@@ -86,7 +87,12 @@ led_mode() {   # led_mode progress|done|fail|identify
 }
 
 led_asked() {   # does the operator want this module to identify itself?
-    [ "$(curl --silent --max-time 4 -g "http://{{ $server }}/scriptexecute?serial={{ $serial }}&identify=poll")" = identify ]
+    LED_REPLY=$(curl --silent --max-time 4 -g "$LED_POLL_URL")
+    if [ "$LED_REPLY" = diagnostics ] && command -v cmp_diag_report >/dev/null 2>&1; then
+        cmp_diag_report manual
+        return 1
+    fi
+    [ "$LED_REPLY" = identify ]
 }
 
 # Blink for the operator as long as the server says so (it stops by itself after a while, or when the
@@ -102,6 +108,9 @@ led_poll_once() {   # led_poll_once done|fail
 # whether to identify itself, until it is switched off. Never returns.
 finish() {   # finish done|fail
     led_mode "$1"
+    if command -v cmp_diag_report >/dev/null 2>&1; then
+        case "$1" in fail) cmp_diag_report failure;; done) cmp_diag_report complete;; esac
+    fi
     while true; do
         sleep "$LED_POLL_SECONDS"
         led_poll_once "$1"

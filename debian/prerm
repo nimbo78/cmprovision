@@ -28,6 +28,12 @@ if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.7.0
     runuser -u www-data -- /usr/lib/cmprovision/boot-link legacy /var/lib/cmprovision || true
 fi
 
+# The receiver opens the application database and must stop when its files leave on downgrade.
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.7.2~"; then
+    deb-systemd-invoke stop cmprovision-usb-diagnostics.service >/dev/null || true
+    deb-systemd-helper purge cmprovision-usb-diagnostics.service >/dev/null || true
+fi
+
 #DEBHELPER#
 
 exit 0

@@ -1,0 +1,118 @@
+#!/bin/sh
+# CDC ACM protocol, not a shell/login or mass-storage gadget. All files are private RAM state.
+umask 077
+. "${CMP_DIAG_LIB:-/usr/lib/cmprovision/module-diagnostics.sh}"
+DIAG_SERIAL=$(cmp_diag_text "$DIAG_PROC/device-tree/serial-number")
+DIAG_TARGET=/dev/mmcblk0
+DIAG_FILE=$DIAG_STATE/usb-report
+mkdir -p "$DIAG_STATE" || exit 1
+uuid_ok() { printf '%s\n' "$1" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; }
+serial_ok() { printf '%s\n' "$1" | grep -Eq '^[0-9a-f]{16}$' && [ "$1" != 0000000000000000 ]; }
+serial_ok "$DIAG_SERIAL" && uuid_ok "$DIAG_BOOT_ID" || exit 1
+status() {
+    current_token=-; bound_target=/dev/mmcblk0
+    if [ -r "$DIAG_STATE/binding" ]; then
+        read -r current_token bound_target < "$DIAG_STATE/binding"
+    fi
+    event=-; context=idle; collected=0; event_token=$current_token
+    if [ -r "$DIAG_STATE/pending" ]; then
+        read -r event context collected event_token < "$DIAG_STATE/pending"
+    else
+        delivered=0
+        case "$(cmp_diag_text "$DIAG_STATE/ethernet-event")" in "$current_token "*) [ "$current_token" = - ] || delivered=1;; esac
+        if [ "$delivered" = 0 ]; then event=$DIAG_BOOT_ID; context=discovery; fi
+    fi
+    now=$(cmp_diag_uptime); now=${now:-0}
+    case "$collected" in ''|*[!0-9]*) collected=$now;; esac
+    age=$((now - collected)); [ "$age" -ge 0 ] || age=0
+}
+report() {
+    requested_event=$1; requested_context=$2
+    status
+    report_token=$event_token
+    if [ "$requested_context" = manual ] && [ "$current_token" != - ]; then
+        DIAG_TARGET=$bound_target; DIAG_EVENT=$requested_event; report_token=$current_token
+        cmp_diag_collect manual || return 1
+    elif [ "$requested_event" = "$event" ] && [ "$requested_context" = "$context" ]; then
+        if [ "$context" = discovery ]; then
+            DIAG_TARGET=$bound_target
+            DIAG_EVENT=$requested_event
+            cmp_diag_collect discovery || return 1
+        else
+            cp "$DIAG_STATE/pending-report" "$DIAG_FILE" || return 1
+        fi
+    else
+        return 1
+    fi
+    # A concurrent network retry may have advanced the pending event: never send mismatched bytes.
+    grep -Fxq "event_id=$requested_event" "$DIAG_FILE" || return 1
+    length=$(wc -c < "$DIAG_FILE" | tr -d ' ')
+    [ "$length" -gt 0 ] && [ "$length" -le 32768 ] || return 1
+    digest=$(sha256sum "$DIAG_FILE" | cut -d' ' -f1)
+    printf 'CMPDIAG1 BEGIN %s %s %s %s %s %s\n' "$nonce" "$DIAG_SERIAL" "$DIAG_BOOT_ID" "$length" "$digest" "$report_token"
+    base64 "$DIAG_FILE"
+    printf '\nCMPDIAG1 END %s\n' "$nonce"
+}
+dispatch() {
+    # Word splitting is deliberate for this tiny fixed grammar; pathname expansion is disabled.
+    set -f
+    set -- $1
+    set +f
+    [ "$#" -ge 3 ] && [ "$1" = CMPDIAG1 ] || return 0
+    nonce=$3
+    [ "${#nonce}" = 64 ] && printf '%s\n' "$nonce" | grep -Eq '^[0-9a-f]{64}$' || return 0
+    case "$2:$#" in
+        HELLO:3)
+            status
+            printf 'CMPDIAG1 STATUS %s %s %s %s %s %s %s %s\n' "$nonce" "$DIAG_SERIAL" "$DIAG_BOOT_ID" "$event" "$context" "$age" "$collected" "$event_token"
+            ;;
+        REPORT:5)
+            uuid_ok "$4" || return 0
+            case "$5" in discovery|startup|failure|complete|manual) ;; *) return 0;; esac
+            report "$4" "$5" || printf 'CMPDIAG1 ERROR %s unavailable\n' "$nonce"
+            ;;
+    esac
+}
+serve() {
+    while IFS= read -r -n 256 command; do dispatch "$command"; done
+}
+# Tests exercise the same parser, collector and framing through stdin/stdout, without USB hardware.
+if [ "${1:-}" = --stdio ]; then serve; exit 0; fi
+
+gadget_setup() {
+    [ -d "$DIAG_SYS/kernel/config/usb_gadget" ] || mount -t configfs none "$DIAG_SYS/kernel/config" 2>/dev/null
+    gadget=$DIAG_SYS/kernel/config/usb_gadget/cmprovision
+    controller=
+    for candidate in "$DIAG_SYS"/class/udc/*; do
+        [ -e "$candidate" ] && { controller=${candidate##*/}; break; }
+    done
+    [ -n "$controller" ] && [ -d "$DIAG_SYS/kernel/config/usb_gadget" ] || return 1
+    mkdir -p "$gadget" || return 1
+    if [ ! -d "$gadget/functions/acm.usb0" ]; then
+        # Linux Foundation composite-gadget identifiers, with an identifying product and real hardware serial.
+        echo 0x1d6b > "$gadget/idVendor"
+        echo 0x0104 > "$gadget/idProduct"
+        echo 0x0200 > "$gadget/bcdUSB"
+        mkdir -p "$gadget/strings/0x409" "$gadget/configs/c.1/strings/0x409" "$gadget/functions/acm.usb0"
+        printf '%s' "$DIAG_SERIAL" > "$gadget/strings/0x409/serialnumber"
+        echo cmprovision > "$gadget/strings/0x409/manufacturer"
+        echo 'cmprovision diagnostics' > "$gadget/strings/0x409/product"
+        echo 'Read-only diagnostics' > "$gadget/configs/c.1/strings/0x409/configuration"
+        ln -s "$gadget/functions/acm.usb0" "$gadget/configs/c.1/acm.usb0" || return 1
+    fi
+    [ -n "$(cmp_diag_text "$gadget/UDC")" ] || echo "$controller" > "$gadget/UDC" || return 1
+    [ -c "${CMP_DIAG_DEVICE:-/dev/ttyGS0}" ]
+}
+while :; do
+    if gadget_setup; then
+        device=${CMP_DIAG_DEVICE:-/dev/ttyGS0}
+        # Opening can wait for the host. This daemon is independent of provisioning. The open is in a subshell:
+        # a failed redirection of the special builtin exec ends a non-interactive ash, and with it this daemon.
+        (
+            exec 3<> "$device" || exit 0
+            stty raw -echo <&3 2>/dev/null
+            while IFS= read -r -n 256 command <&3; do dispatch "$command" >&3; done
+        )
+    fi
+    sleep 2
+done

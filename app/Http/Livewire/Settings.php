@@ -11,13 +11,14 @@ use Illuminate\Support\Facades\Validator;
 #[Title('Settings')]
 class Settings extends Component
 {
-    public $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $uplinkSpareRunning, $utilityOs, $logOutput, $logTitle;
+    public $usbDiagnosticsRunning, $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $uplinkSpareRunning, $utilityOs, $logOutput, $logTitle;
     public $ip, $mac, $detectedMacs;
     public $hosts;
     public $logModalOpen = false, $staticModalOpen = false;
 
     public function render()
     {
+        $this->usbDiagnosticsRunning = $this->isActive('cmprovision-usb-diagnostics');
         $this->dnsmasqRunning = $this->isActive('cmprovision-dnsmasq');
         $this->rpibootRunning = $this->isActive('cmprovision-rpiboot');
         $this->queueRunning = $this->isActive('cmprovision-queue');
@@ -64,6 +65,13 @@ class Settings extends Component
     {
         $this->logTitle = "Rpiboot log since boot";
         $this->logOutput = $this->getLog('cmprovision-rpiboot');
+        $this->logModalOpen = true;
+    }
+
+    public function viewLogUsbDiagnostics()
+    {
+        $this->logTitle = 'USB diagnostics receiver log since boot';
+        $this->logOutput = $this->getLog('cmprovision-usb-diagnostics');
         $this->logModalOpen = true;
     }
 
