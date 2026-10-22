@@ -182,6 +182,14 @@ EEPROM «до и после»: сервер хранит доложенный з
 
 ## Фронтенд
 
+HDMI-табло провижинера: `docs/hdmi-display.md`. `tools/hdmi-wallboard.py watch` от root читает только DRM и
+`/etc/default/cmprovision-wallboard.json` (Off по умолчанию), запускает/останавливает отдельный display unit на tty8.
+Renderer и постоянный Artisan `wallboard:snapshot --watch` работают от www-data; `WallboardSnapshot` использует
+`Stand::current()` / общий `SnapshotCache`, `BatchSummary`, `Cm` и `ModuleDiagnostics`, не команды модулям.
+Новый sudoers `011_cmprovision-wallboard` разрешает только помощник без аргументов; JSON на stdin содержит четыре
+проверенных поля. Display unit нельзя автоматически стартовать через debhelper: это решает watcher. При restore
+его читатель БД должен быть остановлен. Тесты: `WallboardTest`, `tests/tools/test_hdmi_wallboard.py` (POSIX/curses).
+
 - Страницы — full-page Livewire-компоненты (`app/Http/Livewire/*` + `resources/views/livewire/*`), подключённые прямо в `routes/web.php`.
 - Livewire 3: классы компонентов остаются в `App\Http\Livewire` (`class_namespace` в `config/livewire.php`), макет полностраничных компонентов — `layouts.app`. Простой `wire:model` отправляет значение с действием, `wire:model.live` — сразу. Методы компонента, которые не должны вызываться из браузера, — `protected`: всё публичное доступно как действие. Объекты, которые Livewire 3 не сериализует (например, `App\Models\Firmware`), передаются в шаблон данными `render()`, а не публичными свойствами.
 - Две ловушки шаблонов. Тестовый помощник Livewire 3 (`assertSee`) вырезает значения `wire:snapshot` и `wire:effects` заменой по всей странице: при `wire:effects="[]"` из проверяемого HTML пропадают все `[]` (например, в `x-data`), поэтому такую разметку проверяйте `assertSeeHtml`. Blade ищет php-блоки раньше, чем вырезает комментарии: в шаблоне с однострочными `@php(...)` блок `@php … @endphp` — и даже слово `@endphp` в комментарии `{{-- --}}` — захватывает текст от первой однострочной директивы и ломает компиляцию (`ports.blade.php` поэтому обходится однострочными).

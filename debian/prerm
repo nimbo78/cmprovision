@@ -34,6 +34,12 @@ if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.7.2
     deb-systemd-helper purge cmprovision-usb-diagnostics.service >/dev/null || true
 fi
 
+# The display's reader holds SQLite connections; stop both units before their code leaves on downgrade.
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.7.3~"; then
+    deb-systemd-invoke stop cmprovision-wallboard.service cmprovision-wallboard-display.service >/dev/null || true
+    deb-systemd-helper purge cmprovision-wallboard.service >/dev/null || true
+fi
+
 #DEBHELPER#
 
 exit 0

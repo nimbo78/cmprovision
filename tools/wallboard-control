@@ -1,0 +1,4 @@
+#!/bin/sh
+# Fixed command, bounded JSON on stdin. No paths or shell code supplied by the web application.
+[ "$#" = 0 ] || exit 1
+exec /usr/bin/python3 /usr/lib/cmprovision/hdmi-wallboard.py control

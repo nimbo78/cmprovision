@@ -1,0 +1,37 @@
+[Unit]
+Description=cmprovision read-only HDMI stand display
+After=cmprovision-wallboard.service
+PartOf=cmprovision-wallboard.service
+Conflicts=getty@tty8.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/lib/cmprovision
+Environment=TERM=linux
+Environment=LC_ALL=C.UTF-8
+ExecStartPre=+/usr/bin/python3 /usr/lib/cmprovision/hdmi-wallboard.py claim
+ExecStart=/usr/bin/python3 /usr/lib/cmprovision/hdmi-wallboard.py display
+ExecStopPost=+/usr/bin/python3 /usr/lib/cmprovision/hdmi-wallboard.py release
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty8
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=8
+KillMode=control-group
+Nice=10
+CPUWeight=10
+MemoryMax=256M
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes

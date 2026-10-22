@@ -125,6 +125,12 @@
             <livewire:utility-os-settings />
         </div>
 
+        <div class="md:col-span-1" id="hdmi-display">
+            <h3 class="text-lg font-medium text-fg">HDMI display</h3>
+            <p class="mt-1 text-sm text-fg-muted">An optional terminal dashboard for the support bench: switch ports, provisioning progress and saved device diagnostics. No desktop or browser required.</p>
+        </div>
+        <div class="mt-5 md:mt-0 md:col-span-2"><livewire:wallboard-settings /></div>
+
         <div class="md:col-span-1">
             <div class="px-4 sm:px-0">
                 <h3 class="text-lg font-medium text-fg">Service status</h3>
