@@ -2,7 +2,12 @@
     <div class="contents">
         <div class="cmp-title">
             <h1>Images</h1>
+            @if ($unusedCount)
+            <button wire:click="deleteUnused()" wire:confirm="Delete {{ $unusedCount }} unused {{ $unusedCount === 1 ? 'image' : 'images' }} ({{ \App\Models\Image::size($unusedSize) }})? Images a project uses stay." class="cmp-btn cmp-btn-secondary ml-auto">Delete unused images ({{ $unusedCount }}, {{ \App\Models\Image::size($unusedSize) }})</button>
+            <button wire:click="openSources()" class="cmp-btn cmp-btn-secondary">Add from the internet</button>
+            @else
             <button wire:click="openSources()" class="cmp-btn cmp-btn-secondary ml-auto">Add from the internet</button>
+            @endif
             <button wire:click="create()" class="cmp-btn">Add image</button>
         </div>
         <div class="cmp-card px-4 py-3">

@@ -78,11 +78,23 @@ class ImageSpace
         if ($unused->isEmpty()) {
             return $text.' There is nothing unused to delete: free space first.';
         }
-        $size = $unused->sum(function (Image $image) {
-            return (int) $image->filesize() + (int) ($image->splitPath() && is_file($image->splitPath()) ? filesize($image->splitPath()) : 0);
-        });
 
-        return $text.' Delete unused images ('.$unused->count().' '.($unused->count() === 1 ? 'image' : 'images').', '.Image::size((int) $size).') or free space first.';
+        return $text.' Delete unused images ('.$unused->count().' '.($unused->count() === 1 ? 'image' : 'images').', '.Image::size($this->bytes($unused)).') or free space first.';
+    }
+
+    /* what images take on the disk: the file, the pieces copy and what an unfinished fetch or repacking left */
+    public function bytes(iterable $images): int
+    {
+        $sum = 0;
+        foreach ($images as $image) {
+            foreach ([$image->imagepath(), $image->splitPath(), $image->imagepath().'.part', $image->imagepath().'.gz.part'] as $file) {
+                if ($file && is_file($file)) {
+                    $sum += (int) filesize($file);
+                }
+            }
+        }
+
+        return $sum;
     }
 
     /* Images nobody needs: in no project, not on their way, not being written by a module. A failed fetch counts: it has nothing worth keeping. */

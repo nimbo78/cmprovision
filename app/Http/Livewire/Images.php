@@ -18,7 +18,7 @@ class Images extends Component
     public $images, $maxfilesize, $freediskspace, $hashPending = false, $splitPending = false;
     public $isOpen = false;
     // images from the internet (2.8.0): the window, the images on their way, what each fetch runs at, the free space they have
-    public $sourcesOpen = false, $fetching = false, $speeds = [], $imageSpace = 0;
+    public $sourcesOpen = false, $fetching = false, $speeds = [], $imageSpace = 0, $unusedCount = 0, $unusedSize = 0;
     public $os32bit = false;
 
     public function render()
@@ -41,6 +41,9 @@ class Images extends Component
             if ($image->download_state === 'downloading')
                 $this->speeds[$image->id] = FetchSpeed::note($image);
         $this->imageSpace = app(ImageSpace::class)->free();
+        $unused = app(ImageSpace::class)->unused();
+        $this->unusedCount = $unused->count();
+        $this->unusedSize = app(ImageSpace::class)->bytes($unused);
         $this->splitPending = $this->images->contains(function ($image) { return $image->splitPreparing(); });
 
         return view('livewire.images');
@@ -60,6 +63,22 @@ class Images extends Component
     public function closeSources()
     {
         $this->sourcesOpen = false;
+    }
+
+    /* the images no project takes, none that is on its way and none a module is writing: decided now, not when the page was drawn */
+    public function deleteUnused()
+    {
+        $space = app(ImageSpace::class);
+        $unused = $space->unused();
+        if ($unused->isEmpty())
+        {
+            session()->flash('message', 'Nothing unused to delete.');
+            return;
+        }
+        $size = $space->bytes($unused);
+        foreach ($unused as $image)
+            $image->delete();
+        session()->flash('message', 'Deleted '.$unused->count().' unused '.($unused->count() === 1 ? 'image' : 'images').' ('.Image::size($size).').');
     }
 
     /* a failed fetch goes on from what is there */

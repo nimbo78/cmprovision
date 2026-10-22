@@ -151,4 +151,15 @@ class ImageReadyTest extends TestCase
         $this->assertStringNotContainsString('example.org', $raw);
         $this->assertSame('https://example.org/a.img.gz?dl=1&token=secret', Image::find($image->id)->download_url);
     }
+    public function test_deleting_an_image_over_the_api_cancels_its_fetch_and_removes_what_it_left()
+    {
+        Sanctum::actingAs(User::factory()->create(), ['*']);
+        $image = $this->image(['download_state' => 'downloading', 'source_type' => 'url', 'download_url' => 'https://example.org/a.img.gz']);
+        file_put_contents($image->imagepath().'.part', 'x');
+
+        $this->deleteJson('/api/images/'.$image->id)->assertOk();
+
+        $this->assertNull(Image::find($image->id));
+        $this->assertFileDoesNotExist($image->imagepath().'.part');
+    }
 }
