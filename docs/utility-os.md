@@ -109,7 +109,7 @@ xz-utils bzip2`; для проверок — `qemu-system-arm`.
 Хэши строгие: файл, скачавшийся с другим SHA256, останавливает сборку.
 Команда принимает только полностью полученные ответы; ошибка оставляет закреплённые версии прежними.
 
-Раз в месяц CI делает то же сам. Если есть новое, он собирает, проверяет и открывает PR в stage2 с таблицей версий и
+Раз в месяц CI делает то же сам. Если есть новое, он собирает, проверяет и открывает PR в main с таблицей версий и
 размерами. Для этого в GitHub нужно включить Actions в форке и разрешить им создавать PR (Settings → Actions → General).
 PR, открытый токеном `GITHUB_TOKEN`, запускает свою проверку только после одобрения («Approve workflows to run»): сборка
 и проверки к этому времени уже прошли в прогоне по расписанию. См. [документацию GitHub](https://docs.github.com/en/actions/concepts/security/github_token).
@@ -128,7 +128,8 @@ GitHub выключает расписание после 60 дней без к�
 В ОС — программы под GPL (ядро, BusyBox и другие). Исходники всех компонентов и тексты лицензий собирает
 `make legal-info` (`$UOS_WORK/output/legal-info`). Архив публикуется GitHub Release `utility-os-<версия>`, а CI кладёт
 его в артефакты каждого прогона.
-Для 2026.10 — [исходники и лицензии в GitHub Release](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10).
+Для 2026.10.1 — [исходники и лицензии в GitHub Release](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10.1).
+[Архив 2026.10](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10) также доступен.
 
 `build.sh` дополняет стандартный вывод через `tools/utility-os/legal_info.py`: в нём остаются исходный архив Buildroot,
 наши рецепты и соответствующие исходники, патчи и лицензии Bootlin SDK. Компоненты определяются по `summary.csv` внутри

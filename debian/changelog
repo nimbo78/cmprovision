@@ -1,3 +1,19 @@
+cmprovision4 (2.7.3) unstable; urgency=high
+
+  * Add an optional HDMI stand display with automatic monitor detection,
+    web UI themes, responsive fonts, physical ports and device cards.
+  * Collect storage, power, memory, Ethernet and boot diagnostics, with
+    Ethernet-first USB fallback and clearer Unrecognized device states.
+  * Ship Utility OS 2026.10.1 with the dedicated USB diagnostic agent
+    and the reviewed read-only collector; retain the legacy boot option.
+  * Add verified switch front panels and improve mobile layouts.
+  * Require patched PHP CLI/FPM branches (8.3.36, 8.4.27 or 8.5.12)
+    while preserving Upload Progress functionality.
+  * Target main for monthly Utility OS update pull requests after the
+    retirement of stage2.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 22 Oct 2026 18:56:02 +0300
+
 cmprovision4 (2.7.3~dev4) unstable; urgency=medium
 
   * Add an optional read-only HDMI terminal wallboard with shared switch
