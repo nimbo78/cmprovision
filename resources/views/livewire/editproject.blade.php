@@ -92,6 +92,16 @@
                       @endforeach
                   </select>
                   @error('firmware') <span class="text-neg">{{ $message }}</span>@enderror
+                  @if ($firmwareChanges)
+                  <div class="mt-2 text-sm" aria-live="polite">
+                      <div class="font-bold mb-1">{{ $firmwareChanges['heading'] }}</div>
+                      @forelse ($firmwareChanges['entries'] as $entry)
+                          @include('livewire.firmware-entry', ['entry' => $entry, 'open' => true])
+                      @empty
+                          <p class="text-fg-muted">The release notes have nothing for this image.</p>
+                      @endforelse
+                  </div>
+                  @endif
               </div>
               @if ($firmware != "")
               @if ($offerSettingsReset)

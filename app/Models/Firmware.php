@@ -12,7 +12,16 @@ class Firmware
 {
     const CHANNELS = ['default', 'latest', 'stable', 'beta', 'critical'];
 
-    public $name, $channel, $path;
+    /** an image added to the store this recently is shown as new */
+    const NEW_DAYS = 14;
+
+    public $name, $channel, $path, $added;
+
+    /** the image reached the store (its file time) in the last NEW_DAYS days */
+    public function isNew(): bool
+    {
+        return $this->added && $this->added > time() - self::NEW_DAYS * 86400;
+    }
 
     public static function allOfChannel($channel)
     {
@@ -30,6 +39,7 @@ class Firmware
                     $entry->name = $f;
                     $entry->channel = $channel;
                     $entry->path = $channel.'/'.$f;
+                    $entry->added = @filemtime($dir.'/'.$f) ?: null;
                     $entries[] = $entry;
                 }
             }

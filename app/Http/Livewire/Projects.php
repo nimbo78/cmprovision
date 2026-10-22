@@ -2,6 +2,7 @@
 
 namespace App\Http\Livewire;
 
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use App\Models\Image;
@@ -15,6 +16,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use App\Jobs\ComputeSHA256;
 use App\Services\EepromImage;
+use App\Services\FirmwareNotes;
 use App\Services\ProjectActivator;
 
 #[Title('Projects')]
@@ -26,6 +28,9 @@ class Projects extends Component
     public $projectid, $name, $device, $storage, $image_id, $label_id, $label_moment, $selectedScripts, $offerSettingsReset;
     public $firmware, $eeprom_settings, $verify, $os_check, $selectedPackages, $split_image;
     public $reprovision = false;
+    /** the firmware the project had when its form was opened: the choice is shown against it */
+    #[Locked]
+    public $savedFirmware = '';
     public $images, $labels, $scripts, $packages;
 
     protected function rules()
@@ -67,7 +72,28 @@ class Projects extends Component
             $this->label_id = $this->labels[0]->id;
 
         // view data, not a property: Livewire 3 does not serialize Firmware objects
-        return view('livewire.projects', ['firmwareChannels' => $firmwareChannels]);
+        return view('livewire.projects', ['firmwareChannels' => $firmwareChannels, 'firmwareChanges' => $this->firmwareChanges()]);
+    }
+
+    /** what the chosen firmware changes, against the one the project has now when it differs; null without notes for it */
+    protected function firmwareChanges(): ?array
+    {
+        $notes = new FirmwareNotes;
+        $to = $this->firmware ? FirmwareNotes::dateOf(basename($this->firmware)) : null;
+        if ($to === null || $notes->latestDate() === null)
+            return null;
+
+        $from = $this->savedFirmware ? FirmwareNotes::dateOf(basename($this->savedFirmware)) : null;
+        if ($this->savedFirmware === $this->firmware)
+            $from = $to;
+        if ($from !== null && $from < $to)
+            return ['heading' => "Changes since $from (the project's current image) up to $to:", 'entries' => $notes->between($from, $to)];
+        if ($from !== null && $from > $to)
+            return ['heading' => "Older than the current image ($from). The current image has these changes that this one lacks:", 'entries' => $notes->between($to, $from)];
+
+        $heading = $from === null ? "What this image changes ($to):" : "Same image as now ($to). What it changes:";
+
+        return ['heading' => $heading, 'entries' => $notes->forFile(basename($this->firmware))['changes']];
     }
 
     /* Called when EEPROM firmware selection changes */
@@ -134,7 +160,7 @@ class Projects extends Component
         $this->reprovision = false;
         $this->selectedPackages = [];
         $this->eeprom_settings = '';
-        $this->firmware = '';
+        $this->firmware = $this->savedFirmware = '';
         $this->offerSettingsReset = false;
 
         $this->openModal();
@@ -161,7 +187,7 @@ class Projects extends Component
         {
             $this->selectedScripts[] = strval($script->id);
         }
-        $this->firmware = $p->eeprom_firmware;
+        $this->firmware = $this->savedFirmware = (string) $p->eeprom_firmware;
         $this->eeprom_settings = $p->eeprom_settings;
         $this->offerSettingsReset = false;
         $this->openModal();
