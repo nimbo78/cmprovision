@@ -26,3 +26,6 @@ debian/cmprovision-uplink.timer lib/systemd/system
 debian/010_cmprovision etc/sudoers.d
 
 debian/cmprovision-usb-diagnostics.service lib/systemd/system
+debian/cmprovision-wallboard.service lib/systemd/system
+debian/cmprovision-wallboard-display.service lib/systemd/system
+debian/011_cmprovision-wallboard etc/sudoers.d

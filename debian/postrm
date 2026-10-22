@@ -15,6 +15,7 @@ if [ "$1" = "purge" ]; then
     rmdir /run/cmprovision 2>/dev/null || true
     # The utility OS link made by postinst (2.7.0).
     rm -f /var/lib/cmprovision/etc/boot
+    rm -f /etc/default/cmprovision-wallboard.json
 fi
 
 if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then

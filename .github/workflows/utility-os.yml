@@ -1,5 +1,5 @@
 # The utility OS (docs/utility-os.md): built and checked on demand and on every pull request that changes it; once a month
-# with the newest versions, which then come as a pull request to stage2 (adopted only after a live check on the bench).
+# with the newest versions, which then come as a pull request to main (adopted only after a live check on the bench).
 name: utility-os
 
 on:
@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'schedule' && 'stage2' || github.ref }}
+          ref: ${{ github.event_name == 'schedule' && 'main' || github.ref }}
 
       - name: Working directories
         run: |
@@ -146,7 +146,7 @@ jobs:
           path: ${{ runner.temp }}/uos-cache
           key: uos-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Pull request to stage2
+      - name: Pull request to main
         if: github.event_name == 'schedule' && steps.check.outputs.new == 'yes'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -172,4 +172,4 @@ jobs:
             echo
             echo "Adopt it only after the live check on the provisioner (docs/utility-os.md, «Выпуск новой версии ОС»)."
           } > "$RUNNER_TEMP/pr.md"
-          gh pr create --base stage2 --head "$branch" --title "Utility OS $UOS_VERSION" --body-file "$RUNNER_TEMP/pr.md"
+          gh pr create --base main --head "$branch" --title "Utility OS $UOS_VERSION" --body-file "$RUNNER_TEMP/pr.md"
