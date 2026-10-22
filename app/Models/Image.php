@@ -176,6 +176,9 @@ class Image extends Model
         // Delete image from filesystem, if it is still there
         if (is_file($this->imagepath()))
             unlink($this->imagepath());
+        // and what an unfinished fetch left (App\Jobs\DownloadImage)
+        if (is_file($this->imagepath().'.part'))
+            unlink($this->imagepath().'.part');
         // and its pieces copy
         if ($this->splitPath() && is_file($this->splitPath()))
             unlink($this->splitPath());
