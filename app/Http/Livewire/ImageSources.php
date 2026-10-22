@@ -30,7 +30,9 @@ class ImageSources extends Component
     public $url = '';
     public $filename = '';
     public $sum = '';
-    /* what a check of the address found: size, name, whether the server resumes, what it takes; null before and after a refusal */
+    /* what a check of the address found, and for which address: size, name, whether the server resumes, what it takes; null before and after a refusal.
+       Only the server writes it: the size is the limit of the fetch and of the room it asks for. */
+    #[Locked]
     public $probe = null;
 
     // a GitHub repository
@@ -101,6 +103,7 @@ class ImageSources extends Component
                 'name' => $name,
                 'ranges' => $info['ranges'],
                 'room' => 'Needs about '.Image::size($space->need($info['size'], $zip)).', '.Image::size($space->free()).' free.',
+                'url' => $url,
             ];
         } catch (ImageSourceException $e) {
             $this->error = $e->getMessage();
@@ -110,7 +113,7 @@ class ImageSources extends Component
     public function download(ImageFetcher $fetcher, ImageDownloads $downloads)
     {
         $this->error = null;
-        if (!$this->probe) {
+        if (!$this->probe || ($this->probe['url'] ?? null) !== trim($this->url)) {
             $this->check($fetcher, app(ImageSpace::class));
             if (!$this->probe) {
                 return;

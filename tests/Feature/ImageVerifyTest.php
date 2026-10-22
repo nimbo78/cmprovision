@@ -102,20 +102,31 @@ class ImageVerifyTest extends TestCase
         $this->assertFileDoesNotExist($image->imagepath());
     }
 
-    public function test_an_error_in_the_check_fails_the_image_and_never_leaves_it_ready_without_hashes()
+    public function test_a_fetched_file_that_does_not_unpack_fails_the_image_and_is_deleted_so_that_retry_fetches_it_again()
     {
         $image = $this->checking(['filename_extension' => 'xz', 'filename_on_server' => 'verify-'.uniqid().'.xz'], 'not an xz file at all');
-        try {
-            (new ComputeSHA256($image))->handle();
-            $this->fail('xz cannot read that');
-        } catch (\Exception $e) {
-            (new ComputeSHA256($image))->failed($e);
-        }
 
-        $fresh = Image::find($image->id);
+        $fresh = $this->check($image);
+
         $this->assertSame('failed', $fresh->download_state);
-        $this->assertStringContainsString('Checking the image failed', $fresh->download_error);
+        $this->assertStringContainsString('does not unpack', $fresh->download_error);
+        $this->assertFileDoesNotExist($image->imagepath());
         $this->assertFalse($fresh->isReady());
+    }
+
+    public function test_an_error_of_the_job_itself_fails_the_image_but_keeps_a_file_that_may_be_good()
+    {
+        $image = $this->checking();
+
+        foreach ([new \RuntimeException('database is locked'), new \Illuminate\Queue\TimeoutExceededException('timed out')] as $e) {
+            (new ComputeSHA256($image))->failed($e);
+            $fresh = Image::find($image->id);
+            $this->assertSame('failed', $fresh->download_state);
+            $this->assertStringContainsString('Checking the image failed', $fresh->download_error);
+            $this->assertFileExists($image->imagepath(), 'a transient error is no reason to fetch 1.6 GB again');
+            $fresh->download_state = 'checking';
+            $fresh->save();
+        }
     }
 
     public function test_an_uploaded_image_is_not_touched_by_any_of_this()

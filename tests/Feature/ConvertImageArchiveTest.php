@@ -177,6 +177,7 @@ class ConvertImageArchiveTest extends TestCase
         $this->assertSame('failed', $failed->download_state);
         $this->assertStringContainsString('does not match its checksum', $failed->download_error);
         $this->assertFileDoesNotExist($image->imagepath().'.gz.part');
+        $this->assertFileDoesNotExist($image->imagepath(), 'a damaged archive is not kept: Retry fetches it again');
         $this->assertSame('zip', $failed->filename_extension);
         Queue::assertNothingPushed();
     }
@@ -186,10 +187,12 @@ class ConvertImageArchiveTest extends TestCase
         $path = $this->work.'/not.zip';
         file_put_contents($path, 'this is not a zip file at all');
 
-        $failed = $this->convert($this->repacking($path));
+        $image = $this->repacking($path);
+        $failed = $this->convert($image);
 
         $this->assertSame('failed', $failed->download_state);
         $this->assertStringContainsString('not a readable zip archive', $failed->download_error);
+        $this->assertFileDoesNotExist($image->imagepath());
     }
 
     public function test_no_room_for_the_repacked_file_stops_it_before_it_starts_and_keeps_the_archive()

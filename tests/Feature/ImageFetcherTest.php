@@ -205,7 +205,7 @@ class ImageFetcherTest extends TestCase
     {
         $result = $this->download('/file');
 
-        $this->assertSame(['bytes' => self::TOTAL, 'done' => true, 'restarted' => false, 'cancelled' => false], $result);
+        $this->assertSame(['bytes' => self::TOTAL, 'done' => true, 'restarted' => false, 'cancelled' => false, 'ignoredRange' => false], $result);
         $this->assertSame($this->bytes(), file_get_contents($this->dir.'/image.part'));
     }
 
@@ -227,6 +227,7 @@ class ImageFetcherTest extends TestCase
         $result = $this->download('/no-range');
 
         $this->assertTrue($result['restarted']);
+        $this->assertTrue($result['ignoredRange'], 'it says the server did not resume: the slices of a job cannot add up');
         $this->assertTrue($result['done']);
         $this->assertSame($this->bytes(), file_get_contents($this->dir.'/image.part'));
     }
@@ -237,7 +238,7 @@ class ImageFetcherTest extends TestCase
 
         $result = $this->download('/changed');
 
-        $this->assertSame(['bytes' => 0, 'done' => false, 'restarted' => true, 'cancelled' => false], $result);
+        $this->assertSame(['bytes' => 0, 'done' => false, 'restarted' => true, 'cancelled' => false, 'ignoredRange' => false], $result);
         $this->assertFileExists($this->dir.'/image.part');
         $this->assertSame(0, filesize($this->dir.'/image.part'));
     }
@@ -345,5 +346,16 @@ class ImageFetcherTest extends TestCase
             $this->assertFalse($e->fatal);
             $this->assertStringContainsString('connect', strtolower($e->getMessage()));
         }
+    }
+    public function test_a_server_that_sends_more_than_it_announced_is_stopped_before_it_fills_the_disk()
+    {
+        try {
+            $this->download('/chunked', null, 150);   // 200 bytes come, 150 were announced
+            $this->fail('more than announced');
+        } catch (ImageSourceException $e) {
+            $this->assertStringContainsString('more data than the size it announced', $e->getMessage());
+            $this->assertTrue($e->fatal);
+        }
+        $this->assertLessThanOrEqual(150, filesize($this->dir.'/image.part'));
     }
 }

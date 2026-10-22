@@ -196,6 +196,13 @@ class ImageSourcesPageTest extends TestCase
         $this->window()->call('check')->assertSee('Paste the address');
     }
 
+    public function test_what_a_check_found_cannot_be_written_from_the_browser()
+    {
+        $this->expectException(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
+
+        $this->window()->set('url', self::URL)->call('check')->set('probe', ['size' => 1, 'name' => 'a.img.gz', 'ranges' => true, 'room' => 'x']);
+    }
+
     public function test_a_new_address_forgets_what_was_checked_of_the_old_one()
     {
         $this->window()->set('url', self::URL)->call('check')->assertNotSet('probe', null)

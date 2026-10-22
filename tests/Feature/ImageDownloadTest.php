@@ -240,6 +240,45 @@ class ImageDownloadTest extends TestCase
         Queue::assertNotPushed(DownloadImage::class);
     }
 
+    public function test_a_server_that_does_not_resume_fails_the_image_at_once_unless_the_file_arrived_whole_in_the_slice()
+    {
+        $image = $this->fetched(['download_bytes' => 300]);
+        file_put_contents($image->imagepath().'.part', str_repeat('x', 300));
+        $this->fetcher->script = [['bytes' => 120, 'done' => false, 'restarted' => true, 'cancelled' => false, 'ignoredRange' => true]];
+
+        $this->runSlice($image);
+
+        $fresh = Image::find($image->id);
+        $this->assertSame('failed', $fresh->download_state);
+        $this->assertStringContainsString('does not resume', $fresh->download_error);
+        Queue::assertNothingPushed();
+
+        $whole = $this->fetched(['download_bytes' => 300]);
+        file_put_contents($whole->imagepath().'.part', str_repeat('x', 300));
+        $this->fetcher->script = [function (string $part) {
+            file_put_contents($part, str_repeat('x', 1000));
+
+            return ['bytes' => 1000, 'done' => true, 'restarted' => true, 'cancelled' => false, 'ignoredRange' => true];
+        }];
+        $this->runSlice($whole);
+        $this->assertSame('checking', Image::find($whole->id)->download_state, 'it came whole in one go: nothing was wrong');
+    }
+
+    public function test_a_transfer_that_broke_after_bringing_data_is_a_failure_of_one_not_of_the_chain()
+    {
+        $image = $this->fetched();
+        $this->fetcher->script = [function (string $part) {
+            file_put_contents($part, str_repeat('x', 200), FILE_APPEND);
+
+            throw new ImageSourceException('The connection was lost during the download.');
+        }];
+
+        $this->runSlice($image, 3);   // three in a row before, but this one got 200 bytes further
+
+        Queue::assertPushed(DownloadImage::class, fn ($job) => $job->failures === 1 && $job->delay === 5);
+        $this->assertSame('downloading', Image::find($image->id)->download_state);
+    }
+
     public function test_a_slice_that_brings_nothing_counts_like_a_failure_and_one_that_brings_something_does_not()
     {
         $image = $this->fetched(['download_bytes' => 100]);

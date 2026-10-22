@@ -103,12 +103,12 @@ class ImageFetcher
      * A server that does not resume, or a file that changed, starts the file again. A transfer that breaks keeps what arrived.
      *
      * @param callable(int): bool $progress gets the bytes in $part now, at most every progressEvery seconds; false stops the fetch
-     * @return array{bytes: int, done: bool, restarted: bool, cancelled: bool}
+     * @return array{bytes: int, done: bool, restarted: bool, cancelled: bool, ignoredRange: bool} ignoredRange: the server answered a Range request with the whole file
      * @throws ImageSourceException
      */
     public function download(string $url, string $part, ?int $total, callable $progress, float $deadline): array
     {
-        $state = (object) ['restarted' => false, 'cancelled' => false, 'ended' => false, 'changed' => false, 'handle' => null, 'last' => 0.0, 'offset' => 0];
+        $state = (object) ['restarted' => false, 'cancelled' => false, 'ended' => false, 'changed' => false, 'ignoredRange' => false, 'handle' => null, 'last' => 0.0, 'offset' => 0];
         $state->offset = is_file($part) ? (int) filesize($part) : 0;
         if (!is_file($part)) {
             touch($part);
@@ -268,6 +268,7 @@ class ImageFetcher
                     return 0;
                 }
                 if ($state->offset > 0) {
+                    $state->ignoredRange = true;   // slices cannot add up on such a server: the job must know
                     $this->truncate($part, $state);   // it does not resume: the same answer holds the whole file
                 }
             }
@@ -281,6 +282,9 @@ class ImageFetcher
             $state->ended = true;
 
             return 0;
+        }
+        if ($total !== null && $state->offset + strlen($chunk) > $total) {
+            throw new ImageSourceException('The server sent more data than the size it announced.', true);
         }
         $written = fwrite($state->handle, $chunk);
         if ($written !== strlen($chunk)) {
@@ -316,7 +320,7 @@ class ImageFetcher
     {
         clearstatcache(true, $part);
 
-        return ['bytes' => (int) @filesize($part), 'done' => $done, 'restarted' => $state->restarted, 'cancelled' => $state->cancelled];
+        return ['bytes' => (int) @filesize($part), 'done' => $done, 'restarted' => $state->restarted, 'cancelled' => $state->cancelled, 'ignoredRange' => $state->ignoredRange];
     }
 
     /* the address a redirect points to, null when the answer is no redirect; absolute, with the query kept for the fetch */

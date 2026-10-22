@@ -107,6 +107,10 @@ class ComputeSHA256 implements ShouldQueue
                 $this->image->uncompressed_size = intval($wc);
                 $this->image->save();
             }
+            elseif ($fetched)
+            {
+                return $this->reject('The image does not unpack (the download is damaged): '.mb_substr(trim($sha256sum), 0, 200));
+            }
             else
             {
                 throw new \Exception("Error decompressing/calculating sha256. Ret code=$ret sha256sum=$sha256sum wc=$wc");

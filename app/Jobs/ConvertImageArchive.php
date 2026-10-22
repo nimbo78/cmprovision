@@ -59,6 +59,7 @@ class ConvertImageArchive implements ShouldQueue
 
         $zip = new \ZipArchive;
         if ($zip->open($archive, \ZipArchive::RDONLY) !== true) {
+            @unlink($archive);   // what is no archive is not kept: Retry fetches it again
             $this->fail($image, 'This is not a readable zip archive.');
 
             return;
@@ -105,6 +106,7 @@ class ConvertImageArchive implements ShouldQueue
         if ($outcome !== true) {
             @unlink($part);
             if ($outcome !== null) {
+                @unlink($archive);   // a damaged archive is not kept: Retry fetches it again
                 $this->fail($image, $outcome);   // a reason; null is a cancel: the image is gone
             }
 

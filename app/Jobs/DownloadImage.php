@@ -81,7 +81,9 @@ class DownloadImage implements ShouldQueue
                 return Image::whereKey($id)->where('download_state', 'downloading')->update(['download_bytes' => $bytes, 'download_updated_at' => now()]) > 0;
             }, $deadline);
         } catch (ImageSourceException $e) {
-            $this->again(Image::find($id), $this->failures + 1, $e->fatal, $e->getMessage());
+            // a transfer that broke after bringing data is one failure, not one more of a row of them
+            $grew = is_file($part) && (int) filesize($part) > $have;
+            $this->again(Image::find($id), $grew ? 1 : $this->failures + 1, $e->fatal, $e->getMessage());
 
             return;
         }
@@ -98,6 +100,13 @@ class DownloadImage implements ShouldQueue
 
         if ($result['done']) {
             $this->finish($fresh, $part);
+
+            return;
+        }
+        if (!empty($result['ignoredRange'])) {
+            // every slice would start the file again from its first byte: such a file has to arrive in one slice, and this one did not
+            @unlink($part);
+            $this->fail($fresh, 'The server does not resume interrupted downloads, and the file did not arrive within one slice of about a minute: it cannot be fetched from this server.');
 
             return;
         }

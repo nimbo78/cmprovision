@@ -103,6 +103,25 @@ class ImageSpaceTest extends TestCase
         $this->assertSame(['failed.img.gz', 'unused.img.gz'], $names, 'a failed fetch has nothing worth keeping; one a module is writing stays');
     }
 
+    public function test_every_run_that_is_not_over_keeps_its_image_in_whatever_phase_it_is()
+    {
+        foreach (['preinstall', 'postinstall', 'firstboot', null] as $n => $phase) {
+            $image = $this->image(['filename' => 'run-'.$n.'.img.gz']);
+            Cm::create(['serial' => '10000000e61111'.sprintf('%02x', $n), 'mac' => 'e4:5f:01:62:9f:'.sprintf('%02x', $n), 'phase' => $phase, 'image_filename' => $image->filename]);
+        }
+        foreach (['done', 'failed'] as $n => $phase) {
+            $image = $this->image(['filename' => 'over-'.$phase.'.img.gz']);
+            Cm::create(['serial' => '10000000e61112'.sprintf('%02x', $n), 'mac' => 'e4:5f:02:62:9f:'.sprintf('%02x', $n), 'phase' => $phase, 'image_filename' => $image->filename]);
+        }
+        $idle = $this->image(['filename' => 'never-run.img.gz']);
+        Cm::create(['serial' => '10000000e6111300', 'mac' => 'e4:5f:03:62:9f:00', 'phase' => null]);   // a module that was only seen: no image
+
+        $names = $this->space(0)->unused()->pluck('filename')->sort()->values()->all();
+
+        $this->assertSame(['never-run.img.gz', 'over-done.img.gz', 'over-failed.img.gz'], $names);
+        $this->assertNotNull($idle);
+    }
+
     public function test_the_free_space_is_that_of_the_uploads_directory_unless_told_otherwise()
     {
         $this->assertSame((int) disk_free_space(public_path('uploads')), (new ImageSpace)->free());

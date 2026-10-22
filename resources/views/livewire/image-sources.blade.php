@@ -115,7 +115,7 @@
           <p><span class="font-bold">{{ $probe['name'] ?: 'The file has no name of its own' }}</span> · {{ \App\Models\Image::size($probe['size']) }}</p>
           <p class="text-fg-muted">{{ $probe['room'] }}</p>
           @unless ($probe['ranges'])
-          <p class="text-warn">The server does not resume interrupted downloads: an interruption restarts the file.</p>
+          <p class="text-warn">The server does not resume interrupted downloads: the file must arrive within about a minute, or the fetch fails.</p>
           @endunless
         </div>
 

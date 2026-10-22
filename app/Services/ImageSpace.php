@@ -97,11 +97,16 @@ class ImageSpace
         return $sum;
     }
 
-    /* Images nobody needs: in no project, not on their way, not being written by a module. A failed fetch counts: it has nothing worth keeping. */
+    /* Images nobody needs: in no project, not on their way, not in a run of a module that is not over. A failed fetch counts: it has nothing worth keeping. */
     public function unused(): Collection
     {
         $taken = Project::whereNotNull('image_id')->pluck('image_id')->map(fn ($id) => (int) $id)->all();
-        $writing = Cm::whereIn('phase', ['write', 'verify'])->get(['durable_image_id', 'image_filename']);
+        // a run that has begun has a script that names the file: in any phase until it is over (a module only seen has no image)
+        $writing = Cm::where(function ($query) {
+            $query->whereNull('phase')->orWhereNotIn('phase', ['done', 'failed']);
+        })->where(function ($query) {
+            $query->whereNotNull('image_filename')->orWhereNotNull('durable_image_id');
+        })->get(['durable_image_id', 'image_filename']);
         $ids = $writing->pluck('durable_image_id')->filter()->map(fn ($id) => (int) $id)->all();
         $names = $writing->pluck('image_filename')->filter()->all();
 
