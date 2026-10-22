@@ -11,6 +11,7 @@ use App\Services\ImageFetcher;
 use App\Services\ImageSpace;
 use App\Support\ImageSourceException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeImageFetcher;
@@ -216,7 +217,7 @@ class ImageDownloadTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_a_broken_transfer_is_tried_again_a_little_later_and_five_in_a_row_fail_the_image()
+    public function test_a_broken_transfer_is_tried_again_later_and_later_and_twelve_in_a_row_fail_the_image()
     {
         $image = $this->fetched();
         $this->fetcher->script = [new ImageSourceException('The connection was lost during the download.')];
@@ -225,15 +226,18 @@ class ImageDownloadTest extends TestCase
 
         Queue::assertPushed(DownloadImage::class, fn ($job) => $job->failures === 1 && $job->delay === 5);
         $this->assertSame('downloading', Image::find($image->id)->download_state);
+        $this->assertSame('The connection was lost during the download.', Cache::get('image-retry:'.$image->id)['message'], 'the page says why it waits');
 
-        foreach ([1 => 15, 2 => 30, 3 => 60, 4 => 60] as $failures => $delay) {
+        // the pauses grow to two minutes: about a quarter of an hour of patience for a router that restarts or a Wi-Fi that reconnects
+        foreach ([1 => 15, 2 => 30, 3 => 60, 4 => 120, 5 => 120, 10 => 120] as $failures => $delay) {
             Queue::fake();
             $this->fetcher->script = [new ImageSourceException('The connection was lost during the download.')];
             $this->runSlice($image, $failures);
-            if ($failures < 4) {
-                Queue::assertPushed(DownloadImage::class, fn ($job) => $job->failures === $failures + 1 && $job->delay === $delay);
-            }
+            Queue::assertPushed(DownloadImage::class, fn ($job) => $job->failures === $failures + 1 && $job->delay === $delay);
         }
+        Queue::fake();
+        $this->fetcher->script = [new ImageSourceException('The connection was lost during the download.')];
+        $this->runSlice($image, 11);
         $fresh = Image::find($image->id);
         $this->assertSame('failed', $fresh->download_state);
         $this->assertStringContainsString('The connection was lost during the download.', $fresh->download_error);
@@ -292,9 +296,10 @@ class ImageDownloadTest extends TestCase
         $this->fetcher->script = [FakeImageFetcher::writes(50)];
         $this->runSlice($image, 3);
         Queue::assertPushed(DownloadImage::class, fn ($job) => $job->failures === 0 && $job->delay === null);
+        $this->assertNull(Cache::get('image-retry:'.$image->id), 'the way is clear again: no word of trouble on the page');
 
         $this->fetcher->script = [['bytes' => 150, 'done' => false, 'restarted' => false, 'cancelled' => false]];
-        $this->runSlice($image, 4);
+        $this->runSlice($image, 11);
         $fresh = Image::find($image->id);
         $this->assertSame('failed', $fresh->download_state);
         $this->assertStringContainsString('No data', $fresh->download_error);
@@ -312,6 +317,12 @@ class ImageDownloadTest extends TestCase
         $this->assertSame('The server answered 404 (not found) for https://example.org/downloads/os.img.gz.', $fresh->download_error);
         $this->assertStringNotContainsString('secret', $fresh->download_error);
         Queue::assertNothingPushed();
+    }
+
+    public function test_a_slice_cut_off_by_a_killed_worker_is_run_again_by_the_queue()
+    {
+        // checked live on the provisioner: with one try a killed worker left the image failed after 90 seconds and Retry was needed
+        $this->assertGreaterThan(1, (new DownloadImage($this->fetched()))->tries);
     }
 
     public function test_a_chain_that_dies_fails_the_image_instead_of_leaving_it_downloading_for_ever()

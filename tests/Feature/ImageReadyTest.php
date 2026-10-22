@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
@@ -64,6 +65,9 @@ class ImageReadyTest extends TestCase
         $this->assertSame('Waiting', $this->image(['download_state' => 'queued'])->downloadLabel());
         $this->assertSame('Downloading 34 % (544 MB of 1.6 GB)', $this->image(['download_state' => 'downloading', 'download_bytes' => 544000000, 'download_total' => 1600000000])->downloadLabel());
         $this->assertSame('Downloading', $this->image(['download_state' => 'downloading'])->downloadLabel());
+        $trouble = $this->image(['download_state' => 'downloading', 'download_bytes' => 544000000, 'download_total' => 1600000000]);
+        Cache::put('image-retry:'.$trouble->id, ['message' => 'The connection was lost during the download.', 'failures' => 2], 600);
+        $this->assertSame('Downloading 34 % (544 MB of 1.6 GB) · The connection was lost during the download. Trying again.', $trouble->downloadLabel());
         $this->assertSame('Repacking zip to gz 52 %', $this->image(['download_state' => 'converting', 'download_bytes' => 52, 'download_total' => 100])->downloadLabel());
         $this->assertSame('Checking', $this->image(['download_state' => 'checking'])->downloadLabel());
         $this->assertSame('Failed: no route to host', $this->image(['download_state' => 'failed', 'download_error' => 'no route to host'])->downloadLabel());

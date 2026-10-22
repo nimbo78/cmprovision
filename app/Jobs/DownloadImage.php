@@ -24,13 +24,18 @@ class DownloadImage implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /* a pause before the next slice after a failure, by the number of failures in a row; the fifth fails the image */
+    /* a pause before the next slice after a failure, by the number of failures in a row, then BACKOFF_MAX; the FAILURES-th fails the image:
+       about a quarter of an hour in all, for a router that restarts or a Wi-Fi that reconnects (checked live: five failures in 110 seconds
+       gave up on an outage of 150) */
     const BACKOFF = [1 => 5, 2 => 15, 3 => 30, 4 => 60];
-    const FAILURES = 5;
+    const BACKOFF_MAX = 120;
+    const FAILURES = 12;
 
     public $image;
     public $failures;
-    public $tries = 1;
+    /* A slice cut off by a worker that was killed (a power loss, the kernel's out-of-memory killer) is run again when the queue lets go of it,
+       90 seconds later: a slice repeats nothing, it goes on from the .part. A job that fails the image does so by itself (fail()) before this counts. */
+    public $tries = 3;
     public $timeout = 80;
     public $failOnTimeout = true;
     public $deleteWhenMissingModels = true;
@@ -97,6 +102,9 @@ class DownloadImage implements ShouldQueue
         $fresh->download_bytes = $result['bytes'];
         $fresh->download_updated_at = now();
         $fresh->save();
+        if ($result['bytes'] > $have) {
+            Cache::forget('image-retry:'.$id);   // the way is clear again
+        }
 
         if ($result['done']) {
             $this->finish($fresh, $part);
@@ -117,6 +125,7 @@ class DownloadImage implements ShouldQueue
     /* the file is whole: it gets its name; an archive is repacked first, then the checks take over (hashes, and the published checksums) */
     protected function finish(Image $image, string $part): void
     {
+        Cache::forget('image-retry:'.$image->id);
         rename($part, $image->imagepath());
         $zip = $image->filename_extension === 'zip';
         $image->download_state = $zip ? 'converting' : 'checking';
@@ -138,13 +147,16 @@ class DownloadImage implements ShouldQueue
         }
         $job = new self($image, $failures);
         if ($failures > 0) {
-            $job->delay(self::BACKOFF[$failures]);
+            $job->delay(self::BACKOFF[$failures] ?? self::BACKOFF_MAX);
+            // the page says why the fetch waits (Image::downloadLabel())
+            Cache::put('image-retry:'.$image->id, ['message' => $message, 'failures' => $failures], 3600);
         }
         dispatch($job);
     }
 
     protected function fail(Image $image, string $message): void
     {
+        Cache::forget('image-retry:'.$image->id);
         $image->download_state = 'failed';
         $image->download_error = mb_substr($message, 0, 500);
         $image->save();

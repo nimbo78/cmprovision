@@ -43,8 +43,12 @@ class Image extends Model
             case 'queued':
                 return 'Waiting';
             case 'downloading':
-                return $percent === null ? 'Downloading'
+                $label = $percent === null ? 'Downloading'
                     : 'Downloading '.$percent.' % ('.self::size((int) $this->download_bytes).' of '.self::size((int) $this->download_total).')';
+                // a fetch that waits to try again says why (App\Jobs\DownloadImage)
+                $trouble = \Illuminate\Support\Facades\Cache::get('image-retry:'.$this->id);
+
+                return $trouble ? $label.' · '.$trouble['message'].' Trying again.' : $label;
             case 'converting':
                 return 'Repacking zip to gz'.($percent === null ? '' : ' '.$percent.' %');
             case 'checking':
