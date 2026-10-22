@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\ComputeSHA256;
+use App\Jobs\ConvertImageArchive;
 use App\Jobs\DownloadImage;
 use App\Models\Image;
 use App\Support\ImageSourceException;
@@ -35,9 +36,6 @@ class ImageDownloads
         $extension = ImageUrlGuard::extensionOf($filename);
         if ($extension === null) {
             throw new ImageSourceException('Only .gz, .xz, .bz2 and .zip images are supported.', true);
-        }
-        if ($extension === 'zip') {
-            throw new ImageSourceException('Repacking .zip archives is not available yet.', true);
         }
         $limit = (int) config('cmprovision.image_download_max_gb');
         if ($size > $limit * 1000000000) {
@@ -80,7 +78,7 @@ class ImageDownloads
         return $image;
     }
 
-    /* A failed image goes on from what is there: the part, the whole file (the checks again), or nothing (a fetch from the start) */
+    /* A failed image goes on from what is there: the part, the whole file (repacked or checked again), or nothing (a fetch from the start) */
     public function retry(Image $image): void
     {
         if ($image->download_state !== 'failed') {
@@ -88,9 +86,11 @@ class ImageDownloads
         }
         $image->download_error = null;
         if (is_file($image->imagepath())) {
-            $image->download_state = 'checking';
+            $zip = $image->filename_extension === 'zip';
+            $image->download_state = $zip ? 'converting' : 'checking';
+            $image->download_bytes = $zip ? 0 : $image->download_total;
             $image->save();
-            ComputeSHA256::dispatch($image);
+            $zip ? ConvertImageArchive::dispatch($image) : ComputeSHA256::dispatch($image);
 
             return;
         }

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\ComputeSHA256;
+use App\Jobs\ConvertImageArchive;
 use App\Jobs\DownloadImage;
 use App\Models\Image;
 use App\Services\ImageDownloads;
@@ -353,5 +354,37 @@ class ImageDownloadTest extends TestCase
 
         Queue::assertNothingPushed();
         $this->assertSame('downloading', Image::find($image->id)->download_state);
+    }
+    // --- an archive
+
+    public function test_an_archive_asks_for_room_for_its_repacked_file_too()
+    {
+        $this->space(3 * self::GB);
+        try {
+            $this->start([], self::GB, false, self::URL, 'os.zip');
+            $this->fail('1 GB, 1.3 GB for the repacked file and the reserve do not fit in 3 GB');
+        } catch (ImageSourceException $e) {
+            $this->assertStringContainsString('Needs about 4.4 GB, 3.0 GB free.', $e->getMessage());
+        }
+
+        $this->space(100 * self::GB);
+        $image = $this->start([], self::GB, false, self::URL, 'os.zip');
+        $this->assertSame(['zip', 'queued'], [$image->filename_extension, $image->download_state]);
+        $this->assertStringEndsWith('.zip', $image->filename_on_server);
+    }
+
+    public function test_the_last_slice_of_an_archive_hands_over_to_the_repacking_not_to_the_checks()
+    {
+        $image = $this->fetched(['filename' => 'os.zip', 'filename_extension' => 'zip', 'filename_on_server' => 'dl-'.uniqid().'.zip', 'download_bytes' => 600]);
+        file_put_contents($image->imagepath().'.part', str_repeat('x', 600));
+        $this->fetcher->script = [FakeImageFetcher::writes(400, true)];
+
+        $this->runSlice($image);
+
+        $fresh = Image::find($image->id);
+        $this->assertSame(['converting', 0], [$fresh->download_state, $fresh->download_bytes]);
+        Queue::assertPushedOn('images', ConvertImageArchive::class, fn ($job) => $job->image->is($image));
+        Queue::assertNotPushed(ComputeSHA256::class);
+        @unlink($image->imagepath());
     }
 }

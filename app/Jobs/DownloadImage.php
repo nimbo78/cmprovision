@@ -105,14 +105,15 @@ class DownloadImage implements ShouldQueue
         $this->again($fresh, $result['bytes'] > $have ? 0 : $this->failures + 1, false, 'No data arrived in '.self::FAILURES.' slices in a row.');
     }
 
-    /* the file is whole: it gets its name, and the checks take over (hashes, and the published checksums) */
+    /* the file is whole: it gets its name; an archive is repacked first, then the checks take over (hashes, and the published checksums) */
     protected function finish(Image $image, string $part): void
     {
         rename($part, $image->imagepath());
-        $image->download_state = 'checking';
-        $image->download_bytes = $image->download_total;
+        $zip = $image->filename_extension === 'zip';
+        $image->download_state = $zip ? 'converting' : 'checking';
+        $image->download_bytes = $zip ? 0 : $image->download_total;
         $image->save();
-        ComputeSHA256::dispatch($image);
+        $zip ? ConvertImageArchive::dispatch($image) : ComputeSHA256::dispatch($image);
     }
 
     /* the next slice, after a pause when the last one failed; $failures failures in a row (0: it went well) */

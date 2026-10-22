@@ -299,9 +299,19 @@ class GitHubReleasesTest extends TestCase
         $this->window()->set('repo', 'WLAN-Pi/pi-gen')->call('loadReleases')->set('releases', [['tag' => 'x', 'assets' => []]]);
     }
 
-    public function test_a_fetch_of_a_zip_is_refused_until_the_repacking_is_there()
+    public function test_a_zip_is_fetched_with_room_for_its_repacked_file_and_checked_by_its_digest()
     {
-        $this->window()->set('repo', 'WLAN-Pi/pi-gen')->call('loadReleases')->call('fetchAsset', 1, 0)->assertSee('Repacking .zip');
-        $this->assertSame(0, Image::count());
+        Queue::fake();
+
+        $this->window()->set('repo', 'WLAN-Pi/pi-gen')->call('loadReleases')->call('fetchAsset', 1, 0)->assertSet('error', null)->assertDispatched('image-sources-closed');
+
+        $image = Image::first();
+        $this->assertSame(['wlanpi-os-v3.4.4-2026-02-12.zip', 'zip', 'queued', 1234009803, 'github-digest'],
+            [$image->filename, $image->filename_extension, $image->download_state, $image->download_total, $image->checksum_source]);
+        $this->assertSame(64, strlen($image->expected_sha256));
+
+        $this->app->instance(ImageSpace::class, new ImageSpace(fn () => 3 * self::GB));   // the archive and its repacked file do not both fit
+        Image::query()->delete();
+        $this->window()->set('repo', 'WLAN-Pi/pi-gen')->call('loadReleases')->call('fetchAsset', 1, 0)->assertSee('Needs about 5.0 GB, 3.0 GB free.');
     }
 }

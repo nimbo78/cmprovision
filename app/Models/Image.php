@@ -230,6 +230,9 @@ class Image extends Model
         // and what an unfinished fetch left (App\Jobs\DownloadImage)
         if (is_file($this->imagepath().'.part'))
             unlink($this->imagepath().'.part');
+        // and the half-made .gz of an archive being repacked (App\Jobs\ConvertImageArchive)
+        if (is_file($this->imagepath().'.gz.part'))
+            unlink($this->imagepath().'.gz.part');
         // and its pieces copy
         if ($this->splitPath() && is_file($this->splitPath()))
             unlink($this->splitPath());
