@@ -13,7 +13,74 @@ class Image extends Model
 {
     use HasFactory;
 
-    protected $casts = ['uncompressed_size' => 'integer', 'split_piece_mb' => 'integer', 'split_queued_at' => 'datetime'];
+    protected $casts = [
+        'uncompressed_size' => 'integer', 'split_piece_mb' => 'integer', 'split_queued_at' => 'datetime',
+        'download_url' => 'encrypted', 'download_bytes' => 'integer', 'download_total' => 'integer',
+        'download_started_at' => 'datetime', 'download_updated_at' => 'datetime',
+    ];
+
+    /* the address an image was fetched from may carry a token in its query: never in an API answer */
+    protected $hidden = ['download_url'];
+
+    /* Images no project takes and no module writes yet: an image from the internet is fetched, repacked and checked first.
+       An uploaded image has no download_state and is ready as soon as it is stored. */
+    function scopeReady($query)
+    {
+        return $query->whereNull('download_state')->whereNull('download_error');
+    }
+
+    function isReady(): bool
+    {
+        return $this->download_state === null && $this->download_error === null;
+    }
+
+    /* What the Images page says of an image that is not ready; '' for a ready one */
+    function downloadLabel(): string
+    {
+        $percent = $this->download_total ? min(100, (int) floor($this->download_bytes * 100 / $this->download_total)) : null;
+        switch ($this->download_state)
+        {
+            case 'queued':
+                return 'Waiting';
+            case 'downloading':
+                return $percent === null ? 'Downloading'
+                    : 'Downloading '.$percent.' % ('.self::size((int) $this->download_bytes).' of '.self::size((int) $this->download_total).')';
+            case 'converting':
+                return 'Repacking zip to gz'.($percent === null ? '' : ' '.$percent.' %');
+            case 'checking':
+                return 'Checking';
+            case 'failed':
+                return 'Failed: '.$this->download_error;
+        }
+
+        return $this->download_error === null ? '' : 'Failed: '.$this->download_error;
+    }
+
+    /* Why a module cannot write this image yet; null when it can */
+    function notReadyReason(): ?string
+    {
+        if ($this->isReady())
+            return null;
+        switch ($this->download_state)
+        {
+            case 'queued':
+                return 'Image '.$this->filename.' is still waiting to be downloaded, try again later...';
+            case 'downloading':
+                return 'Image '.$this->filename.' is still being downloaded, try again later...';
+            case 'converting':
+                return 'Image '.$this->filename.' is still being repacked, try again later...';
+            case 'checking':
+                return 'Image '.$this->filename.' is still being checked, try again later...';
+        }
+
+        return 'Image '.$this->filename.' failed to download: '.($this->download_error ?: 'see the Images page');
+    }
+
+    /* 544 MB, 1.6 GB */
+    static function size(int $bytes): string
+    {
+        return $bytes >= 1000000000 ? number_format($bytes / 1000000000, 1).' GB' : number_format($bytes / 1000000).' MB';
+    }
 
     function imagepath()
     {

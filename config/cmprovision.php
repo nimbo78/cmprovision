@@ -64,4 +64,13 @@ return [
     /* The file the Laravel log window of Settings shows the end of. */
     'laravel_log' => storage_path('logs/laravel.log'),
 
+    /* Images from the internet (2.8.0). A fetch runs in slices of this many seconds (less than the queue's retry_after, 90 s),
+       so the checksums and pieces copies of other images take their turn between them. */
+    'image_download_slice' => (int) env('CMPROVISION_IMAGE_DOWNLOAD_SLICE', 45),
+    /* the largest file a fetch accepts, GB, and the free space (GiB) that must stay after it */
+    'image_download_max_gb' => (int) env('CMPROVISION_IMAGE_DOWNLOAD_MAX_GB', 40),
+    'image_reserve_gb' => (int) env('CMPROVISION_IMAGE_RESERVE_GB', 2),
+    /* tests only: allows plain http to loopback addresses (a local test server); nothing in production sets it */
+    'image_test_loopback' => false,
+
 ];

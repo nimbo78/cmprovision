@@ -39,7 +39,12 @@ class Projects extends Component
             'name' => 'required|max:255',
             'device' => 'required|in:cm4',
             'storage' => 'required|max:255',
-            'image_id' => 'nullable|numeric',
+            'image_id' => ['nullable', 'numeric', function ($attribute, $value, $fail) {
+                $image = $value ? Image::find($value) : null;
+                $own = $this->projectid ? Project::find($this->projectid)?->image_id : null;
+                if ($image && !$image->isReady() && (int) $value !== (int) $own)
+                    $fail('This image is not ready yet: it is still being fetched, repacked or checked, or it failed.');
+            }],
             'label_id' => 'nullable|numeric',
             // a file of the firmware store only: the name comes from the browser
             'firmware' => ['nullable', 'max:255', Rule::in($this->firmwarePaths())],
@@ -58,7 +63,12 @@ class Projects extends Component
     {
         $this->projects = Project::orderBy('name')->get();
         $this->activeProject = Project::getActiveId();
-        $this->images = Image::orderBy('filename')->orderBy('id')->get();
+        // the images a project can take: the ready ones and the project's own (an image still being fetched cannot be written)
+        $this->images = Image::where(function ($query) {
+            $query->whereNull('download_state')->whereNull('download_error');
+            if ($this->image_id)
+                $query->orWhere('id', $this->image_id);
+        })->orderBy('filename')->orderBy('id')->get();
         $this->labels = Label::orderBy('name')->get();
         $this->scripts = Script::orderBy('name')->get();
         $this->packages = Package::orderBy('deb_package')->orderBy('id')->get();
@@ -152,7 +162,7 @@ class Projects extends Component
         $this->storage = "/dev/mmcblk0";
         $this->selectedScripts = [];
         $this->label_moment = 'never';
-        $this->image_id = Image::max('id');
+        $this->image_id = Image::ready()->max('id');
         $this->active = true;
         $this->verify = false;
         $this->os_check = false;
@@ -247,13 +257,13 @@ class Projects extends Component
             $this->setActive($project->id);
         }
 
-        if ($this->verify && $this->image_id && !$project->image->uncompressed_sha256)
+        if ($this->verify && $this->image_id && $project->image->isReady() && !$project->image->uncompressed_sha256)
         {
             /* Queue SHA256 calculation job */
             ComputeSHA256::dispatch($project->image);
         }
 
-        if ($this->split_image && $project->image)
+        if ($this->split_image && $project->image && $project->image->isReady())
         {
             /* the pieces copy (2.6.1): made in the background, until then the project writes the original */
             $project->image->queueSplit();
