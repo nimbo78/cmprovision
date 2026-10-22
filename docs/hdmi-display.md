@@ -79,7 +79,7 @@ screen is intended for a trusted support area: it shows device names, serial num
 
 `cmprovision-wallboard` is a small root watcher of connector state and the fixed settings file. It starts/stops
 `cmprovision-wallboard-display`, whose renderer and persistent `wallboard:snapshot --watch` reader run as `www-data`.
-The reader updates every two seconds and shares the web UI's SNMP cache. No monitor in Auto means no renderer,
+The reader updates every two seconds and shares the web UI's SNMP cache: it takes a stored switch snapshot up to 15 seconds old and polls a switch itself only when that has run out, so with a monitor attached each switch is asked about every 15 seconds at most. No monitor in Auto means no renderer,
 application reader or extra switch polling. The watcher itself remains to detect the next connection.
 
 Settings are stored in `/etc/default/cmprovision-wallboard.json` and included in a normal provisioner backup. The

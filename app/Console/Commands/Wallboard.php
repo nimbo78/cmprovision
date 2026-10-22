@@ -16,6 +16,7 @@ class Wallboard extends Command
             try {
                 $this->line(json_encode($snapshots->current(), JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
             } catch (\Throwable $e) {
+                report($e);   // laravel.log; the screen only shows that the data is stale
                 // The terminal keeps its last snapshot with a stale warning. No SQL, credentials or input in stdout.
                 $this->line(json_encode(['version' => 1, 'error' => 'Snapshot unavailable']));
                 if (!$this->option('watch')) return 1;

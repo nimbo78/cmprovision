@@ -185,7 +185,7 @@ EEPROM «до и после»: сервер хранит доложенный з
 HDMI-табло провижинера: `docs/hdmi-display.md`. `tools/hdmi-wallboard.py watch` от root читает только DRM и
 `/etc/default/cmprovision-wallboard.json` (Off по умолчанию), запускает/останавливает отдельный display unit на tty8.
 Renderer и постоянный Artisan `wallboard:snapshot --watch` работают от www-data; `WallboardSnapshot` использует
-`Stand::current()` / общий `SnapshotCache`, `BatchSummary`, `Cm` и `ModuleDiagnostics`, не команды модулям.
+`Stand::current()` / общий `SnapshotCache` (табло берёт снимок коммутатора не старше `WALLBOARD_SECONDS` = 15 с через `$maxAge` и опрашивает коммутатор само, только когда он истёк; без карты показывает модули со стенда), `BatchSummary`, `Cm` и `ModuleDiagnostics`, не команды модулям. Читатель стартует в своей сессии (`start_new_session`): управляющий терминал tty8 остаётся только у отрисовщика.
 Новый sudoers `011_cmprovision-wallboard` разрешает только помощник без аргументов; JSON на stdin содержит четыре
 проверенных поля. Display unit нельзя автоматически стартовать через debhelper: это решает watcher. При restore
 его читатель БД должен быть остановлен. Тесты: `WallboardTest`, `tests/tools/test_hdmi_wallboard.py` (POSIX/curses).

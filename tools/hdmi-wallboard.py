@@ -543,7 +543,8 @@ class Reader:
         if self.process is None and time.monotonic() - self.last_start >= 10:
             self.last_start = time.monotonic()
             self.process = subprocess.Popen(['/usr/bin/php', '/var/lib/cmprovision/artisan', 'wallboard:snapshot', '--watch', '--no-ansi'],
-                                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                            start_new_session=True)   # no controlling terminal: tty8 stays with the renderer alone
             os.set_blocking(self.process.stdout.fileno(), False)
             self.selector.register(self.process.stdout, selectors.EVENT_READ)
         newest = None

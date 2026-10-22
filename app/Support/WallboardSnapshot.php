@@ -11,9 +11,13 @@ use App\Services\Switch\Stand;
    reader share the same switch cache and classification; a disconnected historical module is not on the stand. */
 class WallboardSnapshot
 {
+    const WALLBOARD_SECONDS = 15;
+
     public function current(): array
     {
-        $stand = Stand::current(null, 0);
+        // A display may be a little behind: it takes the Ports cache up to WALLBOARD_SECONDS old and asks a switch itself
+        // only when that has run out, instead of every few seconds around the clock (the web UI's own polls refresh it too).
+        $stand = Stand::current(null, 0, [], self::WALLBOARD_SECONDS);
         $map = $stand['map'] ?? null;
         $modules = $switches = [];
         foreach ($map['switches'] ?? [] as $id => $switch)
@@ -49,7 +53,8 @@ class WallboardSnapshot
                 $switches[] = ['name' => $state['switch']->hostname(), 'model' => '', 'verified_layout' => false,
                     'answering' => false, 'checked_at' => $state['checked_at'], 'blocks' => []];
 
-        if (!$stand)
+        // No map: no switch configured, or none has answered yet. The modules that are on the bench still count.
+        if (!$map)
             foreach (Cm::where('polled_at', '>', now()->subSeconds(Cm::ON_BENCH_SECONDS))
                 ->orWhere(function ($q) { $q->whereIn('phase', Cm::ACTIVE_PHASES)->where('provisioning_started_at', '>', now()->subHours(Cm::ACTIVE_HOURS)); })
                 ->orderBy('serial')->limit(96)->get() as $cm)

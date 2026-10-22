@@ -37,6 +37,31 @@ class WallboardTest extends TestCase
         $this->assertSame('failed', $cm->fresh()->phase, 'a snapshot does not restart or alter a run');
     }
 
+    public function test_a_display_takes_a_snapshot_up_to_fifteen_seconds_old_and_polls_after_that()
+    {
+        $this->stand();
+        app(WallboardSnapshot::class)->current();
+        $first = count($this->fake->walks);
+        $this->assertGreaterThan(0, $first);
+        $this->travel(10)->seconds();   // the Ports page would ask the switch again after 5
+        app(WallboardSnapshot::class)->current();
+        $this->assertCount($first, $this->fake->walks, 'ten seconds old is good enough for a display');
+        $this->travel(10)->seconds();
+        app(WallboardSnapshot::class)->current();
+        $this->assertGreaterThan($first, count($this->fake->walks), 'past the window the display asks the switch itself');
+    }
+
+    public function test_switches_that_never_answered_do_not_empty_the_board()
+    {
+        $cm = $this->stand();
+        $cm->update(['polled_at' => now()]);
+        \Illuminate\Support\Facades\Cache::flush();
+        $this->fake->timeout = true;
+        $data = app(WallboardSnapshot::class)->current();
+        $this->assertSame([$cm->serial], array_column($data['modules'], 'serial'));
+        $this->assertFalse($data['switches'][0]['answering']);
+    }
+
     public function test_without_switches_only_current_reports_or_recent_runs_are_displayed()
     {
         $old = Cm::create(['serial' => '1000000000000001', 'mac' => 'e4:5f:01:00:00:01', 'phase' => 'write', 'provisioning_started_at' => now()->subDays(2)]);
