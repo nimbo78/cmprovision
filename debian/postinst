@@ -74,6 +74,12 @@ POOLCONF
         adduser www-data systemd-journal
     fi
 
+    # The HDMI display's renderer has a user of its own (2.7.5): it draws on tty8 and reads one JSON file. Idempotent, and
+    # it never fails the configure; the display just does not start while the user is missing.
+    if ! getent passwd cmprovision-wallboard >/dev/null; then
+        adduser --system --group --no-create-home --home /nonexistent --shell /usr/sbin/nologin cmprovision-wallboard >/dev/null || true
+    fi
+
     if [ ! -e /var/lib/cmprovision/.env ]; then
 
         # Set Laravel app key

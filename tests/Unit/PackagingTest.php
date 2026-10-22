@@ -169,6 +169,80 @@ class PackagingTest extends TestCase
         $this->assertStringEndsWith("\n", $sudoers);
     }
 
+    public function test_the_hdmi_display_has_a_renderer_user_of_its_own_and_a_data_unit_without_a_terminal()
+    {
+        $display = $this->file('debian/cmprovision-wallboard-display.service');
+        $data = $this->file('debian/cmprovision-wallboard-data.service');
+        // the renderer draws on tty8 as a user that owns nothing else; the database reader is the web user's and has no terminal
+        $this->assertStringContainsString("\nUser=cmprovision-wallboard\nGroup=cmprovision-wallboard\n", $display);
+        $this->assertStringNotContainsString('www-data', $display);
+        $this->assertStringContainsString("\nTTYPath=/dev/tty8\n", $display);
+        $this->assertStringContainsString("\nWants=cmprovision-wallboard-data.service\n", $display);
+        $this->assertStringContainsString("\nPartOf=cmprovision-wallboard.service\n", $display);
+        $this->assertStringContainsString("\nStartLimitBurst=5\n", $display);
+        $this->assertStringContainsString("\nUser=www-data\n", $data);
+        $this->assertStringNotContainsString('TTY', $data);
+        $this->assertStringNotContainsString('StandardInput', $data);
+        $this->assertStringContainsString("\nPartOf=cmprovision-wallboard-display.service\n", $data);
+        $this->assertStringContainsString('wallboard:snapshot --watch --no-ansi --output=/run/cmprovision-wallboard-data/snapshot.json', $data);
+        $this->assertStringContainsString("\nRuntimeDirectory=cmprovision-wallboard-data\n", $data);
+        $this->assertStringNotContainsString('[Install]', $data, 'only the display starts it');
+        $this->assertStringNotContainsString('[Install]', $display, 'only the watcher starts the display');
+        // the renderer reads the file the data unit writes
+        $this->assertStringContainsString("Path('/run/cmprovision-wallboard-data/snapshot.json')", $this->file('tools/hdmi-wallboard.py'));
+    }
+
+    public function test_the_hdmi_units_are_installed_but_only_the_watcher_is_enabled_and_started()
+    {
+        $install = $this->file('debian/install');
+        foreach (['cmprovision-wallboard', 'cmprovision-wallboard-display', 'cmprovision-wallboard-data'] as $unit)
+            $this->assertStringContainsString("debian/$unit.service lib/systemd/system\n", $install);
+        $this->assertStringContainsString("debian/011_cmprovision-wallboard etc/sudoers.d\n", $install);
+        $rules = $this->file('debian/rules');
+        $this->assertStringContainsString("\tdh_installsystemd -Xcmprovision-wallboard-display.service -Xcmprovision-wallboard-data.service\n", $rules);
+        $this->assertStringContainsString("\tdh_installsystemd --no-enable --no-start cmprovision-wallboard-display.service cmprovision-wallboard-data.service\n", $rules);
+        $this->assertStringContainsString("\tinstall -D -m 755 tools/hdmi-wallboard.py debian/cmprovision4/usr/lib/cmprovision/hdmi-wallboard.py\n", $rules);
+        $this->assertStringContainsString("\tinstall -D -m 755 tools/wallboard-control debian/cmprovision4/usr/lib/cmprovision/wallboard-control\n", $rules);
+        $watcher = $this->file('debian/cmprovision-wallboard.service');
+        $this->assertStringContainsString('[Install]', $watcher);
+        $this->assertStringContainsString('hdmi-wallboard.py watch', $watcher);
+    }
+
+    public function test_sudo_lets_the_web_user_run_only_the_display_settings_writer_without_arguments()
+    {
+        $sudoers = $this->file('debian/011_cmprovision-wallboard');
+        $rules = array_values(array_filter(explode("\n", $sudoers), fn ($line) => $line !== '' && $line[0] !== '#'));
+        $this->assertSame(['www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/wallboard-control ""'], $rules);
+        $this->assertStringNotContainsString('*', $sudoers);
+        $this->assertStringEndsWith("\n", $sudoers);
+    }
+
+    public function test_the_renderer_user_is_made_once_and_leaves_with_a_purge()
+    {
+        $postinst = $this->file('debian/postinst');
+        $this->assertStringContainsString("if ! getent passwd cmprovision-wallboard >/dev/null; then\n", $postinst);
+        $this->assertStringContainsString('adduser --system --group --no-create-home --home /nonexistent --shell /usr/sbin/nologin cmprovision-wallboard >/dev/null || true', $postinst);
+        $this->assertMatchesRegularExpression('/^Depends:.*\badduser\b/m', $this->file('debian/control'));
+        $postrm = $this->file('debian/postrm');
+        $this->assertStringContainsString("deluser --system cmprovision-wallboard >/dev/null 2>&1 || true\n", $postrm);
+        $this->assertStringContainsString('rm -f /etc/default/cmprovision-wallboard.json', $postrm);
+        // the purge block, not the remove block: the settings and the user survive a plain removal
+        $this->assertGreaterThan(strpos($postrm, 'if [ "$1" = "purge" ]'), strpos($postrm, 'deluser --system cmprovision-wallboard'));
+    }
+
+    public function test_every_hdmi_unit_stops_before_its_code_leaves_or_the_database_is_replaced()
+    {
+        $prerm = $this->file('debian/prerm');
+        $this->assertStringContainsString('deb-systemd-invoke stop cmprovision-wallboard.service cmprovision-wallboard-display.service cmprovision-wallboard-data.service', $prerm);
+        $this->assertStringContainsString('dpkg --compare-versions "$2" lt "2.7.5~"', $prerm);
+        $this->assertStringContainsString("deb-systemd-invoke stop cmprovision-wallboard-data.service >/dev/null || true\n", $prerm);
+        $restore = $this->file('tools/restore.sh');
+        $this->assertStringContainsString("systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-wallboard-data 2>/dev/null || true\n", $restore);
+        // the stop comes before the database is swapped, the watcher comes back at the end
+        $this->assertLessThan(strpos($restore, 'restoring the data into'), strpos($restore, 'cmprovision-wallboard-data'));
+        $this->assertStringContainsString("systemctl restart cmprovision-wallboard 2>/dev/null || true\n", $restore);
+    }
+
     public function test_networkmanager_gets_the_metrics_by_device()
     {
         $conf = $this->file('tools/90-cmprovision-uplink.conf');

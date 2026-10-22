@@ -20,10 +20,11 @@ override_dh_install:
 	install -D -m 755 tools/hdmi-wallboard.py debian/cmprovision4/usr/lib/cmprovision/hdmi-wallboard.py
 	install -D -m 755 tools/wallboard-control debian/cmprovision4/usr/lib/cmprovision/wallboard-control
 
-# The watcher alone decides whether there is a display. A static unit would otherwise be started by dh as well.
+# The watcher alone decides whether there is a display (it starts the display, which wants the data unit). A static unit
+# would otherwise be started by dh as well.
 override_dh_installsystemd:
-	dh_installsystemd -Xcmprovision-wallboard-display.service
-	dh_installsystemd --no-enable --no-start cmprovision-wallboard-display.service
+	dh_installsystemd -Xcmprovision-wallboard-display.service -Xcmprovision-wallboard-data.service
+	dh_installsystemd --no-enable --no-start cmprovision-wallboard-display.service cmprovision-wallboard-data.service
 
 override_dh_strip:
 	dh_strip --exclude=.elf --exclude=ledpattern

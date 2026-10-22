@@ -1,14 +1,21 @@
 [Unit]
 Description=cmprovision read-only HDMI stand display
-After=cmprovision-wallboard.service
+After=cmprovision-wallboard.service cmprovision-wallboard-data.service
 PartOf=cmprovision-wallboard.service
+# The data unit is a want, not a requirement: without it the screen says the data is stale.
+Wants=cmprovision-wallboard-data.service
 Conflicts=getty@tty8.service
+# A renderer that keeps failing is left alone; the watcher backs off as well.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/var/lib/cmprovision
+# Its own user: it draws on tty8 and reads one JSON file, nothing else (created by postinst). systemd gives it the
+# terminal; the database and the application's writable directories are not its business.
+User=cmprovision-wallboard
+Group=cmprovision-wallboard
+WorkingDirectory=/
 Environment=TERM=linux
 Environment=LC_ALL=C.UTF-8
 ExecStartPre=+/usr/bin/python3 /usr/lib/cmprovision/hdmi-wallboard.py claim

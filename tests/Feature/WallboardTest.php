@@ -72,6 +72,26 @@ class WallboardTest extends TestCase
         $this->assertSame('write', $old->fresh()->phase);
     }
 
+    public function test_the_command_keeps_an_atomic_world_readable_file_for_the_display_user()
+    {
+        $directory = sys_get_temp_dir().'/wallboard-'.uniqid();
+        mkdir($directory);
+        try {
+            $file = $directory.'/snapshot.json';
+            $this->artisan('wallboard:snapshot', ['--output' => $file])->assertSuccessful();
+            $data = json_decode(file_get_contents($file), true);
+            $this->assertSame(1, $data['version']);
+            $this->assertIsArray($data['modules']);
+            $this->assertSame(0644, fileperms($file) & 0777, 'the display runs as another user and only reads it');
+            $this->assertSame([basename($file)], array_values(array_diff(scandir($directory), ['.', '..'])), 'no temporary file is left behind');
+            $this->artisan('wallboard:snapshot', ['--output' => 'relative.json'])->assertFailed();
+            $this->artisan('wallboard:snapshot', ['--output' => $directory.'/missing/snapshot.json'])->assertFailed();
+        } finally {
+            array_map('unlink', glob($directory.'/{,.}*[!.]*', GLOB_BRACE));
+            rmdir($directory);
+        }
+    }
+
     public function test_local_command_outputs_json_and_no_network_route_is_added()
     {
         $this->artisan('wallboard:snapshot')->assertSuccessful();

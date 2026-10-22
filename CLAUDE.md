@@ -182,13 +182,19 @@ EEPROM «до и после»: сервер хранит доложенный з
 
 ## Фронтенд
 
-HDMI-табло провижинера: `docs/hdmi-display.md`. `tools/hdmi-wallboard.py watch` от root читает только DRM и
-`/etc/default/cmprovision-wallboard.json` (Off по умолчанию), запускает/останавливает отдельный display unit на tty8.
-Renderer и постоянный Artisan `wallboard:snapshot --watch` работают от www-data; `WallboardSnapshot` использует
-`Stand::current()` / общий `SnapshotCache` (табло берёт снимок коммутатора не старше `WALLBOARD_SECONDS` = 15 с через `$maxAge` и опрашивает коммутатор само, только когда он истёк; без карты показывает модули со стенда), `BatchSummary`, `Cm` и `ModuleDiagnostics`, не команды модулям. Читатель стартует в своей сессии (`start_new_session`): управляющий терминал tty8 остаётся только у отрисовщика.
-Новый sudoers `011_cmprovision-wallboard` разрешает только помощник без аргументов; JSON на stdin содержит четыре
-проверенных поля. Display unit нельзя автоматически стартовать через debhelper: это решает watcher. При restore
-его читатель БД должен быть остановлен. Тесты: `WallboardTest`, `tests/tools/test_hdmi_wallboard.py` (POSIX/curses).
+HDMI-табло провижинера: `docs/hdmi-display.md`. Три юнита. `tools/hdmi-wallboard.py watch` (`cmprovision-wallboard`, root) читает только DRM
+и `/etc/default/cmprovision-wallboard.json` (Off по умолчанию), считает смену подключения после двух одинаковых чтений подряд и запускает/останавливает
+display unit на tty8; консоль он забирает (`chvt 8` в `claim`) только при свежем запуске, о чём говорит флаг `switch-requested` в `/run/cmprovision-wallboard`,
+а повтор после сбоя идёт раз в 10 с, после трёх неудач — раз в минуту. Renderer (`cmprovision-wallboard-display`) работает от системного пользователя
+`cmprovision-wallboard` (его заводит `postinst`, убирает purge) и только читает `/run/cmprovision-wallboard-data/snapshot.json`; его пишет
+`cmprovision-wallboard-data` (www-data, без терминала, `PartOf` display) командой `wallboard:snapshot --watch --output=...` атомарно (0644).
+`WallboardSnapshot` использует `Stand::current()` / общий `SnapshotCache` (табло берёт снимок коммутатора не старше `WALLBOARD_SECONDS` = 15 с
+через `$maxAge` и опрашивает коммутатор само, только когда он истёк; без карты показывает модули со стенда), `BatchSummary`, `Cm` и
+`ModuleDiagnostics`, не команды модулям. Новый sudoers `011_cmprovision-wallboard` разрешает только помощник без аргументов; JSON на stdin содержит
+четыре проверенных поля. Display и data нельзя запускать через debhelper (`override_dh_installsystemd`): это решает watcher. При restore data unit
+(читатель БД) останавливается до подмены базы. `claim` запоминает интервал гашения консоли в `/run/cmprovision-wallboard/consoleblank`, `release` его
+возвращает. Тесты: `WallboardTest`, `tests/tools/test_hdmi_wallboard.py` (POSIX/curses; ридер, наблюдатель с подставными часами, консоль),
+`PackagingTest` (юниты, пользователь, sudo, prerm/postrm/restore).
 
 - Страницы — full-page Livewire-компоненты (`app/Http/Livewire/*` + `resources/views/livewire/*`), подключённые прямо в `routes/web.php`.
 - Livewire 3: классы компонентов остаются в `App\Http\Livewire` (`class_namespace` в `config/livewire.php`), макет полностраничных компонентов — `layouts.app`. Простой `wire:model` отправляет значение с действием, `wire:model.live` — сразу. Методы компонента, которые не должны вызываться из браузера, — `protected`: всё публичное доступно как действие. Объекты, которые Livewire 3 не сериализует (например, `App\Models\Firmware`), передаются в шаблон данными `render()`, а не публичными свойствами.

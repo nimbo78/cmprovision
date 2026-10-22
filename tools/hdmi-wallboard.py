@@ -1,8 +1,9 @@
 #!/usr/bin/python3
 """Optional local HDMI console. Only the small watcher/VT setup runs as root.
 
-The renderer and its persistent Artisan reader run as www-data. No HTTP listener,
-browser, X server, GPIO writes or diagnostic requests are involved.
+The renderer runs as a user of its own and only reads one JSON file; the Artisan reader that keeps that file
+current is a separate unit of the web user, without a terminal. No HTTP listener, browser, X server, GPIO writes
+or diagnostic requests are involved.
 """
 import argparse
 import curses
@@ -13,7 +14,6 @@ import math
 import os
 from pathlib import Path
 import re
-import selectors
 import signal
 import struct
 import subprocess
@@ -26,6 +26,10 @@ CONFIG = Path('/etc/default/cmprovision-wallboard.json')
 RUNTIME = Path('/run/cmprovision-wallboard')
 UNIT = 'cmprovision-wallboard-display.service'
 TTY = '/dev/tty8'
+SNAPSHOT = Path('/run/cmprovision-wallboard-data/snapshot.json')
+MAX_SNAPSHOT = 2097152
+DEBOUNCE = 2   # readings in a row before a connector change counts
+CONSOLEBLANK = Path('/sys/module/kernel/parameters/consoleblank')
 FONTS = Path('/usr/share/consolefonts')
 DEFAULTS = dict(mode='off', palette='warm', view='auto', rotation=12)
 WEB_THEMES = {'warm': ('warm', 'dark'), 'warm-light': ('warm', 'light'),
@@ -101,18 +105,42 @@ def watch():
     last_state = None
     last_check = 0
     active = False
+    connected = hdmi_connected()
+    candidate, count = connected, 0
+    fresh = True            # the next start is a new connection (or boot), not a retry: only that may take the console
+    failures, retry_at = 0, 0.0
     try:
         while not STOP:
-            config, connected = read_config(), hdmi_connected()
+            config = read_config()
+            # A cable or a TV in standby flaps for a moment: a change counts after DEBOUNCE equal readings in a row.
+            reading = hdmi_connected()
+            if reading == connected:
+                candidate, count = connected, 0
+            else:
+                count = count + 1 if reading == candidate else 1
+                candidate = reading
+                if count >= DEBOUNCE:
+                    connected, count = reading, 0
             desired = wanted(config, connected)
-            if desired != active or time.monotonic() - last_check >= 10:
+            now = time.monotonic()
+            if desired != active or now - last_check >= 10:
                 active = systemctl('is-active', '--quiet')
+                if active:
+                    fresh, failures = False, 0
                 if desired and not active:
-                    active = systemctl('start')
+                    if now >= retry_at:
+                        if fresh:
+                            (RUNTIME / 'switch-requested').write_text('1', encoding='ascii')
+                            fresh = False
+                        active = systemctl('start')
+                        failures = 0 if active else failures + 1
+                        retry_at = now + (10 if failures < 3 else 60)   # a unit that keeps failing is not hammered
                 elif not desired and active:
                     systemctl('stop')
                     active = systemctl('is-active', '--quiet')
-                last_check = time.monotonic()
+                if not desired:
+                    fresh, failures = True, 0
+                last_check = now
             state = dict(state='displaying' if active else ('error' if desired else ('off' if config['mode'] == 'off' else 'waiting for HDMI')),
                          connected=connected, mode=config['mode'])
             if active and desired:
@@ -198,18 +226,36 @@ def claim():
         (RUNTIME / 'previous-vt').write_text(previous, encoding='ascii')
     # Font is local to tty8; other virtual terminals retain the administrator's font.
     configure_console(framebuffer_size(), force=True)
-    subprocess.run(['/usr/bin/chvt', '8'], check=True, timeout=5)
-    # Keep the unattended display from blanking; restore the kernel's configured interval on release.
+    # The console is taken only when the watcher asked for it: a new connection or a boot. A restart after a crash or an
+    # upgrade must not pull the administrator off tty1.
+    flag = RUNTIME / 'switch-requested'
+    switch = flag.exists()
+    flag.unlink(missing_ok=True)
+    if switch:
+        subprocess.run(['/usr/bin/chvt', '8'], check=True, timeout=5)
+    # Keep the unattended display from blanking. The interval the administrator had is remembered once: the kernel
+    # parameter is the live value this very escape sequence zeroes, so release() could not read it back afterwards.
+    saved = RUNTIME / 'consoleblank'
+    if not saved.exists():
+        try:
+            saved.write_text(CONSOLEBLANK.read_text().strip(), encoding='ascii')
+        except OSError:
+            pass
     with open(TTY, 'w') as tty:
         tty.write('\x1b[9;0]')
 
 
 def release():
     try:
-        interval = int(Path('/sys/module/kernel/parameters/consoleblank').read_text())
+        saved = RUNTIME / 'consoleblank'
+        try:
+            interval = int(saved.read_text())
+        except (OSError, ValueError):
+            interval = int(CONSOLEBLANK.read_text())
         with open(TTY, 'w') as tty:
             tty.write('\x1b[0m\x1b]R')  # restore tty8's system palette even after a killed renderer
             tty.write('\x1b[9;%d]' % min(60, math.ceil(interval / 60)))
+        saved.unlink(missing_ok=True)
         previous = (RUNTIME / 'previous-vt').read_text().strip()
         if active_vt() == 'tty8' and previous.startswith('tty') and previous[3:].isdigit() and 1 <= int(previous[3:]) <= 63:
             subprocess.run(['/usr/bin/chvt', previous[3:]], check=False, timeout=5)
@@ -533,52 +579,32 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
 
 
 class Reader:
-    def __init__(self):
-        self.process = None
-        self.buffer = b''
-        self.selector = selectors.DefaultSelector()
-        self.last_start = -10
+    """The display's data: the JSON file that wallboard:snapshot --output keeps current in the data unit's runtime
+    directory. Nothing is started from here, and nothing in the file reaches the terminal unfiltered (see safe())."""
+
+    def __init__(self, path=None):
+        self.path = path or SNAPSHOT
+        self.seen = None
 
     def poll(self):
-        if self.process is None and time.monotonic() - self.last_start >= 10:
-            self.last_start = time.monotonic()
-            self.process = subprocess.Popen(['/usr/bin/php', '/var/lib/cmprovision/artisan', 'wallboard:snapshot', '--watch', '--no-ansi'],
-                                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                            start_new_session=True)   # no controlling terminal: tty8 stays with the renderer alone
-            os.set_blocking(self.process.stdout.fileno(), False)
-            self.selector.register(self.process.stdout, selectors.EVENT_READ)
-        newest = None
-        for key, _ in self.selector.select(0):
-            chunk = os.read(key.fd, 65536)
-            if not chunk:
-                self.close()
-                return newest
-            self.buffer += chunk
-            if len(self.buffer) > 2097152:
-                self.close()
-                return newest
-            while b'\n' in self.buffer:
-                line, self.buffer = self.buffer.split(b'\n', 1)
-                try:
-                    value = json.loads(line)
-                    if value.get('version') == 1 and 'generated_at' in value and isinstance(value.get('modules'), list):
-                        newest = value
-                except (ValueError, TypeError, AttributeError):
-                    pass
-        return newest
+        try:
+            info = os.stat(self.path)
+            key = (info.st_ino, info.st_mtime_ns, info.st_size)
+            if key == self.seen:
+                return None
+            self.seen = key   # a file that cannot be used is not read again until it is replaced
+            if info.st_size > MAX_SNAPSHOT:
+                return None
+            with open(self.path, 'rb') as handle:
+                value = json.loads(handle.read(MAX_SNAPSHOT + 1))
+        except (OSError, ValueError, TypeError):
+            return None
+        if isinstance(value, dict) and value.get('version') == 1 and 'generated_at' in value and isinstance(value.get('modules'), list):
+            return value
+        return None
 
     def close(self):
-        if self.process:
-            self.selector.unregister(self.process.stdout)
-            self.process.stdout.close()
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
-            self.process = None
-            self.buffer = b''
+        pass
 
 
 def web_palette(palette, path=WEB_CSS):

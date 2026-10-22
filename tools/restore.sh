@@ -42,7 +42,7 @@ fi
 # The web server too: in WAL every connection opens -wal and -shm by name, and one left open across the swap would mix
 # the old files into the restored database. Everything is started again at the end.
 systemctl stop nginx 'php*-fpm' cmprovision-queue cmprovision-queue-images cmprovision-dnsmasq cmprovision-usb-diagnostics 2>/dev/null || true
-systemctl stop cmprovision-wallboard cmprovision-wallboard-display 2>/dev/null || true
+systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-wallboard-data 2>/dev/null || true
 
 if [ "$DATA_ONLY" = 1 ]; then
     echo "restoring the data into $APP"

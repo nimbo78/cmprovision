@@ -77,18 +77,30 @@ screen is intended for a trusted support area: it shows device names, serial num
 
 ## Services and troubleshooting
 
-`cmprovision-wallboard` is a small root watcher of connector state and the fixed settings file. It starts/stops
-`cmprovision-wallboard-display`, whose renderer and persistent `wallboard:snapshot --watch` reader run as `www-data`.
-The reader updates every two seconds and shares the web UI's SNMP cache: it takes a stored switch snapshot up to 15 seconds old and polls a switch itself only when that has run out, so with a monitor attached each switch is asked about every 15 seconds at most. No monitor in Auto means no renderer,
-application reader or extra switch polling. The watcher itself remains to detect the next connection.
+Three units work together. `cmprovision-wallboard` is a small root watcher of connector state and the fixed settings
+file; it starts and stops `cmprovision-wallboard-display`, and only it does (the display and the data units are not
+enabled at boot). The display's renderer runs as `cmprovision-wallboard`, a system user of its own made by the
+package: it draws on tty8 and reads one JSON file, nothing else. That file is kept current by
+`cmprovision-wallboard-data`, which runs `wallboard:snapshot --watch --output=/run/cmprovision-wallboard-data/snapshot.json`
+as the web user, without a terminal; it starts and stops with the display.
+
+The data unit updates the file every two seconds and shares the web UI's SNMP cache: it takes a stored switch snapshot
+up to 15 seconds old and polls a switch itself only when that has run out, so with a monitor attached each switch is asked
+about every 15 seconds at most. No monitor in Auto means no renderer, no data unit and no extra switch polling; the
+watcher itself remains to detect the next connection.
+
+The watcher counts a connector change only after two equal readings in a row, so a TV in standby or a loose cable does
+not start and stop the display. A new connection (or boot) takes the console for tty8; a restart after a crash or a
+package upgrade does not, and a display unit that keeps failing is retried every ten seconds three times, then once a
+minute.
 
 Settings are stored in `/etc/default/cmprovision-wallboard.json` and included in a normal provisioner backup. The
 screen uses tty8, with a readable Terminus font when available; other virtual consoles retain their fonts. On stopping,
 the previous console is restored if tty8 is still active. Switching away manually is respected.
 
 ```sh
-systemctl status cmprovision-wallboard cmprovision-wallboard-display
-journalctl -u cmprovision-wallboard -u cmprovision-wallboard-display -n 50 --no-pager
+systemctl status cmprovision-wallboard cmprovision-wallboard-display cmprovision-wallboard-data
+journalctl -u cmprovision-wallboard -u cmprovision-wallboard-display -u cmprovision-wallboard-data -n 50 --no-pager
 cat /sys/class/drm/card*-HDMI-A-*/status
 sudo -u www-data /var/lib/cmprovision/artisan wallboard:snapshot
 ```
@@ -98,7 +110,7 @@ temporarily and use Alt+F8. A missing font or too small terminal is reported on 
 smaller console font leaves more rows for detail. Full diagnostic reports and recovery actions remain in the web UI.
 
 The display unit is deliberately not enabled/started directly at boot: only the watcher starts it. When removing or
-downgrading the package, both units stop; restore stops the reader before replacing the SQLite database. No reboot is
+downgrading the package, all three units stop; restore stops the data unit before replacing the SQLite database. No reboot is
 required for enabling, changing or disabling the display.
 
 Implementation references: [systemd terminal service settings](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html),

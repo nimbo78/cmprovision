@@ -24,17 +24,124 @@ def snapshot():
 
 
 class ReaderTest(unittest.TestCase):
-    def test_the_php_reader_has_its_own_session_and_no_controlling_terminal(self):
-        read_end, write_end = os.pipe()
-        fake = SimpleNamespace(stdout=os.fdopen(read_end, 'rb', buffering=0))
-        try:
-            with patch.object(w.subprocess, 'Popen', return_value=fake) as popen:
-                reader = w.Reader()
-                reader.poll()
-            self.assertTrue(popen.call_args.kwargs['start_new_session'], 'tty8 must stay with the renderer alone')
-            self.assertEqual(subprocess.DEVNULL, popen.call_args.kwargs['stdin'])
-        finally:
-            reader.selector.close(); fake.stdout.close(); os.close(write_end)
+    def test_a_replaced_file_is_read_once_and_unusable_ones_are_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, spare = Path(directory) / 'snapshot.json', Path(directory) / 'next'
+            reader = w.Reader(path)
+            self.assertIsNone(reader.poll(), 'nothing there yet')
+            path.write_text(json.dumps(snapshot()))
+            self.assertEqual('wlanpi-da2', reader.poll()['host'])
+            self.assertIsNone(reader.poll(), 'the same file is not read twice')
+            spare.write_text(json.dumps(dict(snapshot(), host='next')))
+            os.replace(spare, path)
+            self.assertEqual('next', reader.poll()['host'])
+            for bad in ('not json', json.dumps(dict(snapshot(), version=2)), json.dumps(dict(snapshot(), modules='x')), json.dumps([])):
+                spare.write_text(bad)
+                os.replace(spare, path)
+                self.assertIsNone(reader.poll(), bad)
+            spare.write_bytes(b' ' * (w.MAX_SNAPSHOT + 10))
+            os.replace(spare, path)
+            self.assertIsNone(reader.poll(), 'a file over the limit is never read')
+
+    def test_the_renderer_starts_no_process_and_has_no_database(self):
+        source = Path(w.__file__).read_text()
+        display = source[source.index('class Reader:'):source.index('def web_palette(')]
+        self.assertNotIn('subprocess', display)
+        self.assertNotIn('artisan', display)
+
+
+class WatcherTest(unittest.TestCase):
+    def drive(self, readings, start_ok=(), ticks=12, mode='auto'):
+        """Run the watcher for some ticks of a fake clock; returns (systemctl calls, console-switch flag seen at each start)."""
+        calls, seen, active, clock = [], [], [False], [0.0]
+        results = iter(start_ok)
+        it = iter(readings)
+
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            flag = run / 'switch-requested'
+
+            def systemctl(*args):
+                calls.append(args)
+                if args[0] == 'start':
+                    seen.append(flag.exists())
+                    flag.unlink(missing_ok=True)   # what claim() does
+                    active[0] = next(results, True)
+                    return active[0]
+                if args[0] == 'stop':
+                    active[0] = False
+                    return True
+                return active[0]
+
+            def sleep(seconds):
+                clock[0] += seconds
+                if clock[0] >= ticks * 2:
+                    w.STOP = True
+
+            with patch.object(w, 'RUNTIME', run), patch.object(w, 'read_config', return_value=dict(w.DEFAULTS, mode=mode)), \
+                    patch.object(w, 'configure_console', return_value={'resolution': '1920x1080'}), \
+                    patch.object(w, 'hdmi_connected', side_effect=lambda: next(it, readings[-1])), \
+                    patch.object(w, 'systemctl', side_effect=systemctl), patch.object(w.time, 'sleep', side_effect=sleep), \
+                    patch.object(w.time, 'monotonic', side_effect=lambda: clock[0]):
+                w.STOP = False
+                w.watch()
+                w.STOP = False
+        return calls, seen
+
+    def test_a_flapping_connector_starts_nothing_and_a_steady_one_starts_once(self):
+        calls, _ = self.drive([False, True, False, True, False, True, False])
+        self.assertEqual(0, calls.count(('start',)), 'one reading is not a connection')
+        calls, seen = self.drive([False, True, True], ticks=8)
+        self.assertEqual(1, calls.count(('start',)))
+        self.assertEqual([True], seen, 'a new connection asks for the console')
+
+    def test_a_retry_after_a_failed_start_does_not_ask_for_the_console_again(self):
+        calls, seen = self.drive([True], start_ok=(False, True), ticks=12)
+        self.assertEqual(2, calls.count(('start',)))
+        self.assertEqual([True, False], seen, 'only the first start of a connection takes the console')
+
+    def test_a_unit_that_keeps_failing_is_not_hammered(self):
+        calls, _ = self.drive([True], start_ok=(False,) * 20, ticks=30)
+        self.assertEqual(3, calls.count(('start',)), 'ten seconds apart three times, then a minute')
+
+
+class ConsoleTest(unittest.TestCase):
+    def run_claim(self, directory, switch, blank='600\n'):
+        run = Path(directory)
+        (run / 'tty8').write_text('')
+        (run / 'blank').write_text(blank)
+        if switch:
+            (run / 'switch-requested').write_text('1')
+        with patch.object(w, 'RUNTIME', run), patch.object(w, 'TTY', str(run / 'tty8')), patch.object(w, 'CONSOLEBLANK', run / 'blank'), \
+                patch.object(w, 'active_vt', return_value='tty1'), patch.object(w, 'configure_console'), \
+                patch.object(w, 'framebuffer_size', return_value=(1920, 1080)), patch.object(w.subprocess, 'run') as run_command:
+            w.claim()
+        return run_command
+
+    def test_the_console_is_taken_only_when_the_watcher_asked_for_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            command = self.run_claim(directory, switch=True)
+            command.assert_called_once()
+            self.assertEqual(['/usr/bin/chvt', '8'], command.call_args.args[0])
+            self.assertFalse((Path(directory) / 'switch-requested').exists(), 'the request is used up')
+        with tempfile.TemporaryDirectory() as directory:
+            command = self.run_claim(directory, switch=False)
+            command.assert_not_called()   # a restart after a crash or an upgrade leaves the administrator on tty1
+
+    def test_the_blanking_interval_the_administrator_had_comes_back_on_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            self.run_claim(directory, switch=False, blank='600\n')
+            self.assertEqual('600', (run / 'consoleblank').read_text())
+            (run / 'blank').write_text('0\n')   # what the kernel reports once claim has switched the blanking off
+            self.run_claim(directory, switch=False, blank='0\n')
+            self.assertEqual('600', (run / 'consoleblank').read_text(), 'a restart does not overwrite the remembered value')
+            (run / 'tty8').write_text('')
+            with patch.object(w, 'RUNTIME', run), patch.object(w, 'TTY', str(run / 'tty8')), patch.object(w, 'CONSOLEBLANK', run / 'blank'), \
+                    patch.object(w, 'active_vt', return_value='tty1'):
+                w.release()
+            self.assertIn('\x1b[9;10]', (run / 'tty8').read_text(), 'ten minutes, as it was')
+            self.assertFalse((run / 'consoleblank').exists())
 
 
 class SettingsTest(unittest.TestCase):
@@ -68,32 +175,6 @@ class SettingsTest(unittest.TestCase):
         for data in [dict(w.DEFAULTS, mode='on;reboot'), dict(w.DEFAULTS, rotation=True), dict(w.DEFAULTS, rotation=0), dict(w.DEFAULTS, path='/etc/passwd')]:
             with self.assertRaises(ValueError):
                 w.valid_config(data)
-
-    def test_watcher_starts_only_connected_auto_and_stops_after_unplug(self):
-        states = iter([False, True, False])
-        calls = []
-        active = [False]
-
-        def systemctl(*args):
-            calls.append(args)
-            if args[0] == 'start': active[0] = True
-            if args[0] == 'stop': active[0] = False
-            return active[0] if args[0] == 'is-active' else True
-
-        def sleep(_):
-            if len([c for c in calls if c == ('stop',)]) >= 1:
-                w.STOP = True
-
-        with tempfile.TemporaryDirectory() as directory, patch.object(w, 'RUNTIME', Path(directory)), \
-                patch.object(w, 'read_config', return_value=dict(w.DEFAULTS, mode='auto')), \
-                patch.object(w, 'configure_console', return_value={'resolution': '1920x1080'}), \
-                patch.object(w, 'hdmi_connected', side_effect=lambda: next(states, False)), \
-                patch.object(w, 'systemctl', side_effect=systemctl), patch.object(w.time, 'sleep', side_effect=sleep):
-            w.STOP = False
-            w.watch()
-            w.STOP = False
-        self.assertEqual(1, calls.count(('start',)))
-        self.assertGreaterEqual(calls.count(('stop',)), 1)
 
 
 class ScalingTest(unittest.TestCase):

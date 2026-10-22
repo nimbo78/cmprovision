@@ -1,0 +1,26 @@
+[Unit]
+Description=cmprovision HDMI stand display data (a read-only snapshot of the stand for the display)
+# Stops and restarts with the display; the display wants it, nothing else does.
+PartOf=cmprovision-wallboard-display.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/lib/cmprovision
+# The unit's own runtime directory, owned by the web user: the display's user only reads the file in it.
+RuntimeDirectory=cmprovision-wallboard-data
+RuntimeDirectoryMode=0755
+ExecStart=/usr/bin/php /var/lib/cmprovision/artisan wallboard:snapshot --watch --no-ansi --output=/run/cmprovision-wallboard-data/snapshot.json
+Restart=on-failure
+RestartSec=10
+Nice=10
+CPUWeight=10
+MemoryMax=256M
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
