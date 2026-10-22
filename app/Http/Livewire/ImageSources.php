@@ -9,6 +9,7 @@ use App\Services\ImageChecksums;
 use App\Services\ImageDownloads;
 use App\Services\ImageFetcher;
 use App\Services\ImageSpace;
+use App\Services\RaspberryPiCatalog;
 use App\Support\ImageSourceException;
 use App\Support\ImageUrlGuard;
 use Livewire\Attributes\Locked;
@@ -42,6 +43,10 @@ class ImageSources extends Component
     #[Locked]
     public $listed = '';
 
+    // Raspberry Pi OS: the images of the official list (only the server sets them)
+    #[Locked]
+    public $catalog = [];
+
     public function mount()
     {
         $this->repos = $this->savedRepos();
@@ -50,6 +55,9 @@ class ImageSources extends Component
     public function updatedTab()
     {
         $this->error = null;
+        if ($this->tab === 'raspberrypi' && !$this->catalog) {
+            $this->loadCatalog(app(RaspberryPiCatalog::class));
+        }
     }
 
     public function updatedUrl()
@@ -195,6 +203,39 @@ class ImageSources extends Component
             return;
         }
         $this->started($chosen['name']);
+    }
+
+    // --- Raspberry Pi OS
+
+    public function loadCatalog(RaspberryPiCatalog $catalog)
+    {
+        $this->error = null;
+        $this->catalog = [];
+        try {
+            $this->catalog = $catalog->variants();
+        } catch (ImageSourceException $e) {
+            $this->error = $e->getMessage();
+        }
+    }
+
+    public function fetchVariant(int $index, RaspberryPiCatalog $catalog, ImageDownloads $downloads)
+    {
+        $this->error = null;
+        $variant = $this->catalog[$index] ?? null;
+        if (!$variant) {
+            $this->error = 'That image is no longer in the list: open the tab again.';
+
+            return;
+        }
+        try {
+            $downloads->start('raspberrypi', $variant['url'], $variant['filename'], ['name' => $variant['name'], 'date' => $variant['date']], $variant['size'],
+                $catalog->checksums($variant), (bool) $this->unverified);
+        } catch (ImageSourceException $e) {
+            $this->error = $e->getMessage();
+
+            return;
+        }
+        $this->started($variant['filename']);
     }
 
     /* the repositories used before, newest first, at most ten */

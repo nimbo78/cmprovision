@@ -359,7 +359,7 @@ class ImageFetcher
         $reasons = [400 => 'bad request', 401 => 'sign-in needed', 403 => 'forbidden', 404 => 'not found', 410 => 'gone', 429 => 'too many requests',
             500 => 'server error', 502 => 'bad gateway', 503 => 'unavailable', 504 => 'gateway timeout'];
         $text = 'The server answered '.$r['status'].(isset($reasons[$r['status']]) ? ' ('.$reasons[$r['status']].')' : '').' for '.ImageUrlGuard::redact($url).'.';
-        throw new ImageSourceException($text, $r['status'] >= 400 && $r['status'] < 500 && $r['status'] !== 429);
+        throw new ImageSourceException($text, $r['status'] >= 400 && $r['status'] < 500 && $r['status'] !== 429, $r['status']);
     }
 
     protected function curlError(array $r, string $url): ImageSourceException

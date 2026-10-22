@@ -7,10 +7,13 @@ namespace App\Support;
 class ImageSourceException extends \RuntimeException
 {
     public $fatal;
+    /* the HTTP status the server answered, when the exception is about one (0 otherwise) */
+    public $status;
 
-    public function __construct(string $message, bool $fatal = false)
+    public function __construct(string $message, bool $fatal = false, int $status = 0)
     {
         parent::__construct($message);
         $this->fatal = $fatal;
+        $this->status = $status;
     }
 }

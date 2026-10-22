@@ -1,0 +1,211 @@
+{
+ "imager": {
+  "latest_version": "2.0.12"
+ },
+ "os_list": [
+  {
+   "name": "Raspberry Pi OS (64-bit)",
+   "url": "https://downloads.raspberrypi.com/raspios_arm64/images/raspios_arm64-2026-10-06/2026-10-06-raspios-trixie-arm64.img.xz",
+   "extract_size": 6744440832,
+   "extract_sha256": "2e0024bca282503a5cb6755500cbd7998cfc141c8f452808b59f9178623d2f0d",
+   "image_download_size": 1364720984,
+   "release_date": "2026-10-06",
+   "devices": [
+    "pi5-64bit",
+    "pi4-64bit",
+    "pi3-64bit"
+   ]
+  },
+  {
+   "name": "Raspberry Pi OS (32-bit)",
+   "url": "https://downloads.raspberrypi.com/raspios_armhf/images/raspios_armhf-2026-10-06/2026-10-06-raspios-trixie-armhf.img.xz",
+   "extract_size": 5888802816,
+   "extract_sha256": "99aa8805a727711bd4175f79e0136c2fcda90efdc7d20a500f60f0f8a2143f53",
+   "image_download_size": 1294672820,
+   "release_date": "2026-10-06",
+   "devices": [
+    "pi5-32bit",
+    "pi4-32bit",
+    "pi3-32bit",
+    "pi2-32bit",
+    "pi1-32bit"
+   ]
+  },
+  {
+   "name": "Raspberry Pi OS (Legacy, 32-bit)",
+   "url": "https://downloads.raspberrypi.com/raspios_oldstable_armhf/images/raspios_oldstable_armhf-2026-10-06/2026-10-06-raspios-bookworm-armhf.img.xz",
+   "extract_size": 5544869888,
+   "extract_sha256": "8d16fec6d6a5fda65055c5aae6ccbc327f51c8e3b171e1f7a7bc8f9288c4ce84",
+   "image_download_size": 1282696448,
+   "release_date": "2026-10-06",
+   "devices": [
+    "pi5-32bit",
+    "pi4-32bit",
+    "pi3-32bit",
+    "pi2-32bit",
+    "pi1-32bit"
+   ]
+  },
+  {
+   "name": "Raspberry Pi OS (other)",
+   "subitems": [
+    {
+     "name": "Raspberry Pi OS Lite (64-bit)",
+     "url": "https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-10-06/2026-10-06-raspios-trixie-arm64-lite.img.xz",
+     "extract_size": 3078619136,
+     "extract_sha256": "b8a393dc1c3701450b5fffbfe74368a98fb6eab7415ce456cc0cead886ea8780",
+     "image_download_size": 550466056,
+     "release_date": "2026-10-06",
+     "devices": [
+      "pi5-64bit",
+      "pi4-64bit",
+      "pi3-64bit"
+     ]
+    },
+    {
+     "name": "Raspberry Pi OS Full (64-bit)",
+     "url": "https://downloads.raspberrypi.com/raspios_full_arm64/images/raspios_full_arm64-2026-10-06/2026-10-06-raspios-trixie-arm64-full.img.xz",
+     "extract_size": 9965666304,
+     "extract_sha256": "d5396f3a3b0d306750b4a42f12b7014414fa13d49372333b20124b15656bf720",
+     "image_download_size": 2064882780,
+     "release_date": "2026-10-06",
+     "devices": [
+      "pi5-64bit",
+      "pi4-64bit",
+      "pi3-64bit"
+     ]
+    },
+    {
+     "name": "Raspberry Pi OS Lite (32-bit)",
+     "url": "https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2026-10-06/2026-10-06-raspios-trixie-armhf-lite.img.xz",
+     "extract_size": 2785017856,
+     "extract_sha256": "acf39427d33c997fc2bbc237cc48a30f3b00c9cd60b831d67fedc9e3205fa816",
+     "image_download_size": 569747828,
+     "release_date": "2026-10-06",
+     "devices": [
+      "pi5-32bit",
+      "pi4-32bit",
+      "pi3-32bit",
+      "pi2-32bit",
+      "pi1-32bit"
+     ]
+    },
+    {
+     "name": "Raspberry Pi OS Full (32-bit)",
+     "url": "https://downloads.raspberrypi.com/raspios_full_armhf/images/raspios_full_armhf-2026-10-06/2026-10-06-raspios-trixie-armhf-full.img.xz",
+     "extract_size": 9059696640,
+     "extract_sha256": "033be5425237f9a5a5dc74373906342c80b544d9d65e87bd32c64e50187e136c",
+     "image_download_size": 1984999860,
+     "release_date": "2026-10-06",
+     "devices": [
+      "pi5-32bit",
+      "pi4-32bit",
+      "pi3-32bit",
+      "pi2-32bit",
+      "pi1-32bit"
+     ]
+    },
+    {
+     "name": "Raspberry Pi OS (Legacy, 32-bit) Lite",
+     "url": "https://downloads.raspberrypi.com/raspios_oldstable_lite_armhf/images/raspios_oldstable_lite_armhf-2026-10-06/2026-10-06-raspios-bookworm-armhf-lite.img.xz",
+     "extract_size": 2524971008,
+     "extract_sha256": "340d17e344724aebe42f5ca7d16fa569d99a64ceb9304942b551defed4edc4b9",
+     "image_download_size": 520503180,
+     "release_date": "2026-10-06",
+     "devices": [
+      "pi5-32bit",
+      "pi4-32bit",
+      "pi3-32bit",
+      "pi2-32bit",
+      "pi1-32bit"
+     ]
+    },
+    {
+     "name": "Raspberry Pi OS (Legacy, 32-bit) Full",
+     "url": "https://downloads.raspberrypi.com/raspios_oldstable_full_armhf/images/raspios_oldstable_full_armhf-2026-10-06/2026-10-06-raspios-bookworm-armhf-full.img.xz",
+     "extract_size": 12666798080,
+     "extract_sha256": "b830f3a98de3671d6bc96a810b8f2afcb344c2cf389cb1c4b4260e4cc3df95b9",
+     "image_download_size": 2954169196,
+     "release_date": "2026-10-06",
+     "devices": [
+      "pi5-32bit",
+      "pi4-32bit",
+      "pi3-32bit",
+      "pi2-32bit",
+      "pi1-32bit"
+     ]
+    },
+    {
+     "name": "Raspberry Pi OS (Legacy, 64-bit)",
+     "url": "https://downloads.raspberrypi.com/raspios_oldstable_arm64/images/raspios_oldstable_arm64-2026-10-06/2026-10-06-raspios-bookworm-arm64.img.xz",
+     "extract_size": 6249512960,
+     "extract_sha256": "fab4056295cdf1b0464fe2ba3e245af9b18e718c682dbed23f6daadc17780999",
+     "image_download_size": 1232712236,
+     "release_date": "2026-10-06",
+     "devices": [
+      "pi5-64bit",
+      "pi4-64bit",
+      "pi3-64bit"
+     ]
+    },
+    {
+     "name": "Raspberry Pi OS (Legacy, 64-bit) Lite",
+     "url": "https://downloads.raspberrypi.com/raspios_oldstable_lite_arm64/images/raspios_oldstable_lite_arm64-2026-10-06/2026-10-06-raspios-bookworm-arm64-lite.img.xz",
+     "extract_size": 2743074816,
+     "extract_sha256": "3503be87118ead788bef3842723715fc12989723fea1990d761cd490e56892f3",
+     "image_download_size": 442245740,
+     "release_date": "2026-10-06",
+     "devices": [
+      "pi5-64bit",
+      "pi4-64bit",
+      "pi3-64bit"
+     ]
+    },
+    {
+     "name": "Raspberry Pi OS (Legacy, 64-bit) Full",
+     "url": "https://downloads.raspberrypi.com/raspios_oldstable_full_arm64/images/raspios_oldstable_full_arm64-2026-10-06/2026-10-06-raspios-bookworm-arm64-full.img.xz",
+     "extract_size": 16676552704,
+     "extract_sha256": "7f2b1940b16ed1dc7a7e2c4df181937f94ffac15363bdba31c9b3e1a62686f0a",
+     "image_download_size": 3645822860,
+     "release_date": "2026-10-06",
+     "devices": [
+      "pi5-64bit",
+      "pi4-64bit",
+      "pi3-64bit"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Other general-purpose OS",
+   "subitems": [
+    {
+     "name": "Ubuntu",
+     "subitems": [
+      {
+       "name": "Ubuntu Desktop 26.04.1 (64-bit)",
+       "url": "http://cdimage.ubuntu.com/ubuntu/releases/resolute/release/ubuntu-26.04.1-preinstalled-desktop-arm64+raspi.img.xz",
+       "extract_size": 9554125312,
+       "extract_sha256": "791d59075ad0be36a5848bbc24910e6a1e6eef0cb8537f96c73f9665cf6f518f",
+       "image_download_size": 3078337648,
+       "release_date": "2026-08-27",
+       "devices": [
+        "pi5-64bit",
+        "pi4-64bit"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Misc utility images",
+   "subitems": [
+    {
+     "name": "SD Card Boot",
+     "description": "boot only"
+    }
+   ]
+  }
+ ]
+}

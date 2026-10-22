@@ -14,6 +14,7 @@
 
         <div class="cmp-seg mb-4" role="group" aria-label="Source">
           <button type="button" wire:click="$set('tab', 'github')" aria-pressed="{{ $tab === 'github' ? 'true' : 'false' }}">GitHub release</button>
+          <button type="button" wire:click="$set('tab', 'raspberrypi')" aria-pressed="{{ $tab === 'raspberrypi' ? 'true' : 'false' }}">Raspberry Pi OS</button>
           <button type="button" wire:click="$set('tab', 'url')" aria-pressed="{{ $tab === 'url' ? 'true' : 'false' }}">Any link</button>
         </div>
 
@@ -80,6 +81,23 @@
           </label>
         </div>
         @endif
+        @endif
+
+        @if ($tab === 'raspberrypi')
+        <p class="text-sm text-fg-muted mb-3">The images of the official Raspberry Pi list. Each is checked against the checksums Raspberry Pi publishes.</p>
+        <div class="max-h-96 overflow-y-auto border border-pline rounded">
+          @forelse ($catalog as $i => $variant)
+          <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-pline text-sm">
+            <div class="min-w-0">
+              <span class="font-bold">{{ $variant['name'] }}</span>
+              <span class="text-fg-muted">· {{ \App\Models\Image::size($variant['size']) }}@if ($variant['date']) · {{ $variant['date'] }}@endif</span>
+            </div>
+            <button type="button" wire:click="fetchVariant({{ $i }})" wire:loading.attr="disabled" class="cmp-btn cmp-btn-small">Download</button>
+          </div>
+          @empty
+          <p class="px-3 py-2 text-sm text-fg-muted">{{ $error ? 'The list could not be had.' : 'No images to show.' }}</p>
+          @endforelse
+        </div>
         @endif
 
         @if ($tab === 'url')
