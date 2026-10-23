@@ -23,6 +23,8 @@ class Cms extends Component
         if ($term !== '')
             $query->where(function ($q) use ($term) {
                 $q->whereRaw('lower(serial) like ?', ['%'.$term.'%'])->orWhereRaw('lower(mac) like ?', ['%'.$term.'%'])
+                  // the four digits of a Ports tile are the end of the MAC without its colon
+                  ->orWhereRaw("replace(lower(mac), ':', '') like ?", ['%'.str_replace(':', '', $term).'%'])
                   ->orWhereRaw('lower(hostname) like ?', ['%'.$term.'%']);
             });
         return $query->get();

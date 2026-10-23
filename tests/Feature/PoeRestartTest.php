@@ -141,6 +141,16 @@ class PoeRestartTest extends TestCase
         $this->assertSame(['s1p8'], array_keys(PoeRestart::modules([$cm], 'igor')['restarted']));
     }
 
+    public function test_two_skipped_modules_with_the_same_name_are_both_named()
+    {
+        $this->stand();
+        $a = Cm::create(['serial' => '10000000e611fff1', 'mac' => 'e4:5f:01:00:ff:f1', 'hostname' => 'sensor', 'phase' => 'failed']);
+        $b = Cm::create(['serial' => '10000000e611fff2', 'mac' => 'e4:5f:01:00:ff:f2', 'hostname' => 'sensor', 'phase' => 'failed']);
+
+        $this->assertSame(['sensor' => 'not seen on the switch', 'sensor (10000000e611fff2)' => 'not seen on the switch'],
+            PoeRestart::modules([$a, $b], 'igor')['skipped']);
+    }
+
     public function test_a_module_the_switch_does_not_show_is_not_restarted()
     {
         $this->stand();

@@ -51,7 +51,7 @@ class PoeRestart
                 $tile = Stand::tileOf($stand['map'], $cm);
                 $why = $tile ? StandMap::restartBlocker($tile) : Stand::notSeen($stand);
                 if ($why !== null)
-                    $skipped[$cm->displayName()] = $why;
+                    $skipped[isset($skipped[$cm->displayName()]) ? $cm->displayName().' ('.$cm->serial.')' : $cm->displayName()] = $why;   // two modules of one name stay two lines
                 else
                     $tiles[$tile['key']] = $tile + ['serial' => $cm->serial, 'module_name' => $cm->displayName()];
             }

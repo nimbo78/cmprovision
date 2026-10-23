@@ -33,6 +33,17 @@ class ModuleIdentityTest extends TestCase
             'provisioning_started_at' => now(), 'phase_started_at' => now()], $extra));
     }
 
+    public function test_the_four_digits_on_a_ports_tile_find_the_module_in_the_cms_search()
+    {
+        $this->cm(['mac' => 'dc:a6:32:12:ab:cd']);
+        $this->cm(['serial' => '1000000000000002', 'mac' => 'dc:a6:32:12:00:01']);
+
+        $html = Livewire::test(Cms::class)->set('search', 'abcd')->html();   // the tile says ABCD
+        $this->assertStringContainsString('dc:a6:32:12:ab:cd', $html);
+        $this->assertStringNotContainsString('dc:a6:32:12:00:01', $html);
+        $this->assertStringContainsString('dc:a6:32:12:ab:cd', Livewire::test(Cms::class)->set('search', 'AB:CD')->html());
+    }
+
     public function test_a_module_is_named_by_its_host_name_or_else_by_its_mac_and_only_in_the_last_resort_by_its_serial()
     {
         $this->assertSame(self::MAC, $this->cm()->displayName());
