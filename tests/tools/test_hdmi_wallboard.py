@@ -318,16 +318,52 @@ class RenderingTest(unittest.TestCase):
         c = w.Canvas(100, 20)
         w.ports(c, 0, 0, 100, 20, [switch], [], 0)
         lines = c.plain().splitlines()
-        self.assertTrue(any('|2 FREE ' in line and '|10 FREE|' in line for line in lines))
-        self.assertTrue(any('|1 FREE ' in line and '|10 FREE|' not in line for line in lines))
+        self.assertTrue(any('|2      |' in line and '|10     |' in line for line in lines))
+        self.assertTrue(any('|1      |' in line and '|10     |' not in line for line in lines))
         data = snapshot()
         data['switches'] = [switch]
         data['modules'] = []
         for cols, rows in [(133, 36), (168, 38)]:
             rendered = w.frame(data, cols, rows, view='desk', now=1001).plain()
             for number in (9, 10, 11, 12):
-                self.assertIn('|%s|' % (str(number) + ' FREE').ljust(7), rendered)
+                self.assertIn('|%s|' % str(number).ljust(7), rendered)
             self.assertIn('DEVICE CARD', rendered)
+
+
+class QuietPortsTest(unittest.TestCase):
+    """A free port is an empty frame with its number; the provisioner's own port says cm."""
+
+    def panel(self, ports):
+        switch = dict(name='sw01', model='2960CX', answering=True, blocks=[dict(label='RJ45', rows=2, ports=ports)])
+        c = w.Canvas(60, 12)
+        w.ports(c, 0, 0, 60, 12, [switch], [], 0)
+        return c.plain()
+
+    def test_a_free_port_keeps_its_frame_and_number_but_no_word(self):
+        ports = [dict(number=i, name='Gi0/' + str(i), serials=[], state='free') for i in range(1, 5)]
+        text = self.panel(ports)
+        self.assertNotIn('FREE', text)
+        for number in range(1, 5):
+            self.assertIn('|%d      |' % number, text)
+        self.assertEqual(4, text.count('.-------.'), 'every port keeps its frame')
+
+    def test_the_panel_has_the_same_shape_whatever_the_ports_say(self):
+        free = [dict(number=i, name='Gi0/' + str(i), serials=[], state='free') for i in range(1, 5)]
+        busy = [dict(p, state='unrecognized') for p in free]
+        shape = lambda text: [line.replace('UNR', '   ').replace(' ', '') for line in text.splitlines()]
+        self.assertEqual(shape(self.panel(busy)), shape(self.panel(free)))
+
+    def test_the_port_with_the_provisioner_says_cm_and_other_uplinks_say_up(self):
+        ports = [dict(number=7, name='Gi0/7', serials=[], state='uplink', server=True),
+                 dict(number=8, name='Gi0/8', serials=[], state='uplink', server=False),
+                 dict(number=9, name='Gi0/9', serials=[], state='uplink')]
+        text = self.panel(ports)
+        self.assertIn('|7 cm   |', text)
+        self.assertIn('|8 UP   |', text)
+        self.assertIn('|9 UP   |', text, 'a snapshot of an older version has no word about the provisioner')
+
+    def test_the_provisioner_flag_means_nothing_on_a_port_that_is_not_an_uplink(self):
+        self.assertEqual('', w.port_mark(dict(state='free', server=True), [])[0])
 
 
 class LayoutTest(unittest.TestCase):

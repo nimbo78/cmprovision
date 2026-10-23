@@ -1,3 +1,12 @@
+cmprovision4 (2.12.2) unstable; urgency=medium
+
+  * HDMI display: a free port is no longer labelled "FREE": it stays an empty
+    frame with its number, so the panel keeps its shape and is calmer to look
+    at. The port where the provisioner itself is connected says "cm" instead
+    of "UP"; the other uplinks still say "UP".
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 23 Oct 2026 18:00:00 +0300
+
 cmprovision4 (2.12.1) unstable; urgency=medium
 
   * HDMI display: the table of modules shows the speed of a write next to the

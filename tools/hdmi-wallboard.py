@@ -397,7 +397,10 @@ def port_mark(port, modules):
         mark = 'WAIT' if m['state'] == 'stale' else ('FAIL' if m['state'] == 'fail' else
                 ('DONE' if m['state'] == 'ok' else (str(m['percent']) + '%' if m.get('percent') is not None else phase(m)[:4])))
         return mark, INK.get(m['state'], 'dim')
-    return {'free': ('FREE', 'dim'), 'uplink': ('UP', 'dim'), 'unrecognized': ('UNR', 'warn'),
+    # A free port stays a quiet empty frame, with its number: the panel keeps its shape and nothing flickers on it
+    if port.get('state') == 'uplink' and port.get('server'):
+        return 'cm', 'accent'   # the provisioner itself
+    return {'free': ('', 'dim'), 'uplink': ('UP', 'dim'), 'unrecognized': ('UNR', 'warn'),
             'quiet': ('LNK', 'warn'), 'boot': ('BOOT', 'run')}.get(port.get('state'), ('?', 'dim'))
 
 

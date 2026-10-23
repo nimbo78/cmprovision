@@ -37,6 +37,19 @@ class WallboardTest extends TestCase
         $this->assertSame('failed', $cm->fresh()->phase, 'a snapshot does not restart or alter a run');
     }
 
+    public function test_the_port_with_the_provisioner_is_marked_for_the_display()
+    {
+        $this->stand();
+        $ports = [];
+        foreach (app(WallboardSnapshot::class)->current()['switches'][0]['blocks'] as $block)
+            foreach ($block['ports'] as $port)
+                $ports[$port['name']] = $port;
+        $this->assertSame('uplink', $ports['XGE0/0/1']['state']);
+        $this->assertTrue($ports['XGE0/0/1']['server'], 'the provisioner\'s MAC is on this port');
+        foreach (['GE0/0/1', 'GE0/0/2', 'GE0/0/3'] as $name)
+            $this->assertFalse($ports[$name]['server'], $name);
+    }
+
     public function test_a_display_takes_a_snapshot_up_to_fifteen_seconds_old_and_polls_after_that()
     {
         $this->stand();

@@ -37,7 +37,7 @@ class WallboardSnapshot
                     }
                     $ports[] = ['name' => $tile['name'], 'number' => $tile['panel_number'] ?? $tile['number'],
                         'state' => $tile['state'] === 'foreign' ? 'unrecognized' : $tile['state'],
-                        'mark' => $tile['mark'], 'filter' => $tile['filter'], 'serials' => $serials,
+                        'mark' => $tile['mark'], 'filter' => $tile['filter'], 'serials' => $serials, 'server' => $tile['server'],
                         'speed' => $tile['speed'], 'watts' => $tile['poe']['watts'] ?? null];
                 }
                 $blocks[] = ['rows' => $block['rows'], 'label' => $block['label'] ?? ($block['uplinks'] ? 'UPLINK' : 'PORTS'),
