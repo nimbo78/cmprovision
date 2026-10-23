@@ -330,6 +330,86 @@ class RenderingTest(unittest.TestCase):
             self.assertIn('DEVICE CARD', rendered)
 
 
+class UnknownDevicesTest(unittest.TestCase):
+    """The table says what is on a port and is not a module: what it says about itself, or who made its adapter."""
+
+    def frame(self, unknown, modules=None, cols=137, **extra):
+        data = snapshot()
+        data['modules'] = [device()] if modules is None else modules
+        if unknown is not None:
+            data['unknown'] = unknown
+        data.update(extra)
+        return w.frame(data, cols, 38, view='desk', now=1001).plain()
+
+    def row(self, text, needle):
+        return next(line for line in text.splitlines() if needle in line)
+
+    def test_a_device_that_says_what_it_is_has_a_row_with_its_name_and_what_it_says(self):
+        text = self.frame([dict(port='sw01 Gi0/4', state='unrecognized', name='ap-lobby', mac='00:0a:95:dd:ee:ff',
+                                detail='Cisco AP 1832 / 192.168.1.5 / wlan-ap', says=True)])
+        line = self.row(text, 'sw01 Gi0/4 / ap-lobby')
+        self.assertIn('UNR', line)
+        self.assertIn('Cisco AP 1832 / 192.168.1.5 / wlan-ap', line)
+
+    def test_a_device_that_says_nothing_shows_its_maker_and_its_mac(self):
+        text = self.frame([dict(port='sw01 Gi0/6', state='unrecognized', name='INGRAM MICRO SERVICES', mac='10:e9:92:12:34:56',
+                                detail='10:e9:92:12:34:56', says=False)])
+        line = self.row(text, 'sw01 Gi0/6 / INGRAM MICRO SERVICES')
+        self.assertIn('UNR', line)
+        self.assertIn('10:e9:92:12:34:56', line)
+
+    def test_a_quiet_link_is_lnk_and_the_modules_come_first(self):
+        text = self.frame([dict(port='sw01 Gi0/7', state='quiet', name='unknown device', mac=None, detail='link is up, nothing sent from it', says=False)])
+        self.assertIn('LNK', self.row(text, 'sw01 Gi0/7 / unknown device'))
+        self.assertLess(text.index('sw01 Gi0/1 / wlanpi-demo'), text.index('sw01 Gi0/7'))
+
+    def test_a_snapshot_without_the_list_still_shows_the_modules(self):
+        text = self.frame(None)
+        self.assertIn('sw01 Gi0/1 / wlanpi-demo', text)
+        self.assertNotIn('UNR', text)
+
+    def test_with_no_module_the_devices_are_not_hidden_by_the_empty_message(self):
+        text = self.frame([dict(port='sw01 Gi0/4', state='unrecognized', name='ap-lobby', mac='a', detail='x', says=True)], modules=[])
+        self.assertIn('ap-lobby', text)
+        self.assertNotIn('No modules currently on the stand.', text)
+        self.assertIn('No modules currently on the stand.', self.frame([], modules=[]))
+
+    def test_what_a_device_calls_itself_never_reaches_the_screen_as_a_control_character(self):
+        text = self.frame([dict(port='sw01 Gi0/4', state='unrecognized', name='evil\x1b[31m‮ name', mac='a', detail='bell\x07', says=True)])
+        self.assertNotIn('\x1b', text)
+        self.assertNotIn('\x07', text)
+        self.assertNotIn('‮', text)
+        self.assertIn('evil', text)
+
+
+class ProgressInOtherViewsTest(unittest.TestCase):
+    """The speed of a write is on the flow cards and under the name in the engineer view, as it is in the table and on the card."""
+
+    def test_the_flow_card_says_percent_speed_and_time_left(self):
+        data = snapshot()
+        data['modules'] = [device()]
+        text = w.frame(data, 137, 38, view='flow', now=1001).plain()
+        self.assertIn('63% / 25.0 MiB/s / ETA 1:00', text)
+
+    def test_a_flow_card_with_no_speed_yet_keeps_what_it_said(self):
+        data = snapshot()
+        data['modules'] = [dict(device(), speed=None)]
+        text = w.frame(data, 137, 38, view='flow', now=1001).plain()
+        self.assertIn('63% / ETA 1:00', text)
+        self.assertNotIn('MiB/s', text)
+
+    def test_a_done_module_shows_no_speed(self):
+        data = snapshot()
+        data['modules'] = [dict(device(), phase='done', state='ok', detail='Provisioning completed')]
+        self.assertNotIn('MiB/s', w.frame(data, 137, 38, view='flow', now=1001).plain())
+
+    def test_the_engineer_view_has_the_line_for_a_module_that_writes(self):
+        data = snapshot()
+        data['modules'] = [device()]
+        text = w.frame(data, 137, 38, view='engineer', now=1001).plain()
+        self.assertIn('63% / 25.0 MiB/s / ETA 1:00', text)
+
+
 class QuietPortsTest(unittest.TestCase):
     """A free port is an empty frame with its number; the provisioner's own port says cm."""
 

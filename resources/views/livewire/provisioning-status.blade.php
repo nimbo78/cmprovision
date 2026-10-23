@@ -52,11 +52,11 @@
             <table class="cmp-table">
                 <thead>
                     <tr>
-                        <x-sort-th column="board" :sort="$sort" :dir="$dir">Board</x-sort-th>
-                        <x-sort-th column="module" :sort="$sort" :dir="$dir">Module</x-sort-th>
-                        <x-sort-th column="step" :sort="$sort" :dir="$dir">Step</x-sort-th>
-                        <x-sort-th column="progress" :sort="$sort" :dir="$dir">Progress</x-sort-th>
-                        <x-sort-th column="time" :sort="$sort" :dir="$dir">Time</x-sort-th>
+                        <x-sort-th column="board" :sort="$sortKey" :dir="$sortDir">Board</x-sort-th>
+                        <x-sort-th column="module" :sort="$sortKey" :dir="$sortDir">Module</x-sort-th>
+                        <x-sort-th column="step" :sort="$sortKey" :dir="$sortDir">Step</x-sort-th>
+                        <x-sort-th column="progress" :sort="$sortKey" :dir="$sortDir">Progress</x-sort-th>
+                        <x-sort-th column="time" :sort="$sortKey" :dir="$sortDir">Time</x-sort-th>
                         <th></th>
                     </tr>
                 </thead>

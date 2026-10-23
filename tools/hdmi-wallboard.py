@@ -364,6 +364,14 @@ def phase(module):
     return safe(module.get('phase', 'unknown')).upper()
 
 
+def progress_text(m):
+    """63% / 25.0 MiB/s / ETA 1:00 of a module that writes, as the device card says it; None when it has no percent or is done."""
+    if m.get('percent') is None or m.get('phase') == 'done':
+        return None
+    speed = ('%.1f MiB/s / ' % (m['speed'] / 1048576)) if m.get('speed') else ''
+    return str(m['percent']) + '% / ' + speed + 'ETA ' + duration(m.get('eta'))
+
+
 def header(c, data, now):
     counts = data.get('counts', {})
     if c.cols >= 100:
@@ -504,31 +512,42 @@ def desk(c, data, module, now, tick):
         c.box(width + 2, y, c.cols - width - 2, height, 'DEVICE CARD')
         detail(c, width + 4, y + 1, c.cols - width - 6, module, now)
         table_y = y + height + 1
-    table(c, table_y, data.get('modules', []), tick)
+    table(c, table_y, data.get('modules', []), tick, data.get('unknown', []))
 
 
-def table(c, y, modules, tick):
+def table_rows(modules, unknown):
+    """The rows of the table: [(port / device, phase, result, ink)], the modules, then what is on a port and is not a module (a device
+    that says what it is over LLDP or CDP, or only who made its adapter): so the table tells what was plugged into the switch."""
+    rows = []
+    for m in modules:
+        result = progress_text(m) or (m.get('detail') or 'Cycle ' + duration(m.get('cycle')))
+        rows.append((safe(m['port']) + ' / ' + safe(m['name']), phase(m), result, INK.get(m['state'], 'dim')))
+    for u in unknown:
+        quiet = u.get('state') == 'quiet'
+        rows.append((safe(u.get('port')) + ' / ' + safe(u.get('name')), 'LNK' if quiet else 'UNR',
+                     safe(u.get('detail')) or safe(u.get('mac')), 'dim' if quiet else 'warn'))
+    return rows
+
+
+def table(c, y, modules, tick, unknown=()):
     """Port / device, phase and result across the whole width. The first column is as wide as the longest name needs
     (at most about half the screen), the result takes the rest; what still does not fit runs through its column."""
     phase_width = 12
-    names = [safe(m['port']) + ' / ' + safe(m['name']) for m in modules]
-    first = max(33, min(max(map(len, names), default=0), max(33, min(c.cols - phase_width - 4 - 30, int(c.cols * .45)))))
+    rows = table_rows(modules, unknown)
+    first = max(33, min(max((len(r[0]) for r in rows), default=0), max(33, min(c.cols - phase_width - 4 - 30, int(c.cols * .45)))))
     x_phase, x_result = first + 2, first + 2 + phase_width + 2
     c.text(0, y, 'PORT / DEVICE', 'dim')
     c.text(x_phase, y, 'PHASE', 'dim')
     c.text(x_result, y, 'PROGRESS / RESULT', 'dim')
     c.line(y + 1)
     capacity = max(1, c.rows - 5 - y - 2)
-    start = (tick % max(1, math.ceil(len(modules) / capacity))) * capacity
-    for i, m in enumerate(modules[start:start + capacity]):
-        ink, row = INK.get(m['state'], 'dim'), y + 2 + i
-        speed = ('%.1f MiB/s / ' % (m['speed'] / 1048576)) if m.get('speed') else ''   # as on the device card
-        result = ((str(m['percent']) + '% / ' + speed + 'ETA ' + duration(m.get('eta'))) if m.get('percent') is not None and m['phase'] != 'done'
-                  else (m.get('detail') or 'Cycle ' + duration(m.get('cycle'))))
-        c.marquee(0, row, names[start + i], first, ink)
-        c.text(x_phase, row, phase(m)[:phase_width], ink)
+    start = (tick % max(1, math.ceil(len(rows) / capacity))) * capacity
+    for i, (name, phase_text, result, ink) in enumerate(rows[start:start + capacity]):
+        row = y + 2 + i
+        c.marquee(0, row, name, first, ink)
+        c.text(x_phase, row, phase_text[:phase_width], ink)
         c.marquee(x_result, row, result, c.cols - x_result, ink)
-    if not modules:
+    if not rows:
         c.text(0, y + 2, 'No modules currently on the stand.', 'dim')
 
 
@@ -549,7 +568,7 @@ def flow(c, data, module, now, tick):
         for j, line in enumerate(['.-----.', '| CM4 |', "'-----'"]):
             c.text(x + 2, cy + 2 + j, line, ink)
         c.text(x + 12, cy + 2, phase(m), ink, width - 14)
-        c.text(x + 12, cy + 3, (str(m['percent']) + '%') if m.get('percent') is not None else m.get('detail'), ink, width - 14)
+        c.text(x + 12, cy + 3, progress_text(m) or ((str(m['percent']) + '%') if m.get('percent') is not None else m.get('detail')), ink, width - 14)
         c.text(x + 12, cy + 4, 'CYCLE ' + duration(m.get('cycle')), 'dim', width - 14)
         c.text(x + 2, cy + 6, identity(m), 'dim', width - 4)
     if not modules:
@@ -572,6 +591,8 @@ def engineer(c, data, module, now, tick):
     for row in range(3):
         c.text(x, dy + row, ' '.join(SMALL[ch][row] for ch in word), ink)
     c.text(x, dy + 4, identity(module), 'dim')
+    if progress_text(module):
+        c.text(x, dy + 5, progress_text(module), ink, c.cols - x)
     diag = module.get('diagnostics')
     c.wrap(x, dy + 6, (diag['title'] if diag else module.get('detail')) or 'No diagnostic snapshot yet.', c.cols - x, 2, ink)
     if diag:

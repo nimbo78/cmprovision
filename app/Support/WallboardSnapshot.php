@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Cm;
 use App\Models\Project;
 use App\Models\UsbDiagnosticReport;
+use App\Services\OuiVendors;
 use App\Services\Switch\Stand;
 
 /* Local display only. No HTTP route, credentials, raw logs or commands to modules. The Ports page and this
@@ -19,7 +20,7 @@ class WallboardSnapshot
         // only when that has run out, instead of every few seconds around the clock (the web UI's own polls refresh it too).
         $stand = Stand::current(null, 0, [], self::WALLBOARD_SECONDS);
         $map = $stand['map'] ?? null;
-        $modules = $switches = [];
+        $modules = $switches = $unknown = [];
         foreach ($map['switches'] ?? [] as $id => $switch)
         {
             $state = $stand['switches'][$id];
@@ -30,6 +31,8 @@ class WallboardSnapshot
                 foreach ($block['tiles'] as $tile)
                 {
                     $serials = [];
+                    if (in_array($tile['state'], ['foreign', 'quiet'], true))
+                        $unknown[] = $this->unknown($tile);
                     foreach ($tile['modules'] as $cm)
                     {
                         $serials[] = $cm->serial;
@@ -80,7 +83,29 @@ class WallboardSnapshot
         return ['version' => 1, 'generated_at' => now()->getTimestamp(), 'clock' => now()->format('Y-m-d H:i:s T'),
             'host' => gethostname(), 'app_version' => AppVersion::text(), 'project' => $project?->name,
             'batch' => $batch ? ['title' => $batch->title(), 'open' => $batch->open, 'counts' => $batch->counts] : null,
-            'counts' => $counts, 'switches' => $switches, 'modules' => $modules];
+            'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown];
+    }
+
+    /* A port with a device that is not a module and is not booting: what it says about itself over LLDP or CDP, or else
+       who made its adapter (the MAC), for the table of the display; the texts are cleaned already (Neighbors::text) */
+    protected function unknown(array $tile): array
+    {
+        $says = $tile['neighbors'][0] ?? null;
+        $mac = $tile['macs'][0] ?? null;
+        $maker = $mac ? OuiVendors::name($mac) : null;
+        if ($says)
+        {
+            $name = $says['name'] !== '' ? $says['name'] : ($says['platform'] !== '' ? $says['platform'] : $says['chassis']);
+            $detail = implode(' / ', array_filter([$says['platform'] !== '' ? $says['platform'] : $says['description'], $says['address'],
+                implode(', ', $says['capabilities'])]));
+        }
+        else
+        {
+            $name = $maker ?: ($mac ?: 'unknown device');
+            $detail = $tile['state'] === 'quiet' ? 'link is up, nothing sent from it' : implode(' / ', array_filter([$maker ? $mac : null]));
+        }
+        return ['port' => $tile['label'], 'state' => $tile['state'] === 'quiet' ? 'quiet' : 'unrecognized', 'name' => $name !== '' ? $name : 'unknown device',
+            'mac' => $mac, 'detail' => $detail, 'says' => (bool) $says];
     }
 
     protected function module(Cm $cm, string $port): array

@@ -6,6 +6,7 @@ use App\Http\Livewire\WallboardSettings;
 use App\Models\Cm;
 use App\Models\User;
 use App\Models\UsbDiagnosticReport;
+use App\Services\Switch\MacTable;
 use App\Services\Wallboard;
 use App\Support\ModuleDiagnostics;
 use App\Support\WallboardSnapshot;
@@ -48,6 +49,28 @@ class WallboardTest extends TestCase
         $this->assertTrue($ports['XGE0/0/1']['server'], 'the provisioner\'s MAC is on this port');
         foreach (['GE0/0/1', 'GE0/0/2', 'GE0/0/3'] as $name)
             $this->assertFalse($ports[$name]['server'], $name);
+    }
+
+    public function test_a_device_on_a_port_that_is_not_a_module_is_listed_for_the_display_with_what_it_says_or_its_maker()
+    {
+        $this->stand();
+        config(['cmprovision.ieee_data_dir' => dirname(__DIR__).'/fixtures/ieee']);
+        $t =& $this->fake->tables[''];
+        // GE0/0/1 (6): an access point that talks LLDP; GE0/0/2 (7): a device that says nothing, from the registry's INGRAM MICRO SERVICES
+        $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;       // 00:0a:95:dd:ee:ff
+        $t[MacTable::OID_HUAWEI_FDB_PORT.'.16.233.146.18.52.86.10.0'] = 7;         // 10:e9:92:12:34:56
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 8 => 'eth0', 9 => "ap-lobby\x1b[31m", 10 => 'Cisco AP firmware', 12 => hex2bin('10')] as $column => $value)
+            $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+        $t[\App\Services\Switch\Neighbors::OID_LLDP_MAN.'.0.6.1.1.4.192.168.1.5'] = 2;
+
+        $unknown = app(WallboardSnapshot::class)->current()['unknown'];
+        $this->assertSame(['ap-lobby [31m', 'INGRAM MICRO SERVICES'], array_column($unknown, 'name'), 'the name is cleaned: no control character');
+        $this->assertSame(['unrecognized', 'unrecognized'], array_column($unknown, 'state'));
+        $this->assertSame('Cisco AP firmware / 192.168.1.5 / wlan-ap', $unknown[0]['detail']);
+        $this->assertTrue($unknown[0]['says']);
+        $this->assertSame('10:e9:92:12:34:56', $unknown[1]['detail'], 'no neighbour: the MAC beside the maker');
+        $this->assertFalse($unknown[1]['says']);
+        $this->assertStringNotContainsString('sw01 GE0/0/3', json_encode($unknown), 'the module on its port is not in the list');
     }
 
     public function test_a_display_takes_a_snapshot_up_to_fifteen_seconds_old_and_polls_after_that()

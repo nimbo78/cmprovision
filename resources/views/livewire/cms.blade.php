@@ -20,14 +20,14 @@
         <table class="cmp-table">
             <thead>
                 <tr>
-                    <x-sort-th column="mac" :sort="$sort" :dir="$dir">MAC</x-sort-th>
-                    <x-sort-th column="hostname" :sort="$sort" :dir="$dir">Host name</x-sort-th>
-                    <x-sort-th column="serial" :sort="$sort" :dir="$dir">Serial</x-sort-th>
-                    <x-sort-th column="model" :sort="$sort" :dir="$dir">Model</x-sort-th>
-                    <x-sort-th column="project" :sort="$sort" :dir="$dir">Project</x-sort-th>
-                    <x-sort-th column="board" :sort="$sort" :dir="$dir">Board</x-sort-th>
-                    <x-sort-th column="result" :sort="$sort" :dir="$dir">Result</x-sort-th>
-                    <x-sort-th column="finished" :sort="$sort" :dir="$dir">Finished</x-sort-th>
+                    <x-sort-th column="mac" :sort="$sortKey" :dir="$sortDir">MAC</x-sort-th>
+                    <x-sort-th column="hostname" :sort="$sortKey" :dir="$sortDir">Host name</x-sort-th>
+                    <x-sort-th column="serial" :sort="$sortKey" :dir="$sortDir">Serial</x-sort-th>
+                    <x-sort-th column="model" :sort="$sortKey" :dir="$sortDir">Model</x-sort-th>
+                    <x-sort-th column="project" :sort="$sortKey" :dir="$sortDir">Project</x-sort-th>
+                    <x-sort-th column="board" :sort="$sortKey" :dir="$sortDir">Board</x-sort-th>
+                    <x-sort-th column="result" :sort="$sortKey" :dir="$sortDir">Result</x-sort-th>
+                    <x-sort-th column="finished" :sort="$sortKey" :dir="$sortDir">Finished</x-sort-th>
                     <th></th>
                 </tr>
             </thead>

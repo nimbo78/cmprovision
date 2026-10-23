@@ -70,6 +70,18 @@ class CmsPageTest extends TestCase
             ->assertSeeInOrder(['10000000bbbb0003', '10000000aaaa0001', '10000000aaaa0002']);   // running first, then the latest flashed
     }
 
+    public function test_an_address_without_a_direction_means_the_first_direction_of_the_column()
+    {
+        $this->cms();
+        // a time: the latest first; the next click turns it to the oldest
+        Livewire::withQueryParams(['sort' => 'finished'])->test(Cms::class)
+            ->assertSeeInOrder(['10000000aaaa0001', '10000000aaaa0002', '10000000bbbb0003'])->assertSeeHtml('aria-sort="descending"')
+            ->call('sortBy', 'finished')->assertSet('dir', 'asc')->assertSeeInOrder(['10000000aaaa0002', '10000000aaaa0001', '10000000bbbb0003']);
+        // a text: A to Z
+        Livewire::withQueryParams(['sort' => 'project'])->test(Cms::class)->assertSeeHtml('aria-sort="ascending"')
+            ->assertSeeInOrder(['10000000aaaa0001', '10000000aaaa0002', '10000000bbbb0003']);
+    }
+
     public function test_the_finished_column_starts_with_the_latest_and_a_module_still_running_is_last()
     {
         $this->cms();
