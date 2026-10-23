@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -13,6 +14,10 @@ class UtilityOs
 {
     /** the directories an OS of the package lives in, in the order the page lists them */
     const DIRS = ['scriptexecute64', 'scriptexecute'];
+
+    /** How long a verified directory is taken as it was while no file of it changes size, time or inode. Hashing the files
+        (tens of megabytes) on every page load and every Livewire render took seconds; switching always hashes afresh. */
+    const VERIFIED_SECONDS = 3600;
 
     public function link(): string
     {
@@ -35,7 +40,7 @@ class UtilityOs
     }
 
     /** The MANIFEST of one directory: its key=value lines, the file= lines as files; null when it is no OS of the package */
-    public function manifest(string $dir): ?array
+    public function manifest(string $dir, bool $fresh = false): ?array
     {
         if (!in_array($dir, self::DIRS, true))
             return null;
@@ -59,15 +64,16 @@ class UtilityOs
         }
         if (!preg_match('/^[0-9A-Za-z.-]{1,32}$/D', $values['version'] ?? '') || !$values['files'])
             return null;
-        return $this->filesMatch($dir, $values['files']) ? $values : null;
+        return $this->filesMatch($dir, $values['files'], $fresh) ? $values : null;
     }
 
     /** A readable inventory is not enough: an incomplete or damaged directory must never be offered for boot. */
-    protected function filesMatch(string $dir, array $files): bool
+    protected function filesMatch(string $dir, array $files, bool $fresh = false): bool
     {
         $base = realpath($this->root().'/'.$dir);
         if ($base === false || is_link($this->root().'/'.$dir))
             return false;
+        $stats = [];
         foreach ($files as $path => $expected)
         {
             if ($path[0] === '/' || str_contains($path, '\\') || preg_match('/[\x00-\x1f\x7f]/', $path)
@@ -76,9 +82,13 @@ class UtilityOs
             $file = $base.'/'.$path;
             $real = realpath($file);
             if ($real === false || !str_starts_with($real, $base.'/') || is_link($file) || !is_file($file)
-                || @filesize($file) !== $expected['size'] || @hash_file('sha256', $file) !== $expected['sha256'])
+                || @filesize($file) !== $expected['size'])
                 return false;
+            $stat = @stat($file);
+            $stats[$path] = $stat ? [$stat['size'], $stat['mtime'], $stat['ino']] : null;
         }
+        if (!$this->contentsMatch($dir, $files, $stats, $fresh))
+            return false;
         $actual = [];
         try
         {
@@ -105,6 +115,27 @@ class UtilityOs
         return $actual === $listed;
     }
 
+    /** The bytes: what the MANIFEST says, hashed once and then taken as it was while the files stay as they are (their
+        sizes, times and inodes, and the hashes the MANIFEST expects, make the key). $fresh hashes whatever the key says. */
+    protected function contentsMatch(string $dir, array $files, array $stats, bool $fresh): bool
+    {
+        $key = 'utility-os-verified:'.$dir.':'.sha1(json_encode([$files, $stats]));
+        if (!$fresh && Cache::get($key) === true)
+            return true;
+        $base = realpath($this->root().'/'.$dir);
+        foreach ($files as $path => $expected)
+            if ($this->hash($base.'/'.$path) !== $expected['sha256'])
+                return false;
+        Cache::put($key, true, self::VERIFIED_SECONDS);
+        return true;
+    }
+
+    /** The one place a file is hashed (the tests count it) */
+    protected function hash(string $file): string|false
+    {
+        return @hash_file('sha256', $file);
+    }
+
     /** The directory modules get now: where the link points, when that is an OS of the package */
     public function current(): ?string
     {
@@ -121,7 +152,7 @@ class UtilityOs
         moment without one */
     public function switchTo(string $dir): void
     {
-        if ($this->manifest($dir) === null)
+        if ($this->manifest($dir, true) === null)
             throw new InvalidArgumentException(($dir === '' ? 'nothing' : $dir).' is not a utility OS of the package');
         $link = $this->link();
         $new = dirname($link).'/.boot-'.bin2hex(random_bytes(4));

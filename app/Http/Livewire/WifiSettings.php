@@ -2,6 +2,7 @@
 
 namespace App\Http\Livewire;
 
+use App\Services\ServiceLogs;
 use App\Services\WifiNetworks;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -30,7 +31,7 @@ class WifiSettings extends Component
     #[Locked]
     public $found = null;
     public $notice = null, $noticeIsError = false;
-    public $logModalOpen = false, $logTitle = '', $logOutput = '';
+    public $logModalOpen = false, $logTitle = '', $logSource = '';
 
     public function render()
     {
@@ -144,8 +145,8 @@ class WifiSettings extends Component
 
     public function showLog()
     {
-        $this->logTitle = 'Wi-Fi changes';
-        $this->logOutput = app(WifiNetworks::class)->log();
+        $this->logSource = 'wifi';
+        $this->logTitle = ServiceLogs::title('wifi');
         $this->logModalOpen = true;
     }
 

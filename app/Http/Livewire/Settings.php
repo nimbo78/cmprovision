@@ -6,12 +6,13 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 use App\Models\Host;
 use App\Models\Setting;
+use App\Services\ServiceLogs;
 use Illuminate\Support\Facades\Validator;
 
 #[Title('Settings')]
 class Settings extends Component
 {
-    public $usbDiagnosticsRunning, $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $uplinkSpareRunning, $utilityOs, $logOutput, $logTitle;
+    public $usbDiagnosticsRunning, $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $uplinkSpareRunning, $utilityOs, $logTitle, $logSource;
     public $ip, $mac, $detectedMacs;
     public $hosts;
     public $logModalOpen = false, $staticModalOpen = false;
@@ -54,58 +55,51 @@ class Settings extends Component
         return ($retcode == 0);
     }
 
+    /* a log window follows its log by itself (the ServiceLog component inside it) */
+    protected function openLog(string $source)
+    {
+        $this->logSource = $source;
+        $this->logTitle = ServiceLogs::title($source);
+        $this->logModalOpen = true;
+    }
+
     public function viewLogDnsmasq()
     {
-        $this->logTitle = "Dnsmasq log since boot";
-        $this->logOutput = $this->getLog('cmprovision-dnsmasq');
-        $this->logModalOpen = true;
+        $this->openLog('dnsmasq');
     }
 
     public function viewLogRpiboot()
     {
-        $this->logTitle = "Rpiboot log since boot";
-        $this->logOutput = $this->getLog('cmprovision-rpiboot');
-        $this->logModalOpen = true;
+        $this->openLog('rpiboot');
     }
 
     public function viewLogUsbDiagnostics()
     {
-        $this->logTitle = 'USB diagnostics receiver log since boot';
-        $this->logOutput = $this->getLog('cmprovision-usb-diagnostics');
-        $this->logModalOpen = true;
+        $this->openLog('usb-diagnostics');
     }
 
     public function viewLogQueue()
     {
-        $this->logTitle = "Queue worker log since boot";
-        $this->logOutput = $this->getLog('cmprovision-queue');
-        $this->logModalOpen = true;
+        $this->openLog('queue');
     }
 
     public function viewLogImagesQueue()
     {
-        $this->logTitle = "Image checksum worker log since boot";
-        $this->logOutput = $this->getLog('cmprovision-queue-images');
-        $this->logModalOpen = true;
+        $this->openLog('queue-images');
     }
 
     public function viewLogUplinkSpare()
     {
-        $this->logTitle = "Uplink cold spare log since boot";
-        $this->logOutput = $this->getLog('cmprovision-uplink', '-t');
-        $this->logModalOpen = true;
+        $this->openLog('uplink-spare');
     }
 
     public function viewLogLaravel()
     {
-        $this->logTitle = "Laravel error log";
-        $this->logOutput = file_get_contents(storage_path('logs/laravel.log'));
-        $this->logModalOpen = true;
+        $this->openLog('laravel');
     }
 
     public function closeModal()
     {
-        $this->logOutput = '';
         $this->logModalOpen = $this->staticModalOpen = false;
     }
 

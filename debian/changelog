@@ -1,3 +1,25 @@
+cmprovision4 (2.7.6) unstable; urgency=medium
+
+  * Settings opens in a fraction of a second instead of about five: the utility
+    OS check no longer hashes tens of megabytes of files on every page load and
+    every Livewire render. A directory that was verified is trusted while its
+    files keep their size, time and inode (an hour at most); switching the OS
+    always hashes afresh.
+  * The log windows of Settings (dnsmasq, rpiboot, queue workers, uplink spare,
+    Laravel error log) and the Wi-Fi changes log follow their log by
+    themselves: new lines appear every 5 seconds without reloading the window,
+    the window stays at the end while you are there, and a Pause button freezes
+    it for reading. A journal shows its last 1000 lines, the Laravel log its
+    last 256 KB (a missing Laravel log used to be a PHP warning).
+  * Firmware: the page shows what each EEPROM image changed, from the release
+    notes of rpi-eeprom kept beside the images (the package's copy works
+    offline, GitHub's is used when it is newer), marks images that arrived in
+    the last two weeks as new, and says where an image was promoted. Choosing
+    a firmware in a project shows what changes against the project's current
+    image (or what the current one has that an older choice lacks).
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 22 Oct 2026 20:55:00 +0300
+
 cmprovision4 (2.7.5) unstable; urgency=medium
 
   * HDMI display: the renderer runs as its own system user, cmprovision-wallboard,

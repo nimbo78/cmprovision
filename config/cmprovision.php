@@ -61,4 +61,7 @@ return [
     'boot_root' => env('CMPROVISION_BOOT_ROOT', base_path()),
     'boot_link' => env('CMPROVISION_BOOT_LINK', base_path('etc/boot')),
 
+    /* The file the Laravel log window of Settings shows the end of. */
+    'laravel_log' => storage_path('logs/laravel.log'),
+
 ];

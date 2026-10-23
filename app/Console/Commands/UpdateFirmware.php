@@ -39,6 +39,10 @@ class UpdateFirmware extends Command
         {
             $this->line('No new images available.');
         }
+        if ($result['notes'] == 'updated')
+        {
+            $this->line('Release notes updated.');
+        }
         foreach ($result['errors'] as $error)
         {
             $this->error($error);
