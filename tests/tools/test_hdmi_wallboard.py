@@ -358,9 +358,13 @@ class QuietPortsTest(unittest.TestCase):
                  dict(number=8, name='Gi0/8', serials=[], state='uplink', server=False),
                  dict(number=9, name='Gi0/9', serials=[], state='uplink')]
         text = self.panel(ports)
-        self.assertIn('|7 cm   |', text)
+        self.assertIn('|7  cm  |', text, 'cm stands one column further from the number than UP')
         self.assertIn('|8 UP   |', text)
         self.assertIn('|9 UP   |', text, 'a snapshot of an older version has no word about the provisioner')
+
+    def test_cm_fits_beside_a_two_digit_port_number(self):
+        text = self.panel([dict(number=10, name='Gi0/10', serials=[], state='uplink', server=True)])
+        self.assertIn('|10  cm |', text)
 
     def test_the_provisioner_flag_means_nothing_on_a_port_that_is_not_an_uplink(self):
         self.assertEqual('', w.port_mark(dict(state='free', server=True), [])[0])
