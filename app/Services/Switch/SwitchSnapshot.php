@@ -40,21 +40,23 @@ class SwitchSnapshot
     const OID_ENT_NAME = '.1.3.6.1.2.1.47.1.1.1.1.7';      // entPhysicalName
     const OID_ENT_CONTAINED_IN = '.1.3.6.1.2.1.47.1.1.1.1.4';   // entPhysicalContainedIn
 
-    protected $snmp, $macs, $poe, $id, $lastError;
+    protected $snmp, $macs, $poe, $neighbors, $id, $lastError;
 
-    public function __construct(SnmpClient $snmp, MacTable $macs, ?Poe $poe = null, string $id = 'switch')
+    public function __construct(SnmpClient $snmp, MacTable $macs, ?Poe $poe = null, string $id = 'switch', ?Neighbors $neighbors = null)
     {
         $this->snmp = $snmp;
         $this->macs = $macs;
         $this->poe = $poe;
         $this->id = $id;
+        $this->neighbors = $neighbors;
     }
 
     /* The switch of these settings (EthernetSwitch::config()), named by its address */
     public static function forConfig(array $config): self
     {
         $snmp = app(SnmpClient::class, ['config' => $config]);
-        return new self($snmp, new MacTable($snmp, $config['method'] ?? 'auto', $config['detected'] ?? null), new Poe($snmp), (string) $config['host']);
+        return new self($snmp, new MacTable($snmp, $config['method'] ?? 'auto', $config['detected'] ?? null), new Poe($snmp), (string) $config['host'],
+            new Neighbors($snmp, (string) $config['host']));
     }
 
     /**
@@ -62,7 +64,9 @@ class SwitchSnapshot
      *  'taken_at' (unix time), 'duration' (seconds), 'mac_method', 'poe' (any PoE data),
      *  'ports' => [ifIndex => ['ifIndex', 'name', 'alias', 'up', 'speed' (Mbit/s as the switch reports
      *  it, also without a link; null when unknown), 'changed' (seconds in the current link state, null
-     *  when unknown), 'macs' => the first MAC_KEEP, 'mac_count', 'poe' => Poe::read() entry or null]]].
+     *  when unknown), 'macs' => the first MAC_KEEP, 'mac_count', 'poe' => Poe::read() entry or null,
+     *  'neighbors' => what LLDP and CDP say about the devices on it (Neighbors)]],
+     *  'discovery' => ['lldp' => bool, 'cdp' => ?bool] (whether the switch answers LLDP and CDP at all)].
      * Throws SnmpError when the switch does not answer or lists no interfaces or no Ethernet ports.
      */
     public function take(): array
@@ -102,6 +106,7 @@ class SwitchSnapshot
                 'macs' => [],
                 'mac_count' => 0,
                 'poe' => null,
+                'neighbors' => [],
             ];
         }
         if (!$ports)
@@ -124,6 +129,13 @@ class SwitchSnapshot
             if (isset($ports[$ifIndex]))
                 $ports[$ifIndex]['poe'] = $entry;
 
+        $seen = $this->neighbors ? $this->neighbors->read($ports) : ['ports' => [], 'discovery' => ['lldp' => false, 'cdp' => null]];
+        // the neighbours were read a moment ago: a port that is down, or came up since, is not the port they were read on
+        $age = max(0, Carbon::now()->getTimestamp() - (int) ($seen['at'] ?? Carbon::now()->getTimestamp()));
+        foreach ($seen['ports'] as $ifIndex => $list)
+            if (isset($ports[$ifIndex]) && $ports[$ifIndex]['up'] && !($ports[$ifIndex]['changed'] !== null && $ports[$ifIndex]['changed'] < $age))
+                $ports[$ifIndex]['neighbors'] = $list;
+
         $classes = $this->column(self::OID_ENT_CLASS);
         $media = $this->media($ports, $classes);
         foreach (array_keys($ports) as $ifIndex)
@@ -139,6 +151,7 @@ class SwitchSnapshot
             'duration' => round(microtime(true) - $started, 3),
             'mac_method' => $table['method'],
             'poe' => (bool) $poe,
+            'discovery' => $seen['discovery'],
             'ports' => $ports,
         ];
     }

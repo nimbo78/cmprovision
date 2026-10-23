@@ -310,4 +310,9 @@ class PackagingTest extends TestCase
             'before dnsmasq starts again');
     }
 
+    public function test_the_package_recommends_the_registry_of_mac_blocks()
+    {
+        // the Ports page names the maker of an unknown device from the ieee-data files, and works without them
+        $this->assertMatchesRegularExpression('/^Recommends:.*\bieee-data\b/m', $this->file('debian/control'));
+    }
 }

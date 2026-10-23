@@ -156,6 +156,8 @@ Verified switch models use the physical positions and printed port numbers of th
 
 Write access is optional, set for each switch, and only used to restart modules over PoE: a write community for v2c, or a user of its own for v3. **Check write access** writes one PoE port's current value back, so it changes nothing. With write access, the module card, the Ports page and the dashboard get a **Restart** button: the switch turns the port's PoE off for 5 seconds and on again. It is offered only on ports with one of the provisioner's modules (or a Raspberry Pi still booting) and nothing else, and not while the module writes its bootloader EEPROM. A port that does not come back on is listed on the dashboard, the Ports page and the module card with **Power on** until it does.
 
+A device on a port that announces itself over LLDP or CDP (switches, access points, phones, WLAN Pi OS) is described on the port's details under **Says about itself**, and the line of each switch tells how many neighbors it knows; for a device that says nothing the details name the maker of its MAC address. See [what the device says about itself](unrecognized-devices.md#what-the-device-says-about-itself-lldp-and-cdp).
+
 ## Network access
 
 Connect the provisioner's `eth0` only to the isolated provisioning switch. Use Wi-Fi for the web interface and the upstream network.

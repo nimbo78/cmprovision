@@ -66,7 +66,7 @@ class SwitchSnapshotTest extends TestCase
         $this->assertSame('192.0.2.10', $s['id']);
         $this->assertFalse($s['poe']);
         $this->assertSame(['ifIndex' => 8, 'name' => 'GE0/0/3', 'alias' => 'stand 3', 'up' => true, 'speed' => 1000, 'changed' => null,
-                           'macs' => [self::MODULE], 'mac_count' => 1, 'poe' => null, 'media' => null, 'transceiver' => null], $s['ports'][8],
+                           'macs' => [self::MODULE], 'mac_count' => 1, 'poe' => null, 'neighbors' => [], 'media' => null, 'transceiver' => null], $s['ports'][8],
                           'no ENTITY-MIB: the connector is not known');
         $this->assertFalse($s['ports'][7]['up']);
         $this->assertSame(1000, $s['ports'][7]['speed'], 'what the switch says without a link');

@@ -1,0 +1,40 @@
+OUI                                                         Organization                                 
+OUI-28/MA-M Range                                           Organization                                 
+                                                            Address                                      
+
+C8-5C-E2   (hex)		SYNERGY SYSTEMS AND SOLUTIONS
+700000-7FFFFF     (base 16)		SYNERGY SYSTEMS AND SOLUTIONS
+				A1526, GREEN FIELDS COLONY
+				Faridabad  HARYANA  121001
+				IN
+
+74-1A-E0   (hex)		Private
+900000-9FFFFF     (base 16)		Private
+
+C8-5C-E2   (hex)		San Telequip (P) Ltd.,
+A00000-AFFFFF     (base 16)		San Telequip (P) Ltd.,
+				504 505 Deron Heights, Baner Road, Baner
+				Pune  Maharashtra  411045
+				IN
+
+B8-4C-87   (hex)		Airgain Inc.
+900000-9FFFFF     (base 16)		Airgain Inc.
+				3611 Valley Centre Dr, Ste 150
+				San Diego  CA  92130
+				US
+
+B8-4C-87   (hex)		Blum Novotest GmbH
+400000-4FFFFF     (base 16)		Blum Novotest GmbH
+				Kaufstraße 14
+				Gruenkraut    88287
+				DE
+
+D0-D9-4F   (hex)		Mitsubishi Electric US, Inc.
+700000-7FFFFF     (base 16)		Mitsubishi Electric US, Inc.
+				1340 Satellite Boulevard
+				Suwanee  GA  30345
+				US
+
+C0-22-F1   (hex)		MAHINDR & MAHINDRA
+900000-9FFFFF     (base 16)		MAHINDR & MAHINDRA
+				Electric Aggregate Plant, Gate No. – A/B, Plot No. A-1, Phase IV, Chakan MIDC, Pune, Chakan, Taluka – Khed

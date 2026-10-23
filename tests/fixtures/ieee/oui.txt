@@ -1,0 +1,40 @@
+OUI/MA-L                                                    Organization                                 
+company_id                                                  Organization                                 
+                                                            Address                                      
+
+10-E9-92   (hex)		INGRAM MICRO SERVICES
+10E992     (base 16)		INGRAM MICRO SERVICES
+				100 CHEMIN DE BAILLOT
+				MONTAUBAN    82000
+				FR
+
+78-F2-76   (hex)		Cyklop Fastjet Technologies (Shanghai) Inc.
+78F276     (base 16)		Cyklop Fastjet Technologies (Shanghai) Inc.
+				No 18?Lane 699, Zhang Wengmiao Rd,  Fengxian district, Shanghai China
+				Shanghai    201401
+				CN
+
+28-6F-B9   (hex)		Nokia Shanghai Bell Co., Ltd.
+286FB9     (base 16)		Nokia Shanghai Bell Co., Ltd.
+				No.388 Ning Qiao Road,Jin Qiao Pudong Shanghai
+				Shanghai     201206
+				CN
+
+E0-A1-29   (hex)		Extreme Networks Headquarters
+E0A129     (base 16)		Extreme Networks Headquarters
+				2121 RDU Center Drive
+				Morrisville  NC  27560
+				US
+
+A8-C6-47   (hex)		Extreme Networks Headquarters
+A8C647     (base 16)		Extreme Networks Headquarters
+				2121 RDU Center Drive 
+				Morrisville  NC  27560
+				US
+
+A4-C7-F6   (hex)		Extreme Networks Headquarters
+A4C7F6     (base 16)		Extreme Networks Headquarters
+				2121 RDU Center Drive 
+				Morrisville  NC  27560
+				US
+
