@@ -71,7 +71,9 @@ The local screen choice lasts until the renderer stops; Settings defines its nex
 
 Verified switch models use the same physical port banks as the [Ports page](switch-front-panels.md), including the
 2960CX's odd/even rows and separate RJ45/SFP uplinks. Other models use the application's automatic layout. Large
-panels and multiple switches rotate through pages, without dropping ports. `UNR` means **Unrecognized**; it does not
+panels and multiple switches rotate through pages, without dropping ports. A free port is an empty frame with its number,
+so the panel keeps its shape and nothing on it flickers; the port where the provisioner itself is connected says `cm`, and
+the other uplinks (a link to another switch, a port with many devices) say `UP`. `UNR` means **Unrecognized**; it does not
 mean a module has been registered. See [discovery troubleshooting](unrecognized-devices.md).
 
 ## What the numbers mean

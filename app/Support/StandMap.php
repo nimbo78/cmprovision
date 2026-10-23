@@ -359,6 +359,8 @@ class StandMap
             'board_port' => $boardPort,
             'board' => trim($part['name'].' '.$boardPort),
             'link' => isset($links[$key]) ? $this->parts[$links[$key]]['name'] : null,
+            // the provisioner itself is on this port (not behind a link to another switch): the HDMI display says "cm" there
+            'server' => $this->serverMac !== null && !isset($links[$key]) && in_array($this->serverMac, $p['macs'], true),
             'ifIndex' => $port['ifIndex'],
             'name' => $port['name'],
             'alias' => $port['alias'],
