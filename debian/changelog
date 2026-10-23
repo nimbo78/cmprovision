@@ -1,4 +1,4 @@
-cmprovision4 (2.10.0~dev1) unstable; urgency=medium
+cmprovision4 (2.10.0) unstable; urgency=medium
 
   * A module is named by its host name, or by its MAC address while it has
     none; the serial number is the small print. CMs list: MAC (the link to the
