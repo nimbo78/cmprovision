@@ -37,7 +37,12 @@
 
     function currentTab(search) {
         var m = /(?:^|[?&])tab=([^&]*)/.exec(search || '');
-        return m ? decodeURIComponent(m[1]) : 'status';
+        if (!m) return 'status';
+        try {
+            return decodeURIComponent(m[1]);
+        } catch (e) {
+            return m[1];   // not readable: not the name of a tab, so the section's own tab is not the open one
+        }
     }
 
     /* the address to go to, or null when the section is on the open tab (or is none of ours) */

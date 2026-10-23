@@ -6,11 +6,12 @@
         @endforeach
     </div>
     <a href="{{ route('settings', ['tab' => 'status']) }}" class="text-sm text-link hover:underline">{{ $runningCount }} of {{ count($services) }} running</a>
-    <div class="relative" x-data="{ open: false }" @keydown.escape.window="open = false" @click.outside="open = false">
-        <button type="button" class="cmp-btn cmp-btn-secondary cmp-btn-small" @click="open = ! open" aria-haspopup="menu" :aria-expanded="open.toString()">Logs ▾</button>
-        <div x-show="open" x-cloak class="cmp-menu" role="menu" aria-label="Logs">
+    {{-- a disclosure, not an arrow-key menu: Tab walks the list, Escape closes it and gives the focus back to the button --}}
+    <div class="relative" x-data="{ open: false }" @keydown.escape.window="if (open) { open = false; $refs.logs.focus() }" @click.outside="open = false">
+        <button type="button" x-ref="logs" class="cmp-btn cmp-btn-secondary cmp-btn-small" @click="open = ! open" aria-controls="settings-logs-list" :aria-expanded="open.toString()">Logs ▾</button>
+        <div id="settings-logs-list" x-show="open" x-cloak class="cmp-menu" aria-label="Logs">
             @foreach ($services as $service)
-                <button type="button" role="menuitem" wire:click="{{ $service['method'] }}()" @click="open = false">{{ $service['label'] }}</button>
+                <button type="button" wire:click="{{ $service['method'] }}()" @click="open = false">{{ $service['label'] }}</button>
             @endforeach
         </div>
     </div>

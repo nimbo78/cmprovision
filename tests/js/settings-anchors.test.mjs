@@ -31,6 +31,11 @@ test('an anchor that is none of ours is left alone', () => {
     assert.equal(SettingsAnchors.redirect('/settings', '', '#constructor'), null, 'prototype names are not sections');
 });
 
+test('a broken tab value does not throw', () => {
+    assert.doesNotThrow(() => SettingsAnchors.redirect('/settings', '?tab=%', '#wifi'));
+    assert.equal(SettingsAnchors.redirect('/settings', '?tab=%E0%A4%A', '#wifi'), '/settings?tab=network#wifi', 'an unreadable tab is not the open one');
+});
+
 test('every section id of the tab views is in the table', async () => {
     const { readFileSync, readdirSync } = await import('node:fs');
     const dir = new URL('../../resources/views/livewire/', import.meta.url);

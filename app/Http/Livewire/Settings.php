@@ -43,7 +43,8 @@ class Settings extends Component
 
     public function render()
     {
-        $this->tab = array_key_exists($this->tab, self::TABS) ? $this->tab : 'status';
+        // the property comes from the address and from the browser: ?tab[]=x makes it an array
+        $this->tab = is_string($this->tab) && array_key_exists($this->tab, self::TABS) ? $this->tab : 'status';
 
         $state = app(ServiceState::class);
         $services = [];

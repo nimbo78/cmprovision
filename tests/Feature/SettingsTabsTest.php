@@ -121,6 +121,23 @@ class SettingsTabsTest extends TestCase
         $this->tab('nonsense')->assertSee('dnsmasq (DHCP server)')->assertDontSeeHtml('id="settings-health"');
     }
 
+    public function test_a_tab_that_is_not_a_name_is_the_status_tab()
+    {
+        // ?tab[]=x and a crafted update put an array into the property
+        $this->tab(null)->set('tab', ['x'])->assertSet('tab', 'status')->assertSee('dnsmasq (DHCP server)');
+        $this->actingAs(User::factory()->create());
+        $this->get('/settings?tab[]=x')->assertOk()->assertSee('dnsmasq (DHCP server)');
+    }
+
+    public function test_the_logs_menu_is_a_disclosure_that_gives_the_focus_back()
+    {
+        $html = $this->tab('network')->html();
+        $this->assertStringNotContainsString('role="menu"', $html, 'no arrow-key menu is promised');
+        $this->assertStringContainsString('aria-expanded', $html);
+        $this->assertStringContainsString('aria-controls="settings-logs-list"', $html);
+        $this->assertStringContainsString('id="settings-logs-list"', $html);
+    }
+
     public function test_the_tab_bar_links_to_every_tab_and_marks_the_current_one()
     {
         $page = $this->tab('network');

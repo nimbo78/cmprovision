@@ -11,8 +11,8 @@
         <h1>Settings</h1>
     </div>
 
-    {{-- Narrower than the four tabs, they scroll (app.css): bring the current one into view --}}
-    <nav class="cmp-tabs" aria-label="Settings sections" x-data x-init="$el.querySelector('[aria-current=page]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })">
+    {{-- Narrower than the four tabs, they scroll (app.css): bring the current one into view, sideways only: scrollIntoView would also scroll the page away from a section a link points at --}}
+    <nav class="cmp-tabs" aria-label="Settings sections" x-data x-init="const cur = $el.querySelector('[aria-current=page]'); if (cur) $el.scrollLeft = Math.max(0, cur.offsetLeft - 16)">
         @foreach ($tabs as $key => $name)
             <a href="{{ route('settings', ['tab' => $key]) }}" @if ($tab === $key) aria-current="page" @endif>{{ $name }}</a>
         @endforeach

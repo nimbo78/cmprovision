@@ -148,7 +148,7 @@ body { background: var(--page); color: var(--text); }
     .cmp-card { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 8px; }
 
     /* Settings (2.9): tabs that are links, sections as cards, the health strip and the menu of logs */
-    .cmp-tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin: 14px 0 16px; border-bottom: 1px solid var(--panel-line); }
+    .cmp-tabs { position: relative; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin: 14px 0 16px; border-bottom: 1px solid var(--panel-line); }
     .cmp-tabs::-webkit-scrollbar { display: none; }
     .cmp-tabs a { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent;
         font-weight: 600; white-space: nowrap; color: var(--muted); }
