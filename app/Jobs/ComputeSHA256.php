@@ -23,6 +23,7 @@ class ComputeSHA256 implements ShouldQueue
 
     public $tries = 1;
     public $timeout = 7200;
+    public $deleteWhenMissingModels = true;
 
     /**
      * Create a new job instance.
@@ -42,10 +43,18 @@ class ComputeSHA256 implements ShouldQueue
      */
     public function handle()
     {
+        /* An image fetched from the internet (2.8.0) is checked here, last: it is ready only when what it is is what was published.
+           An uploaded image has no source and none of this applies. */
+        $fetched = $this->image->source_type !== null && $this->image->download_state === 'checking';
+
         if (!$this->image->sha256)
         {
             $this->image->sha256 = hash_file("sha256", $this->image->imagepath());
             $this->image->save();
+        }
+        if ($fetched && $this->image->expected_sha256 && strtolower($this->image->expected_sha256) !== $this->image->sha256)
+        {
+            return $this->reject('The downloaded file is not the published one: its sha256 is '.$this->image->sha256.', the published one is '.strtolower($this->image->expected_sha256).'.');
         }
         if (!$this->image->uncompressed_sha256)
         {
@@ -98,12 +107,51 @@ class ComputeSHA256 implements ShouldQueue
                 $this->image->uncompressed_size = intval($wc);
                 $this->image->save();
             }
+            elseif ($fetched)
+            {
+                return $this->reject('The image does not unpack (the download is damaged): '.mb_substr(trim($sha256sum), 0, 200));
+            }
             else
             {
                 throw new \Exception("Error decompressing/calculating sha256. Ret code=$ret sha256sum=$sha256sum wc=$wc");
             }
 
             $this->image->save();
-        }        
+        }
+
+        if ($fetched)
+        {
+            if ($this->image->expected_uncompressed_sha256 && strtolower($this->image->expected_uncompressed_sha256) !== $this->image->uncompressed_sha256)
+            {
+                return $this->reject('The unpacked image does not match the published checksum: its sha256 is '.$this->image->uncompressed_sha256.', the published one is '.strtolower($this->image->expected_uncompressed_sha256).'.');
+            }
+            $this->image->download_state = null;
+            $this->image->download_error = null;
+            $this->image->save();
+        }
+    }
+
+    /* what was fetched is not what was published: it is deleted, and the image says why (Retry fetches it again from the start) */
+    protected function reject(string $why)
+    {
+        @unlink($this->image->imagepath());
+        $this->image->sha256 = '';
+        $this->image->uncompressed_sha256 = null;
+        $this->image->uncompressed_size = null;
+        $this->image->download_state = 'failed';
+        $this->image->download_error = $why;
+        $this->image->save();
+    }
+
+    /* The job has only one try: an error in the checks (a corrupt archive, a full disk, a timeout) must not leave a fetched image "ready" without hashes */
+    public function failed(\Throwable $e)
+    {
+        $image = Image::find($this->image->id ?? null);
+        if ($image && $image->source_type !== null && $image->download_state === 'checking')
+        {
+            $image->download_state = 'failed';
+            $image->download_error = 'Checking the image failed: '.mb_substr($e->getMessage(), 0, 300);
+            $image->save();
+        }
     }
 }

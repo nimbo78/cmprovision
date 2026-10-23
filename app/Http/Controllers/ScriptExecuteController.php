@@ -272,6 +272,12 @@ exit 1
             return $this->refuse("Could not provision, because there is no active project", 'No active project set in CMprovisioning');
         }
 
+        // an image from the internet is written only after it is fetched, repacked and checked
+        if ($image && ($reason = $image->notReadyReason()))
+        {
+            return $this->refuse($reason);
+        }
+
         $batch = NotificationBatch::current($project);
         $batch->touchEvent();
         $this->cm->notification_batch_id = $batch->id;

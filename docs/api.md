@@ -19,12 +19,12 @@ Replace the server address and set `CMPROVISION_TOKEN` to your token before runn
 | GET | `/api/projects` | List projects with scripts |
 | GET | `/api/projects/{id}` | Read a project with scripts |
 | GET | `/api/projects/{id}/cms` | List a project's modules |
-| GET | `/api/images`, `/api/images/{id}` | List images or read an image |
+| GET | `/api/images`, `/api/images/{id}` | List images or read an image; an image fetched from the internet shows its `download_state` until it is ready (a project cannot take it before), and its source address is never returned |
 | GET | `/api/firmware` | List firmware |
 | GET | `/api/scripts`, `/api/scripts/{id}` | List scripts or read a script |
 | GET | `/api/labels` | List labels |
 | POST | `/api/images` | Upload an image using multipart field `image` |
-| DELETE | `/api/images/{id}` | Delete an image |
+| DELETE | `/api/images/{id}` | Delete an image; one that is being fetched from the internet is cancelled and what it left is removed |
 | PATCH | `/api/projects/{id}` | Update project fields and its script selection |
 | POST | `/api/scripts` | Create a script |
 | PATCH | `/api/scripts/{id}` | Update a script |

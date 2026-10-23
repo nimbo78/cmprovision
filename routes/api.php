@@ -101,7 +101,7 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
         'name' => 'sometimes|string|max:255',
         'device' => 'sometimes|in:cm4',
         'storage' => 'sometimes|string|max:255',
-        'image_id' => 'sometimes|nullable|exists:images,id',
+        'image_id' => ['sometimes', 'nullable', Rule::exists('images', 'id')->whereNull('download_state')->whereNull('download_error')],   // not one still being fetched
         'label_id' => 'sometimes|nullable|exists:labels,id',
         'label_moment' => 'sometimes|in:never,preinstall,postinstall,firstboot',
         'eeprom_firmware' => 'sometimes|nullable|string|max:255',
@@ -129,7 +129,7 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
     {
         $project->scripts()->sync($data['scripts']);
     }
-    if ($project->split_image && $project->image)
+    if ($project->split_image && $project->image && $project->image->isReady())
         $project->image->queueSplit();   // the pieces copy (2.6.1)
 
     try

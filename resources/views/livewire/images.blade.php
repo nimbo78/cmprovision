@@ -1,8 +1,14 @@
-<div class="cmp-page" @if (($hashPending || $splitPending) && !$isOpen) wire:poll.5s @endif>
+<div class="cmp-page" @if (($hashPending || $splitPending || $fetching) && !$isOpen && !$sourcesOpen) wire:poll.5s @endif>
     <div class="contents">
         <div class="cmp-title">
             <h1>Images</h1>
-            <button wire:click="create()" class="cmp-btn ml-auto">Add image</button>
+            @if ($unusedCount)
+            <button wire:click="deleteUnused()" wire:confirm="Delete {{ $unusedCount }} unused {{ $unusedCount === 1 ? 'image' : 'images' }} ({{ \App\Models\Image::size($unusedSize) }})? Images a project uses stay." class="cmp-btn cmp-btn-secondary ml-auto">Delete unused images ({{ $unusedCount }}, {{ \App\Models\Image::size($unusedSize) }})</button>
+            <button wire:click="openSources()" class="cmp-btn cmp-btn-secondary">Add from the internet</button>
+            @else
+            <button wire:click="openSources()" class="cmp-btn cmp-btn-secondary ml-auto">Add from the internet</button>
+            @endif
+            <button wire:click="create()" class="cmp-btn">Add image</button>
         </div>
         <div class="cmp-card px-4 py-3">
             @if (session()->has('message'))
@@ -28,6 +34,10 @@
             @if($isOpen)
                 @include('livewire.addimage')
             @endif
+            @if ($sourcesOpen)
+                <livewire:image-sources key="image-sources" />
+            @endif
+            <p class="text-sm text-fg-muted mb-3">Free disk space for images: {{ \App\Models\Image::size((int) $imageSpace) }}.</p>
             <div class="cmp-card-scroll">
                 <table class="cmp-table min-w-full">
                     <thead>
@@ -41,23 +51,40 @@
                     <tbody>
                         @forelse($images as $i)
                         <tr>
-                            <td><span style="word-break: break-all;">{{ $i->filename }}</span> (added {{ $i->created_at->local()->format("d-M-Y") }})</td>
+                            <td><span style="word-break: break-all;">{{ $i->filename }}</span> (added {{ $i->created_at->local()->format("d-M-Y") }})
+                                @if ($i->source_type)
+                                <div class="text-xs text-fg-muted">From {{ $i->sourceLabel() }}@if ($i->checksumLabel()) · {{ $i->checksumLabel() }}@endif</div>
+                                @endif
+                            </td>
                             <td>
-                                @if ($i->filesize() === null)
+                                @if (!$i->isReady())
+                                @php($pct = $i->download_total ? min(100, floor($i->download_bytes * 100 / $i->download_total)) : 0)
+                                <div class="w-full bg-track rounded-full h-2 overflow-hidden mb-1"><div class="bg-info-bar h-2" style="width: {{ $pct }}%"></div></div>
+                                <span class="{{ $i->download_state === 'failed' ? 'text-neg' : '' }}">{{ $i->downloadLabel() }}{{ $i->downloadRate($speeds[$i->id] ?? null) }}</span>
+                                @elseif ($i->filesize() === null)
                                 <nobr class="text-neg font-bold">file missing on disk</nobr><br>
                                 @else
                                 <nobr>Comp.: {{ number_format($i->filesize()/1000000000,1) }} GB</nobr><br>
                                 @endif
+                                @if ($i->isReady())
                                 <nobr>Uncomp.: {{ $i->uncompressed_size ? number_format($i->uncompressed_size/1000000000,1) : 'unknown' }} GB</nobr>
                                 @if ($i->split_filename || $i->split_queued_at || $i->split_error || $i->splitNeeded())
                                 <br><nobr>Pieces: {{ $i->splitState() }}</nobr>
                                 @endif
+                                @endif
                             </td>
                             <td class="break-all">
+                                @if (!$i->isReady())
+                                —
+                                @else
                                 {{ $i->sha256 ? $i->sha256 : "...still computing hash..." }}<br>
                                 {{ $i->uncompressed_sha256 ? $i->uncompressed_sha256 : "" }}
+                                @endif
                             </td>
                             <td>
+                                @if ($i->download_state === 'failed')
+                                <button wire:click="retry({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Retry</button>
+                                @endif
                                 <button wire:click="delete({{ $i->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
                                 @if (($i->split_filename || $i->split_error) && !$i->splitPreparing() && !$i->splitNeeded())
                                 <button wire:click="removeSplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Remove pieces</button>

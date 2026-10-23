@@ -9,6 +9,7 @@ For direct diagnosis on a target's screen and keyboard, use its [tty2 console](l
 The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connectors and USB roles.
 
 - [First-boot OS check](#first-boot-os-check)
+- [Images from the internet](#images-from-the-internet)
 - [Image download and write recovery](#image-download-and-write-recovery)
 - [Re-provision an installed sensor](#re-provision-an-installed-sensor)
 - [Built-in Wi-Fi as a cold spare](#built-in-wi-fi-as-a-cold-spare)
@@ -58,6 +59,27 @@ If the active project or its configuration changes, the previous confirmation no
 Changes require your web account password. Saved passwords are encrypted with the provisioner's APP_KEY; they never return to the browser. An empty password when editing keeps the stored one. Backups preserve the list together with its matching APP_KEY. Changing one sensor's expired password does not replace a shared saved password.
 
 Keep up to 10 profiles, with at most 3 enabled for automatic checks. Enabled profiles run in order, identical credentials are tried once, and the first usable login with a matching device and sudo access wins. Automatic attempts run only on the first **Check access** of an operation, at most once per minute per module; manual entry remains available during that interval. A changed SSH host key, network failure or mismatched hardware stops the sequence. Finding a password does not erase anything: the normal identity review and separate wipe confirmation still apply.
+
+## Images from the internet
+
+**Add from the internet** on the Images page makes the provisioner fetch an image itself instead of you uploading it from your computer. There are three sources:
+
+- **GitHub release.** Type `owner/name` (for example `WLAN-Pi/pi-gen`); the releases and their images are listed, pre-releases on request. The repositories you used stay in a list of their own.
+- **Raspberry Pi OS.** The images of the official Raspberry Pi list (64 and 32 bit, Lite and Full, legacy).
+- **Any link.** An https address of a `.gz`, `.xz`, `.bz2` or `.zip` file, and optionally its checksum (64 hex digits, or the address of a `.sha256` / `SHA256SUMS` file).
+
+How the fetch goes:
+
+- The image appears in the list with a progress bar, the speed and the time left. A broken connection is tried again after 5, 15, 30, 60 and then every 120 seconds, and the fetch goes on from the byte it has, also after a restart or a kill of the queue worker; the row says why it waits. (A server that cannot resume a download can only deliver a file within one slice of about a minute; the window warns about it, and a longer fetch from such a server fails with that reason.) Twelve failures in a row (about a quarter of an hour without the connection), or twelve slices of about a minute without a byte, fail the image; it says why, and **Retry** goes on from what is on the disk. **Delete** cancels a fetch and removes what it left.
+- The fetch runs in slices of about a minute on the queue of the image checksums, so the checksums and pieces copies of other images are not held up by a download that lasts for hours.
+- The image cannot be chosen in a project, and a module does not write it, until it is fetched **and checked**. Uploaded images are ready as soon as they are stored, as before.
+- What is checked: the downloaded file against the checksum the source published (the GitHub digest, a `.sha256` file next to the file, the checksum list of the release, or the checksum you gave), and for Raspberry Pi OS also the unpacked image against the checksum of the list. A file that is not the published one, or that does not unpack, is deleted and the image says so; Retry then fetches it again. An image without any published checksum is taken only when you tick **Add without a checksum**; the page then says "no published checksum".
+- A `.zip` is repacked into an `.img.gz` on the server (a module can only stream gz, xz and bz2): the image is read from the archive straight into gzip, so no unpacked copy lies on the disk; the archive is deleted when the new file is whole and checked. The archive must hold exactly one `.img` file. On a CM4 this takes minutes for a 6 GB image; the Images page shows the share done.
+- Only https addresses of public servers are accepted. Addresses that point into a private or local network (including the stand's 172.20.0.0/16), numeric hosts and addresses with a user name or password are refused, on every redirect too.
+- GitHub allows 60 requests an hour without a token: the lists are kept for five minutes, and when the limit is reached the window says when to come back.
+- Fetching needs a 64-bit PHP; on a 32-bit system the function is off.
+
+The disk of the provisioner is small (29 GB on the stand's M4+), and the Images page shows what is free. Before a fetch starts the server checks that the file fits with 2 GiB to spare, counting what the other fetches still have to write, a `.zip` with room for its repacked file; if it does not, the message says what is missing. **Delete unused images** removes the images that no project takes (and no module is writing), their pieces copies and the leftovers of failed fetches, after a confirmation that names the number and the size.
 
 ## Image download and write recovery
 

@@ -1,0 +1,158 @@
+[
+ {
+  "tag_name": "draft-only",
+  "name": "Draft",
+  "draft": true,
+  "prerelease": false,
+  "published_at": null,
+  "assets": []
+ },
+ {
+  "tag_name": "26.10-DeadEye",
+  "name": "v26.10-DeadEye",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-10-06T00:18:19Z",
+  "assets": [
+   {
+    "name": "wlanpi-os-26.10-DeadEye-full.img.gz",
+    "size": 1644477876,
+    "state": "uploaded",
+    "content_type": "application/gzip",
+    "digest": "sha256:04c4cd5c63b63f484c97d00fbc1bb39ce27c8f9e47bdf88e37f9a02520312f8b",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/26.10-DeadEye/wlanpi-os-26.10-DeadEye-full.img.gz"
+   },
+   {
+    "name": "wlanpi-os-26.10-DeadEye-full.img.gz.sha256",
+    "size": 102,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": "sha256:cba9f3c2d4d5e92546aa7b37b90de4c050afabdae182887bb34d4e27f90d65de",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/26.10-DeadEye/wlanpi-os-26.10-DeadEye-full.img.gz.sha256"
+   },
+   {
+    "name": "wlanpi-os-26.10-DeadEye-full.info",
+    "size": 177946,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": "sha256:d326f34edd0fed15213b605d768017018237e1ec39603c0da30a8024a6f77685",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/26.10-DeadEye/wlanpi-os-26.10-DeadEye-full.info"
+   },
+   {
+    "name": "wlanpi-os-26.10-DeadEye-full.sbom.xz",
+    "size": 10605044,
+    "state": "uploaded",
+    "content_type": "application/x-xz",
+    "digest": "sha256:c59bc86d9c7028a8e3a33c3d8db2ade9174837c79f8114ff51a3d793c8b3d4ae",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/26.10-DeadEye/wlanpi-os-26.10-DeadEye-full.sbom.xz"
+   },
+   {
+    "name": "wlanpi-os-26.10-DeadEye-SHA256SUMS",
+    "size": 414,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": "sha256:ae0e928c86513d89ac62c3e13e678fff37513d8307c673135ffd580a429aac48",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/26.10-DeadEye/wlanpi-os-26.10-DeadEye-SHA256SUMS"
+   }
+  ]
+ },
+ {
+  "tag_name": "26.11-RC1",
+  "name": "26.11 RC1",
+  "draft": false,
+  "prerelease": true,
+  "published_at": "2026-10-20T10:00:00Z",
+  "assets": [
+   {
+    "name": "wlanpi-os-26.11-RC1-full.img.xz",
+    "size": 1500000000,
+    "state": "uploaded",
+    "content_type": "application/x-xz",
+    "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/26.11-RC1/wlanpi-os-26.11-RC1-full.img.xz"
+   }
+  ]
+ },
+ {
+  "tag_name": "v3.4.4",
+  "name": "v3.4.4",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-02-12T19:46:54Z",
+  "assets": [
+   {
+    "name": "wlanpi-os-v3.4.4-2026-02-12.info",
+    "size": 125409,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": "sha256:431f936c846b9eceb1a67a58d77163e9502709b7161b4740975a7495a9fe872d",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/v3.4.4/wlanpi-os-v3.4.4-2026-02-12.info"
+   },
+   {
+    "name": "wlanpi-os-v3.4.4-2026-02-12.json",
+    "size": 310,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": "sha256:34b70ad6c76d8624745f7fda3ecb62b865331bdf3dbf1fdd3a749f75413d5b1e",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/v3.4.4/wlanpi-os-v3.4.4-2026-02-12.json"
+   },
+   {
+    "name": "wlanpi-os-v3.4.4-2026-02-12.zip",
+    "size": 1234009803,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": "sha256:5c76448ae69834cf8f6d5d0ccd876527fc0e1871948413841c616fd8329e6eb6",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/v3.4.4/wlanpi-os-v3.4.4-2026-02-12.zip"
+   },
+   {
+    "name": "wlanpi-os-v3.4.4-2026-02-12.zip.sha256",
+    "size": 104,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": "sha256:81c49fb7915ccc74219a49b1bbeceabdfb37575f1d298ff286fbc0a6bdcbc43f",
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/v3.4.4/wlanpi-os-v3.4.4-2026-02-12.zip.sha256"
+   }
+  ]
+ },
+ {
+  "tag_name": "v3.3.0",
+  "name": "v3.3.0",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2025-02-17T21:59:46Z",
+  "assets": [
+   {
+    "name": "wlanpi-os_v3.3.0-2025-02-17.info",
+    "size": 125409,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": null,
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/v3.3.0/wlanpi-os_v3.3.0-2025-02-17.info"
+   },
+   {
+    "name": "wlanpi-os_v3.3.0-2025-02-17.json",
+    "size": 310,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": null,
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/v3.3.0/wlanpi-os_v3.3.0-2025-02-17.json"
+   },
+   {
+    "name": "wlanpi-os_v3.3.0-2025-02-17.zip",
+    "size": 1205330402,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": null,
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/v3.3.0/wlanpi-os_v3.3.0-2025-02-17.zip"
+   },
+   {
+    "name": "wlanpi-os_v3.3.0-2025-02-17.zip.sha256",
+    "size": 104,
+    "state": "uploaded",
+    "content_type": "application/octet-stream",
+    "digest": null,
+    "browser_download_url": "https://github.com/WLAN-Pi/pi-gen/releases/download/v3.3.0/wlanpi-os_v3.3.0-2025-02-17.zip.sha256"
+   }
+  ]
+ }
+]
