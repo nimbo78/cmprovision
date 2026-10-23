@@ -44,7 +44,8 @@ card. The card's second line is the MAC address under a host name, or `S/N` and 
 so nothing is shown twice; with a host name the serial number follows on the fourth line.
 
 The table under the front panel has three columns across the whole width: **Port / device**, **Phase** and
-**Progress / result**. The first column is as wide as the longest port and device name needs (at most about half the
+**Progress / result**, which says the percent, the speed and the time left of a module that writes (`63% / 25.0 MiB/s / ETA
+1:00`, the speed as on the device card; a module that has not reported one yet shows the percent and the time). The first column is as wide as the longest port and device name needs (at most about half the
 screen), the result takes the rest. A text that still does not fit is not cut: it rests at its start, runs through its
 column one step at a time (about three columns a second), rests at its end and starts over; a `>` at the end of the
 column says there is more. The same goes for the device name and port on the device card and for the failure line at
