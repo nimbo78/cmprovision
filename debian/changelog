@@ -1,4 +1,4 @@
-cmprovision4 (2.12.0~dev1) unstable; urgency=medium
+cmprovision4 (2.12.0) unstable; urgency=medium
 
   * USB prep: a button on the Dashboard ("Prepare boards over USB") for
     setting a board to boot from the network without writing an image over
