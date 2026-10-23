@@ -4,6 +4,8 @@ namespace App\Http\Livewire;
 
 use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
+use App\Http\Livewire\Concerns\SortsColumns;
+use App\Support\ColumnSort;
 use Livewire\Component;
 use App\Models\Image;
 use App\Services\ImageDownloads;
@@ -14,6 +16,7 @@ use \Illuminate\Http\UploadedFile;
 #[Title('Images')]
 class Images extends Component
 {
+    use SortsColumns;
 
     public $images, $maxfilesize, $freediskspace, $hashPending = false, $splitPending = false;
     public $isOpen = false;
@@ -21,9 +24,20 @@ class Images extends Component
     public $sourcesOpen = false, $fetching = false, $speeds = [], $imageSpace = 0, $unusedCount = 0, $unusedSize = 0;
     public $os32bit = false;
 
+    /* The columns that sort the list by a click on their header; with none chosen the order is the name of the file */
+    protected function columns(): array
+    {
+        return [
+            'filename' => ['first' => 'asc', 'value' => fn (Image $image) => (string) $image->filename],
+            'size' => ['first' => 'desc', 'value' => fn (Image $image) => $image->isReady() ? $image->filesize() : null],
+        ];
+    }
+
     public function render()
     {
-        $this->images = Image::orderBy('filename')->orderBy('id')->get();
+        [$sort, $dir] = $this->sorting();
+        $this->images = ColumnSort::apply(Image::orderBy('filename')->orderBy('id')->get(), $this->columns(), $sort, $dir,
+            fn ($a, $b) => strnatcasecmp((string) $a->filename, (string) $b->filename) ?: $a->id <=> $b->id);
         $this->maxfilesize = UploadedFile::getMaxFilesize();
         // uploads pass through PHP's temporary directory before landing in public/uploads
         $tmpdir = ini_get('upload_tmp_dir') ?: sys_get_temp_dir();
@@ -46,7 +60,7 @@ class Images extends Component
         $this->unusedSize = app(ImageSpace::class)->bytes($unused);
         $this->splitPending = $this->images->contains(function ($image) { return $image->splitPreparing(); });
 
-        return view('livewire.images');
+        return view('livewire.images', ['sortKey' => $sort, 'sortDir' => $dir]);
     }
 
     public function openModal()

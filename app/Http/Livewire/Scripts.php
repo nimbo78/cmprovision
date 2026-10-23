@@ -3,6 +3,8 @@
 namespace App\Http\Livewire;
 
 use Livewire\Attributes\Title;
+use App\Http\Livewire\Concerns\SortsColumns;
+use App\Support\ColumnSort;
 use Livewire\Component;
 use App\Models\Package;
 use App\Models\Script;
@@ -10,6 +12,7 @@ use App\Models\Script;
 #[Title('Scripts')]
 class Scripts extends Component
 {
+    use SortsColumns;
     public $isOpen = false;
     public $scripts, $packages;
     public $scriptid, $name, $script_type, $bg, $priority, $script;
@@ -22,11 +25,23 @@ class Scripts extends Component
         'script' => 'required'
     ];
 
+    /* The columns that sort the table of scripts by a click on their header; with none chosen the order is the name */
+    protected function columns(): array
+    {
+        return [
+            'name' => ['first' => 'asc', 'value' => fn (Script $script) => (string) $script->name],
+            'type' => ['first' => 'asc', 'value' => fn (Script $script) => (string) $script->script_type],
+            'priority' => ['first' => 'asc', 'value' => fn (Script $script) => is_numeric($script->priority) ? (int) $script->priority : null],
+        ];
+    }
+
     public function render()
     {
-        $this->scripts = Script::orderBy('name')->get();
+        [$sort, $dir] = $this->sorting();
+        $this->scripts = ColumnSort::apply(Script::orderBy('name')->get(), $this->columns(), $sort, $dir,
+            fn ($a, $b) => strnatcasecmp((string) $a->name, (string) $b->name) ?: $a->id <=> $b->id);
         $this->packages = Package::orderBy('deb_package')->orderBy('id')->get();
-        return view('livewire.scripts');
+        return view('livewire.scripts', ['sortKey' => $sort, 'sortDir' => $dir]);
     }
 
     public function openModal()

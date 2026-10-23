@@ -4,6 +4,8 @@ namespace App\Http\Livewire;
 
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
+use App\Http\Livewire\Concerns\SortsColumns;
+use App\Support\ColumnSort;
 use Livewire\Component;
 use App\Models\Image;
 use App\Models\Label;
@@ -22,6 +24,7 @@ use App\Services\ProjectActivator;
 #[Title('Projects')]
 class Projects extends Component
 {
+    use SortsColumns;
     public $isOpen = false;
     public $active = true;
     public $projects, $activeProject;
@@ -59,9 +62,20 @@ class Projects extends Component
         ];
     }
 
+    /* The columns that sort the table of projects by a click on their header; with none chosen the order is the name */
+    protected function columns(): array
+    {
+        return [
+            'name' => ['first' => 'asc', 'value' => fn (Project $project) => (string) $project->name],
+            'image' => ['first' => 'asc', 'value' => fn (Project $project) => $project->image?->filename],
+        ];
+    }
+
     public function render()
     {
-        $this->projects = Project::orderBy('name')->get();
+        [$sort, $dir] = $this->sorting();
+        $this->projects = ColumnSort::apply(Project::with('image')->orderBy('name')->get(), $this->columns(), $sort, $dir,
+            fn ($a, $b) => strnatcasecmp((string) $a->name, (string) $b->name) ?: $a->id <=> $b->id);
         $this->activeProject = Project::getActiveId();
         // the images a project can take: the ready ones and the project's own (an image still being fetched cannot be written)
         $this->images = Image::where(function ($query) {
@@ -82,7 +96,7 @@ class Projects extends Component
             $this->label_id = $this->labels[0]->id;
 
         // view data, not a property: Livewire 3 does not serialize Firmware objects
-        return view('livewire.projects', ['firmwareChannels' => $firmwareChannels, 'firmwareChanges' => $this->firmwareChanges()]);
+        return view('livewire.projects', ['firmwareChannels' => $firmwareChannels, 'firmwareChanges' => $this->firmwareChanges(), 'sortKey' => $sort, 'sortDir' => $dir]);
     }
 
     /** what the chosen firmware changes, against the one the project has now when it differs; null without notes for it */

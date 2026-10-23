@@ -10,7 +10,12 @@
     <section class="cmp-card p-4" aria-label="USB report list">
         <div class="cmp-card-scroll">
             <table class="cmp-table text-sm whitespace-nowrap">
-                <thead><tr><th>Ethernet MAC</th><th>Serial</th><th>Received</th><th>Context</th></tr></thead>
+                <thead><tr>
+                    <x-sort-th column="mac" :sort="$sortKey" :dir="$sortDir">Ethernet MAC</x-sort-th>
+                    <x-sort-th column="serial" :sort="$sortKey" :dir="$sortDir">Serial</x-sort-th>
+                    <x-sort-th column="received" :sort="$sortKey" :dir="$sortDir">Received</x-sort-th>
+                    <x-sort-th column="context" :sort="$sortKey" :dir="$sortDir">Context</x-sort-th>
+                </tr></thead>
                 <tbody>
                 @forelse ($rows as $item)
                     <tr>

@@ -21,8 +21,8 @@
                 <table class="cmp-table w-full">
                     <thead>
                         <tr>
-                            <th>Project name</th>
-                            <th>Uses image</th>
+                            <x-sort-th column="name" :sort="$sortKey" :dir="$sortDir">Project name</x-sort-th>
+                            <x-sort-th column="image" :sort="$sortKey" :dir="$sortDir">Uses image</x-sort-th>
                             <th>Action</th>
                         </tr>
                     </thead>

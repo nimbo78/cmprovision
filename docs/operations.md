@@ -30,6 +30,11 @@ board yet, no host name) are always last, and rows that tie keep the order by ti
 (`/dashboard?sort=time&dir=asc`, `/cms?sort=hostname`), so it stays through a reload and a link carries it; the CSV export of CMs
 follows the order on the screen.
 
+The same click sorts the lists of **Images** (file name, size of the file), **Projects** (name, image), **Scripts** (name, type,
+priority as a number), **Labels** (name, type, printer host) and **USB diagnostics** (MAC, serial, time received, context: of the
+latest 50 reports; the report that opens by itself stays the latest). Without a click each list is in the order it always was, by name,
+and the USB reports newest first.
+
 ## How a module is named
 
 A module is known by its **MAC address** (the one of its Ethernet port, which belongs to the module and stays with it on

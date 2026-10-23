@@ -42,8 +42,8 @@
                 <table class="cmp-table min-w-full">
                     <thead>
                         <tr>
-                            <th>Filename</th>
-                            <th>Size</th>
+                            <x-sort-th column="filename" :sort="$sortKey" :dir="$sortDir">Filename</x-sort-th>
+                            <x-sort-th column="size" :sort="$sortKey" :dir="$sortDir">Size</x-sort-th>
                             <th>SHA256</th>
                             <th>Action</th>
                         </tr>

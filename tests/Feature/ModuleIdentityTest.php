@@ -105,7 +105,7 @@ class ModuleIdentityTest extends TestCase
             'usb_path' => '1-2', 'report' => $report, 'received_at' => now()->subMinute()]);
 
         $html = Livewire::test(UsbDiagnostics::class)->html();
-        $this->assertMatchesRegularExpression('~<th>Ethernet MAC</th>\s*<th>Serial</th>~', $html);
+        $this->assertMatchesRegularExpression("~sortBy\('mac'\)[^<]*>Ethernet MAC.*?sortBy\('serial'\)[^<]*>Serial~s", $html);
         $this->assertStringContainsString('not reported', $html);
         $this->assertStringContainsString('1000000000000005', $html);
     }
