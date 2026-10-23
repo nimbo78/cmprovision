@@ -330,5 +330,104 @@ class RenderingTest(unittest.TestCase):
             self.assertIn('DEVICE CARD', rendered)
 
 
+class LayoutTest(unittest.TestCase):
+    """The header lines up with the logo, the table uses the width, and a text that does not fit scrolls."""
+
+    LONG_PORT = 't-iof-sw01-provision Gi0/1'
+    LONG_NAME = 'wlanpi-1-very-long-device-name-sensor0'
+    LONG_TEXT = LONG_PORT + ' / ' + LONG_NAME
+    LONG_DETAIL = 'The module stopped reporting for a long time, check power and the cable on the port'
+
+    def long_snapshot(self):
+        data = snapshot()
+        data['modules'] = [dict(device(), port=self.LONG_PORT, name=self.LONG_NAME, state='fail', phase='failed', percent=None, speed=None, detail=self.LONG_DETAIL),
+                           dict(device('1000000000000002'), port='sw01 Gi0/2', name='wlanpi-demo')]
+        return data
+
+    def row_of(self, canvas, text):
+        return next(line for line in canvas.plain().splitlines() if text in line)
+
+    def test_the_name_is_on_the_middle_row_of_the_logo_with_a_two_column_gap(self):
+        lines = w.frame(snapshot(), 112, 37, now=1001).plain().splitlines()
+        self.assertEqual('.----.', lines[0][:6])
+        self.assertTrue(lines[1].startswith('| cm |  cmprovision  PROVISIONING STAND'), lines[1])
+        self.assertEqual("'----'", lines[2][:6])
+        self.assertEqual('', lines[0][6:].strip()[:0], 'nothing else of the name on the logo rows above and below')
+        self.assertNotIn('cmprovision', lines[0] + lines[2])
+        self.assertNotIn('PROVISIONING', lines[0] + lines[2])
+
+    def test_a_text_that_fits_stays_still_and_a_longer_one_rests_runs_and_starts_over(self):
+        c = w.Canvas(40, 1)
+        c.marquee(0, 0, 'short', 10)
+        self.assertEqual('short', c.plain())
+        text = 'abcdefghijklmnopqrstuvwxyz'      # 26 characters in a column of 10: nine show, the tenth says there is more
+        seen = []
+        for step in range(2 * w.MARQUEE_REST + 17 + 3):
+            c = w.Canvas(40, 1, step=step)
+            c.marquee(0, 0, text, 10)
+            seen.append(c.plain())
+        self.assertEqual('abcdefghi>', seen[0])
+        self.assertEqual(['abcdefghi>'] * (w.MARQUEE_REST + 1), seen[:w.MARQUEE_REST + 1], 'it rests at the start')
+        self.assertEqual('bcdefghij>', seen[w.MARQUEE_REST + 1], 'then runs one column a step')
+        end = 'rstuvwxyz'
+        self.assertIn(end, seen, 'the last characters are shown in full')
+        self.assertNotIn('>', seen[seen.index(end)], 'with nothing more to come at the end')
+        self.assertEqual(seen[0], seen[2 * w.MARQUEE_REST + 17], 'and it starts over')
+
+    def test_a_canvas_knows_whether_anything_scrolls_so_the_screen_is_redrawn_fast_only_then(self):
+        c = w.Canvas(40, 2)
+        c.marquee(0, 0, 'fits', 10)
+        self.assertFalse(c.scrolls)
+        c.marquee(0, 1, 'x' * 30, 10)
+        self.assertTrue(c.scrolls)
+
+    def test_the_port_and_device_column_grows_to_the_longest_name_when_the_screen_is_wide(self):
+        c = w.frame(self.long_snapshot(), 172, 40, view='desk', now=1001)
+        self.assertIn(self.LONG_TEXT + ' ', self.row_of(c, 'Gi0/1 / '), 'a 172-column screen shows the whole name, nothing scrolls')
+        self.assertFalse(c.scrolls)
+
+    def test_the_table_has_a_rule_under_its_header_across_the_whole_width(self):
+        for cols in (172, 112):
+            lines = w.frame(self.long_snapshot(), cols, 40, view='desk', now=1001).plain().splitlines()
+            head = next(i for i, line in enumerate(lines) if line.startswith('PORT / DEVICE'))
+            self.assertEqual('-' * cols, lines[head + 1])
+            self.assertTrue(lines[head].split()[-1] == 'RESULT')
+            self.assertTrue(lines[head + 2].strip(), 'the first row follows the rule')
+
+    def test_on_a_narrower_screen_the_long_name_scrolls_through_the_column_until_all_of_it_was_seen(self):
+        seen = set()
+        shown = []
+        for step in range(0, 80):
+            c = w.frame(self.long_snapshot(), 112, 40, view='desk', now=1001, step=step)
+            line = self.row_of(c, 'Gi0/1 / ')
+            shown.append(line)
+            seen.add(line.split('  ')[0].rstrip('> '))
+        text = ' '.join(shown)
+        self.assertIn(self.LONG_NAME[-7:] + ' ', text + ' ', 'the end of the device name comes into view')
+        self.assertTrue(c.scrolls)
+        self.assertIn('>', shown[0])
+        # the other module's short text does not move
+        self.assertTrue(all('sw01 Gi0/2 / wlanpi-demo' in self.row_of(w.frame(self.long_snapshot(), 112, 40, view='desk', now=1001, step=s), 'Gi0/2 / ') for s in (0, 5, 30)))
+
+    def test_a_long_result_uses_the_rest_of_the_row_and_scrolls_only_when_it_must(self):
+        wide = w.frame(self.long_snapshot(), 172, 40, view='desk', now=1001)
+        self.assertIn(self.LONG_DETAIL, self.row_of(wide, 'Gi0/1 / '))
+        narrow = w.frame(self.long_snapshot(), 112, 40, view='desk', now=1001)
+        self.assertNotIn(self.LONG_DETAIL, narrow.plain())
+
+    def test_the_device_card_and_the_alert_line_scroll_too(self):
+        data = self.long_snapshot()
+        data['modules'][0]['name'] = 'sensor-with-an-extremely-long-hostname-for-the-scroll-test'
+        card = [w.frame(data, 112, 40, view='desk', now=1001, step=step).plain().splitlines()[8].split('|')[-2] for step in range(0, 120)]
+        self.assertTrue(card[0].strip().startswith('sensor-with-an'))
+        self.assertTrue(any('scroll-test' in line for line in card), 'the end of the name of the device on the card comes into view')
+        data = self.long_snapshot()
+        tail = []
+        for step in range(0, 120):
+            c = w.frame(data, 100, 40, view='desk', now=1001, step=step)
+            tail.append(c.plain().splitlines()[36])   # the alert line, four rows above the bottom
+        self.assertTrue(any('the port' in line for line in tail), 'the end of the alert shows up as it runs')
+
+
 if __name__ == '__main__':
     unittest.main()
