@@ -464,6 +464,34 @@ class IdentityTest(unittest.TestCase):
             self.assertNotIn('\n1000000000000001', rendered)
 
 
+class SpeedInTheTableTest(unittest.TestCase):
+    """The table says how fast the image goes, as the device card does, next to the percent and the time left."""
+
+    def row(self, module, cols=137):
+        data = snapshot()
+        data['modules'] = [module]
+        c = w.frame(data, cols, 38, view='desk', now=1001)
+        return next(line for line in c.plain().splitlines() if 'sw01 Gi0/1 / ' in line)
+
+    def test_a_module_that_writes_shows_percent_speed_and_time_left(self):
+        self.assertIn('63% / 25.0 MiB/s / ETA 1:00', self.row(device()))
+
+    def test_a_module_with_no_speed_yet_shows_what_it_knew_before(self):
+        row = self.row(dict(device(), speed=None))
+        self.assertIn('63% / ETA 1:00', row)
+        self.assertNotIn('MiB/s', row)
+
+    def test_the_card_and_the_table_say_the_speed_the_same_way(self):
+        data = snapshot()
+        data['modules'] = [dict(device(), speed=3.5 * 1048576)]
+        rendered = w.frame(data, 137, 38, view='desk', now=1001).plain()
+        self.assertEqual(2, rendered.count('3.5 MiB/s'), 'once on the card, once in the table')
+
+    def test_a_finished_module_shows_its_result_not_a_speed(self):
+        row = self.row(dict(device(), phase='done', state='ok', detail='Provisioning completed'))
+        self.assertNotIn('MiB/s', row)
+
+
 class ProgressBarTest(unittest.TestCase):
     def test_the_bar_and_its_percent_fit_the_device_card_at_every_width(self):
         for cols in (100, 112, 137, 172):   # below 100 columns there is no device card

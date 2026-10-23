@@ -519,7 +519,8 @@ def table(c, y, modules, tick):
     start = (tick % max(1, math.ceil(len(modules) / capacity))) * capacity
     for i, m in enumerate(modules[start:start + capacity]):
         ink, row = INK.get(m['state'], 'dim'), y + 2 + i
-        result = ((str(m['percent']) + '% / ETA ' + duration(m.get('eta'))) if m.get('percent') is not None and m['phase'] != 'done'
+        speed = ('%.1f MiB/s / ' % (m['speed'] / 1048576)) if m.get('speed') else ''   # as on the device card
+        result = ((str(m['percent']) + '% / ' + speed + 'ETA ' + duration(m.get('eta'))) if m.get('percent') is not None and m['phase'] != 'done'
                   else (m.get('detail') or 'Cycle ' + duration(m.get('cycle'))))
         c.marquee(0, row, names[start + i], first, ink)
         c.text(x_phase, row, phase(m)[:phase_width], ink)
