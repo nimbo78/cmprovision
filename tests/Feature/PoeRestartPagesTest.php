@@ -35,9 +35,9 @@ class PoeRestartPagesTest extends TestCase
         $this->assertSame([], $this->fake->walks, 'a slow switch does not hold the card back');
         $card->call('loadPower')
             ->assertSee('sw01 GE0/0/3 · delivering 6.9 W')
-            ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on sw01 GE0/0/3? PoE goes off for 5 s; the module boots from the network and is provisioned again."')
+            ->assertSeeHtml('wire:confirm="Restart e4:5f:01:62:9f:d3 on sw01 GE0/0/3? PoE goes off for 5 s; the module boots from the network and is provisioned again."')
             ->call('restart')
-            ->assertSee('Restarted sw01 GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
+            ->assertSee('Restarted sw01 GE0/0/3 (e4:5f:01:62:9f:d3): PoE was off for 5 s.');
     }
 
     public function test_the_card_says_why_there_is_no_restart()
@@ -56,7 +56,7 @@ class PoeRestartPagesTest extends TestCase
         $two = $this->secondSwitch();
         Livewire::test(CmCard::class, ['serial' => $two->serial])->call('loadPower')
             ->assertSee('sw02 GE0/0/3 · delivering 6.9 W')
-            ->assertSeeHtml('wire:confirm="Restart 10000000e611110e on sw02 GE0/0/3? PoE goes off for 5 s;');
+            ->assertSeeHtml('wire:confirm="Restart e4:5f:01:62:9f:d5 on sw02 GE0/0/3? PoE goes off for 5 s;');
     }
 
     public function test_the_card_says_which_switch_is_silent_when_it_does_not_find_the_module()
@@ -101,9 +101,9 @@ class PoeRestartPagesTest extends TestCase
         Livewire::test(ProvisioningStatus::class)
             ->assertSee('Restart failed (1)')
             ->assertSeeHtml('<span wire:loading wire:target="restart('.$cm->id.')">Restarting…</span>')
-            ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on GE0/0/3? PoE goes off for 5 s; the module boots from the network and is provisioned again."')
+            ->assertSeeHtml('wire:confirm="Restart e4:5f:01:62:9f:d3 on GE0/0/3? PoE goes off for 5 s; the module boots from the network and is provisioned again."')
             ->call('restartFailed')
-            ->assertSee('Restarted sw01 GE0/0/3 (10000000e611110c): PoE was off for 5 s.')
+            ->assertSee('Restarted sw01 GE0/0/3 (e4:5f:01:62:9f:d3): PoE was off for 5 s.')
             ->assertDispatched('poe-outages-changed');
     }
 
@@ -162,8 +162,8 @@ class PoeRestartPagesTest extends TestCase
         $cm->update(['provisioning_board' => 'GE0/0/1']);
         $this->batchWith($cm);
         Livewire::test(ProvisioningStatus::class)
-            ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on GE0/0/1? PoE goes off for 5 s;')
+            ->assertSeeHtml('wire:confirm="Restart e4:5f:01:62:9f:d3 on GE0/0/1? PoE goes off for 5 s;')
             ->call('restart', $cm->id)
-            ->assertSee('Restarted sw01 GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
+            ->assertSee('Restarted sw01 GE0/0/3 (e4:5f:01:62:9f:d3): PoE was off for 5 s.');
     }
 }

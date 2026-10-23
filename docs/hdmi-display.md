@@ -39,6 +39,10 @@ and 4K fit two. A compact switch front panel stays together when it fits beside 
 small `cm` tile with the name of the stand on the tile's middle row, and a plain-text project name, rather than a large
 word drawn from hash characters.
 
+A module is named by its host name, or by its MAC address while it has none, in the table and as the title of the device
+card. The card's second line is the MAC address under a host name, or `S/N` and the serial number under a MAC address,
+so nothing is shown twice; with a host name the serial number follows on the fourth line.
+
 The table under the front panel has three columns across the whole width: **Port / device**, **Phase** and
 **Progress / result**. The first column is as wide as the longest port and device name needs (at most about half the
 screen), the result takes the rest. A text that still does not fit is not cut: it rests at its start, runs through its
@@ -81,7 +85,7 @@ hardware sensors. If application data stops updating for more than ten seconds, 
 footer. A switch that stops answering keeps its last known ports with an explicit warning.
 
 No image files, project scripts, account passwords, SNMP credentials or run tokens are sent to the terminal. The local
-screen is intended for a trusted support area: it shows device names, serial numbers, project names and failure hints.
+screen is intended for a trusted support area: it shows device names, MAC addresses, serial numbers, project names and failure hints.
 
 ## Services and troubleshooting
 

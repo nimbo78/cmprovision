@@ -8,6 +8,7 @@ For a CM4 that cannot enter normal network boot, use [USB provisioning](usb-prov
 For direct diagnosis on a target's screen and keyboard, use its [tty2 console](local-console.md).
 The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connectors and USB roles.
 
+- [How a module is named](#how-a-module-is-named)
 - [The Settings page](#the-settings-page)
 - [First-boot OS check](#first-boot-os-check)
 - [Images from the internet](#images-from-the-internet)
@@ -17,6 +18,15 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 - [Wi-Fi networks](#wi-fi-networks)
 - [Switches and PoE restart](#switches-and-poe-restart)
 - [Network access](#network-access)
+
+## How a module is named
+
+A module is known by its **MAC address** (the one of its Ethernet port, which belongs to the module and stays with it on
+any carrier board) and, once the system written to it has started, by its **host name**. Every page, the HDMI display
+and the messages to chats show the host name when there is one and the MAC address when there is not; the MAC is shown
+beside the host name. The **serial number** of the board is the small print: the Serial column of the CMs list, a row on
+the module card, `S/N` on the HDMI device card, `serial` in the JSON of a webhook. The label placeholders `$mac`,
+`$serial` and `$hostname` all stay. The address of a module card, `/cms/<serial>`, is the same as before.
 
 ## The Settings page
 
@@ -150,7 +160,7 @@ Files under `/uploads`, including OS images and packages, can be downloaded by a
 ## Unrecognized devices
 
 On Ports, **Unrecognized** / **UNR** means that a MAC has not been matched to a
-module serial. A new module is added automatically when its utility OS requests
+module. A new module is added automatically when its utility OS requests
 the provisioning script; no manual registration is needed. The initial booting
 window is 180 seconds for recognized Raspberry Pi MACs with a known link age.
 The later unrecognized state does not prove a hardware fault. Follow the

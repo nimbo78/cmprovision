@@ -351,6 +351,13 @@ CHIP = ['    .--------------------.', ' +--|    WLAN Pi M4+     |--+',
 INK = {'ok': 'good', 'run': 'run', 'fail': 'fail', 'stale': 'warn', 'unknown': 'dim'}
 
 
+def identity(module):
+    """The line under a module's name: its MAC under a host name; its serial under a name that already is the MAC."""
+    if module.get('hostname'):
+        return safe(module.get('mac') or module.get('serial'))
+    return 'S/N ' + safe(module.get('serial')) if module.get('mac') else safe(module.get('serial'))
+
+
 def phase(module):
     if module.get('state') == 'stale':
         return 'NO REPORT'
@@ -460,12 +467,14 @@ def detail(c, x, y, width, module, now):
         return
     ink = INK.get(module.get('state'), 'dim')
     c.marquee(x, y, module['name'], width, 'accent')
-    c.text(x, y + 1, module['serial'], 'dim', width)
+    c.text(x, y + 1, identity(module), 'dim', width)
     c.marquee(x, y + 2, module['port'], width, 'dim')
+    if module.get('hostname'):
+        c.text(x, y + 3, 'S/N ' + safe(module.get('serial')), 'dim', width)
     c.text(x, y + 4, phase(module), ink, width)
     pct = module.get('percent')
     if pct is not None:
-        bar_width = min(width - 2, 36)
+        bar_width = max(10, min(width - 8, 36))   # room for '[', '] ' and '100%'
         fill = round(bar_width * max(0, min(100, pct)) / 100)
         c.text(x, y + 5, '[' + '#' * fill + '.' * (bar_width - fill) + '] ' + str(pct) + '%', ink, width)
     c.text(x, y + 7, ('%.1f MiB/s / ETA %s' % (module['speed'] / 1048576, duration(module.get('eta'))))
@@ -538,7 +547,7 @@ def flow(c, data, module, now, tick):
         c.text(x + 12, cy + 2, phase(m), ink, width - 14)
         c.text(x + 12, cy + 3, (str(m['percent']) + '%') if m.get('percent') is not None else m.get('detail'), ink, width - 14)
         c.text(x + 12, cy + 4, 'CYCLE ' + duration(m.get('cycle')), 'dim', width - 14)
-        c.text(x + 2, cy + 6, m['serial'], 'dim', width - 4)
+        c.text(x + 2, cy + 6, identity(m), 'dim', width - 4)
     if not modules:
         c.text(0, y + 3, 'Waiting for connected modules.', 'dim')
 
@@ -558,7 +567,7 @@ def engineer(c, data, module, now, tick):
             {'write': 'WRITE', 'verify': 'VERIFY', 'firstboot': 'OS'}.get(module['phase'], 'BOOT'))
     for row in range(3):
         c.text(x, dy + row, ' '.join(SMALL[ch][row] for ch in word), ink)
-    c.text(x, dy + 4, module['serial'], 'dim')
+    c.text(x, dy + 4, identity(module), 'dim')
     diag = module.get('diagnostics')
     c.wrap(x, dy + 6, (diag['title'] if diag else module.get('detail')) or 'No diagnostic snapshot yet.', c.cols - x, 2, ink)
     if diag:

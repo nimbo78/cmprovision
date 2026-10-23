@@ -72,6 +72,31 @@ class WallboardTest extends TestCase
         $this->assertSame('write', $old->fresh()->phase);
     }
 
+    public function test_a_module_is_named_by_its_host_name_or_its_mac_and_never_by_its_serial()
+    {
+        Cm::create(['serial' => '1000000000000001', 'mac' => 'e4:5f:01:00:00:01', 'phase' => 'done', 'polled_at' => now()]);
+        Cm::create(['serial' => '1000000000000002', 'mac' => 'e4:5f:01:00:00:02', 'hostname' => 'wlanpi-sensor2', 'phase' => 'done', 'polled_at' => now()]);
+
+        $modules = collect(app(WallboardSnapshot::class)->current()['modules'])->keyBy('serial');
+
+        $this->assertSame(['e4:5f:01:00:00:01', 'e4:5f:01:00:00:01', null], [$modules['1000000000000001']['name'], $modules['1000000000000001']['mac'], $modules['1000000000000001']['hostname']]);
+        $this->assertSame(['wlanpi-sensor2', 'e4:5f:01:00:00:02', 'wlanpi-sensor2'], [$modules['1000000000000002']['name'], $modules['1000000000000002']['mac'], $modules['1000000000000002']['hostname']]);
+    }
+
+    public function test_an_unregistered_usb_module_is_named_by_the_mac_it_reported()
+    {
+        $report = ModuleDiagnostics::parse("CMPROVISION_DIAGNOSTICS_V1\ncontext=discovery\nserial=1000000000000003\ntarget=/dev/mmcblk0\nblock=missing\ncontroller=present\nthrottled=0x0\n");
+        UsbDiagnosticReport::create(['serial' => '1000000000000003', 'boot_id' => 'boot', 'event_id' => 'event', 'mac' => 'e4:5f:01:00:00:03',
+            'usb_path' => '/dev/ttyACM0', 'report' => $report, 'received_at' => now()->subSeconds(18)]);
+        UsbDiagnosticReport::create(['serial' => '1000000000000004', 'boot_id' => 'boot', 'event_id' => 'event', 'mac' => null,
+            'usb_path' => '/dev/ttyACM1', 'report' => $report, 'received_at' => now()->subSeconds(20)]);
+
+        $modules = collect(app(WallboardSnapshot::class)->current()['modules'])->keyBy('serial');
+
+        $this->assertSame('e4:5f:01:00:00:03', $modules['1000000000000003']['name']);
+        $this->assertSame('Unregistered module', $modules['1000000000000004']['name']);
+    }
+
     public function test_the_command_keeps_an_atomic_world_readable_file_for_the_display_user()
     {
         $directory = sys_get_temp_dir().'/wallboard-'.uniqid();

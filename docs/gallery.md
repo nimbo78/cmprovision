@@ -4,6 +4,8 @@
 
 Screenshots of the current interface, captured from a disposable local copy on 17 October 2026. **All device records, projects, network readings and switch responses are demo data.** Speeds, power readings and completion times are illustrative, not hardware measurements. The images and firmware listed in the demo are placeholders.
 
+Since 2.10 a module is named by its MAC address and host name and the serial number moves to the end of the row; the CMs, Dashboard, Ports and module screenshots below were taken before that and still lead with the serial.
+
 Most views use **Warm · Light · Compact** at a 1440-pixel browser width. Each screenshot links to its original PNG; dialogs and status panels are captured separately so their controls remain readable.
 
 | Main tabs | More views |
@@ -20,9 +22,9 @@ Follow the active batch without opening individual records. Modules show their c
 
 ## CMs
 
-Search the module inventory, review each device's latest result and export records as CSV. Open a serial number for the device's detailed record.
+Search the module inventory, review each device's latest result and export records as CSV. Open a MAC address for the device's detailed record.
 
-<a href="../assets/readme/screenshots/cms.png"><img src="../assets/readme/screenshots/cms.png" width="100%" alt="CMs inventory showing serial numbers, model, board, project, provisioning dates and status"></a>
+<a href="../assets/readme/screenshots/cms.png"><img src="../assets/readme/screenshots/cms.png" width="100%" alt="CMs inventory showing MAC addresses, host names, serial numbers, model, board, project, provisioning dates and status"></a>
 
 ## Ports
 

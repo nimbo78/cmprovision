@@ -429,5 +429,49 @@ class LayoutTest(unittest.TestCase):
         self.assertTrue(any('the port' in line for line in tail), 'the end of the alert shows up as it runs')
 
 
+class IdentityTest(unittest.TestCase):
+    """A module is its host name or its MAC; the serial is never the name and never shown twice."""
+
+    MAC = 'e4:5f:01:62:9f:d3'
+
+    def card(self, **extra):
+        data = snapshot()
+        data['modules'] = [dict(device(), mac=self.MAC, **extra)]
+        c = w.frame(data, 112, 40, view='desk', now=1001)
+        lines = c.plain().splitlines()
+        return [line.split('|')[-2].strip() for line in lines[8:12]]
+
+    def test_the_card_of_a_module_with_a_host_name_shows_the_host_name_the_mac_the_port_and_the_serial_last(self):
+        self.assertEqual(['wlanpi-sensor1', self.MAC, 'sw01 Gi0/1', 'S/N 1000000000000001'],
+                         self.card(name='wlanpi-sensor1', hostname='wlanpi-sensor1'))
+
+    def test_the_card_of_a_module_without_one_is_titled_by_its_mac_and_the_serial_is_not_a_second_title(self):
+        card = self.card(name=self.MAC, hostname=None)
+        self.assertEqual([self.MAC, 'S/N 1000000000000001', 'sw01 Gi0/1'], card[:3])
+        self.assertEqual(1, card.count(self.MAC))
+
+    def test_a_snapshot_of_the_older_shape_still_draws(self):
+        # no mac and no hostname keys (the data unit of an earlier version): the serial is under the name as before
+        self.assertEqual(['wlanpi-demo', '1000000000000001', 'sw01 Gi0/1'],
+                         [line.split('|')[-2].strip() for line in w.frame(snapshot(), 112, 40, view='desk', now=1001).plain().splitlines()[8:11]])
+
+    def test_the_other_views_show_the_same_second_line(self):
+        data = snapshot()
+        data['modules'] = [dict(device(), mac=self.MAC, hostname=None, name=self.MAC)]
+        for view in ('flow', 'engineer'):
+            rendered = w.frame(data, 137, 38, view=view, now=1001).plain()
+            self.assertIn('S/N 1000000000000001', rendered, view)
+            self.assertNotIn('\n1000000000000001', rendered)
+
+
+class ProgressBarTest(unittest.TestCase):
+    def test_the_bar_and_its_percent_fit_the_device_card_at_every_width(self):
+        for cols in (100, 112, 137, 172):   # below 100 columns there is no device card
+            rendered = w.frame(snapshot(), cols, 38, view='desk', now=1001).plain()
+            line = next(line for line in rendered.splitlines() if '[#' in line)
+            self.assertIn('] 63%', line, cols)
+            self.assertNotIn('~', line, cols)
+
+
 if __name__ == '__main__':
     unittest.main()

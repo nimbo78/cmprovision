@@ -113,7 +113,7 @@ class CmCard extends Component
             'zone' => config('app.display_timezone'),
             'power' => $this->powerLoaded ? $this->power($cm) : null,
             'powerPending' => !$this->powerLoaded && EthernetSwitch::exists(),
-        ])->title($cm->serial);
+        ])->title($cm->displayName());
     }
 
     /* The module's port and its PoE on its switch's snapshot, and why it may not be restarted; null without a switch */

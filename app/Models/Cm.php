@@ -91,6 +91,19 @@ class Cm extends Model
             && $this->polled_at->getTimestamp() >= now()->getTimestamp() - self::ON_BENCH_SECONDS;
     }
 
+    /** What a person calls the module: the host name its new system has, else its MAC address; the serial number only
+     *  when there is neither (a row that never knew its MAC). */
+    public function displayName(): string
+    {
+        foreach ([$this->hostname, $this->mac, $this->serial] as $name) {
+            if (trim((string) $name) !== '') {
+                return trim((string) $name);
+            }
+        }
+
+        return '';
+    }
+
     /** The utility OS of the last start: our version, or the legacy system. */
     public function utilityOsLabel(): string
     {

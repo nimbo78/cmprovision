@@ -373,12 +373,14 @@ class Notifier
         return (self::ICONS[$event] ?? '').' '.$this->moduleText($cm, $event);
     }
 
-    /* A module in a message: serial, MAC, board and what the event adds (duration, EEPROM, reason) */
+    /* A module in a message: its host name (the new system's own, after the OS check), MAC, board and what the event
+       adds (duration, EEPROM, reason); the serial is in the JSON of a webhook, not in a line for people */
     public function moduleText(Cm $cm, $event)
     {
-        $parts = [$cm->serial, $cm->mac];
-        if ($cm->hostname)
-            $parts[] = $cm->hostname;   // the new system's own name, after the OS check
+        $parts = [];
+        if (trim((string) $cm->hostname) !== '')
+            $parts[] = $cm->hostname;
+        $parts[] = $cm->mac ?: $cm->serial;
         if ($cm->provisioning_board)
             $parts[] = 'board '.$cm->provisioning_board;
         if ($event === 'completed' && $cm->provisioning_started_at && $cm->provisioning_complete_at)

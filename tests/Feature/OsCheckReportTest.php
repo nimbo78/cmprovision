@@ -374,7 +374,7 @@ class OsCheckReportTest extends TestCase
     {
         $cm = new Cm(['serial' => self::SERIAL, 'mac' => 'e4:5f:01:62:9f:d3', 'phase' => 'firstboot', 'os_check' => 'waiting',
             'provisioning_started_at' => now(), 'progress_updated_at' => now()]);
-        $text = 'Restart '.self::SERIAL.' on sw01 Gi0/1? PoE goes off for 5 s; the module boots its new system again.';
+        $text = 'Restart e4:5f:01:62:9f:d3 on sw01 Gi0/1? PoE goes off for 5 s; the module boots its new system again.';
         $this->assertSame($text, PoeRestart::confirm($cm, 'sw01 Gi0/1'));
 
         $cm->phase = 'failed';

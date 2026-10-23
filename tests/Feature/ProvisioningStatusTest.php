@@ -52,7 +52,7 @@ class ProvisioningStatusTest extends TestCase
         ]);
 
         Livewire::test(ProvisioningStatus::class)
-            ->assertSee('1000000000000a01')
+            ->assertSee('e4:5f:01:00:00:01')
             ->assertSee('GE0/0/5')
             ->assertSee('Writing image')
             ->assertSee('25%')
@@ -108,7 +108,7 @@ class ProvisioningStatusTest extends TestCase
         Livewire::test(ProvisioningStatus::class)
             ->assertSee('Error during dd. Return code 1.')
             ->assertSee('24%')
-            ->assertSee('1000000000000a05')
+            ->assertSee('e4:5f:01:00:00:05')
             ->assertSee('Done')
             ->assertDontSee('1000000000000a06');
     }
@@ -119,7 +119,7 @@ class ProvisioningStatusTest extends TestCase
                                            'progress_updated_at' => now(), 'progress_bytes' => 0, 'progress_total' => 100]);
 
         $this->actingAs(User::factory()->create())->get('/dashboard')
-            ->assertOk()->assertSee('1000000000000a07')->assertSee('Verifying');
+            ->assertOk()->assertSee('e4:5f:01:00:00:07')->assertSee('Verifying');
     }
 
     public function test_modules_are_listed_in_port_order_so_rows_stay_in_place()

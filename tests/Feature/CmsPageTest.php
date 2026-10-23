@@ -102,6 +102,6 @@ class CmsPageTest extends TestCase
     public function test_delete_asks_first()
     {
         $this->cms();
-        Livewire::test(Cms::class)->set('projectId', 0)->assertSeeHtml('wire:confirm="Delete CM 10000000aaaa0001?"');
+        Livewire::test(Cms::class)->set('projectId', 0)->assertSeeHtml('wire:confirm="Delete CM e4:5f:01:aa:00:01?"');
     }
 }
