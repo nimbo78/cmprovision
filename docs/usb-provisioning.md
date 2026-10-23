@@ -115,8 +115,9 @@ written at the stand, over the network, to boards that are plugged into the PoE 
    settings, **network first** by default: `BOOT_ORDER=0xf12`, the network, then the eMMC) is under **Settings →
    Provisioning → USB prep**. Boards that boot from the network are provisioned as usual while it is on.
 2. Connect the board as in **Start through USB** (steps 3 to 6: no power but USB, `nRPIBOOT`, USB data cable, Ethernet to the
-   provisioning switch). The board loads the utility OS over USB, flashes the bootloader and shows **ready** in the
-   list under the tile, with the three steps (both LEDs fade up and down in turn; the list is shown while the mode is on). No image is written, no OS check and no label.
+   provisioning switch). The board loads the utility OS over USB, flashes the bootloader and the tile shows **ready** with the
+   board's MAC (both LEDs fade up and down in turn). The text of the tile is the next step for the board prepared last:
+   connect one, wait for ready, unplug it; boards prepared before it are counted (`+1 more`). Nothing else opens on the page. No image is written, no OS check and no label.
 3. Unplug USB and the power, release `nRPIBOOT`, and plug the board into the PoE switch. It boots from the network and the
    stand provisions it with the active project.
 4. **Stop USB prep** when you are done. It also switches off by itself after an hour without a board.

@@ -177,8 +177,8 @@ class ProvisioningStatusTest extends TestCase
 
         $html = Livewire::test(ProvisioningStatus::class)->assertSeeLivewire(\App\Http\Livewire\UsbPrepPanel::class)->html();
         $this->assertStringContainsString('min-[1440px]:grid-cols-[repeat(3,minmax(0,160px))_minmax(0,1fr)_minmax(0,320px)]', $html);
-        $this->assertStringContainsString('Start USB prep', $html);
-        $this->assertLessThan(strpos($html, 'Start USB prep'), strpos($html, 'batch since'), 'after the batch tile');
+        $this->assertStringContainsString('aria-label="Start USB prep"', $html);
+        $this->assertLessThan(strpos($html, 'aria-label="Start USB prep"'), strpos($html, 'batch since'), 'after the batch tile');
     }
 
     public function test_restart_is_offered_by_the_write_access_of_the_module_s_switch()
