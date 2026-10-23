@@ -1,3 +1,15 @@
+cmprovision4 (2.17.0) unstable; urgency=medium
+
+  * Every upgrade takes a snapshot of the data before it unpacks anything
+    (before: only an upgrade from a version older than 2.5). Below 2.5 the
+    upgrade still stops when no snapshot can be made; from 2.5 on that is
+    told and the upgrade goes on, as it does when there is not twice the room
+    the application needs under /var/backups. CMPROVISION_NO_SNAPSHOT=1 still
+    skips it. After the upgrade postinst runs "cmprovision-backup --prune":
+    the newest five snapshots stay.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 24 Oct 2026 04:00:00 +0300
+
 cmprovision4 (2.16.0) unstable; urgency=medium
 
   * HDMI display: the table lists, after the modules, the devices that sit on

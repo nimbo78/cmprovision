@@ -19,7 +19,7 @@ Reload browser tabs that were open during the upgrade.
 
 ## Backups and rollback
 
-Upgrading from a version older than 2.5 (1.x or 2.0–2.4) automatically takes a snapshot under `/var/backups/cmprovision/<timestamp>-<old-version>/`, including the old package. If all three snapshot attempts fail, the upgrade stops and leaves the old version installed. Try again with no modules on the stand.
+Every upgrade automatically takes a snapshot under `/var/backups/cmprovision/<timestamp>-<old-version>/` before it unpacks anything, including the old package (since 2.17.0 also from 2.5 and later; before that only from older versions). It needs free space of twice what the application holds (without the uploaded images). From a version older than 2.5 (1.x or 2.0–2.4), if all three snapshot attempts fail, the upgrade stops and leaves the old version installed: try again with no modules on the stand. From 2.5 on a snapshot that cannot be made (a server in use, a full disk) is told in the output and the upgrade goes on; take one yourself with `cmprovision-backup` when you want a way back. The newest five snapshots stay, the older ones are removed after the upgrade.
 
 To restore that version and its data:
 
@@ -27,7 +27,7 @@ To restore that version and its data:
 sudo cmprovision-restore "/var/backups/cmprovision/<snapshot>"
 ```
 
-For other upgrades, take the snapshot yourself before installing. Install `dpkg-repack` so the backup includes the installed package:
+To take a snapshot at any other time, for example before a change of a setting, install `dpkg-repack` so the backup includes the installed package:
 
 ```sh
 sudo apt install dpkg-repack
