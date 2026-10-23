@@ -62,7 +62,7 @@ set: for print, convert the flat colour with the printer's profile.
 
 - The top bar shows `resources/views/components/application-mark.blade.php`; the sign-in pages show
   `authentication-card-logo.blade.php`, the mark with the name as live text (`.cmp-lockup` in `resources/css/app.css`).
-- Every inline copy has a gradient id of its own (`cmp-mark-tile`, `cmp-logo-tile`, `cmp-auth-tile`): ids are shared
+- Every inline copy has a gradient id of its own (`cmp-mark-tile`, `cmp-logo-tile`, `cmp-auth-tile`, and `cmp-ports-<port key>` for the mark on the provisioner's port of the Ports page: `x-application-mark` takes it as `gradient`): ids are shared
   by the whole page.
 - The browser tab and home screens take `public/favicon.svg` (the favicon cut), `public/favicon.ico` (16, 32 and
   48 px) and `public/apple-touch-icon.png` (180 px).
