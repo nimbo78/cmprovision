@@ -24,13 +24,18 @@ trait SortsColumns
     {
         if (!is_string($key))
             return;
-        [$this->sort, $this->dir] = ColumnSort::next($this->columns(), is_string($this->sort) ? $this->sort : '', is_string($this->dir) ? $this->dir : '', $key);
+        [$sort, $dir] = $this->sorting();
+        [$this->sort, $this->dir] = ColumnSort::next($this->columns(), $sort, $dir, $key);
     }
 
-    /* The chosen column if there is such a column, and the direction: for the headers of the view */
+    /* The chosen column if there is such a column, and the direction (the first one of the column when the address does not say
+       asc or desc: /cms?sort=finished is the latest first): for the headers of the view and for the sorting */
     protected function sorting(): array
     {
-        $sort = is_string($this->sort) && isset($this->columns()[$this->sort]) ? $this->sort : '';
-        return [$sort, $sort !== '' && $this->dir === 'desc' ? 'desc' : ($sort !== '' ? 'asc' : '')];
+        $columns = $this->columns();
+        $sort = is_string($this->sort) && isset($columns[$this->sort]) ? $this->sort : '';
+        if ($sort === '')
+            return ['', ''];
+        return [$sort, in_array($this->dir, ['asc', 'desc'], true) ? $this->dir : ($columns[$sort]['first'] ?? 'asc')];
     }
 }

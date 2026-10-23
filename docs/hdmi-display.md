@@ -51,6 +51,13 @@ column one step at a time (about three columns a second), rests at its end and s
 column says there is more. The same goes for the device name and port on the device card and for the failure line at
 the bottom. The screen is redrawn faster only while something runs; with every text fitting nothing moves.
 
+After the modules the table lists what a switch shows on a port where there is a device that is not a module and is not booting,
+so the table tells what was plugged in: the phase says `UNR` (an unrecognized device) or `LNK` (a link up with nothing sent from
+it), the name is what the device calls itself over LLDP or CDP with its system, address and abilities in the result column, and for
+a device that says nothing it is the maker of its MAC address (the Raspberry Pi blocks are built in, the `ieee-data` package adds
+the others) with the MAC itself. Texts that come from a device are cleaned before they reach the screen. The `flow` cards and the
+`engineer` view say the speed of a write as the table does: `63% / 25.0 MiB/s / ETA 1:00`.
+
 The four display themes match the web UI: **Warm / Dark**, **Warm / Light**, **Neutral / Dark**, and **Neutral / Light**.
 The renderer reads the same `resources/css/app.css` tokens for the page, text, muted text, accent and status colors.
 Warm dark uses the web's `#ff8a3d` orange; neutral dark uses `#818cf8` indigo. Alpha text colors are composited over the

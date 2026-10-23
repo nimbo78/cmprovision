@@ -58,8 +58,9 @@ class Cms extends Component
 
         return view('livewire.cms', [
             'CMs' => $this->cms(),
-            'sort' => $this->sorting()[0],
-            'dir' => $this->sorting()[1],
+            // not 'sort' and 'dir': the properties of the same names (what the address says) would be the ones the view sees
+            'sortKey' => $this->sorting()[0],
+            'sortDir' => $this->sorting()[1],
             'total' => Cm::count(),
             'projects' => Project::withCount('cms')->orderBy('name')->get(),
         ]);

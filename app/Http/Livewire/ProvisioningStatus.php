@@ -122,8 +122,9 @@ class ProvisioningStatus extends Component
         return view('livewire.provisioning-status', [
             'summary' => $summary,
             'modules' => $modules,
-            'sort' => $sort,
-            'dir' => $dir,
+            // not 'sort' and 'dir': the properties of the same names (what the address says) would be the ones the view sees
+            'sortKey' => $sort,
+            'sortDir' => $dir,
             'activeCount' => $modules->filter->isActive()->count(),
             'canRestart' => $canRestart,
             'activeProject' => $active,
