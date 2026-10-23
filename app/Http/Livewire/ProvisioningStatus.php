@@ -86,11 +86,8 @@ class ProvisioningStatus extends Component
             ->orderByDesc('provisioning_started_at')
             ->limit(self::MAX_ROWS)
             ->get()
-            // port (or jumper board) order: every row stays where its module is plugged in
-            ->sort(function ($a, $b) {
-                return strnatcasecmp((string) $a->provisioning_board, (string) $b->provisioning_board)
-                    ?: strcmp($a->serial, $b->serial);
-            })
+            // what runs now first, then by the time they were flashed, the latest on top (Cm::newestFirst())
+            ->sort(Cm::newestFirst())
             ->values();
 
         // a module's switch must take writes; one found before 2.4 (no switch_id) needs any switch that does
@@ -130,6 +127,13 @@ class ProvisioningStatus extends Component
     public static function speed($bytesPerSecond)
     {
         return sprintf('%.1f MB/s', $bytesPerSecond / 1048576);
+    }
+
+    /* The time of day in the display time zone; with the day and month (d.m) when it was not today: a batch can last days */
+    public static function clock($time)
+    {
+        $local = $time->local();
+        return $local->isToday() ? $local->format('H:i') : $local->format('d.m H:i');
     }
 
     public static function duration($seconds)

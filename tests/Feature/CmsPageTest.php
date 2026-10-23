@@ -34,18 +34,18 @@ class CmsPageTest extends TestCase
         Cm::create(['serial' => '10000000aaaa0001', 'mac' => 'e4:5f:01:aa:00:01', 'model' => 'CM4', 'project_id' => $p78->id,
                     'provisioning_board' => 'GE0/0/1', 'phase' => 'done', 'provisioning_complete_at' => now()]);
         Cm::create(['serial' => '10000000aaaa0002', 'mac' => 'e4:5f:01:aa:00:02', 'model' => 'CM4', 'project_id' => $p78->id,
-                    'provisioning_board' => 'GE0/0/2', 'phase' => 'failed']);
+                    'provisioning_board' => 'GE0/0/2', 'phase' => 'failed', 'phase_started_at' => now()->subMinutes(10)]);
         Cm::create(['serial' => '10000000bbbb0003', 'mac' => 'E4:5F:01:BB:00:03', 'model' => 'CM4', 'project_id' => $test->id, 'phase' => 'write',
                     'provisioning_started_at' => now()->subMinutes(3)]);
         return [$p78, $test];
     }
 
-    public function test_newest_first_with_project_board_and_result()
+    public function test_running_first_then_the_latest_flashed_with_project_board_and_result()
     {
         $this->cms();
         Livewire::test(Cms::class)
             ->set('projectId', 0)
-            ->assertSeeInOrder(['10000000bbbb0003', '10000000aaaa0002', '10000000aaaa0001'])
+            ->assertSeeInOrder(['10000000bbbb0003', '10000000aaaa0001', '10000000aaaa0002'])
             ->assertSee('stage1-test')
             ->assertSee('GE0/0/2')
             ->assertSeeHtml('<span class="cmp-chip cmp-chip-fail">failed</span>')

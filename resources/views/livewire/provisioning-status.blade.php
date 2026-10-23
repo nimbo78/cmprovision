@@ -3,8 +3,14 @@
     @if ($restartMessage)
         <div class="rounded px-4 py-2 text-sm font-semibold {{ $restartError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $restartMessage }}</div>
     @endif
+    {{-- the summary tiles and, at the end of the row, the USB prep tile (a child component: its own poll and its own state);
+         under 1440 px the tile takes a row of its own under the batch tile --}}
+    <div @class([
+        'grid gap-[var(--gap)]',
+        'grid-cols-3 lg:grid-cols-[repeat(3,minmax(0,160px))_minmax(0,1fr)] min-[1440px]:grid-cols-[repeat(3,minmax(0,160px))_minmax(0,1fr)_minmax(0,320px)]' => $summary,
+        'grid-cols-1' => !$summary,
+    ])>
     @if ($summary)
-        <div class="grid gap-[var(--gap)] grid-cols-3 lg:grid-cols-[repeat(3,minmax(0,160px))_minmax(0,1fr)]">
             <div class="cmp-tile"><div class="num text-info">{{ $summary->running }}</div><div class="label">running</div></div>
             <div class="cmp-tile"><div class="num text-pos">{{ $summary->counts['done'] }}</div><div class="label">done</div></div>
             <div @class(['cmp-tile', 'cmp-tile-fail' => $summary->counts['failed']])><div class="num text-neg">{{ $summary->counts['failed'] }}</div><div class="label">failed</div></div>
@@ -12,7 +18,7 @@
                 <div class="min-w-0">
                     <div class="font-bold">
                         @if ($summary->open)
-                            Project {{ $summary->project?->name }} · batch since {{ $summary->batch->started_at->local()->format('H:i') }}
+                            Project {{ $summary->project?->name }} · batch since {{ $fmt::clock($summary->batch->started_at) }}
                         @else
                             @php($closed = ($summary->batch->closed_at ?? $summary->batch->last_event_at)->local())
                             Last batch, closed {{ $closed->isToday() ? 'at '.$closed->format('H:i') : 'on '.$closed->format('d.m').' at '.$closed->format('H:i') }} · project {{ $summary->project?->name }}
@@ -34,8 +40,9 @@
                     </div>
                 @endif
             </div>
-        </div>
     @endif
+        <livewire:usb-prep-panel :key="'usb-prep'" />
+    </div>
 
     {{-- cmp-card-scroll: narrower than xl the table scrolls sideways inside the card (app.css) --}}
     <div class="cmp-card cmp-card-scroll">
@@ -63,7 +70,8 @@
                         <td>
                             <div class="line-clamp-2" title="{{ $step }}">
                                 @if ($m->phase === 'done')
-                                    <span class="text-pos font-semibold">Done</span>
+                                    {{-- a board that only had its bootloader set over USB (USB prep) is ready to move to the PoE switch, not provisioned --}}
+                                    <span class="text-pos font-semibold">{{ $m->usb_prep_at ? 'Ready (USB prep)' : 'Done' }}</span>
                                 @elseif ($m->phase === 'failed')
                                     <span class="text-neg font-semibold">Failed</span>@if ($m->phase_detail)<span class="text-neg">: {{ $m->phase_detail }}</span>@endif
                                 @else
@@ -91,11 +99,11 @@
                         <td class="whitespace-nowrap tabular-nums">
                             @if ($m->provisioning_started_at)
                                 @if ($m->phase === 'done' && $m->provisioning_complete_at)
-                                    took {{ $fmt::duration($m->provisioning_complete_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $m->provisioning_complete_at->local()->format('H:i') }}</span>
+                                    took {{ $fmt::duration($m->provisioning_complete_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $fmt::clock($m->provisioning_complete_at) }}</span>
                                 @elseif ($m->phase === 'failed' && $m->phase_started_at)
-                                    failed after {{ $fmt::duration($m->phase_started_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $m->phase_started_at->local()->format('H:i') }}</span>
+                                    failed after {{ $fmt::duration($m->phase_started_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $fmt::clock($m->phase_started_at) }}</span>
                                 @else
-                                    {{ $fmt::duration(now()->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">since {{ $m->provisioning_started_at->local()->format('H:i') }}</span>
+                                    {{ $fmt::duration(now()->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">since {{ $fmt::clock($m->provisioning_started_at) }}</span>
                                 @endif
                             @endif
                         </td>

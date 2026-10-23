@@ -37,7 +37,7 @@
                             @else <span class="text-fg-faint">—</span>
                             @endif
                         </td>
-                        <td class="tabular-nums text-fg-muted whitespace-nowrap">{{ $c->provisioning_complete_at ? $c->provisioning_complete_at->local()->format('Y-m-d H:i:s') : '—' }}</td>
+                        <td class="tabular-nums text-fg-muted whitespace-nowrap">{{ $c->finishedAt() ? $c->finishedAt()->local()->format('Y-m-d H:i:s') : '—' }}</td>
                         <td class="text-right whitespace-nowrap">
                             <a href="{{ route('cm', $c->mac) }}" class="text-link font-semibold mr-3">View</a>
                             <button type="button" wire:click="delete({{ $c->id }})" wire:confirm="Delete CM {{ $c->displayName() }}?" class="text-fg-muted hover:text-neg" title="Delete" aria-label="Delete CM {{ $c->displayName() }}">
