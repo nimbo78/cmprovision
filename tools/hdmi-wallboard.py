@@ -399,7 +399,7 @@ def port_mark(port, modules):
         return mark, INK.get(m['state'], 'dim')
     # A free port stays a quiet empty frame, with its number: the panel keeps its shape and nothing flickers on it
     if port.get('state') == 'uplink' and port.get('server'):
-        return 'cm', 'accent'   # the provisioner itself
+        return ' cm', 'accent'   # the provisioner itself; one space more than the other marks, so it does not crowd the number
     return {'free': ('', 'dim'), 'uplink': ('UP', 'dim'), 'unrecognized': ('UNR', 'warn'),
             'quiet': ('LNK', 'warn'), 'boot': ('BOOT', 'run')}.get(port.get('state'), ('?', 'dim'))
 
