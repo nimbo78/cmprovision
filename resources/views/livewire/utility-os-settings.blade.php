@@ -1,5 +1,9 @@
 {{-- Settings → Utility OS (2.7.0): the OSes of the package, the one modules get, the switch --}}
-<div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md">
+<x-settings-card title="Utility OS" id="utility-os" description="The system a module boots from the network or over USB to be provisioned.">
+    <x-slot name="help">
+        The package has two: ours, built from current versions (64-bit), and the legacy one from 2022 (32-bit). A switch
+        takes effect for the next file a module asks for.
+    </x-slot>
     @if ($notice)
         <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $notice }}</div>
     @endif
@@ -37,4 +41,4 @@
     @if ($current === null)
         <p class="mt-3 text-sm text-neg">The link {{ $link }} points at no utility OS of the package: modules get nothing. Choose one.</p>
     @endif
-</div>
+</x-settings-card>

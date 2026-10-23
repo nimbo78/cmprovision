@@ -94,7 +94,7 @@ These commands inspect state without changing the disk:
 
 A target on the default stand gets an address in `172.20.0.0/16`. If there is no
 carrier, check the cable and switch port first. If the link is present but there
-is no address, inspect DHCP/TFTP under **Settings → Service status** on the
+is no address, inspect DHCP/TFTP under **Settings → Status** on the
 provisioner. If the target has an address but no script, compare tty1's messages
 with the server logs.
 

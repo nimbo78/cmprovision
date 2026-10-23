@@ -78,7 +78,7 @@
                 </div>
             @endforeach
             <div class="mt-2 text-fg-faint">{{ $v['checked'] }}</div>
-            <div class="mt-1"><a href="{{ route('settings') }}#wifi" class="text-link hover:underline">Settings → Wi-Fi networks</a></div>
+            <div class="mt-1"><a href="{{ route('settings', ['tab' => 'network']) }}#wifi" class="text-link hover:underline">Settings → Wi-Fi networks</a></div>
         </div>
     </div>
 </div>

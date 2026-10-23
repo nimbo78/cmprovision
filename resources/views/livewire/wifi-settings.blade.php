@@ -1,7 +1,18 @@
-<div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md">
-    @php($input = 'cmp-field w-full')
-    @php($label = 'block text-fg text-sm font-bold mb-2')
-    @php($small = 'cmp-btn cmp-btn-secondary cmp-btn-small')
+@php($input = 'cmp-field w-full')
+@php($label = 'block text-fg text-sm font-bold mb-2')
+@php($small = 'cmp-btn cmp-btn-secondary cmp-btn-small')
+<x-settings-card title="Wi-Fi networks" id="wifi" description="The networks the provisioner connects to, the preferred first.">
+    @if ($available && !$form)
+        <x-slot name="actions">
+            <button type="button" wire:click="showLog" class="cmp-btn cmp-btn-secondary">Changes log</button>
+            <button type="button" wire:click="add" class="cmp-btn">Add network</button>
+        </x-slot>
+    @endif
+    <x-slot name="help">
+        Each network serves both radios: the M.2 card carries the traffic, the built-in Wi-Fi stands by. A password is
+        stored on the server and never shown again; Check now tries a network on the idle built-in Wi-Fi while the card
+        keeps working.
+    </x-slot>
 
     @if ($logModalOpen)
         @include('livewire.viewlog')
@@ -75,10 +86,7 @@
             @endif
         @endif
 
-        @if (!$form)
-            <button type="button" wire:click="add" class="cmp-btn">Add network</button>
-            <button type="button" wire:click="showLog" class="cmp-btn cmp-btn-secondary ml-2">Changes log</button>
-        @else
+        @if ($form)
             {{-- the network password lives in Alpine and goes as a parameter of save: no snapshot ever holds it --}}
             <div class="border-t border-pline pt-4" x-data="{ secret: '' }">
                 <div class="font-bold mb-3">{{ $editingUuid ? 'Edit network' : 'New network' }}</div>
@@ -147,4 +155,4 @@
             </div>
         @endif
     @endif
-</div>
+</x-settings-card>

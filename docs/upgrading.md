@@ -75,7 +75,7 @@ php-fpm8.4 -v
 
 APT also upgrades the installed extensions tied to the PHP common package.
 Restarting the queue workers replaces their long-running PHP processes.
-Check **Settings → Service status** and reload the interface afterwards.
+Check **Settings → Status** and reload the interface afterwards.
 
 Composer accepts the fixed branches. Its `config.platform.php` value of `8.3.36`
 is a dependency-resolution target. A pre-install check validates the actual CLI
@@ -107,7 +107,7 @@ Two workers run alongside the web interface:
 | `cmprovision-queue` | Switch-port lookup and notifications |
 | `cmprovision-queue-images` | Image checksums and image processing; also port lookup when the first worker is busy |
 
-**Settings → Service status** shows both workers and their logs. A module receives its script immediately; its switch and port appear a few seconds later. Notifications are grouped into one message per channel every 10 seconds.
+**Settings → Status** shows both workers and their logs. A module receives its script immediately; its switch and port appear a few seconds later. Notifications are grouped into one message per channel every 10 seconds.
 
 SQLite uses WAL mode. Run manual `artisan` and `sqlite3` commands as `www-data`, for example:
 

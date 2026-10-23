@@ -137,7 +137,7 @@ ssh da2 'sudo systemctl restart php8.4-fpm cmprovision-queue cmprovision-queue-i
 
 ## 4. Проверить
 
-- Открыть веб-интерфейс провижинера и глянуть **Settings → Service status**: два
+- Открыть веб-интерфейс провижинера и глянуть **Settings → Status**: два
   воркера очереди и dnsmasq должны быть зелёными.
 - Версия: `ssh da2 'dpkg-query -W cmprovision4'`.
 - Журнал, последние 50 строк:

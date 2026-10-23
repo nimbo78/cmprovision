@@ -3,41 +3,74 @@
 namespace App\Http\Livewire;
 
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use App\Models\Host;
 use App\Models\Setting;
 use App\Services\ServiceLogs;
+use App\Services\ServiceState;
+use App\Services\UtilityOs;
 use Illuminate\Support\Facades\Validator;
 
 #[Title('Settings')]
 class Settings extends Component
 {
-    public $usbDiagnosticsRunning, $dnsmasqRunning, $rpibootRunning, $queueRunning, $imagesQueueRunning, $uplinkSpareRunning, $utilityOs, $logTitle, $logSource;
+    /** tab => name; each has its own address (/settings?tab=network) and reads only its own sections */
+    const TABS = [
+        'status' => 'Status',
+        'network' => 'Network',
+        'provisioning' => 'Provisioning',
+        'notifications' => 'Notifications',
+    ];
+
+    /** log source (ServiceLogs) => [what the list calls it, systemd unit, the short name for the strip]; the web interface has no unit: it answers this request */
+    const SERVICES = [
+        'dnsmasq' => ['dnsmasq (DHCP server)', 'cmprovision-dnsmasq', 'dnsmasq'],
+        'rpiboot' => ['rpiboot (USB file server)', 'cmprovision-rpiboot', 'rpiboot'],
+        'usb-diagnostics' => ['USB diagnostic fallback receiver', 'cmprovision-usb-diagnostics', 'USB diagnostics'],
+        'queue' => ['queue worker (switch ports, notifications)', 'cmprovision-queue', 'queue'],
+        'queue-images' => ['queue worker (image checksums)', 'cmprovision-queue-images', 'image queue'],
+        'uplink-spare' => ['uplink cold spare (built-in Wi-Fi)', 'cmprovision-uplink.timer', 'Wi-Fi spare'],
+        'laravel' => ['web interface', null, 'web'],
+    ];
+
+    #[Url(as: 'tab')]
+    public $tab = 'status';
+
+    public $logTitle, $logSource;
     public $ip, $mac, $detectedMacs;
-    public $hosts;
     public $logModalOpen = false, $staticModalOpen = false;
 
     public function render()
     {
-        $this->usbDiagnosticsRunning = $this->isActive('cmprovision-usb-diagnostics');
-        $this->dnsmasqRunning = $this->isActive('cmprovision-dnsmasq');
-        $this->rpibootRunning = $this->isActive('cmprovision-rpiboot');
-        $this->queueRunning = $this->isActive('cmprovision-queue');
-        $this->imagesQueueRunning = $this->isActive('cmprovision-queue-images');
-        $this->uplinkSpareRunning = $this->isActive('cmprovision-uplink.timer');
-        $os = app(\App\Services\UtilityOs::class);
-        $current = $os->current();
-        $this->utilityOs = \App\Services\UtilityOs::label($current ? $os->manifest($current) : null);
-        $this->hosts = Host::orderBy('ip')->get();
+        // the property comes from the address and from the browser: ?tab[]=x makes it an array
+        $this->tab = is_string($this->tab) && array_key_exists($this->tab, self::TABS) ? $this->tab : 'status';
 
-        return view('livewire.settings');
-    }
+        $state = app(ServiceState::class);
+        $services = [];
+        foreach (self::SERVICES as $source => [$label, $unit, $short]) {
+            $services[$source] = [
+                'label' => $label,
+                'short' => $short,
+                'running' => $unit === null || $state->isActive($unit),
+                'method' => 'viewLog'.str_replace(' ', '', ucwords(str_replace('-', ' ', $source))),
+            ];
+        }
+        $data = [
+            'tabs' => self::TABS,
+            'services' => $services,
+            'runningCount' => count(array_filter(array_column($services, 'running'))),
+        ];
+        if ($this->tab === 'status') {
+            $os = app(UtilityOs::class);
+            $current = $os->current();
+            $data['utilityOs'] = UtilityOs::label($current ? $os->manifest($current) : null);
+        }
+        if ($this->tab === 'network') {
+            $data['hosts'] = Host::orderBy('ip')->get();
+        }
 
-    protected function isActive($service)
-    {
-        $output = $retcode = '';
-        exec("/bin/systemctl is-active ".escapeshellarg($service), $output, $retcode);
-        return ($retcode == 0);
+        return view('livewire.settings', $data);
     }
 
     /* the journal since boot of a unit (-u) or of a syslog tag (-t) */
@@ -83,7 +116,7 @@ class Settings extends Component
         $this->openLog('queue');
     }
 
-    public function viewLogImagesQueue()
+    public function viewLogQueueImages()
     {
         $this->openLog('queue-images');
     }

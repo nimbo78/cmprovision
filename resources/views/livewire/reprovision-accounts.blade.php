@@ -1,5 +1,6 @@
-<div class="cmp-card p-6">
-    <p class="text-sm text-fg-muted">Check access tries the provisioner key first, then these enabled accounts in order, then offers manual entry. Passwords stay on the server and are never shown again.</p>
+<div>
+    <h3 class="text-sm font-bold text-fg">Sensor accounts</h3>
+    <p class="text-sm text-fg-muted mt-1">Check access tries the provisioner key first, then these enabled accounts in order, then offers manual entry. Passwords stay on the server and are never shown again.</p>
     <p class="text-sm text-fg-muted mt-2">Enable up to 3 accounts. Automatic attempts run once per check and at most once per minute for each module. Wiping still needs a separate confirmation.</p>
     @if ($error)<p class="text-neg text-sm mt-3" role="alert">{{ $error }}</p>@endif
     <div class="mt-4 space-y-3">

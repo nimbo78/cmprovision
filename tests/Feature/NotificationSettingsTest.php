@@ -22,7 +22,7 @@ class NotificationSettingsTest extends TestCase
 
     public function test_the_settings_page_has_a_notifications_section()
     {
-        $this->actingAs(User::factory()->create())->get('/settings')->assertOk()->assertSee('Notifications');
+        $this->actingAs(User::factory()->create())->get('/settings?tab=notifications')->assertOk()->assertSee('Notifications');
     }
 
     public function test_a_webhook_channel_is_added_with_the_default_events()

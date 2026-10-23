@@ -84,9 +84,9 @@ Review the available Raspberry Pi bootloader EEPROM releases by channel. Choose 
 
 ## Settings
 
-Manage DHCP assignments, preferred Wi-Fi networks, SNMP switches and notification channels. Service status and log buttons help diagnose the provisioner. The demo runs without provisioning hardware, so DHCP and USB boot services are shown as stopped.
+Settings is split into four tabs by purpose: **Status** (the services of the server and their logs), **Network** (Wi-Fi networks, SNMP switches, DHCP assignments), **Provisioning** (utility OS, re-provisioning, the HDMI display) and **Notifications** (channels and batches). On the three tabs besides Status, a strip above the sections shows the state of the services and a menu with their logs. The demo runs without provisioning hardware, so DHCP and USB boot services are shown as stopped. This view was captured on 23 October 2026 from the development bench.
 
-<a href="../assets/readme/screenshots/settings.png"><img src="../assets/readme/screenshots/settings.png" width="100%" alt="Settings page with DHCP assignments, Wi-Fi priorities, SNMP switch access, batch notifications and service status"></a>
+<a href="../assets/readme/screenshots/settings.png"><img src="../assets/readme/screenshots/settings.png" width="100%" alt="Settings page, Status tab, with the services of the server, running or stopped, a View log button for each and the utility OS in use"></a>
 
 ## Module detail
 

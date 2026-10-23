@@ -4,7 +4,7 @@
         <p class="text-sm text-fg-muted">Ethernet is the primary report channel. The USB receiver requests a snapshot after 90 seconds without the expected network report.
             A report can arrive before a module is registered; it does not start provisioning or count as a successful run.</p>
         <p class="text-sm text-fg-muted mt-2">The target needs a utility OS with the USB diagnostic agent and a USB data connection to the provisioner.
-            Check the receiver under <a href="{{ route('settings') }}" class="text-link hover:underline">Settings → Service status</a>.
+            Check the receiver under <a href="{{ route('settings') }}" class="text-link hover:underline">Settings → Status</a>.
             Reports are kept for 14 days, up to 2,000 snapshots; the latest 50 are listed here.</p>
     </section>
     <section class="cmp-card p-4" aria-label="USB report list">

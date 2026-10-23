@@ -7,7 +7,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
 
-/** Settings → Service status: the cold spare of the built-in Wi-Fi has a row, and its log is its journal */
+/** Settings → Status: the cold spare of the built-in Wi-Fi has a row, and its log is its journal */
 class ServiceStatusTest extends TestCase
 {
     use RefreshDatabase;
