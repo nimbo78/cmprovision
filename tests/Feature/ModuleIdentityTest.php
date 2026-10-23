@@ -58,7 +58,7 @@ class ModuleIdentityTest extends TestCase
 
         $html = Livewire::test(Cms::class)->html();
         $this->assertMatchesRegularExpression('~<th>MAC</th>\s*<th>Host name</th>\s*<th>Serial</th>~', $html);
-        $this->assertMatchesRegularExpression('~<a href="[^"]*/cms/'.self::SERIAL.'"[^>]*>'.self::MAC.'</a>~', $html, 'the MAC is the link to the card');
+        $this->assertMatchesRegularExpression('~<a href="[^"]*/cms/'.self::MAC.'"[^>]*>'.self::MAC.'</a>~', $html, 'the MAC is the link to the card');
         $this->assertStringContainsString('Delete CM wlanpi-sensor1?', $html, 'the host name when there is one, else the MAC');
         $this->assertStringContainsString('MAC, host name or serial', $html);
     }
@@ -69,7 +69,7 @@ class ModuleIdentityTest extends TestCase
 
         $html = Livewire::test(ProvisioningStatus::class)->html();
         $this->assertStringNotContainsString('<th>Serial</th>', $html);
-        $this->assertMatchesRegularExpression('~<a href="[^"]*/cms/'.self::SERIAL.'"[^>]*>'.self::MAC.'</a>~', $html);
+        $this->assertMatchesRegularExpression('~<a href="[^"]*/cms/'.self::MAC.'"[^>]*>'.self::MAC.'</a>~', $html);
         $this->assertStringContainsString('wlanpi-sensor1', $html);
         $this->assertStringNotContainsString('>'.self::SERIAL.'<', $html);
     }
@@ -78,21 +78,21 @@ class ModuleIdentityTest extends TestCase
     {
         $cm = $this->cm();
         $this->actingAs(User::factory()->create());
-        $this->get(route('cm', $cm->serial))->assertOk()->assertSee('<title>'.self::MAC, false);
+        $this->get(route('cm', $cm->mac))->assertOk()->assertSee('<title>'.self::MAC, false);
         Livewire::test(CmCard::class, ['serial' => $cm->serial])->assertSee('Serial')->assertSee(self::SERIAL);
 
         $cm->update(['hostname' => 'wlanpi-sensor1']);
-        $this->get(route('cm', $cm->serial))->assertSee('<title>wlanpi-sensor1', false);
+        $this->get(route('cm', $cm->mac))->assertSee('<title>wlanpi-sensor1', false);
     }
 
     public function test_the_log_on_the_dashboard_shows_the_mac_of_the_module_and_keeps_the_card_link()
     {
         $this->cm();
-        Cmlog::create(['cm' => self::SERIAL, 'board' => 'sw01 Gi0/1', 'loglevel' => 'info', 'msg' => 'Module started']);
+        Cmlog::create(['cm' => self::MAC, 'board' => 'sw01 Gi0/1', 'loglevel' => 'info', 'msg' => 'Module started']);
         Cmlog::create(['cm' => '1000000000009999', 'board' => '', 'loglevel' => 'info', 'msg' => 'A module that was deleted']);
 
         $html = Livewire::test(ProvisioningLog::class)->html();
-        $this->assertMatchesRegularExpression('~<a href="[^"]*/cms/'.self::SERIAL.'"[^>]*>'.self::MAC.'</a>~', $html);
+        $this->assertMatchesRegularExpression('~<a href="[^"]*/cms/'.self::MAC.'"[^>]*>'.self::MAC.'</a>~', $html);
         $this->assertStringContainsString('1000000000009999', $html, 'the serial of a module that is not there any more is all there is');
     }
 

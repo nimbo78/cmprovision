@@ -56,7 +56,7 @@
                     <tr wire:key="cm-{{ $m->id }}" class="{{ $m->phase === 'failed' ? 'bg-neg-bg' : '' }}">
                         <td class="text-fg-muted whitespace-nowrap">@if ($m->board_pending_since)<span title="looking up the switch port">…</span>@else{{ $m->provisioning_board }}@endif</td>
                         <td class="mono">
-                            <a href="{{ route('cm', $m->serial) }}" class="text-link hover:underline">{{ $m->mac ?: $m->serial }}</a>
+                            <a href="{{ route('cm', $m->mac) }}" class="text-link hover:underline">{{ $m->mac ?: $m->serial }}</a>
                             @if (trim((string) $m->hostname) !== '')<div class="text-fg-muted">{{ $m->hostname }}</div>@endif
                         </td>
                         {{-- The step takes the width the other columns leave: a long reason wraps to two lines, all of it in the tooltip and on the module card --}}

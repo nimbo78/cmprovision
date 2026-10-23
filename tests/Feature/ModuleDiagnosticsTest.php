@@ -197,7 +197,7 @@ class ModuleDiagnosticsTest extends TestCase
         $this->upload($this->snapshot())->assertNoContent();
         $this->upload($this->snapshot())->assertNoContent();
         $this->start(false);
-        $this->assertSame(1, \App\Models\Cmlog::where('cm', self::SERIAL)->where('msg', 'like', 'Module diagnostics:%')->count());
+        $this->assertSame(1, \App\Models\Cmlog::where('cm', 'e4:5f:01:00:00:01')->where('msg', 'like', 'Module diagnostics:%')->count());
     }
 
     public function test_generic_network_write_failure_keeps_its_original_advice_despite_power_warning()
@@ -219,7 +219,7 @@ class ModuleDiagnosticsTest extends TestCase
         $this->assertSame(['thermal_trip', 'soft_temperature_limit', 'memory_pressure', 'oom', 'ethernet_link', 'ethernet_duplex'], $codes);
         $this->assertSame([], ModuleDiagnostics::summary($this->cm()->storage_diagnostics, 'storage')['issues']);
         $this->upload($text)->assertNoContent();
-        $this->assertSame(6, \App\Models\Cmlog::where('cm', self::SERIAL)->where('msg', 'like', 'Module diagnostics:%')->count());
+        $this->assertSame(6, \App\Models\Cmlog::where('cm', 'e4:5f:01:00:00:01')->where('msg', 'like', 'Module diagnostics:%')->count());
         $this->actingAs(User::factory()->create())->get('/cms/'.self::SERIAL)->assertOk()
             ->assertSee('83.0 °C')->assertSee('Memory')->assertSee('Link down')->assertSee('not a physical RAM test');
     }

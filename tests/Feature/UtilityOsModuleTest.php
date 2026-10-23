@@ -31,7 +31,7 @@ class UtilityOsModuleTest extends TestCase
 
     protected function startLine(): string
     {
-        return (string) Cmlog::where('cm', self::SERIAL)->where('msg', 'like', 'Provisioning started%')->latest('id')->value('msg');
+        return (string) Cmlog::where('cm', 'e4:5f:01:62:9f:d3')->where('msg', 'like', 'Provisioning started%')->latest('id')->value('msg');
     }
 
     public function test_ours_names_its_version()

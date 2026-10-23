@@ -79,7 +79,7 @@ class UsbDiagnostics
             {
                 if ($report['context'] === 'failure' && $row->wasRecentlyCreated)
                     foreach (ModuleDiagnostics::summary($report)['issues'] as $issue)
-                        \App\Models\Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => $issue['severity'] === 'error' ? 'error' : 'warning',
+                        \App\Models\Cmlog::create(['cm' => $cm->mac, 'board' => $cm->provisioning_board, 'loglevel' => $issue['severity'] === 'error' ? 'error' : 'warning',
                             'msg' => 'Module diagnostics: '.$issue['title'].'. '.$issue['advice'].' (received via USB)']);
                 Cm::whereKey($cm->id)->where('diagnostics_token', $m['token'])->update(['storage_diagnostics' => $report, 'storage_diagnostics_at' => $row->received_at, 'diagnostics_requested_at' => null]);
             }

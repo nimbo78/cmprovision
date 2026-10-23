@@ -129,7 +129,7 @@
                         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 mb-3">
                             <dt class="text-fg-muted">Module</dt>
                             <dd>
-                                <a href="{{ route('cm', $cm->serial) }}" class="ports-serial font-bold text-link hover:underline">{{ $cm->mac ?: $cm->serial }}</a>
+                                <a href="{{ route('cm', $cm->mac) }}" class="ports-serial font-bold text-link hover:underline">{{ $cm->mac ?: $cm->serial }}</a>
                                 @if (trim((string) $cm->hostname) !== '')<span class="text-fg-muted">{{ $cm->hostname }}</span>@endif
                             </dd>
                             <dt class="text-fg-muted">Step</dt>
@@ -155,7 +155,7 @@
                             <p class="mb-2 font-semibold {{ $cm->phase === 'failed' ? 'text-neg' : 'text-warn' }}">{{ $advice['advice'] }}</p>
                         @endif
                         <div class="flex flex-wrap gap-2 mb-3">
-                            <a href="{{ route('cm', $cm->serial) }}" class="cmp-btn cmp-btn-small">Module card</a>
+                            <a href="{{ route('cm', $cm->mac) }}" class="cmp-btn cmp-btn-small">Module card</a>
                             @if ($cm->canIdentify())
                                 @if ($cm->isIdentifying())
                                     <button type="button" wire:click="stopIdentify({{ $cm->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Stop</button>

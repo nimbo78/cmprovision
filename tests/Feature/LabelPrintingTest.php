@@ -55,7 +55,7 @@ class LabelPrintingTest extends TestCase
 
         $this->start('1000000000000e01');
 
-        $this->assertSame(1, Cmlog::where('cm', '1000000000000e01')
+        $this->assertSame(1, Cmlog::where('cm', 'e4:5f:01:00:00:01')
             ->where('msg', 'Label command output: cannot write /home/wlanpi/cmprovision.csv')->count());
     }
 
@@ -66,7 +66,7 @@ class LabelPrintingTest extends TestCase
 
         $this->start('1000000000000e03');
 
-        $this->assertSame(1, Cmlog::where('cm', '1000000000000e03')
+        $this->assertSame(1, Cmlog::where('cm', 'e4:5f:01:00:00:01')
             ->where('msg', 'like', 'Label command output:%/nonexistent-dir/cmprovision.csv%')->count());
     }
 
@@ -76,7 +76,7 @@ class LabelPrintingTest extends TestCase
 
         $this->start('1000000000000e04');
 
-        $this->assertSame(1, Cmlog::where('cm', '1000000000000e04')
+        $this->assertSame(1, Cmlog::where('cm', 'e4:5f:01:00:00:01')
             ->where('msg', 'like', '%returned exit code 3. Program output:%printer offline%')->count());
     }
 

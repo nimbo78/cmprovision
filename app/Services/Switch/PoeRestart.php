@@ -53,7 +53,7 @@ class PoeRestart
                 if ($why !== null)
                     $skipped[isset($skipped[$cm->displayName()]) ? $cm->displayName().' ('.$cm->serial.')' : $cm->displayName()] = $why;   // two modules of one name stay two lines
                 else
-                    $tiles[$tile['key']] = $tile + ['serial' => $cm->serial, 'module_name' => $cm->displayName()];
+                    $tiles[$tile['key']] = $tile + ['serial' => $cm->serial, 'module_mac' => $cm->mac, 'module_name' => $cm->displayName()];
             }
             return [$tiles, $skipped];
         });
@@ -72,6 +72,7 @@ class PoeRestart
                     self::skip($skipped, $tile['label'] ?? $key, $why, $tile ? $stand['switches'][$tile['switch_id']]['config']['host'] : null);
                 else
                     $tiles[$key] = $tile + ['serial' => $tile['modules'] ? $tile['modules'][0]->serial : null,
+                        'module_mac' => $tile['modules'] ? $tile['modules'][0]->mac : null,
                         'module_name' => $tile['modules'] ? $tile['modules'][0]->displayName() : null];
             }
             return [$tiles, $skipped];
@@ -294,7 +295,7 @@ class PoeRestart
             }
             $outage = PoeOutage::create(['switch_id' => $this->switch->id, 'switch_host' => $this->switch->host,
                 'if_index' => $tile['ifIndex'], 'port' => $tile['label'], 'oid' => $oid, 'on_value' => PoeControl::ON,
-                'cm_serial' => $tile['serial'], 'user' => $this->user, 'off_at' => now()]);
+                'cm_mac' => $tile['module_mac'] ?? null, 'user' => $this->user, 'off_at' => now()]);
             [$state, $why] = $this->switchOff($oid);
             if ($state === 'refused')
             {
@@ -388,8 +389,7 @@ class PoeRestart
         $skipped[$what] = $why;
     }
 
-    /* A module in a message after the run: its host name or MAC, not its serial (that stays the key of the lock and the
-       log). During the run the tile carries the name: a database that fails part way must not fail a message. */
+    /* A module in a message after the run: its host name or MAC, not its serial (that stays the key of the lock). During the run the tile carries the name: a database that fails part way must not fail a message. */
     protected static function moduleName(string $serial): string
     {
         try {
@@ -408,7 +408,7 @@ class PoeRestart
     /* A line of the module log; a booting Raspberry Pi has no serial yet */
     protected function log(array $tile, string $level, string $message): void
     {
-        Cmlog::create(['cm' => $tile['serial'] ?? '', 'board' => $tile['label'], 'loglevel' => $level, 'msg' => $message]);
+        Cmlog::create(['cm' => $tile['module_mac'] ?? '', 'board' => $tile['label'], 'loglevel' => $level, 'msg' => $message]);
     }
 
     protected function who(): string

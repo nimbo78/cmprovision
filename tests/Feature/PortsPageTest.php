@@ -224,7 +224,7 @@ class PortsPageTest extends TestCase
         Livewire::test(Ports::class)
             ->call('select', 's1p8')
             ->assertSee('GE0/0/3')
-            ->assertSee(route('cm', $cm->serial), false)
+            ->assertSee(route('cm', $cm->mac), false)
             ->assertSee('delivering 6.9 W')
             ->call('identify', $cm->id);
 

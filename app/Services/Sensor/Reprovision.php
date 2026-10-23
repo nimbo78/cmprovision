@@ -243,6 +243,6 @@ class Reprovision
     }
     private function log(Cm $cm, string $message): void
     {
-        Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => 'info', 'msg' => $message]);
+        Cmlog::create(['cm' => $cm->mac, 'board' => $cm->provisioning_board, 'loglevel' => 'info', 'msg' => $message]);
     }
 }

@@ -23,7 +23,7 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * The module card (/cms/<serial>): the steps of the last run with their times, durations and
+ * The module card (/cms/<mac>): the steps of the last run with their times, durations and
  * speeds, the bootloader before and after, the logs, the module's history, and for a failed or
  * silent module the step where it stopped and what the operator can do about it.
  */
@@ -348,7 +348,7 @@ class ModuleCardTest extends TestCase
     public function test_dashboard_log_and_module_list_link_to_the_card()
     {
         $this->sensor0Run();
-        $link = route('cm', self::SERIAL);
+        $link = route('cm', 'e4:5f:01:62:9f:d3');
 
         Livewire::test(ProvisioningStatus::class)->assertSee($link, false);
         Livewire::test(ProvisioningLog::class)->assertSee($link, false);

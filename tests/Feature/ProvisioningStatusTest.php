@@ -110,7 +110,7 @@ class ProvisioningStatusTest extends TestCase
             ->assertSee('24%')
             ->assertSee('e4:5f:01:00:00:05')
             ->assertSee('Done')
-            ->assertDontSee('1000000000000a06');
+            ->assertDontSee('e4:5f:01:00:00:06');
     }
 
     public function test_the_dashboard_embeds_the_status_panel()
@@ -173,7 +173,7 @@ class ProvisioningStatusTest extends TestCase
                 'phase' => 'write', 'provisioning_started_at' => now()->subMinutes($i), 'notification_batch_id' => $batch->id]);
 
         $html = Livewire::test(ProvisioningStatus::class)->html();
-        $this->assertStringContainsString('1000000000000060', $html, 'the first module of 60 is not cut off');
+        $this->assertStringContainsString('e4:5f:01:00:00:3c', $html, 'the first module of 60 is not cut off');
     }
 
     public function test_the_summary_counts_the_open_batch()
@@ -190,7 +190,7 @@ class ProvisioningStatusTest extends TestCase
             ->assertSeeHtml('<div class="num text-neg">1</div>')
             ->assertSee('Project 78 · batch since')
             ->assertSee('3 modules · 5:00 per module')
-            ->assertSee('1000000000000c01');   // a module of the batch stays, however long ago it finished
+            ->assertSee('e4:5f:01:00:00:01');   // a module of the batch stays, however long ago it finished
     }
 
     public function test_new_batch_closes_the_open_one()
@@ -209,7 +209,7 @@ class ProvisioningStatusTest extends TestCase
 
         Livewire::test(ProvisioningStatus::class)
             ->assertSee('Last batch, closed at')
-            ->assertSee('1000000000000c04');
+            ->assertSee('e4:5f:01:00:00:04');
     }
 
     public function test_a_module_running_in_another_batch_is_listed_too()
@@ -219,7 +219,7 @@ class ProvisioningStatusTest extends TestCase
         $other = NotificationBatch::create(['project_id' => $batch->project_id, 'started_at' => now()->subHour(), 'last_event_at' => now(), 'closed_at' => now()]);
         $this->module('1000000000000c05', ['phase' => 'verify', 'notification_batch_id' => $other->id, 'phase_started_at' => now(), 'progress_updated_at' => now()]);
 
-        Livewire::test(ProvisioningStatus::class)->assertSee('1000000000000c05');
+        Livewire::test(ProvisioningStatus::class)->assertSee('e4:5f:01:00:00:05');
     }
 
     public function test_a_long_failure_reason_wraps_and_a_narrow_table_scrolls()
@@ -272,7 +272,7 @@ class ProvisioningStatusTest extends TestCase
         $this->module('1000000000000c10', ['phase' => 'done', 'notification_batch_id' => $batch->id, 'phase_started_at' => now()->subMinutes(20),
                                            'provisioning_complete_at' => now()->subMinutes(20)]);
 
-        Livewire::test(ProvisioningStatus::class)->assertSee('1000000000000c10')->assertDontSee('1000000000000c09');
+        Livewire::test(ProvisioningStatus::class)->assertSee('e4:5f:01:00:00:10')->assertDontSee('e4:5f:01:00:00:09');
     }
 
     public function test_nothing_to_show_says_so()

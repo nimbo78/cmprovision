@@ -144,7 +144,7 @@ class ImageResumeStartTest extends TestCase
         $this->assertSame([3 * self::MIB, 3 * self::MIB], [$cm->progress_bytes, $cm->progress_base]);
         $this->assertSame(['BUILD_TIMESTAMP=1700000000', 'flashed'], [$cm->eeprom_before, $cm->pre_script_output]);
         Event::assertDispatchedTimes(CmProvisioningStarted::class, 1);
-        $this->assertTrue(Cmlog::where('cm', self::SERIAL)
+        $this->assertTrue(Cmlog::where('cm', 'e4:5f:01:62:9f:d3')
             ->where('msg', 'Provisioning resumed: the module restarted during the write; continuing from 0.0 GB of 0.0 GB. Utility OS: legacy.')->exists());
 
         $copy = $project->image->fresh();
@@ -333,7 +333,7 @@ class ImageResumeStartTest extends TestCase
         $this->assertSame('skipped', $this->cm()->os_check, 'a reboot would bring it back to USB boot');
         $this->assertStringNotContainsString('cat >/tmp/oscheck/run', $script);
         $this->assertStringNotContainsString("reboot -f\n", $script);
-        $this->assertTrue(Cmlog::where('cm', self::SERIAL)->where('msg', 'like', 'Provisioning resumed:%OS check skipped: the module booted over USB.')->exists());
+        $this->assertTrue(Cmlog::where('cm', 'e4:5f:01:62:9f:d3')->where('msg', 'like', 'Provisioning resumed:%OS check skipped: the module booted over USB.')->exists());
     }
 
     public function test_marks_past_the_image_or_outside_the_write_do_not_count()

@@ -139,7 +139,7 @@ class ResolveBoardsTest extends TestCase
 
         Queue::assertNothingPushed();
         $this->assertSame([null, null], [$cm->fresh()->provisioning_board, $cm->fresh()->board_pending_since]);
-        $this->assertSame(1, Cmlog::where('cm', '10000000e611110f')->where('loglevel', 'warning')
+        $this->assertSame(1, Cmlog::where('cm', 'e4:5f:01:00:00:99')->where('loglevel', 'warning')
             ->where('msg', 'Switch port unknown: sw01 does not know MAC e4:5f:01:00:00:99')->count());
     }
 
@@ -245,7 +245,7 @@ class ResolveBoardsTest extends TestCase
 
         $this->assertSame([null, null], [$cm->fresh()->provisioning_board, $cm->fresh()->board_pending_since]);
         $this->assertSame(0, Cmlog::where('msg', 'like', 'Label command output:%')->count());
-        $this->assertSame(1, Cmlog::where('cm', '10000000e611110c')->where('loglevel', 'warning')->count());
+        $this->assertSame(1, Cmlog::where('cm', 'e4:5f:01:62:9f:d3')->where('loglevel', 'warning')->count());
     }
 
     public function test_the_boards_of_a_wave_are_written_before_any_label_is_printed()
@@ -284,7 +284,7 @@ class ResolveBoardsTest extends TestCase
         $this->stand();
         $this->project();
         $this->get(self::START.'10000000e611110c&mac=e4:5f:01:62:9f:d3')->assertOk();
-        $started = fn () => Cmlog::where('cm', '10000000e611110c')->where('msg', 'like', 'Provisioning started%')->value('board');
+        $started = fn () => Cmlog::where('cm', 'e4:5f:01:62:9f:d3')->where('msg', 'like', 'Provisioning started%')->value('board');
         $this->assertNull($started());
 
         (new ResolveBoards)->handle();
@@ -309,7 +309,7 @@ class ResolveBoardsTest extends TestCase
         Carbon::setTestNow(now()->addSeconds(ResolveBoards::GIVE_UP_SECONDS));
         (new ResolveBoards)->handle();
         $this->assertNull($cm->fresh()->board_pending_since);
-        $this->assertSame(1, Cmlog::where('cm', '10000000e611110c')->where('msg', 'Switch port unknown: no route to the stand')->count());
+        $this->assertSame(1, Cmlog::where('cm', 'e4:5f:01:62:9f:d3')->where('msg', 'Switch port unknown: no route to the stand')->count());
     }
 
     public function test_a_module_whose_switches_are_gone_gets_no_board_at_once()
@@ -320,7 +320,7 @@ class ResolveBoardsTest extends TestCase
         (new ResolveBoards)->handle();
 
         $this->assertSame([null, null], [$cm->fresh()->provisioning_board, $cm->fresh()->board_pending_since]);
-        $this->assertSame(0, Cmlog::where('cm', '10000000e611110c')->count());
+        $this->assertSame(0, Cmlog::count());
         Queue::assertNothingPushed();
     }
 

@@ -104,10 +104,10 @@ class ResolveBoards implements ShouldQueue, ShouldBeUniqueUntilProcessing
             return false;
         // the lines this start wrote before its board was known
         if ($found['board'] !== null)
-            Cmlog::where('cm', $cm->serial)->whereNull('board')->where('created_at', '>=', $since)->update(['board' => $found['board']]);
+            $cm->logLines()->whereNull('board')->where('created_at', '>=', $since)->update(['board' => $found['board']]);
         $cm->refresh();
         if ($found['warning'])
-            Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => 'warning', 'msg' => $found['warning']]);
+            Cmlog::create(['cm' => $cm->mac, 'board' => $cm->provisioning_board, 'loglevel' => 'warning', 'msg' => $found['warning']]);
         // a job of its own: a slow or silent printer never holds up the boards of the wave
         if ($cm->phase !== 'failed' && $cm->project && $cm->project->label_moment === 'preinstall' && $cm->project->label)
             PrintLabel::dispatch($cm->id);
@@ -121,7 +121,7 @@ class ResolveBoards implements ShouldQueue, ShouldBeUniqueUntilProcessing
         $stale = Cm::whereNotNull('board_pending_since')->where('board_pending_since', '<', now()->subMinutes(self::STALE_MINUTES))->get();
         foreach ($stale as $cm)
             if (Cm::whereKey($cm->id)->where('board_pending_since', $cm->board_pending_since)->update(['board_pending_since' => null]))
-                Cmlog::create(['cm' => $cm->serial, 'board' => null, 'loglevel' => 'warning',
+                Cmlog::create(['cm' => $cm->mac, 'board' => null, 'loglevel' => 'warning',
                                'msg' => 'Switch port unknown: the lookup did not run within '.self::STALE_MINUTES.' minutes of the start']);
     }
 }
