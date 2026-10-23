@@ -1,3 +1,14 @@
+cmprovision4 (2.12.4) unstable; urgency=medium
+
+  * cmprovision-backup keeps the newest 5 snapshots in /var/backups/cmprovision
+    and removes the older ones after making a new one (--keep N or
+    CMPROVISION_BACKUP_KEEP; --keep all keeps everything). New
+    "cmprovision-backup --prune" applies the limit without making a snapshot.
+    Only directories named <date>-<time>-<version> are removed; a destination
+    given by hand is trimmed only by --prune.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 23 Oct 2026 19:00:00 +0300
+
 cmprovision4 (2.12.3) unstable; urgency=medium
 
   * HDMI display: "cm" on the provisioner's port stands one column further from

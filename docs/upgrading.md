@@ -36,6 +36,8 @@ sudo cmprovision-backup
 
 Replace `<snapshot>` with the actual snapshot directory. By default, backups omit uploaded images and packages. Use `sudo cmprovision-backup --with-uploads` to include them.
 
+Snapshots take 100–150 MB each, so only the newest five stay: after a snapshot in `/var/backups/cmprovision` the older ones are removed. `--keep N` (or `CMPROVISION_BACKUP_KEEP=N` in the environment) sets another number, `--keep all` keeps every snapshot. `sudo cmprovision-backup --prune` applies the limit without making a snapshot, for example after an upgrade that left a long list. Only directories named `<date>-<time>-<version>` are ever removed; a destination you give by hand is trimmed only by `--prune`.
+
 Without the old package in the snapshot, `cmprovision-restore` refuses to restore it over a different installed version. The helpers are installed with the package; their source is [`tools/backup.sh`](../tools/backup.sh) and [`tools/restore.sh`](../tools/restore.sh).
 
 If you deliberately accept upgrading without an automatic rollback snapshot, the escape hatch is:
