@@ -1,4 +1,4 @@
-cmprovision4 (2.8.0~dev1) unstable; urgency=medium
+cmprovision4 (2.8.0) unstable; urgency=medium
 
   * Images from the internet: Images -> Add from the internet fetches an
     image by itself from a GitHub release (any repository; the ones used are
