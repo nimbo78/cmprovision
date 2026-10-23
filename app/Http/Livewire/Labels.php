@@ -3,12 +3,15 @@
 namespace App\Http\Livewire;
 
 use Livewire\Attributes\Title;
+use App\Http\Livewire\Concerns\SortsColumns;
+use App\Support\ColumnSort;
 use Livewire\Component;
 use App\Models\Label;
 
 #[Title('Labels')]
 class Labels extends Component
 {
+    use SortsColumns;
     public $isOpen = false;
     public $labels;
     public $labelid, $name, $printer_type, $print_command;
@@ -26,10 +29,22 @@ class Labels extends Component
         'template' => 'required'
     ];
 
+    /* The columns that sort the table of labels by a click on their header; with none chosen the order is the name */
+    protected function columns(): array
+    {
+        return [
+            'name' => ['first' => 'asc', 'value' => fn (Label $label) => (string) $label->name],
+            'type' => ['first' => 'asc', 'value' => fn (Label $label) => (string) $label->printer_type],
+            'host' => ['first' => 'asc', 'value' => fn (Label $label) => $label->printer_type === 'ftp' && trim((string) $label->ftp_hostname) !== '' ? $label->ftp_hostname : null],
+        ];
+    }
+
     public function render()
     {
-        $this->labels = Label::orderBy('name')->get();
-        return view('livewire.labels');
+        [$sort, $dir] = $this->sorting();
+        $this->labels = ColumnSort::apply(Label::orderBy('name')->get(), $this->columns(), $sort, $dir,
+            fn ($a, $b) => strnatcasecmp((string) $a->name, (string) $b->name) ?: $a->id <=> $b->id);
+        return view('livewire.labels', ['sortKey' => $sort, 'sortDir' => $dir]);
     }
 
     public function openModal()

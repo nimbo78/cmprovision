@@ -21,9 +21,9 @@
                 <table class="cmp-table min-w-full">
                     <thead>
                         <tr>
-                            <th>Name</th>
-                            <th>Type</th>
-                            <th>Printer FTP hostname</th>
+                            <x-sort-th column="name" :sort="$sortKey" :dir="$sortDir">Name</x-sort-th>
+                            <x-sort-th column="type" :sort="$sortKey" :dir="$sortDir">Type</x-sort-th>
+                            <x-sort-th column="host" :sort="$sortKey" :dir="$sortDir">Printer FTP hostname</x-sort-th>
                             <th>Action</th>
                         </tr>
                     </thead>

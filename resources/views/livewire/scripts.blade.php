@@ -21,9 +21,9 @@
                 <table class="cmp-table min-w-full">
                     <thead>
                         <tr>
-                            <th>Name</th>
-                            <th>Type</th>
-                            <th>Priority</th>
+                            <x-sort-th column="name" :sort="$sortKey" :dir="$sortDir">Name</x-sort-th>
+                            <x-sort-th column="type" :sort="$sortKey" :dir="$sortDir">Type</x-sort-th>
+                            <x-sort-th column="priority" :sort="$sortKey" :dir="$sortDir">Priority</x-sort-th>
                             <th>Action</th>
                         </tr>
                     </thead>
