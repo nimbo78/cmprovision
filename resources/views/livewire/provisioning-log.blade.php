@@ -19,7 +19,7 @@
                     <tr wire:key="log-{{ $l->id }}" class="{{ $l->loglevel == 'error' ? 'text-log-err' : '' }}">
                         <td class="tabular-nums text-log-muted whitespace-nowrap border-log-line">{{ $at->toDateString() === $today ? $at->format('H:i:s') : $at->format('d.m H:i:s') }}</td>
                         <td class="text-log-muted whitespace-nowrap border-log-line">{{ $l->board }}</td>
-                        <td class="mono border-log-line">@if ($l->cm)<a href="{{ route('cm', $l->cm) }}" class="hover:underline">{{ $l->cm }}</a>@endif</td>
+                        <td class="mono border-log-line">@if ($l->cm)<a href="{{ route('cm', $l->cm) }}" class="hover:underline">{{ $macs[$l->cm] ?? $l->cm }}</a>@endif</td>
                         <td class="border-log-line">{!! nl2br(e($l->msg), false) !!}</td>
                     </tr>
                 @empty

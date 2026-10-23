@@ -3,7 +3,7 @@
 [Back to the README](../README.md) · [Module diagnostics](module-diagnostics.md) · [USB provisioning](usb-provisioning.md)
 
 **Unrecognized** means that the switch reports a MAC address on a live port, but
-cmprovision has not matched it to a module serial. The port tile says **UNR**.
+cmprovision has not matched it to a module. The port tile says **UNR**.
 Older versions called this **foreign** and displayed **MAC**; neither term was a
 hardware diagnosis. A device with a link but no learned MAC is shown as **LNK**
 and shares the unrecognized filter.

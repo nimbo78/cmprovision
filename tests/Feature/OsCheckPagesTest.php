@@ -141,7 +141,7 @@ class OsCheckPagesTest extends TestCase
         Http::fake();
         $cm = $this->module(['phase' => 'done', 'hostname' => 'wlanpi-a1b', 'os_state' => 'degraded', 'provisioning_complete_at' => now()]);
 
-        $this->assertSame('10000000e611110c · e4:5f:01:62:9f:d3 · wlanpi-a1b · 8:00', (new Notifier)->moduleText($cm, 'completed'));
+        $this->assertSame('wlanpi-a1b · e4:5f:01:62:9f:d3 · 8:00', (new Notifier)->moduleText($cm, 'completed'));
         (new Notifier)->notify($cm, 'completed');
 
         Http::assertSent(function (Request $r) {

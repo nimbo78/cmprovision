@@ -82,7 +82,7 @@ target storage before enabling USB boot.
    target in the shown setup. Watch the rpiboot log for discovery and file transfer.
    The installed cmprovision service already runs rpiboot; a second manual
    rpiboot process is unnecessary.
-7. Open **CMs** and the target's serial number. Check the project, image and
+7. Open **CMs** and the target's MAC address. Check the project, image and
    **Utility OS**. Follow the write and verification stages to **Done**.
 
 If OS check was enabled, the card should say **skipped: the module booted over USB**.

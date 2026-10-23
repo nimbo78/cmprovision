@@ -115,7 +115,7 @@
             </section>
             @endforeach
             @if ($map)
-                <p class="text-xs text-fg-muted">The last 4 characters of the serial and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
+                <p class="text-xs text-fg-muted">The last 4 characters of the MAC address and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
             @endif
             </div>
 
@@ -128,7 +128,10 @@
                         @php($advice = \App\Support\FailureAdvice::for($cm))
                         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 mb-3">
                             <dt class="text-fg-muted">Module</dt>
-                            <dd><a href="{{ route('cm', $cm->serial) }}" class="ports-serial font-bold text-link hover:underline">{{ $cm->serial }}</a></dd>
+                            <dd>
+                                <a href="{{ route('cm', $cm->serial) }}" class="ports-serial font-bold text-link hover:underline">{{ $cm->mac ?: $cm->serial }}</a>
+                                @if (trim((string) $cm->hostname) !== '')<span class="text-fg-muted">{{ $cm->hostname }}</span>@endif
+                            </dd>
                             <dt class="text-fg-muted">Step</dt>
                             <dd>
                                 @if ($cm->phase)
@@ -171,12 +174,12 @@
                             @else
                                 <p class="mb-2"><a href="{{ route('diagnostics') }}" class="text-link hover:underline">USB diagnostic reports</a></p>
                             @endif
-                            <p class="mb-2">The switch reports these MAC addresses, but none is matched to a module serial in cmprovision:
+                            <p class="mb-2">The switch reports these MAC addresses, but none is matched to a module in cmprovision:
                                 <span class="ports-serial break-all">{{ implode(', ', $tile['macs']) }}</span></p>
                             @if ($tile['changed'] !== null && $tile['changed'] > \App\Support\StandMap::BOOT_SECONDS)
                                 <p class="mb-2 text-fg-muted">The initial 3-minute discovery window has passed. This does not prove a hardware fault.</p>
                             @endif
-                            <p class="mb-2">A new module is added automatically when its utility OS reports its serial and MAC. No manual registration is needed.</p>
+                            <p class="mb-2">A new module is added automatically when its utility OS reports to the server. No manual registration is needed.</p>
                             <p class="text-fg-muted">The device may have booted its installed OS or stopped before reaching the provisioning server. Check DHCP and boot-file delivery on the provisioner, then the target console or USB recovery if needed.</p>
                         </div>
                     @elseif ($tile['state'] === 'boot' && $tile['macs'])

@@ -51,9 +51,9 @@ class PoeRestart
                 $tile = Stand::tileOf($stand['map'], $cm);
                 $why = $tile ? StandMap::restartBlocker($tile) : Stand::notSeen($stand);
                 if ($why !== null)
-                    $skipped[$cm->serial] = $why;
+                    $skipped[$cm->displayName()] = $why;
                 else
-                    $tiles[$tile['key']] = $tile + ['serial' => $cm->serial];
+                    $tiles[$tile['key']] = $tile + ['serial' => $cm->serial, 'module_name' => $cm->displayName()];
             }
             return [$tiles, $skipped];
         });
@@ -71,7 +71,8 @@ class PoeRestart
                 if ($why !== null)
                     self::skip($skipped, $tile['label'] ?? $key, $why, $tile ? $stand['switches'][$tile['switch_id']]['config']['host'] : null);
                 else
-                    $tiles[$key] = $tile + ['serial' => $tile['modules'] ? $tile['modules'][0]->serial : null];
+                    $tiles[$key] = $tile + ['serial' => $tile['modules'] ? $tile['modules'][0]->serial : null,
+                        'module_name' => $tile['modules'] ? $tile['modules'][0]->displayName() : null];
             }
             return [$tiles, $skipped];
         });
@@ -88,7 +89,7 @@ class PoeRestart
         if (count($r['restarted']) === 1)
         {
             $port = reset($r['restarted']);
-            $parts[] = 'Restarted '.$port['label'].($port['serial'] ? ' ('.$port['serial'].')' : '').': PoE was off for '.self::OFF_SECONDS.' s.';
+            $parts[] = 'Restarted '.$port['label'].($port['serial'] ? ' ('.self::moduleName($port['serial']).')' : '').': PoE was off for '.self::OFF_SECONDS.' s.';
         }
         elseif ($r['restarted'])
             $parts[] = 'Restarted '.count($r['restarted']).' ports: '.implode(', ', array_column($r['restarted'], 'label')).'.';
@@ -122,7 +123,7 @@ class PoeRestart
             $then = 'its run stops and starts over.';
         else
             $then = 'the module boots from the network and is provisioned again.';
-        return 'Restart '.$cm->serial.$on.'? PoE goes off for '.self::OFF_SECONDS.' s; '.$then;
+        return 'Restart '.$cm->displayName().$on.'? PoE goes off for '.self::OFF_SECONDS.' s; '.$then;
     }
 
     public static function confirmFailed(int $count, int $resuming = 0): string
@@ -164,7 +165,7 @@ class PoeRestart
         {
             $why = self::switchBlocker($stand['switches'][$tile['switch_id']] ?? null);
             if ($why !== null)
-                self::skip($result['skipped'], $tile['serial'] ?? $tile['label'], $why, $stand['switches'][$tile['switch_id']]['config']['host'] ?? null);
+                self::skip($result['skipped'], $tile['module_name'] ?? $tile['label'], $why, $stand['switches'][$tile['switch_id']]['config']['host'] ?? null);
             else
                 $groups[$tile['switch_id']][$key] = $tile;
         }
@@ -199,7 +200,7 @@ class PoeRestart
                 catch (\Throwable $e)
                 {
                     foreach ($group as $tile)
-                        self::skip($result['skipped'], $tile['serial'] ?? $tile['label'], $state['switch']->hostname().' does not answer: '.$e->getMessage(),
+                        self::skip($result['skipped'], $tile['module_name'] ?? $tile['label'], $state['switch']->hostname().' does not answer: '.$e->getMessage(),
                             $state['config']['host']);
                     continue;
                 }
@@ -281,13 +282,13 @@ class PoeRestart
             catch (\Throwable $e)
             {
                 // a port nobody could check keeps its power
-                self::skip($result['skipped'], $tile['serial'] ?? $tile['label'], 'could not check whether the module on '
+                self::skip($result['skipped'], $tile['module_name'] ?? $tile['label'], 'could not check whether the module on '
                     .$tile['label'].' writes its bootloader EEPROM: '.$e->getMessage(), $this->switch->host);
                 continue;
             }
             if ($writer)
             {
-                self::skip($result['skipped'], $tile['serial'] ?? $tile['label'],
+                self::skip($result['skipped'], $tile['module_name'] ?? $tile['label'],
                     'the module on '.$tile['label'].' is writing its bootloader EEPROM', $this->switch->host);
                 continue;
             }
@@ -385,6 +386,17 @@ class PoeRestart
         if (isset($skipped[$what]) && $host !== null)
             $what .= ' ('.$host.')';
         $skipped[$what] = $why;
+    }
+
+    /* A module in a message after the run: its host name or MAC, not its serial (that stays the key of the lock and the
+       log). During the run the tile carries the name: a database that fails part way must not fail a message. */
+    protected static function moduleName(string $serial): string
+    {
+        try {
+            return Cm::where('serial', $serial)->first()?->displayName() ?? $serial;
+        } catch (\Throwable) {
+            return $serial;
+        }
     }
 
     /* A port in the result: what the operator reads about it */

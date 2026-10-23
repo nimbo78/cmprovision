@@ -111,7 +111,7 @@ class NotificationsTest extends TestCase
         $this->assertTrue($old->fresh()->last_event_at->eq(now()->subDay()), 'the old batch is not touched');
         Http::assertNotSent(function (Request $r) { return ($r['root_id'] ?? null) === 'oldsummary'; });
         Http::assertSent(function (Request $r) {
-            return $r->url() == 'https://mm.example.com/api/v4/posts' && empty($r['root_id']) && Str::contains($r['message'], '1000000000000e01');
+            return $r->url() == 'https://mm.example.com/api/v4/posts' && empty($r['root_id']) && Str::contains($r['message'], 'e4:5f:01:00:00:01');
         });
     }
 
@@ -133,7 +133,7 @@ class NotificationsTest extends TestCase
 
         Http::assertSent(function (Request $r) {
             return $r->url() == 'https://mm.example.com/api/v4/posts' && ($r['root_id'] ?? null) === 'summary1'
-                && Str::contains($r['message'], '1000000000000c01') && Str::contains($r['message'], '✅');
+                && Str::contains($r['message'], 'e4:5f:01:00:00:01') && Str::contains($r['message'], '✅');
         });
         Http::assertSent(function (Request $r) {
             return $r->method() == 'PUT' && $r->url() == 'https://mm.example.com/api/v4/posts/summary1/patch'
@@ -176,7 +176,7 @@ class NotificationsTest extends TestCase
         $this->complete('1000000000000c03');
 
         Http::assertSent(function (Request $r) {
-            return $r->url() == 'https://mm.example.com/hooks/abc' && Str::contains($r['text'], '1000000000000c03')
+            return $r->url() == 'https://mm.example.com/hooks/abc' && Str::contains($r['text'], 'e4:5f:01:00:00:03')
                 && Str::contains($r['text'], '✅');
         });
         Http::assertSent(function (Request $r) {

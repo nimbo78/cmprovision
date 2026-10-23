@@ -47,7 +47,7 @@ class PoeRestartTest extends TestCase
         $this->assertNotNull($outage->on_at);
         $this->assertDatabaseHas('cmlogs', ['cm' => '10000000e611110c', 'board' => 'sw01 GE0/0/3', 'loglevel' => 'info',
                                             'msg' => 'PoE restart of sw01 GE0/0/3 by igor: off for 5 s']);
-        $this->assertSame(['text' => 'Restarted sw01 GE0/0/3 (10000000e611110c): PoE was off for 5 s.', 'error' => false],
+        $this->assertSame(['text' => 'Restarted sw01 GE0/0/3 (e4:5f:01:62:9f:d3): PoE was off for 5 s.', 'error' => false],
             PoeRestart::message($result));
     }
 
@@ -65,9 +65,9 @@ class PoeRestartTest extends TestCase
         $cm = $this->stand();
         $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.0.17.34.51.68.85.10.0'] = 8;   // 00:11:22:33:44:55 next to the module
         $result = PoeRestart::modules([$cm], 'igor');
-        $this->assertSame(['10000000e611110c' => 'other devices on sw01 GE0/0/3'], $result['skipped']);
+        $this->assertSame(['e4:5f:01:62:9f:d3' => 'other devices on sw01 GE0/0/3'], $result['skipped']);
         $this->assertSame([], $this->fake->sets);
-        $this->assertSame(['text' => 'Not restarted: 10000000e611110c (other devices on sw01 GE0/0/3).', 'error' => true],
+        $this->assertSame(['text' => 'Not restarted: e4:5f:01:62:9f:d3 (other devices on sw01 GE0/0/3).', 'error' => true],
             PoeRestart::message($result));
     }
 
@@ -130,7 +130,7 @@ class PoeRestartTest extends TestCase
 
         $this->assertSame(['s1p8' => ['label' => 'sw01 GE0/0/3', 'serial' => '10000000e611110c', 'why' => 'noAccess']], $result['failed']);
         $this->assertSame(['s1p7' => ['label' => 'sw01 GE0/0/2', 'serial' => '10000000e611110d', 'why' => null]], $result['restarted']);
-        $this->assertSame(['text' => 'Restarted sw01 GE0/0/2 (10000000e611110d): PoE was off for 5 s. The switch did not switch off sw01 GE0/0/3: noAccess.',
+        $this->assertSame(['text' => 'Restarted sw01 GE0/0/2 (e4:5f:01:62:9f:d4): PoE was off for 5 s. The switch did not switch off sw01 GE0/0/3: noAccess.',
                            'error' => true], PoeRestart::message($result));
     }
 
@@ -145,7 +145,7 @@ class PoeRestartTest extends TestCase
     {
         $this->stand();
         $away = Cm::create(['serial' => '10000000e611ffff', 'mac' => 'e4:5f:01:00:ff:ff', 'phase' => 'failed']);
-        $this->assertSame(['10000000e611ffff' => 'not seen on the switch'], PoeRestart::modules([$away], 'igor')['skipped']);
+        $this->assertSame(['e4:5f:01:00:ff:ff' => 'not seen on the switch'], PoeRestart::modules([$away], 'igor')['skipped']);
     }
 
     public function test_a_silent_switch_restarts_nothing()
@@ -168,13 +168,13 @@ class PoeRestartTest extends TestCase
     public function test_what_the_operator_is_asked()
     {
         $cm = $this->stand();
-        $this->assertSame('Restart 10000000e611110c on GE0/0/3? PoE goes off for 5 s; the module boots from the network and is provisioned again.',
+        $this->assertSame('Restart e4:5f:01:62:9f:d3 on GE0/0/3? PoE goes off for 5 s; the module boots from the network and is provisioned again.',
             PoeRestart::confirm($cm, 'GE0/0/3'));
         $cm->phase = 'done';
-        $this->assertSame('Restart 10000000e611110c on GE0/0/3? PoE goes off for 5 s; the module boots the system it was flashed with.',
+        $this->assertSame('Restart e4:5f:01:62:9f:d3 on GE0/0/3? PoE goes off for 5 s; the module boots the system it was flashed with.',
             PoeRestart::confirm($cm, 'GE0/0/3'));
         $cm->forceFill(['phase' => 'write', 'provisioning_started_at' => now(), 'progress_updated_at' => now()]);
-        $this->assertSame('Restart 10000000e611110c? PoE goes off for 5 s; its run stops and starts over.', PoeRestart::confirm($cm, null));
+        $this->assertSame('Restart e4:5f:01:62:9f:d3? PoE goes off for 5 s; its run stops and starts over.', PoeRestart::confirm($cm, null));
         $this->assertSame('Restart the Raspberry Pi on GE0/0/7? PoE goes off for 5 s.', PoeRestart::confirm(null, 'GE0/0/7'));
         $this->assertSame('Restart 3 modules (failed or without a report)? PoE goes off for 5 s on each port.', PoeRestart::confirmFailed(3));
         $this->assertSame('Restart 1 module (failed or without a report)? PoE goes off for 5 s on each port.', PoeRestart::confirmFailed(1));
@@ -245,7 +245,7 @@ class PoeRestartTest extends TestCase
 
         $this->assertSame(['s1p8'], array_keys($result['restarted']));
         $this->assertStringStartsWith('could not check whether the module on sw01 GE0/0/2 writes its bootloader EEPROM',
-            $result['skipped']['10000000e611110d']);
+            $result['skipped']['e4:5f:01:62:9f:d4']);
         $this->assertNotContains([self::OID7, 'i', PoeControl::OFF], $this->fake->sets);
     }
 
@@ -273,7 +273,7 @@ class PoeRestartTest extends TestCase
             'provisioning_started_at' => now()->subMinute(), 'phase_started_at' => now()->subMinute(), 'progress_updated_at' => now()]);
         $result = PoeRestart::modules([$pulled], 'igor');
 
-        $this->assertSame(['10000000e611110c' => 'not seen on the switch'], $result['skipped']);
+        $this->assertSame(['e4:5f:01:62:9f:d3' => 'not seen on the switch'], $result['skipped']);
         $this->assertSame([], $this->fake->sets, 'the running module keeps its power');
     }
 
@@ -314,7 +314,7 @@ class PoeRestartTest extends TestCase
         $this->fake->timeout = true;      // then the switch goes silent
         $result = PoeRestart::modules([$cm], 'igor');
         $this->assertSame([], $this->fake->sets);
-        $this->assertSame(['text' => 'Not restarted: 10000000e611110c (sw01 does not answer: No response from 192.0.2.1).', 'error' => true],
+        $this->assertSame(['text' => 'Not restarted: e4:5f:01:62:9f:d3 (sw01 does not answer: No response from 192.0.2.1).', 'error' => true],
             PoeRestart::message($result));
     }
 
@@ -338,7 +338,7 @@ class PoeRestartTest extends TestCase
         $result = PoeRestart::modules([$cm], 'igor');
         $this->assertSame([], $this->fake->sets);
         // an hour, and the wait for the lock, which may carry it into the next second
-        $this->assertMatchesRegularExpression('/^Not restarted: 10000000e611110c \(sw01 was last read 360[01] s ago: try again\)\.$/',
+        $this->assertMatchesRegularExpression('/^Not restarted: e4:5f:01:62:9f:d3 \(sw01 was last read 360[01] s ago: try again\)\.$/',
             PoeRestart::message($result)['text']);
         $this->assertTrue(PoeRestart::message($result)['error']);
     }
@@ -368,7 +368,7 @@ class PoeRestartTest extends TestCase
         $result = PoeRestart::modules([$one, $two], 'Igor');
 
         $this->assertSame(['s1p8'], array_keys($result['restarted']));
-        $this->assertSame('sw02 does not answer', $result['skipped'][$two->serial]);
+        $this->assertSame('sw02 does not answer', $result['skipped'][$two->displayName()]);
         $this->assertSame([], $this->fake2->sets);
     }
 
@@ -397,7 +397,7 @@ class PoeRestartTest extends TestCase
         $result = PoeRestart::modules([$one, $two], 'Igor');
 
         $this->assertSame(['s1p8'], array_keys($result['restarted']));
-        $this->assertSame('no write access on sw02', $result['skipped'][$two->serial]);
+        $this->assertSame('no write access on sw02', $result['skipped'][$two->displayName()]);
     }
 
     public function test_two_ports_with_one_label_both_say_why()

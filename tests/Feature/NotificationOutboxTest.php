@@ -97,7 +97,7 @@ class NotificationOutboxTest extends TestCase
         $this->assertCount(1, $this->replies());
         $text = $this->replies()[0]['message'];
         $this->assertStringStartsWith("✅ 3 done:\n", $text);
-        foreach (['1000000000000001', '1000000000000002', '1000000000000003'] as $serial)
+        foreach (['e4:5f:01:00:01:01', 'e4:5f:01:00:01:02', 'e4:5f:01:00:01:03'] as $serial)
             $this->assertStringContainsString($serial, $text);
         $this->assertSame(0, NotificationOutbox::whereNull('sent_at')->count());
     }
@@ -114,7 +114,7 @@ class NotificationOutboxTest extends TestCase
 
         $this->assertCount(1, $this->replies());
         $this->assertStringStartsWith("❌ 1 failed:\n", $this->replies()[0]['message']);
-        $this->assertStringNotContainsString('1000000000000001', $this->replies()[0]['message']);
+        $this->assertStringNotContainsString('e4:5f:01:00:01:01', $this->replies()[0]['message']);
         Http::assertSent(fn (Request $r) => Str::endsWith($r->url(), '/posts/summary1/patch')
             && Str::contains($r['message'], '✅ 1 done · ❌ 1 failed · ⏳ 1 in progress'));
     }
@@ -130,7 +130,7 @@ class NotificationOutboxTest extends TestCase
         $this->assertGreaterThan(1, $this->replies()->count());
         foreach ($this->replies() as $reply)
             $this->assertLessThanOrEqual(4000, mb_strlen($reply['message']));
-        $this->assertStringContainsString('1000000000000080', $this->replies()->last()['message']);
+        $this->assertStringContainsString('e4:5f:01:00:01:50', $this->replies()->last()['message']);
     }
 
     public function test_a_rate_limit_waits_as_long_as_the_chat_server_asks()
@@ -196,7 +196,7 @@ class NotificationOutboxTest extends TestCase
         $sent = collect(Http::recorded())->filter(fn ($pair) => Str::endsWith($pair[0]->url(), '/sendMessage') && $pair[1]->ok())
             ->map(fn ($pair) => $pair[0]['text'])->values();
         foreach (range(1, 80) as $n)
-            $this->assertSame(1, $sent->filter(fn ($text) => Str::contains($text, sprintf('1000000000000%03d', $n)))->count(),
+            $this->assertSame(1, $sent->filter(fn ($text) => Str::contains($text, sprintf('e4:5f:01:00:01:%02x', $n)))->count(),
                 "module $n is in exactly one message");
         $this->assertSame(0, NotificationOutbox::whereNull('sent_at')->count());
     }
@@ -357,6 +357,6 @@ class NotificationOutboxTest extends TestCase
         $this->flush();
 
         $this->assertCount(1, $this->replies());
-        $this->assertStringStartsWith("✅ 1 done:\n1000000000000002", $this->replies()[0]['message']);
+        $this->assertStringStartsWith("✅ 1 done:\ne4:5f:01:00:01:02", $this->replies()[0]['message']);
     }
 }

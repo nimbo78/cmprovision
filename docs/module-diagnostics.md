@@ -2,7 +2,7 @@
 
 cmprovision collects a read-only snapshot from the target's temporary utility OS at
 startup, after a failure, and at completion when the target stays in that OS.
-Open **CMs → serial number → Module diagnostics** for a summary of storage, power
+Open **CMs → the module's MAC address → Module diagnostics** for a summary of storage, power
 and temperature, memory, Ethernet, and boot/system information. Expand **Device
 facts and kernel output** for evidence. **Download report** saves a text copy;
 failure findings from registered modules are also retained in module History and the dashboard log.

@@ -169,7 +169,7 @@ class StandMapTest extends TestCase
         ]);
 
         $t = $map['tiles'];
-        $this->assertSame(['module', 'ok', '110C', '✓'], [$t['s1p1']['state'], $t['s1p1']['filter'], $t['s1p1']['short'], $t['s1p1']['mark']]);
+        $this->assertSame(['module', 'ok', '0001', '✓'], [$t['s1p1']['state'], $t['s1p1']['filter'], $t['s1p1']['short'], $t['s1p1']['mark']]);
         $this->assertSame(['boot', '···'], [$t['s1p2']['state'], $t['s1p2']['short']]);
         $this->assertSame(['foreign', 'UNR'], [$t['s1p3']['state'], $t['s1p3']['short']]);
         $this->assertSame('free', $t['s1p4']['state'], 'no link: free, even though the MAC is still in the switch table');
@@ -211,7 +211,7 @@ class StandMapTest extends TestCase
         ]);
 
         $tile = $map['tiles']['s1p1'];
-        $this->assertSame(['module', 'fail', '×2', 'A2'], [$tile['state'], $tile['filter'], $tile['mark'], substr($tile['short'], -2)]);
+        $this->assertSame(['module', 'fail', '×2', '02'], [$tile['state'], $tile['filter'], $tile['mark'], substr($tile['short'], -2)]);
         $this->assertSame(['10000000000000a2', '10000000000000a1'], array_map(function ($cm) { return $cm->serial; }, $tile['modules']));
         $this->assertSame(2, $map['summary']['modules']);
         $this->assertSame(1, $map['summary']['counts']['ok']);
@@ -241,7 +241,7 @@ class StandMapTest extends TestCase
         ]);
 
         $tile = $map['tiles']['s1p1'];
-        $this->assertSame(['run', '10%', '00A2'], [$tile['filter'], $tile['mark'], $tile['short']]);
+        $this->assertSame(['run', '10%', '0002'], [$tile['filter'], $tile['mark'], $tile['short']]);
         $this->assertSame(1, $map['summary']['modules']);
         $this->assertSame(0, $map['summary']['counts']['fail']);
     }

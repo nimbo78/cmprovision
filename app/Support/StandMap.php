@@ -373,7 +373,8 @@ class StandMap
             // a port with several modules answers to the chip of each of their states
             'filters' => $state === 'module' ? array_values(array_unique(array_map([self::class, 'moduleState'], $modules))) : [$filter],
             'modules' => $state === 'module' ? $modules : [],
-            'short' => $state === 'module' ? strtoupper(substr($modules[0]->serial, -4))
+            // the last four hex digits of the MAC: what a person reads off a switch or a label
+            'short' => $state === 'module' ? strtoupper(substr(str_replace(':', '', $modules[0]->mac ?: $modules[0]->serial), -4))
                 : (isset($links[$key]) ? '→' : (['uplink' => 'UP', 'foreign' => 'UNR', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? '')),
         ];
     }

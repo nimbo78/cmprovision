@@ -123,7 +123,7 @@ class PortsPageTest extends TestCase
         Livewire::test(Ports::class)
             ->assertSee('S5731-S24P4X')
             ->assertSee('3 × 1G PoE · 1 × SFP')
-            ->assertSee('110C')
+            ->assertSee('9FD3')
             ->assertSee('1 module on the stand')
             ->assertSee('2 of 3 ports free')
             ->assertSeeHtml('<span class="label">1 done</span>')   // the chip text has a box of its own to trim (app.css)
@@ -252,7 +252,7 @@ class PortsPageTest extends TestCase
         $page->call('$refresh')
             ->assertSee('not answering since')
             ->assertSee('No response from 192.0.2.1')
-            ->assertSee('110C');
+            ->assertSee('9FD3');
     }
 
     public function test_a_switch_that_never_answered_says_so()
@@ -487,9 +487,9 @@ class PortsPageTest extends TestCase
         $this->switchWithModule();
         $this->writeAccess();
         Livewire::test(Ports::class)->call('select', 's1p8')
-            ->assertSeeHtml('wire:confirm="Restart 10000000e611110c on 192.0.2.10 GE0/0/3? PoE goes off for 5 s; the module boots the system it was flashed with."')
+            ->assertSeeHtml('wire:confirm="Restart e4:5f:01:62:9f:d3 on 192.0.2.10 GE0/0/3? PoE goes off for 5 s; the module boots the system it was flashed with."')
             ->call('restart', 's1p8')
-            ->assertSee('Restarted 192.0.2.10 GE0/0/3 (10000000e611110c): PoE was off for 5 s.')
+            ->assertSee('Restarted 192.0.2.10 GE0/0/3 (e4:5f:01:62:9f:d3): PoE was off for 5 s.')
             ->assertDispatched('poe-outages-changed');
         $this->assertSame([[Poe::OID_HW_ENABLE.'.8', 'i', 2], [Poe::OID_HW_ENABLE.'.8', 'i', 1]], $this->fake->sets);
     }
@@ -519,6 +519,6 @@ class PortsPageTest extends TestCase
             ->assertSee('Restart failed (1)')
             ->assertSeeHtml('wire:confirm="Restart 1 module (failed or without a report)? PoE goes off for 5 s on each port."')
             ->call('restartFailed')
-            ->assertSee('Restarted 192.0.2.10 GE0/0/3 (10000000e611110c): PoE was off for 5 s.');
+            ->assertSee('Restarted 192.0.2.10 GE0/0/3 (e4:5f:01:62:9f:d3): PoE was off for 5 s.');
     }
 }

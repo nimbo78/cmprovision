@@ -64,7 +64,8 @@ class WallboardSnapshot
         foreach (UsbDiagnosticReport::where('received_at', '>', now()->subSeconds(Cm::ON_BENCH_SECONDS))
             ->orderByDesc('received_at')->limit(48)->get()->unique('serial') as $row)
             if (!isset($modules[$row->serial]) && !Cm::where('serial', $row->serial)->exists())
-                $modules[$row->serial] = ['serial' => $row->serial, 'name' => 'Unregistered module', 'port' => 'USB / port unknown',
+                $modules[$row->serial] = ['serial' => $row->serial, 'mac' => $row->mac, 'hostname' => null,
+                    'name' => $row->mac ?: 'Unregistered module', 'port' => 'USB / port unknown',
                     'phase' => 'unregistered', 'state' => 'unknown', 'detail' => 'USB observation; no provisioning run',
                     'percent' => null, 'speed' => null, 'eta' => null, 'cycle' => null, 'silent' => null,
                     'diagnostics' => $this->diagnostics($row->report, $row->received_at), 'steps' => [], 'advice' => null,
@@ -85,7 +86,9 @@ class WallboardSnapshot
     protected function module(Cm $cm, string $port): array
     {
         $end = $cm->provisioning_complete_at ?? ($cm->phase === 'failed' ? $cm->phase_started_at : null) ?? now();
-        return ['serial' => $cm->serial, 'name' => $cm->hostname ?: $cm->serial, 'port' => $port,
+        // A module is named by its host name or its MAC; the serial only identifies the row (it matches the ports)
+        return ['serial' => $cm->serial, 'mac' => $cm->mac, 'hostname' => trim((string) $cm->hostname) ?: null,
+            'name' => $cm->displayName(), 'port' => $port,
             'phase' => $cm->phase, 'state' => StandMap::moduleState($cm), 'detail' => $cm->phase_detail,
             'percent' => $cm->progressPercent(), 'speed' => $cm->bytesPerSecond(), 'eta' => $cm->secondsLeft(),
             'bytes' => $cm->progress_bytes, 'total' => $cm->progress_total,
