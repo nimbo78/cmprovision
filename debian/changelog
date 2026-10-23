@@ -1,3 +1,19 @@
+cmprovision4 (2.9.0~dev1) unstable; urgency=medium
+
+  * Settings is split into four tabs by purpose, each at its own address
+    (/settings?tab=network): Status (the services of the server and their
+    logs), Network (Wi-Fi networks, Ethernet switches, DHCP static addresses),
+    Provisioning (utility OS, re-provisioning, the HDMI display) and
+    Notifications. Only the open tab is read, so the page is short and quick.
+    On every tab but Status a strip shows the services in one line (a word
+    beside each colour, "N of 7 running") with a Logs menu for every journal,
+    refreshed every 30 seconds. Each section has a line of what it is, its
+    actions at the right (one primary button per tab) and a longer explanation
+    under "How it works". Links from before (/settings#wifi, #reprovision-key,
+    #utility-os, #hdmi-display) open the tab that holds the section.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 23 Oct 2026 11:00:00 +0300
+
 cmprovision4 (2.8.0) unstable; urgency=medium
 
   * Images from the internet: Images -> Add from the internet fetches an

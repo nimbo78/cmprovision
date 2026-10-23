@@ -52,7 +52,7 @@ class WifiSettingsTest extends TestCase
 
     public function test_the_settings_page_has_the_section()
     {
-        $this->get('/settings')->assertOk()->assertSee('Wi-Fi networks');
+        $this->get('/settings?tab=network')->assertOk()->assertSee('Wi-Fi networks');
     }
 
     public function test_networks_show_in_order_with_their_state_and_foreign_profiles_greyed()

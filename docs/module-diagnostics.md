@@ -129,7 +129,7 @@ retained in that module's History. USB report history is bounded to 14 days and
 
 ### Provisioner service
 
-The package installs **cmprovision-usb-diagnostics**. Settings → Service status
+The package installs **cmprovision-usb-diagnostics**. Settings → Status
 shows it and opens its journal. For a command-line check on the provisioner:
 
 ```sh

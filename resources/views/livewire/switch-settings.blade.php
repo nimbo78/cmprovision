@@ -1,6 +1,16 @@
-<div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md">
-    @php($input = 'cmp-field w-full')
-    @php($label = 'block text-fg text-sm font-bold mb-2')
+@php($input = 'cmp-field w-full')
+@php($label = 'block text-fg text-sm font-bold mb-2')
+<x-settings-card title="Ethernet switches" id="switches" description="Managed switches tell each module the switch and port it is plugged into.">
+    @if (!$form)
+        <x-slot name="actions">
+            <button type="button" wire:click="add" class="cmp-btn cmp-btn-secondary">Add switch</button>
+        </x-slot>
+    @endif
+    <x-slot name="help">
+        With managed switches, each module gets the switch and port it is plugged into as its board ("sw01 Gi0/3"): the
+        server reads the switches' MAC address tables over SNMP when the module starts. A port that leads to another
+        switch of the list is never a module's port. Without a switch, the board comes from the jumpers.
+    </x-slot>
 
     @if ($notice)
         <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $notice }}</div>
@@ -42,9 +52,7 @@
         <p class="text-sm text-fg-muted mb-4">No switch yet: boards come from the jumpers.</p>
     @endif
 
-    @if (!$form)
-        <button type="button" wire:click="add" class="cmp-btn">Add switch</button>
-    @else
+    @if ($form)
     <div class="border-t border-pline pt-4">
     <div class="font-bold mb-3">{{ $editingId ? 'Edit switch' : 'New switch' }}</div>
     <div class="flex mb-4">
@@ -211,4 +219,4 @@
     @endif
 
     @include('livewire.switch-snmp-hints')
-</div>
+</x-settings-card>

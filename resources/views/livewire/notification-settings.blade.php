@@ -1,7 +1,17 @@
-<div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md">
-    @php($input = 'cmp-field w-full')
-    @php($label = 'block text-fg text-sm font-bold mb-2')
-    @php($small = 'cmp-btn-small')
+@php($input = 'cmp-field w-full')
+@php($label = 'block text-fg text-sm font-bold mb-2')
+@php($small = 'cmp-btn-small')
+<x-settings-card title="Notifications" id="notifications" description="Tell Mattermost, Telegram or any webhook when a module is done or failed.">
+    @if (!$formOpen)
+        <x-slot name="actions">
+            <button wire:click="add()" class="cmp-btn">Add channel</button>
+        </x-slot>
+    @endif
+    <x-slot name="help">
+        Bots keep a thread per batch of modules with an up-to-date summary; the selected events go as replies under it.
+        A batch is the modules of one project started together: it closes after a long idle time, when the project
+        changes, or with Start a new batch.
+    </x-slot>
 
     @if ($notice)
         <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}">{{ $notice }}</div>
@@ -61,11 +71,9 @@
         </table>
     </div>
 
-    @if (!$formOpen)
-        <button wire:click="add()" class="cmp-btn my-3">Add channel</button>
-    @else
-        <div class="border rounded p-4 mt-4">
-            <div class="text-lg font-medium text-fg mb-4">{{ $editingId ? 'Edit channel' : 'New channel' }}</div>
+    @if ($formOpen)
+        <div class="border border-pline rounded p-4 mt-4">
+            <div class="font-bold mb-3">{{ $editingId ? 'Edit channel' : 'New channel' }}</div>
 
             <div class="mb-4">
                 <label class="{{ $label }}">Name</label>
@@ -186,4 +194,4 @@
             <button wire:click="cancel()" class="cmp-btn cmp-btn-secondary ml-2">Cancel</button>
         </div>
     @endif
-</div>
+</x-settings-card>

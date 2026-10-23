@@ -13,7 +13,7 @@ use Livewire\Livewire;
 use Tests\Support\FakeWifiNetworks;
 use Tests\TestCase;
 
-/** The log windows (Settings → Service status, Wi-Fi changes) follow the journal by themselves: new lines appear while
+/** The log windows (Settings → Status, Wi-Fi changes) follow the journal by themselves: new lines appear while
     the window is open, and the window can be paused */
 class ServiceLogsTest extends TestCase
 {

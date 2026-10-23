@@ -85,7 +85,7 @@ class UtilityOsSettingsTest extends TestCase
 
     public function test_the_settings_page_has_the_section_and_the_service_status_row()
     {
-        $this->get(route('settings'))->assertOk()
+        $this->get(route('settings', ['tab' => 'provisioning']))->assertOk()
             ->assertSee('Utility OS')
             ->assertSeeLivewire('utility-os-settings');
         Livewire::test(Settings::class)->assertSee('utility OS: legacy (32-bit)');

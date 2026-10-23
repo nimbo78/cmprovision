@@ -62,7 +62,7 @@ class SwitchSettingsTest extends TestCase
 
     public function test_the_settings_page_has_a_switch_section()
     {
-        $this->actingAs(User::factory()->create())->get('/settings')->assertOk()->assertSee('Ethernet switches');
+        $this->actingAs(User::factory()->create())->get('/settings?tab=network')->assertOk()->assertSee('Ethernet switches');
     }
 
     public function test_test_shows_ports_methods_and_known_modules()

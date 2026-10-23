@@ -66,7 +66,7 @@ target storage before enabling USB boot.
 1. In **Settings → Utility OS**, choose the OS to serve. Since 2.7.0 the package
    offers both the new 64-bit OS and legacy. The selected row says **modules get
    this one**. Change it only while no target is booting.
-2. In **Settings → Service status**, check **rpiboot (USB file server)** and open
+2. In **Settings → Status**, check **rpiboot (USB file server)** and open
    its **View log**. Waiting for a device before it is connected is normal.
 3. Fully power off the target: unplug USB and remove or disable its other power
    sources. For the diagram above, disable PoE on its switch port but keep the

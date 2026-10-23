@@ -1,0 +1,1 @@
+<livewire:notification-settings />

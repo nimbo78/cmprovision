@@ -10,7 +10,7 @@ This is separate from the target module's [tty2 troubleshooting console](local-c
 
 1. Connect the provisioner's HDMI output to the monitor and select its HDMI input. Full HD is the usual target;
    higher resolutions also work. Connect a keyboard to the provisioner if local navigation is needed.
-2. Open **Settings → HDMI display** in the web UI.
+2. Open **Settings → Provisioning → HDMI display** in the web UI.
 3. Select **Auto**, choose a screen and colors, and save. The display starts within a few seconds.
 4. Use **Alt+F1** for the normal system console and **Alt+F8** to return to the stand display. SSH remains available.
 

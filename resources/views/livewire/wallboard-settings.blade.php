@@ -1,6 +1,11 @@
-<div class="px-4 py-5 bg-panel sm:p-6 shadow sm:rounded-md" wire:poll.10s>
+<x-settings-card title="HDMI display" id="hdmi-display" wire:poll.10s
+    description="An optional terminal dashboard for the support bench: switch ports, provisioning progress and saved device diagnostics.">
+    <x-slot name="help">
+        No desktop or browser required. Auto starts the display at boot or when HDMI is connected, without login or key presses. Read-only display on tty8 (Alt+F8); Alt+F1 returns to the system console. Disconnecting HDMI in Auto stops the renderer and its data reader. A TV in standby may still report HDMI connected.
+    </x-slot>
     <form wire:submit="save" class="space-y-4">
         <p class="text-sm text-fg-muted">HDMI: {{ !empty($status['connected']) ? 'connected' : 'not detected' }} · Display: {{ $status['state'] }}@if(!empty($status['resolution'])) · {{ $status['resolution'] }}@endif</p>
+        <div class="grid gap-4 md:grid-cols-2">
         <div>
             <label for="wallboard-mode" class="block text-sm text-fg mb-2">Display mode</label>
             <select id="wallboard-mode" wire:model="mode" class="cmp-field w-full">
@@ -30,8 +35,8 @@
             <input id="wallboard-rotation" type="number" min="5" max="60" wire:model="rotation" class="cmp-field w-full">
             @error('rotation') <p class="text-sm text-neg" role="alert">{{ $message }}</p> @enderror
         </div>
-        <p class="text-sm text-fg-muted">Auto starts the display at boot or when HDMI is connected, without login or key presses. Read-only display on tty8 (Alt+F8); Alt+F1 returns to the system console. Disconnecting HDMI in Auto stops the renderer and its data reader. A TV in standby may still report HDMI connected.</p>
+        </div>
         <button type="submit" class="cmp-btn" wire:loading.attr="disabled">Save display settings</button>
         @if($notice) <p class="text-sm text-pos" role="status">{{ $notice }}</p> @endif
     </form>
-</div>
+</x-settings-card>

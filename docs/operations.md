@@ -8,6 +8,7 @@ For a CM4 that cannot enter normal network boot, use [USB provisioning](usb-prov
 For direct diagnosis on a target's screen and keyboard, use its [tty2 console](local-console.md).
 The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connectors and USB roles.
 
+- [The Settings page](#the-settings-page)
 - [First-boot OS check](#first-boot-os-check)
 - [Images from the internet](#images-from-the-internet)
 - [Image download and write recovery](#image-download-and-write-recovery)
@@ -16,6 +17,21 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 - [Wi-Fi networks](#wi-fi-networks)
 - [Switches and PoE restart](#switches-and-poe-restart)
 - [Network access](#network-access)
+
+## The Settings page
+
+Settings has four tabs, each at its own address (`/settings?tab=network`), so a link or a bookmark opens the part you mean:
+
+| Tab | Holds |
+| --- | --- |
+| **Status** | The services of the server (dnsmasq, rpiboot, the USB diagnostics receiver, both queue workers, the cold spare, the web interface) with a running or stopped chip and **View log** for each, and the utility OS modules get now. |
+| **Network** | Wi-Fi networks, Ethernet switches, DHCP static addresses. |
+| **Provisioning** | Utility OS, Re-provision (the provisioner key and the saved sensor accounts), the HDMI display. |
+| **Notifications** | Notification channels and the current batch. |
+
+On every tab except Status a strip at the top shows the same services in one line (a word beside each colour, "N of 7 running") and the **Logs** menu with the journal of each. It refreshes by itself every 30 seconds, so a stopped queue worker is seen whichever tab you are on. Each section has one line of what it is, its actions at the right, and a longer explanation behind **How it works**. Only the open tab is read: Wi-Fi and switches are asked about on Network only.
+
+Links from before the tabs (`/settings#wifi`, `#reprovision-key`, `#utility-os`, `#hdmi-display`) still work: the page takes them to the tab that holds the section.
 
 ## First-boot OS check
 
@@ -40,13 +56,13 @@ Identify after the OS check lasts **until the next reboot**. Only the LED helper
 Use **CMs → module → Re-provision…** when a sensor has booted its installed OS and needs a new image. The first implementation supports eMMC/SD, an MBR partition table and an ext4 root on partition 2. SSH must be running; the bootloader must fall back to network boot when the disk is no longer bootable. A module still in the utility OS can be restarted through PoE instead.
 
 1. Select the active project and open the module card. The module needs a current DHCP lease on the stand network and must not be writing an image or running its first-boot check.
-2. Choose **Check access**. The provisioner tries its restricted SSH key first, then enabled accounts from **Settings → Re-provision accounts**, in their listed order. If none provides access, enter the sensor login and password manually; the account needs sudo access. If a saved or manually entered account requires a password change, enter and repeat a new password. The server verifies the new login before continuing.
+2. Choose **Check access**. The provisioner tries its restricted SSH key first, then enabled accounts from **Settings → Provisioning → Re-provision (sensor accounts)**, in their listed order. If none provides access, enter the sensor login and password manually; the account needs sudo access. If a saved or manually entered account requires a password change, enter and repeat a new password. The server verifies the new login before continuing.
 3. Review the matched serial, address, disk, CID and next project. Choose **Wipe and re-provision** and confirm. This erases the first MiB of that disk and requests a reboot; it is not a full secure erase.
 4. The card waits for the module to return to network boot, then its normal provisioning run starts from the beginning. If SSH disconnects without a confirmed result, the command is not repeated automatically. Wait for boot or perform a fresh access check after 30 seconds if the installed system is still running.
 
 To enable key access for future runs, turn on **Re-provision from the web UI** in the project editor. After the image's verification and post-install scripts, the provisioner adds its public key and `/usr/local/sbin/cmprovision-agent` to the written root. The key uses a forced command and cannot provide an ordinary shell or forwarding. The option defaults to off and does not change the image's SSH login policy: files can be installed while root key login is disabled. Installation failures are nonfatal and appear as `agent skipped` in the post-install log.
 
-**Settings → Re-provision key** shows the public key. Its private part stays in `storage/app/ssh/id_ed25519`; backups and `restore --data-only` preserve it. Protect those backups as server credentials. Manual key installation requires the matching agent and a restricted `authorized_keys` entry, not a plain unrestricted key.
+**Settings → Provisioning → Re-provision (provisioner key)** shows the public key. Its private part stays in `storage/app/ssh/id_ed25519`; backups and `restore --data-only` preserve it. Protect those backups as server credentials. Manual key installation requires the matching agent and a restricted `authorized_keys` entry, not a plain unrestricted key.
 
 An access check lasts two minutes and is tied to the operator's web session. Passwords are kept encrypted on the server for that interval and are cleared when the dialog is cancelled or the command is dispatched. The SSH host key is remembered for the operation, so changing devices between its steps is refused; the initial connection relies on the isolated stand network.
 
@@ -54,7 +70,7 @@ If the active project or its configuration changes, the previous confirmation no
 
 ### Saved sensor accounts
 
-**Settings → Re-provision accounts** lets you add, edit, enable, disable, delete and reorder sensor logins. The initial list enables `wlanpi / wlanpi` for [WLAN Pi](https://userguide.wlanpi.com/wlan-pi-os/faq/default-password). The `pi / raspberry` profile starts disabled for legacy Raspberry Pi OS images; [current images require a user configured at installation](https://www.raspberrypi.com/news/raspberry-pi-bullseye-update-april-2022/).
+**Settings → Provisioning → Re-provision (sensor accounts)** lets you add, edit, enable, disable, delete and reorder sensor logins. The initial list enables `wlanpi / wlanpi` for [WLAN Pi](https://userguide.wlanpi.com/wlan-pi-os/faq/default-password). The `pi / raspberry` profile starts disabled for legacy Raspberry Pi OS images; [current images require a user configured at installation](https://www.raspberrypi.com/news/raspberry-pi-bullseye-update-april-2022/).
 
 Changes require your web account password. Saved passwords are encrypted with the provisioner's APP_KEY; they never return to the browser. An empty password when editing keeps the stored one. Backups preserve the list together with its matching APP_KEY. Changing one sensor's expired password does not replace a shared saved password.
 
@@ -100,13 +116,13 @@ A project with **Split the image into 512 MB pieces** goes further: a module res
 A provisioner with a better Wi-Fi card (an M.2 card, a USB adapter) keeps its built-in Wi-Fi off the network: while another device carries the default route, the built-in Wi-Fi stays disconnected. When there has been no other default route for 30 seconds (the card was removed, its driver failed, it cannot connect), the built-in Wi-Fi connects on its own, and once the card has carried the default route again for a minute, it leaves. Only the device is disconnected, never a NetworkManager profile: after a reboot both radios connect, and the built-in Wi-Fi leaves a minute later.
 
 - The provisioner's address changes with the radio that carries the traffic; `<hostname>.local` (avahi) follows it.
-- Every switch goes to the journal: `journalctl -t cmprovision-uplink`, or Settings → Service status → uplink cold spare.
+- Every switch goes to the journal: `journalctl -t cmprovision-uplink`, or Settings → Status → uplink cold spare.
 - `SPARE=no` in `/etc/default/cmprovision-uplink` keeps the built-in Wi-Fi connected all the time.
 - It works where NetworkManager runs the Wi-Fi (Raspberry Pi OS); on WLAN Pi OS, where it does not, nothing changes.
 
 ## Wi-Fi networks
 
-Settings → Wi-Fi networks lists the networks the provisioner connects to, the preferred first, and the Wi-Fi profiles it leaves to other tools (greyed). Each network is one NetworkManager profile that serves both radios: the card carries the traffic, the built-in Wi-Fi stands by as the cold spare.
+Settings → Network → Wi-Fi networks lists the networks the provisioner connects to, the preferred first, and the Wi-Fi profiles it leaves to other tools (greyed). Each network is one NetworkManager profile that serves both radios: the card carries the traffic, the built-in Wi-Fi stands by as the cold spare.
 
 - **Add network** takes the name (SSID; **Find networks** lists the networks in reach), the security (WPA2-Personal, WPA2/WPA3 mixed or WPA3-Personal), the password, and whether the network is hidden. Every change asks for your account password first.
 - The password is stored on the server and never shown again; left empty when editing, it keeps the stored one. A new password of the network in use takes effect at its next connection, so it can be entered before the router changes.
@@ -117,7 +133,7 @@ Settings → Wi-Fi networks lists the networks the provisioner connects to, the 
 
 ## Switches and PoE restart
 
-Settings → Ethernet switches lists the switches of the stand; **Add switch** takes a switch's address and SNMP read access (a community for v2c, a user for v3). With them a module gets its switch and port as its board, `sw01 Gi0/3` (the switch's sysName before the first dot, then the port's description or name), and the Ports page shows each switch's front panel port by port. A port that leads to another switch of the list is a link, never a module's port: it shows that switch's own MAC (its base MAC, the MAC of its VLAN interface, or the MAC of its address in the provisioner's ARP cache). The same switch cannot be added twice under two addresses. Two switches with the same sysName give boards that look the same: Settings and the Ports page warn about it, rename one on the switch.
+Settings → Network → Ethernet switches lists the switches of the stand; **Add switch** takes a switch's address and SNMP read access (a community for v2c, a user for v3). With them a module gets its switch and port as its board, `sw01 Gi0/3` (the switch's sysName before the first dot, then the port's description or name), and the Ports page shows each switch's front panel port by port. A port that leads to another switch of the list is a link, never a module's port: it shows that switch's own MAC (its base MAC, the MAC of its VLAN interface, or the MAC of its address in the provisioner's ARP cache). The same switch cannot be added twice under two addresses. Two switches with the same sysName give boards that look the same: Settings and the Ports page warn about it, rename one on the switch.
 
 Verified switch models use the physical positions and printed port numbers of their front panel. On a phone, scroll the panel sideways to keep that order. Other models show **Automatic port order**. Supported panels and manufacturer references: [Switch front panels](switch-front-panels.md).
 

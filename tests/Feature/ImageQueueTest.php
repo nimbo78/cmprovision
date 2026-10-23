@@ -36,6 +36,6 @@ class ImageQueueTest extends TestCase
             ->assertSee('queue worker (switch ports, notifications)')
             ->assertSee('queue worker (image checksums)')
             ->assertSeeHtml('wire:click="viewLogQueue()"')
-            ->assertSeeHtml('wire:click="viewLogImagesQueue()"');
+            ->assertSeeHtml('wire:click="viewLogQueueImages()"');
     }
 }
