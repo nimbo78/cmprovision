@@ -56,7 +56,7 @@ return new class extends Migration {
         $hex = substr(str_pad(preg_replace('/[^0-9a-f]/', '0', strtolower($serial)), 10, '0', STR_PAD_LEFT), -10);
         $number = hexdec($hex);
         do {
-            $mac = '02:'.implode(':', str_split(str_pad(dechex($number), 10, '0', STR_PAD_LEFT), 2));
+            $mac = '02:'.implode(':', str_split(str_pad(dechex($number & 0xFFFFFFFFFF), 10, '0', STR_PAD_LEFT), 2));
             $number++;
         } while (isset($taken[$mac]));
 

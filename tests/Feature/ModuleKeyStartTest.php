@@ -54,6 +54,53 @@ class ModuleKeyStartTest extends TestCase
         $this->assertTrue(Cmlog::where('cm', self::MAC)->where('loglevel', 'warning')->where('msg', 'like', '%which another module has%')->exists());
     }
 
+    public function test_a_module_that_says_the_serial_of_another_goes_on_under_its_own_in_every_line_it_is_told()
+    {
+        $this->start(self::SERIAL, self::MAC);
+        $this->start('10000000aaaa0002', 'e4:5f:01:00:00:02');
+
+        // no active project: the module gets a script that shows the failure and polls the server for Identify
+        $body = $this->start('10000000aaaa0002', self::MAC)->getContent();
+
+        $this->assertStringContainsString('serial='.self::SERIAL, $body, 'it polls as the module it is');
+        $this->assertStringNotContainsString('serial=10000000aaaa0002', $body);
+    }
+
+    public function test_the_start_holds_the_lock_of_the_serial_the_module_keeps_as_well_as_the_one_it_said()
+    {
+        $this->start(self::SERIAL, self::MAC);
+        $this->start('10000000aaaa0002', 'e4:5f:01:00:00:02');
+        $held = \Illuminate\Support\Facades\Cache::lock('module-operation:'.hash('sha256', self::SERIAL), 60);
+        $this->assertTrue($held->get());   // a PoE restart or a re-provision is working on the first module
+
+        $this->start('10000000aaaa0002', self::MAC)->assertSee('Another operation is running');   // the start of the same board is refused, not run beside it
+
+        $held->release();
+    }
+
+    public function test_what_is_not_a_mac_is_not_taken_for_one()
+    {
+        $this->start(self::SERIAL, 'a/b');
+        $this->assertSame(Cm::pseudoMac(self::SERIAL), Cm::sole()->mac);
+
+        $this->start(self::SERIAL, 'a/b');
+        $this->assertSame(Cm::pseudoMac(self::SERIAL), Cm::sole()->mac, 'and again');
+
+        $this->start(self::SERIAL, self::MAC);
+        $this->assertSame(self::MAC, Cm::sole()->mac, 'a real one replaces it, the module being the same');
+        $this->start(self::SERIAL, 'a?b#c');
+        $this->assertSame(self::MAC, Cm::sole()->mac, 'garbage does not replace a real one');
+    }
+
+    public function test_a_made_up_mac_that_another_module_has_is_not_given_twice()
+    {
+        Cm::create(['serial' => '1000000099999999', 'mac' => Cm::pseudoMac('1000000012345678')]);
+
+        $this->start('1000000012345678', null);
+
+        $this->assertSame('02:00:12:34:56:79', Cm::where('serial', '1000000012345678')->value('mac'));
+    }
+
     public function test_a_board_that_comes_with_a_new_mac_keeps_its_row_and_its_log_goes_with_it()
     {
         $this->start(self::SERIAL, self::MAC);

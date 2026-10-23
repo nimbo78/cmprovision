@@ -24,6 +24,24 @@ class ModuleKeyTest extends TestCase
         $this->assertSame('', Cm::normalizeMac(null));
     }
 
+    public function test_only_six_pairs_of_hex_digits_are_a_mac()
+    {
+        $this->assertTrue(Cm::isMac('e4:5f:01:62:9f:d3'));
+        $this->assertFalse(Cm::isMac('E4:5F:01:62:9F:D3'), 'the written form is lowercase: normalize first');
+        foreach (['', 'a/b', 'e4:5f:01:62:9f', 'e4:5f:01:62:9f:d3:00', 'e45f01629fd3', 'e4:5f:01:62:9f:zz', "e4:5f:01:62:9f:d3\n"] as $bad)
+            $this->assertFalse(Cm::isMac($bad), var_export($bad, true));
+    }
+
+    public function test_the_card_goes_on_when_the_serial_of_its_module_changes_while_it_is_open()
+    {
+        $cm = Cm::create(['serial' => self::SERIAL, 'mac' => self::MAC]);
+        $card = \Livewire\Livewire::test(\App\Http\Livewire\CmCard::class, ['mac' => self::MAC]);
+
+        $cm->update(['serial' => '10000000aaaa0009']);
+
+        $card->call('identify')->assertHasNoErrors();
+    }
+
     public function test_a_module_without_a_mac_gets_a_locally_administered_one_made_of_its_serial()
     {
         $this->assertSame('02:00:12:34:56:78', Cm::pseudoMac('1000000012345678'));

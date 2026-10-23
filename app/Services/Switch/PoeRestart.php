@@ -389,8 +389,7 @@ class PoeRestart
         $skipped[$what] = $why;
     }
 
-    /* A module in a message after the run: its host name or MAC, not its serial (that stays the key of the lock and the
-       log). During the run the tile carries the name: a database that fails part way must not fail a message. */
+    /* A module in a message after the run: its host name or MAC, not its serial (that stays the key of the lock). During the run the tile carries the name: a database that fails part way must not fail a message. */
     protected static function moduleName(string $serial): string
     {
         try {

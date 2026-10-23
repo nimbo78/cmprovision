@@ -163,7 +163,10 @@ exit 1
 
     public function startProvisoning(Request $req)
     {
-        return ModuleOperationLock::run([$this->serial], fn () => $this->startLockedProvisioning($req));
+        // a module may say a serial that another row has: the start holds the lock of the row it is, and of the serial it said
+        $serials = array_unique(array_filter([$this->serial, $this->findForStart($req)?->serial]));
+
+        return ModuleOperationLock::run($serials, fn () => $this->startLockedProvisioning($req));
     }
 
     /* The module of a start. The MAC is its key: a module is found by it first. One that comes with another MAC but a
@@ -172,13 +175,16 @@ exit 1
     {
         $mac = Cm::normalizeMac($req->query('mac'));
 
-        return ($mac !== '' ? Cm::where('mac', $mac)->first() : null) ?? Cm::where('serial', $this->serial)->first();
+        return (Cm::isMac($mac) ? Cm::where('mac', $mac)->first() : null) ?? Cm::where('serial', $this->serial)->first();
     }
 
-    /* The MAC the module said; without one the row's own, and for a module the server has not met, one made of its serial. */
+    /* The MAC the module said (what is not a MAC is not taken for one); without one the row's own, and for a module the
+       server has not met, one made of its serial. */
     protected function macOf(Request $req): string
     {
-        return Cm::normalizeMac($req->query('mac')) ?: (Cm::where('serial', $this->serial)->value('mac') ?: Cm::pseudoMac($this->serial));
+        $mac = Cm::normalizeMac($req->query('mac'));
+
+        return Cm::isMac($mac) ? $mac : (Cm::where('serial', $this->serial)->value('mac') ?: Cm::freePseudoMac($this->serial));
     }
 
     /* The row takes a new MAC; its lines of the log go with it. */
@@ -192,38 +198,42 @@ exit 1
         }
     }
 
-    /* The row of the start: the one found, with the MAC and the serial the module says now, or a new one. A serial that
-       another row has stays with that row: the MAC is the key, and the module keeps the serial it had. */
+    /* The row of the start: the one found, with the MAC and the serial the module says now (a serial another row has was
+       left aside above: $this->serial is the row's own then), or a new one. One step, so that a start that fails on the
+       unique index leaves the log where it was. */
     protected function placeModule(?Cm $previous, array $fields): Cm
     {
-        if (!$previous)
-            return Cm::create($fields + ['serial' => $this->serial]);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($previous, $fields) {
+            if (!$previous)
+                return Cm::create($fields + ['serial' => $this->serial]);
 
-        $this->adoptMac($previous, $fields['mac']);
-        if ($previous->serial !== $this->serial)
-        {
-            if (Cm::where('serial', $this->serial)->where('id', '!=', $previous->id)->exists())
-                Cmlog::create(['cm' => $fields['mac'], 'loglevel' => 'warning', 'ip' => request()->ip(),
-                    'msg' => 'The module says its serial is '.$this->serial.', which another module has: it keeps '.$previous->serial.'.']);
-            else
-                $fields['serial'] = $this->serial;
-        }
-        $previous->fill($fields)->save();
+            $this->adoptMac($previous, $fields['mac']);
+            $previous->fill($fields + ['serial' => $this->serial])->save();
 
-        return $previous;
+            return $previous;
+        });
     }
 
     protected function startLockedProvisioning(Request $req)
     {
-        if ($reason = ReprovisionIntent::guard($this->serial, Project::getActive(), $req->query('mac')))
+        $previous = $this->findForStart($req);
+        if ($previous && $previous->serial !== $this->serial && Cm::where('serial', $this->serial)->where('id', '!=', $previous->id)->exists())
+        {
+            // The serial the module says is another module's: it goes on under its own, in the script it gets and in
+            // everything it sends back.
+            Cmlog::create(['cm' => $previous->mac, 'board' => $previous->provisioning_board, 'loglevel' => 'warning', 'ip' => $req->ip(),
+                'msg' => 'The module says its serial is '.$this->serial.', which another module has: it keeps '.$previous->serial.'.']);
+            $this->serial = $previous->serial;
+        }
+        $known = $previous?->serial ?? $this->serial;
+        if ($reason = ReprovisionIntent::guard($known, Project::getActive(), $req->query('mac')))
             return $this->failureScript($req, $reason);
-        if (ReprovisionOperation::pending($this->serial))
-            Cm::where('serial', $this->serial)->update(['durable_bytes' => null, 'durable_at' => null, 'durable_image_id' => null]);
+        if (ReprovisionOperation::pending($known))
+            Cm::where('serial', $known)->update(['durable_bytes' => null, 'durable_at' => null, 'durable_image_id' => null]);
         /* The OS check (2.6.0): a module that comes back to network boot while its new system should be starting did not
            start it. That run fails and the module waits (no second write); its start after that is a new run. A USB boot
            is the operator re-flashing it, and a start long after the reboot finds a run whose timeout was lost: both close
            the waiting run and go on as a new run. */
-        $previous = $this->findForStart($req);
         if ($previous && $previous->phase === 'firstboot')
         {
             $this->cm = $previous;

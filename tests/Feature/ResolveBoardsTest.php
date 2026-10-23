@@ -320,7 +320,7 @@ class ResolveBoardsTest extends TestCase
         (new ResolveBoards)->handle();
 
         $this->assertSame([null, null], [$cm->fresh()->provisioning_board, $cm->fresh()->board_pending_since]);
-        $this->assertSame(0, Cmlog::where('cm', 'e4:5f:01:62:9f:d3')->count());
+        $this->assertSame(0, Cmlog::count());
         Queue::assertNothingPushed();
     }
 

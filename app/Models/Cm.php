@@ -98,6 +98,25 @@ class Cm extends Model
         return strtolower(str_replace('-', ':', trim((string) $mac)));
     }
 
+    /** Six pairs of lowercase hex digits (the written form, see normalizeMac()). The module's word is not taken for one otherwise:
+     *  the MAC is the address of its card. */
+    public static function isMac(?string $mac): bool
+    {
+        return preg_match('/\A[0-9a-f]{2}(:[0-9a-f]{2}){5}\z/', (string) $mac) === 1;
+    }
+
+    /** pseudoMac(), moved up while another module has it: a module that did not say its MAC always gets one. */
+    public static function freePseudoMac(string $serial): string
+    {
+        $number = hexdec(substr(str_pad(preg_replace('/[^0-9a-f]/', '0', strtolower($serial)), 10, '0', STR_PAD_LEFT), -10));
+        do {
+            $mac = '02:'.implode(':', str_split(str_pad(dechex($number & 0xFFFFFFFFFF), 10, '0', STR_PAD_LEFT), 2));
+            $number++;
+        } while (static::where('mac', $mac)->exists());
+
+        return $mac;
+    }
+
     /** The MAC of a module that did not say one: locally administered (so it cannot meet a real one), made of its serial. */
     public static function pseudoMac(string $serial): string
     {

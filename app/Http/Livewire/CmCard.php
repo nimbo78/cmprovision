@@ -21,17 +21,22 @@ class CmCard extends Component
     const HISTORY_ROWS = 200;
     const HISTORY_MESSAGE_LENGTH = 4000;
 
-    public $serial;
+    public $mac;
     public $restartMessage = null, $restartError = false;
     public $powerLoaded = false;
     public $diagnosticsMessage = null;
 
-    /* The address says the MAC; a serial (the links of before 2.11, a test) finds the module as well. The component works
-       with the serial: it is what the module's requests, its run and its diagnostics are keyed by. */
+    /* The address says the MAC; a serial (the links of before 2.11, a test) finds the module as well. The card keeps to the
+       MAC: the serial of a module may change while the card is open, its MAC is its key. */
+    protected function module(): Cm
+    {
+        return Cm::where('mac', $this->mac)->firstOrFail();
+    }
+
     public function mount($mac = '', $serial = '')
     {
         $cm = Cm::findByKey($mac !== '' ? $mac : $serial) ?? throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(Cm::class);
-        $this->serial = $cm->serial;
+        $this->mac = $cm->mac;
     }
 
     /* The Power row asks the switch, which may be slow or silent: the card shows first, then the row (wire:init) */
@@ -43,18 +48,18 @@ class CmCard extends Component
     /* The module blinks for the operator the next time it asks the server */
     public function identify()
     {
-        Cm::where('serial', $this->serial)->firstOrFail()->identify();
+        $this->module()->identify();
     }
 
     public function stopIdentify()
     {
-        Cm::where('serial', $this->serial)->firstOrFail()->stopIdentify();
+        $this->module()->stopIdentify();
     }
 
     /* The next start writes the image from the beginning instead of going on from the last durable piece (2.6.1) */
     public function startOver()
     {
-        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        $cm = $this->module();
         if ($cm->durable_bytes === null)
             return;
         $cm->durable_bytes = null;
@@ -67,7 +72,7 @@ class CmCard extends Component
     /* Switch the PoE of the module's port off and on (PoeRestart) */
     public function restart()
     {
-        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        $cm = $this->module();
         ['text' => $this->restartMessage, 'error' => $this->restartError] =
             PoeRestart::message(PoeRestart::modules([$cm], auth()->user()->name ?? null));
         $this->dispatch('poe-outages-changed');   // a port left off shows in the banner at once
@@ -75,7 +80,7 @@ class CmCard extends Component
 
     public function collectModuleDiagnostics()
     {
-        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        $cm = $this->module();
         if (!$cm->canCollectModuleDiagnostics())
         {
             $this->diagnosticsMessage = 'The module must be online in the current utility OS to collect a new snapshot.';
@@ -91,7 +96,7 @@ class CmCard extends Component
 
     public function downloadModuleDiagnostics()
     {
-        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        $cm = $this->module();
         abort_unless($cm->storage_diagnostics, 404);
         $text = ModuleDiagnostics::text($cm);
         return response()->streamDownload(fn () => print($text), 'cm-'.$cm->id.'-module-diagnostics.txt', ['Content-Type' => 'text/plain; charset=UTF-8']);
@@ -99,7 +104,7 @@ class CmCard extends Component
 
     public function render()
     {
-        $cm = Cm::where('serial', $this->serial)->firstOrFail();
+        $cm = $this->module();
 
         return view('livewire.cm-card', [
             'cm' => $cm,
