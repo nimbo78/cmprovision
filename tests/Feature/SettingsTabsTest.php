@@ -101,6 +101,7 @@ class SettingsTabsTest extends TestCase
     {
         $this->tab('provisioning')
             ->assertSeeLivewire(UtilityOsSettings::class)
+            ->assertSeeLivewire(\App\Http\Livewire\UsbPrepSettings::class)
             ->assertSeeLivewire(ReprovisionKey::class)
             ->assertSeeLivewire(ReprovisionAccounts::class)
             ->assertSeeLivewire(WallboardSettings::class)

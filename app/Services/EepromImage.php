@@ -66,6 +66,21 @@ class EepromImage
         return $settings === '' ? '' : $settings."\n";
     }
 
+    /* The firmware of the store with the settings in it, as the bytes of the file the modules download. Only images of the
+       firmware store: the name may come from the API. */
+    public static function forFirmware(string $firmware, string $settings): string
+    {
+        $known = array_map(function ($f) { return $f->path; }, \App\Models\Firmware::all());
+        $source = \App\Models\Firmware::basedir().'/'.$firmware;
+        $data = in_array($firmware, $known, true) && is_file($source) ? @file_get_contents($source) : false;
+        if ($data === false)
+            throw new \RuntimeException("EEPROM firmware '$firmware' is no longer available in the firmware store; the module EEPROM will not be updated");
+        if (!self::setConfig($data, self::normalizeConfig($settings)))
+            throw new \RuntimeException("EEPROM firmware '$firmware' could not be parsed for its configuration");
+
+        return $data;
+    }
+
     /* Replaces the configuration text in the image (in place); false when the image is not usable */
     public static function setConfig(&$data, $settings)
     {

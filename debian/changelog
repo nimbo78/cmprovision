@@ -1,3 +1,18 @@
+cmprovision4 (2.12.0~dev1) unstable; urgency=medium
+
+  * USB prep: a button on the Dashboard ("Prepare boards over USB") for
+    setting a board to boot from the network without writing an image over
+    USB. While it is on, a board that boots over USB gets only the bootloader
+    (a firmware of the store and its settings, network first by default),
+    shows "ready" on the Dashboard and with its LEDs, and is then put on the
+    PoE switch, where the stand writes its image. Boards on the network are
+    provisioned as usual meanwhile; the prepared boards are not counted in a
+    batch and nothing is sent to the channels. It switches off by itself after
+    an hour without a board. The bootloader is set under Settings ->
+    Provisioning -> USB prep.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 23 Oct 2026 17:00:00 +0300
+
 cmprovision4 (2.11.0) unstable; urgency=medium
 
   * The MAC address is the key of a module. The table of modules keeps it

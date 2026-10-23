@@ -18,7 +18,9 @@ use App\Models\NotificationBatch;
 use App\Models\Project;
 use App\Models\Script;
 use App\Models\Setting;
+use App\Services\EepromFlashScript;
 use App\Services\EepromImage;
+use App\Services\UsbPrep;
 use App\Services\LabelPrinter;
 use App\Support\ImagePieces;
 use App\Support\ModuleDiagnostics;
@@ -225,8 +227,10 @@ exit 1
                 'msg' => 'The module says its serial is '.$this->serial.', which another module has: it keeps '.$previous->serial.'.']);
             $this->serial = $previous->serial;
         }
+        /* The USB preparation (2.12): a board that boots over USB while it is on gets the bootloader and no image */
+        $prep = $req->query('bootmode') == 3 && app(UsbPrep::class)->active();
         $known = $previous?->serial ?? $this->serial;
-        if ($reason = ReprovisionIntent::guard($known, Project::getActive(), $req->query('mac')))
+        if (!$prep && ($reason = ReprovisionIntent::guard($known, Project::getActive(), $req->query('mac'))))
             return $this->failureScript($req, $reason);
         if (ReprovisionOperation::pending($known))
             Cm::where('serial', $known)->update(['durable_bytes' => null, 'durable_at' => null, 'durable_image_id' => null]);
@@ -249,7 +253,7 @@ exit 1
             }
         }
 
-        $project = Project::getActive();
+        $project = $prep ? null : Project::getActive();
         $image   = $project ? $project->image : null;
 
         /* The image resume (2.6.1): a module that stopped in its write goes on from its last durable piece, on the storage
@@ -259,7 +263,7 @@ exit 1
 
         $bootmode = $req->query('bootmode');
         // with switches the board is looked up in the background (ResolveBoards): the module gets its script at once
-        $lookUp = $req->query('mac') && EthernetSwitch::exists();
+        $lookUp = !$prep && $req->query('mac') && EthernetSwitch::exists();
         // with "Split the image into pieces" the module writes the pieces copy. One whose file is gone (a restore without the
         // uploads) is made again in the background: saving the project makes it in the first place, and a failed one waits
         // for Retry on the Images page. Queueing it must not fail the start.
@@ -321,7 +325,11 @@ exit 1
             'durable_bytes' => null,
             'durable_image_id' => $split ? $image->id : null,
             'durable_at' => null,
+            'usb_prep_at' => $prep ? now() : null,
         ]));
+
+        if ($prep)
+            return $this->prepScript($req);
 
         if (!$project)
         {
@@ -377,14 +385,7 @@ exit 1
             /* flashrom leaves the chip alone when it holds the image already; the last line says which it
                was (EEPROM_RESULT_LINE). The script runs under sh -v, which copies every script line into
                the log as well, so the result is printed from a variable and never spelled out in the script. */
-            $fscript->script = "#!/bin/sh\n"
-                             . "set -e\n"
-                             . "curl --retry 10 --silent --show-error -g -o pieeprom.bin \"$eeprom_url\"\n"
-                             . "echo \"$eeprom_sha256  pieeprom.bin\" | sha256sum -c\n"
-                             . 'flashrom -p "linux_spi:dev=/dev/spidev0.0,spispeed=16000" -w "pieeprom.bin" >flashrom.log 2>&1 || { cat flashrom.log; exit 1; }'."\n"
-                             . "cat flashrom.log\n"
-                             . "if grep -q \"identical\" flashrom.log; then RESULT=identical; else RESULT=written; fi\n"
-                             . "echo \"EEPROM_RESULT=\$RESULT\"\n";
+            $fscript->script = EepromFlashScript::make($eeprom_url, $eeprom_sha256);
             $preinstall_scripts->prepend($fscript);
         }
 
@@ -428,6 +429,55 @@ exit 1
        run goes on from the first piece not durably written. Kept: the steps, the bootloader before and after, the
        pre-install log and the start; the batch while it is open. The module skips the bootloader report, the pre-install
        scripts and blkdiscard, and gets the first MiB of the image inside its script. */
+    /* The USB preparation of a board (2.12): the script flashes the bootloader of the preparation (network boot first) and
+       shows "ready". The run is the board's own and the stand does not hear of it: no batch, no event, no label. */
+    protected function prepScript(Request $req)
+    {
+        $prep = app(UsbPrep::class);
+        $problem = $prep->problem();
+        if (!$problem)
+        {
+            try
+            {
+                $prep->ensureImage();
+            }
+            catch (\Throwable $e)
+            {
+                $problem = $e->getMessage();
+            }
+        }
+        if ($problem)
+            return $this->refuse('USB prep cannot flash the bootloader: '.$problem);
+
+        $prep->touch();
+        $server = $this->moduleServer($req);
+        $name = 'Flash EEPROM firmware ('.$prep->firmware().')';
+        $this->cm->eeprom_config_after = EepromImage::normalizeConfig($prep->settings());
+        $this->cm->setPhase('preinstall', $name)->save();
+        $this->logInfo('USB prep started: the bootloader only, no image. Utility OS: '.$this->cm->utilityOsLabel().'.');
+
+        return response()->view('scriptexecute.usbprep', [
+            'cm' => $this->cm,
+            'server' => $server,
+            'storage' => $this->cm->provisioning_storage ?: '/dev/mmcblk0',
+            'diagnosticsToken' => $this->cm->diagnostics_token,
+            'flash' => EepromFlashScript::make("http://$server/".UsbPrep::IMAGE, (string) $prep->imageSha()),
+            'flashName' => $name,
+        ])->header('Content-Type', 'text/plain');
+    }
+
+    /* The bootloader is flashed: the board is ready to be put on the stand's switch. */
+    protected function prepComplete(Request $req)
+    {
+        $this->cm->provisioning_complete_at = now();
+        $this->cm->temp2 = $req->query('temp');
+        $this->cm->setPhase('done', 'Bootloader ready: unplug the USB cable and the power, then plug the board into the PoE switch.');
+        $this->cm->save();
+        $this->logInfo('USB prep completed. EEPROM '.($this->cm->eeprom_result ?: 'flashed').': the board boots from the network first.');
+
+        return '';
+    }
+
     protected function resumeProvisioning(Request $req, Cm $previous, Project $project, int $from)
     {
         $image = $project->image;
@@ -628,6 +678,8 @@ exit 1
     public function provisioningComplete(Request $req)
     {
         $this->cm = Cm::where('serial', $this->serial)->firstOrFail();
+        if ($this->cm->usb_prep_at !== null)
+            return $this->prepComplete($req);
         $project = $this->cm->project;
         if ($this->cm->os_check === 'pending')
             return $this->rebootIntoTheNewSystem($req, $project);
@@ -1002,6 +1054,8 @@ exit 1
     protected function failed()
     {
         $this->touchBatch();
+        if ($this->cm && $this->cm->usb_prep_at !== null)
+            return;   // a board in its USB preparation is not a run of the stand: the log and the LEDs tell, no channel does
         CmProvisioningFailed::dispatch($this->cm);
     }
 

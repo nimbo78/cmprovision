@@ -49,7 +49,7 @@ class Cm extends Model
         'timeline', 'polled_at', 'identify_until',
         'os_check', 'hostname', 'os_state', 'os_failed_units', 'os_checked_at', 'os_check_output',
         'durable_bytes', 'durable_image_id', 'durable_at', 'progress_base', 'utility_os',
-        'diagnostics_token', 'storage_diagnostics', 'storage_diagnostics_at', 'diagnostics_requested_at',
+        'diagnostics_token', 'storage_diagnostics', 'storage_diagnostics_at', 'diagnostics_requested_at', 'usb_prep_at',
     ];
 
     // The snapshot is up to 32 KiB per module with kernel output: it is read through the card and its download, not the API.
@@ -57,6 +57,7 @@ class Cm extends Model
 
     // The original storage_diagnostics columns also hold the extended module snapshot.
     protected $casts = [
+        'usb_prep_at' => 'datetime',
         'storage_diagnostics' => 'array',
         'storage_diagnostics_at' => 'datetime',
         'diagnostics_requested_at' => 'datetime',

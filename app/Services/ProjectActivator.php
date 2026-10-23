@@ -45,20 +45,17 @@ class ProjectActivator
             return;
         }
 
-        /* Only images from the firmware store: the value may come from the API */
-        $known = array_map(function ($f) { return $f->path; }, Firmware::all());
-        $source = Firmware::basedir().'/'.$firmware;
-        $data = in_array($firmware, $known, true) && is_file($source) ? @file_get_contents($source) : false;
-        if ($data === false)
+        try
+        {
+            $data = EepromImage::forFirmware($firmware, (string) $project->eeprom_settings);
+        }
+        catch (RuntimeException $e)
         {
             /* Do not leave the image of a previous project in place */
             if (file_exists($target))
                 unlink($target);
-            throw new RuntimeException("EEPROM firmware '$firmware' is no longer available in the firmware store; the module EEPROM will not be updated");
+            throw $e;
         }
-
-        if (!EepromImage::setConfig($data, EepromImage::normalizeConfig($project->eeprom_settings)))
-            throw new RuntimeException("EEPROM firmware '$firmware' could not be parsed for its configuration");
 
         $tmp = $target.'.part';
         if (@file_put_contents($tmp, $data) === false || !rename($tmp, $target))

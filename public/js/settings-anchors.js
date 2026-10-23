@@ -28,6 +28,7 @@
         'switches': 'network',
         'dhcp': 'network',
         'utility-os': 'provisioning',
+        'usb-prep': 'provisioning',
         'reprovision': 'provisioning',
         'reprovision-key': 'provisioning',
         'reprovision-accounts': 'provisioning',
