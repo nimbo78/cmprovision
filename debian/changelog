@@ -1,4 +1,4 @@
-cmprovision4 (2.9.1~dev1) unstable; urgency=medium
+cmprovision4 (2.9.1) unstable; urgency=medium
 
   * HDMI display: the name of the stand now sits on the middle row of the
     `cm` tile (it was a row lower and three columns away). The table of
