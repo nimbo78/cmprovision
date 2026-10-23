@@ -39,6 +39,8 @@ WEB_CSS = Path('/var/lib/cmprovision/resources/css/app.css')
 CHOICES = dict(mode=('off', 'auto', 'on'), palette=tuple(WEB_THEMES),
                view=('auto', 'desk', 'flow', 'engineer'))
 STOP = False
+SCROLL_SECONDS = .35   # a text that does not fit runs one column per step
+MARQUEE_REST = 4       # steps it rests at each end
 
 
 def valid_config(data):
@@ -284,8 +286,10 @@ def age(value, now):
 
 
 class Canvas:
-    def __init__(self, cols, rows):
+    def __init__(self, cols, rows, step=0):
         self.cols, self.rows = cols, rows
+        self.step = step      # which step of the scrolling texts this frame is
+        self.scrolls = False  # something did not fit: the screen is redrawn every step
         self.cells = [[(' ', 'fg') for _ in range(cols)] for _ in range(rows)]
 
     def text(self, x, y, text, ink='fg', width=None):
@@ -298,6 +302,19 @@ class Canvas:
         for i, char in enumerate(value):
             if 0 <= x + i < self.cols:
                 self.cells[y][x + i] = (char, ink)
+
+    def marquee(self, x, y, text, width, ink='fg'):
+        """Text that fits is drawn as it is. A longer one runs through its column: it rests at the start, moves one
+        column a step, rests at the end and starts over; the last column says '>' while there is more to come."""
+        value = safe(text)
+        width = max(0, min(self.cols - x, width))
+        if len(value) <= width:
+            return self.text(x, y, value, ink, width)
+        self.scrolls = True
+        shown = max(1, width - 1)
+        last = len(value) - shown
+        offset = min(max(self.step % (last + 2 * MARQUEE_REST) - MARQUEE_REST, 0), last)
+        self.text(x, y, value[offset:offset + shown] + ('>' if offset < last else ' '), ink, width)
 
     def line(self, y, x=0, width=None):
         self.text(x, y, '-' * (width or self.cols), 'dim')
@@ -347,8 +364,9 @@ def header(c, data, now):
         # Keep the web mark's simple cm tile; the name is ordinary readable text.
         for row, line in enumerate(['.----.', '| cm |', "'----'"]):
             c.text(0, row, line, 'accent')
-        c.text(9, 1, 'cmprovision', 'fg')
-        c.text(9, 2, 'PROVISIONING STAND', 'dim')
+        # The name sits on the middle row of the three-row mark, two columns from it.
+        c.text(8, 1, 'cmprovision', 'fg')
+        c.text(21, 1, 'PROVISIONING STAND', 'dim')
         x = max(48, c.cols - 36)
         c.text(x, 0, safe(data.get('host')) + ' / HDMI', 'dim')
         c.text(x, 1, 'ON STAND %02d   DONE %02d' % (len(data.get('modules', [])), counts.get('done', 0)), 'good')
@@ -441,9 +459,9 @@ def detail(c, x, y, width, module, now):
         c.wrap(x, y, 'Waiting for a connected module. Plug Ethernet into the provisioning switch.', width, 4, 'dim')
         return
     ink = INK.get(module.get('state'), 'dim')
-    c.text(x, y, module['name'], 'accent', width)
+    c.marquee(x, y, module['name'], width, 'accent')
     c.text(x, y + 1, module['serial'], 'dim', width)
-    c.text(x, y + 2, module['port'], 'dim', width)
+    c.marquee(x, y + 2, module['port'], width, 'dim')
     c.text(x, y + 4, phase(module), ink, width)
     pct = module.get('percent')
     if pct is not None:
@@ -474,16 +492,31 @@ def desk(c, data, module, now, tick):
         c.box(width + 2, y, c.cols - width - 2, height, 'DEVICE CARD')
         detail(c, width + 4, y + 1, c.cols - width - 6, module, now)
         table_y = y + height + 1
-    c.text(0, table_y, 'PORT / DEVICE                     PHASE        PROGRESS / RESULT', 'dim')
-    capacity = max(1, c.rows - 5 - table_y - 1)
-    modules = data.get('modules', [])
+    table(c, table_y, data.get('modules', []), tick)
+
+
+def table(c, y, modules, tick):
+    """Port / device, phase and result across the whole width. The first column is as wide as the longest name needs
+    (at most about half the screen), the result takes the rest; what still does not fit runs through its column."""
+    phase_width = 12
+    names = [safe(m['port']) + ' / ' + safe(m['name']) for m in modules]
+    first = max(33, min(max(map(len, names), default=0), max(33, min(c.cols - phase_width - 4 - 30, int(c.cols * .45)))))
+    x_phase, x_result = first + 2, first + 2 + phase_width + 2
+    c.text(0, y, 'PORT / DEVICE', 'dim')
+    c.text(x_phase, y, 'PHASE', 'dim')
+    c.text(x_result, y, 'PROGRESS / RESULT', 'dim')
+    c.line(y + 1)
+    capacity = max(1, c.rows - 5 - y - 2)
     start = (tick % max(1, math.ceil(len(modules) / capacity))) * capacity
     for i, m in enumerate(modules[start:start + capacity]):
-        text = '%-33s %-12s %s' % ((safe(m['port']) + ' / ' + safe(m['name']))[:33], phase(m)[:12],
-                (str(m['percent']) + '% / ETA ' + duration(m.get('eta'))) if m.get('percent') is not None and m['phase'] != 'done' else (m.get('detail') or 'Cycle ' + duration(m.get('cycle'))))
-        c.text(0, table_y + i + 1, text, INK.get(m['state'], 'dim'))
+        ink, row = INK.get(m['state'], 'dim'), y + 2 + i
+        result = ((str(m['percent']) + '% / ETA ' + duration(m.get('eta'))) if m.get('percent') is not None and m['phase'] != 'done'
+                  else (m.get('detail') or 'Cycle ' + duration(m.get('cycle'))))
+        c.marquee(0, row, names[start + i], first, ink)
+        c.text(x_phase, row, phase(m)[:phase_width], ink)
+        c.marquee(x_result, row, result, c.cols - x_result, ink)
     if not modules:
-        c.text(0, table_y + 2, 'No modules currently on the stand.', 'dim')
+        c.text(0, y + 2, 'No modules currently on the stand.', 'dim')
 
 
 def flow(c, data, module, now, tick):
@@ -547,9 +580,9 @@ def engineer(c, data, module, now, tick):
         c.wrap(0, below + 7, 'NEXT: ' + (advice or 'Wait for the configured checks to complete. See the module card in the web UI.'), c.cols, min(3, c.rows - 5 - below - 7), 'warn')
 
 
-def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=False):
+def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=False, step=0):
     now = now or time.time()
-    c = Canvas(max(1, cols), max(1, rows))
+    c = Canvas(max(1, cols), max(1, rows), step)
     if cols < 60 or rows < 24:
         c.wrap(0, 0, 'cmprovision HDMI: terminal too small. Need at least 60 columns and 24 rows. Use Settings > HDMI display or a smaller console font.', cols, rows, 'warn')
         return c
@@ -565,7 +598,7 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
         c.text(0, rows - 4, '! DATA STALE / last successful snapshot ' + age(data.get('generated_at'), now), 'fail')
     elif problems:
         m = problems[tick % len(problems)]
-        c.text(0, rows - 4, '! ' + m['port'] + ': ' + (m.get('detail') or phase(m)), 'fail')
+        c.marquee(0, rows - 4, '! ' + m['port'] + ': ' + (m.get('detail') or phase(m)), cols, 'fail')
     elif any(not s['answering'] for s in data.get('switches', [])):
         c.text(0, rows - 4, '! A switch is not answering. Ports are last known data.', 'warn')
     else:
@@ -690,7 +723,9 @@ def display(screen):
                 last_rotation = time.monotonic()
             rows, cols = screen.getmaxyx()
             width, height, ox, oy = viewport(cols, rows)
-            canvas = frame(data, width, height, selected, view_override or config['view'], tick=tick, paused=paused)
+            canvas = frame(data, width, height, selected, view_override or config['view'], tick=tick, paused=paused,
+                           step=int(time.monotonic() / SCROLL_SECONDS))
+            screen.timeout(int(SCROLL_SECONDS * 1000) if canvas.scrolls else 1000)   # faster only while a text runs
             if config['palette'] != palette_name:
                 inks = colors(config['palette'])
                 palette_name = config['palette']
@@ -734,6 +769,7 @@ def main():
     parser.add_argument('--cols', type=int, default=112)
     parser.add_argument('--rows', type=int, default=37)
     parser.add_argument('--view', choices=CHOICES['view'], default='auto')
+    parser.add_argument('--step', type=int, default=0, help='preview: the step of the scrolling texts')
     args = parser.parse_args()
     if args.action == 'control':
         try:
@@ -746,7 +782,7 @@ def main():
             return 1
     if args.action == 'preview':
         data = json.loads(Path(args.snapshot).read_text(encoding='utf-8'))
-        print(frame(data, args.cols, args.rows, view=args.view).plain())
+        print(frame(data, args.cols, args.rows, view=args.view, step=args.step).plain())
         return 0
     signal.signal(signal.SIGTERM, lambda *_: globals().__setitem__('STOP', True))
     signal.signal(signal.SIGINT, lambda *_: globals().__setitem__('STOP', True))

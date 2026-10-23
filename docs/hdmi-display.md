@@ -36,7 +36,15 @@ Older kernels that reject tall fonts fall back to a smaller supported font. Sele
 
 The layout uses the available width with small margins. Ultrawide screens fit three cards per row; ordinary Full HD
 and 4K fit two. A compact switch front panel stays together when it fits beside the device card. The header uses a
-small `cm` tile and a plain-text project name, rather than a large word drawn from hash characters.
+small `cm` tile with the name of the stand on the tile's middle row, and a plain-text project name, rather than a large
+word drawn from hash characters.
+
+The table under the front panel has three columns across the whole width: **Port / device**, **Phase** and
+**Progress / result**. The first column is as wide as the longest port and device name needs (at most about half the
+screen), the result takes the rest. A text that still does not fit is not cut: it rests at its start, runs through its
+column one step at a time (about three columns a second), rests at its end and starts over; a `>` at the end of the
+column says there is more. The same goes for the device name and port on the device card and for the failure line at
+the bottom. The screen is redrawn faster only while something runs; with every text fitting nothing moves.
 
 The four display themes match the web UI: **Warm / Dark**, **Warm / Light**, **Neutral / Dark**, and **Neutral / Light**.
 The renderer reads the same `resources/css/app.css` tokens for the page, text, muted text, accent and status colors.
