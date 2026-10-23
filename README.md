@@ -14,7 +14,7 @@ An independently maintained fork of [raspberrypi/cmprovision](https://github.com
 
 ## From image to checked device
 
-- **Prepare a project.** Choose a compressed OS image, EEPROM firmware, scripts and a label template, then make the project active for the stand.
+- **Prepare a project.** Choose a compressed OS image, EEPROM firmware, scripts and a label template, then make the project active for the stand. Images can be [fetched from the internet](docs/operations.md#images-from-the-internet) (a GitHub release, Raspberry Pi OS, any link) and checked against the published checksum; the EEPROM firmware list shows what each image changed.
 - **Follow the batch.** See each module's phase, progress, transfer rate, time remaining and errors. Use the Ports page to locate modules on configured SNMP switches, with [physical front panels](docs/switch-front-panels.md) for verified models.
 - **Put the bench on a monitor.** An optional [HDMI terminal display](docs/hdmi-display.md) shows ports, rotating device cards and saved diagnostics; Auto stops its renderer when HDMI is disconnected.
 - **Recover interrupted writes.** Downloads resume after connection loss. Enable image splitting to continue after a restart from the last verified 512 MB piece; enable verification to check the whole image.
@@ -106,7 +106,7 @@ Open `http://<server-wifi-address>/` and sign in with the account you created. F
 
 ### 3. Provision the first module
 
-1. In **Images**, upload an OS image compressed as `.gz`, `.xz` or `.bz2` and wait for its checksum to finish.
+1. In **Images**, upload an OS image compressed as `.gz`, `.xz` or `.bz2`, or choose **Add from the internet** (a GitHub release such as `WLAN-Pi/pi-gen`, Raspberry Pi OS, or a link; a `.zip` is repacked). Wait for the checksum to finish.
 2. In **Projects → Add project**, select the image and destination storage. Enable **Verify that image was written correctly**; add EEPROM settings, scripts or labels as needed.
 3. Save the project and choose **Set active**.
 4. Connect a CM4 prepared for network boot to the isolated switch and power it on. Follow its progress on **Dashboard**; open the module for its detailed log.
@@ -149,6 +149,7 @@ The [upgrade and restore guide](docs/upgrading.md) covers snapshots, rollback, P
 | --- | --- |
 | Tour every tab, theme and UI mode | [Screenshot gallery](docs/gallery.md) |
 | First-boot checks, packages and scripts | [OS check](docs/operations.md#first-boot-os-check) |
+| Fetch an image from GitHub, Raspberry Pi OS or a link | [Images from the internet](docs/operations.md#images-from-the-internet) |
 | Interrupted downloads and power loss | [Image recovery](docs/operations.md#image-download-and-write-recovery) |
 | Wi-Fi networks and a spare radio | [Wi-Fi management](docs/operations.md#wi-fi-networks) · [Cold spare](docs/operations.md#built-in-wi-fi-as-a-cold-spare) |
 | Find a module's port or restart it | [Switches and PoE](docs/operations.md#switches-and-poe-restart) |
