@@ -1,4 +1,4 @@
-cmprovision4 (2.11.0~dev1) unstable; urgency=medium
+cmprovision4 (2.11.0) unstable; urgency=medium
 
   * The MAC address is the key of a module. The table of modules keeps it
     unique and in one spelling, the card is at /cms/<MAC> (the links with the
