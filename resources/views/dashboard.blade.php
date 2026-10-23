@@ -8,8 +8,6 @@
             </div>
         @endif
 
-        <livewire:usb-prep-panel />
-
         <livewire:provisioning-status />
 
         <livewire:provisioning-log />

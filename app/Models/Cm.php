@@ -336,6 +336,37 @@ class Cm extends Model
             && $this->provisioning_started_at->getTimestamp() >= now()->subHours(self::ACTIVE_HOURS)->getTimestamp();
     }
 
+    /* When the last run ended: the end of a run that is done, the moment it failed; null for a run that is not over.
+       A row of a version before the phases has no phase and the time it completed */
+    public function finishedAt()
+    {
+        if ($this->phase === 'failed')
+            return $this->phase_started_at ?? $this->provisioning_started_at;
+        if ($this->phase === 'done')
+            return $this->provisioning_complete_at ?? $this->phase_started_at ?? $this->provisioning_started_at;
+        return $this->isActive() ? null : $this->provisioning_complete_at;
+    }
+
+    /* When the module was flashed: the end of its last run, or the start of one that is not over; null for a module that
+       never ran */
+    public function flashedAt()
+    {
+        return $this->finishedAt() ?? $this->provisioning_started_at;
+    }
+
+    /* The order of the lists (sort() of a collection): what is running now first, the latest start on top, then the
+       others by the time they were flashed, the latest first; a module that never ran is last */
+    public static function newestFirst()
+    {
+        return function (Cm $a, Cm $b) {
+            if ($a->isRunning() !== $b->isRunning())
+                return $a->isRunning() ? -1 : 1;
+            $at = $a->isRunning() ? $a->provisioning_started_at : $a->flashedAt();
+            $bt = $b->isRunning() ? $b->provisioning_started_at : $b->flashedAt();
+            return ($bt ? $bt->getTimestamp() : PHP_INT_MIN) <=> ($at ? $at->getTimestamp() : PHP_INT_MIN) ?: $b->id <=> $a->id;
+        };
+    }
+
     public function isStreaming()
     {
         return in_array($this->phase, ['write', 'verify'], true);

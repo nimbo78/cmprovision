@@ -7,7 +7,7 @@ use App\Models\Project;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-/* The list of CMs: newest first, by project, searchable by a part of the serial or the MAC */
+/* The list of CMs: what runs now first, then by the time they were flashed, the latest on top; by project, searchable by a part of the serial or the MAC */
 #[Title('CMs')]
 class Cms extends Component
 {
@@ -16,7 +16,7 @@ class Cms extends Component
 
     protected function cms()
     {
-        $query = Cm::with('project')->orderByDesc('id');
+        $query = Cm::with('project');
         if ($this->projectId)
             $query->where('project_id', $this->projectId);
         $term = strtolower(trim((string) $this->search));
@@ -27,7 +27,7 @@ class Cms extends Component
                   ->orWhereRaw("replace(lower(mac), ':', '') like ?", ['%'.str_replace(':', '', $term).'%'])
                   ->orWhereRaw('lower(hostname) like ?', ['%'.$term.'%']);
             });
-        return $query->get();
+        return $query->get()->sort(Cm::newestFirst())->values();
     }
 
     public function render()

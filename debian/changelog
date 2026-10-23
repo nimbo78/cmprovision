@@ -1,3 +1,18 @@
+cmprovision4 (2.14.0) unstable; urgency=medium
+
+  * Dashboard and CMs: the modules are listed by the time they were flashed,
+    the latest on top, the ones that run now above them (it was the port order
+    on the Dashboard and the first appearance on CMs). A module that failed is
+    placed by the time it failed; the Finished column of CMs shows that time
+    too.
+  * Dashboard: USB prep is a tile at the end of the row of the summary tiles
+    (under 1440 pixels, a row of its own under them) with a short text and the
+    button "Start USB prep" / "Stop USB prep". The steps and the list of the
+    boards it prepared are shown while the mode is on. A board that only had
+    its bootloader set is "Ready (USB prep)" in the table, not "Done".
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 23 Oct 2026 23:00:00 +0300
+
 cmprovision4 (2.13.1) unstable; urgency=medium
 
   * Ports: the port where the provisioner itself is connected shows the
