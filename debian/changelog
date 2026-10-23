@@ -1,4 +1,4 @@
-cmprovision4 (2.9.0~dev1) unstable; urgency=medium
+cmprovision4 (2.9.0) unstable; urgency=medium
 
   * Settings is split into four tabs by purpose, each at its own address
     (/settings?tab=network): Status (the services of the server and their
