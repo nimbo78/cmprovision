@@ -5,7 +5,7 @@
             <h2 class="font-bold">USB prep @if ($active)<span class="cmp-chip cmp-chip-run ml-1"><span class="dot"></span>on · {{ $minutes }} min</span>@endif</h2>
             @if ($active)
                 <p class="text-sm text-fg-muted">A board that boots over USB gets only the bootloader, with network boot first: no image is written.
-                    Wait for <strong>ready</strong> below (or the slow fade of both LEDs), unplug USB and power, and plug the board into the PoE switch.
+                    Wait for <strong>ready</strong> below (or both LEDs fading up and down in turn), unplug USB and power, and plug the board into the PoE switch.
                     Boards on the network are provisioned as usual. It switches off by itself after an hour without a board.</p>
             @else
                 <p class="text-sm text-fg-muted">Set a board to boot from the network first: connect it over USB, wait until it is ready, then plug it into the PoE switch.
@@ -39,6 +39,9 @@
                             @elseif ($cm->phase === 'failed')
                                 <span class="cmp-chip cmp-chip-fail"><span class="dot"></span>failed</span>
                                 <span class="text-neg">{{ $cm->phase_detail }}</span>
+                            @elseif ($cm->silentFor())
+                                <span class="cmp-chip cmp-chip-stale"><span class="dot"></span>no report</span>
+                                <span class="text-fg-muted">for {{ intdiv($cm->silentFor(), 60) }} min: check the board and its cables</span>
                             @else
                                 <span class="cmp-chip cmp-chip-run"><span class="dot"></span>flashing</span>
                             @endif

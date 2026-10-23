@@ -189,6 +189,56 @@ class UsbPrepTest extends TestCase
         $this->assertSame($sorted, $order, 'the bootloader is read, flashed and reported before the board is done');
     }
 
+    public function test_the_card_of_a_prepared_board_knows_the_firmware_it_got()
+    {
+        $this->prep()->start();
+        $this->get(self::USB)->assertOk();
+
+        $this->assertSame('default/pieeprom-2026-09-23.bin', Cm::sole()->firmware);
+    }
+
+    public function test_a_firmware_that_arrives_while_the_mode_is_on_is_what_the_next_board_gets()
+    {
+        $this->prep()->start();
+        $before = $this->prep()->imageSha();
+        file_put_contents($this->dir . '/default/pieeprom-2026-10-01.bin', ProjectActivationTest::eepromImage("[all]\nBOOT_UART=0\n") . str_repeat("\xff", 16));
+
+        $script = $this->get(self::USB)->assertOk()->getContent();
+
+        $this->assertNotSame($before, $this->prep()->imageSha(), 'the image is made again');
+        $this->assertStringContainsString($this->prep()->imageSha(), $script);
+        $this->assertStringContainsString('pieeprom-2026-10-01.bin', $script);
+        $this->assertSame('default/pieeprom-2026-10-01.bin', Cm::sole()->firmware);
+    }
+
+    public function test_settings_that_do_not_fit_the_bootloader_are_refused_and_what_was_saved_stays()
+    {
+        $this->prep()->save('default/pieeprom-2026-09-23.bin', "[all]\nBOOT_ORDER=0xf2\n");
+        $sha = $this->prep()->imageSha();
+
+        try {
+            $this->prep()->save('default/pieeprom-2025-05-08.bin', "[all]\n" . str_repeat("# a comment line\n", 200));
+            $this->fail('it was saved');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('2024', $e->getMessage());
+        }
+
+        $this->assertSame([$sha, 'default/pieeprom-2026-09-23.bin', "[all]\nBOOT_ORDER=0xf2\n"],
+            [$this->prep()->imageSha(), $this->prep()->firmware(), $this->prep()->settings()]);
+    }
+
+    public function test_a_board_that_was_prepared_is_not_a_done_board_of_the_stand()
+    {
+        $cm = Cm::create(['serial' => self::SERIAL, 'mac' => self::MAC, 'phase' => 'done', 'usb_prep_at' => now(), 'polled_at' => now()]);
+        $this->assertSame('unknown', \App\Support\StandMap::moduleState($cm));
+
+        $module = collect(app(\App\Support\WallboardSnapshot::class)->current()['modules'])->firstWhere('serial', self::SERIAL);
+        $this->assertSame(['ready', 'unknown'], [$module['phase'], $module['state']]);
+
+        $cm->update(['usb_prep_at' => null]);
+        $this->assertSame('ok', \App\Support\StandMap::moduleState($cm->fresh()));
+    }
+
     public function test_a_board_on_the_network_is_provisioned_as_always_while_the_mode_is_on()
     {
         $this->activeProject();

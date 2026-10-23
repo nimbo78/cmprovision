@@ -89,7 +89,7 @@ class WallboardSnapshot
         // A module is named by its host name or its MAC; the serial only identifies the row (it matches the ports)
         return ['serial' => $cm->serial, 'mac' => $cm->mac, 'hostname' => trim((string) $cm->hostname) ?: null,
             'name' => $cm->displayName(), 'port' => $port,
-            'phase' => $cm->phase, 'state' => StandMap::moduleState($cm), 'detail' => $cm->phase_detail,
+            'phase' => $cm->usb_prep_at !== null && $cm->phase === 'done' ? 'ready' : $cm->phase, 'state' => StandMap::moduleState($cm), 'detail' => $cm->phase_detail,
             'percent' => $cm->progressPercent(), 'speed' => $cm->bytesPerSecond(), 'eta' => $cm->secondsLeft(),
             'bytes' => $cm->progress_bytes, 'total' => $cm->progress_total,
             'cycle' => $cm->provisioning_started_at ? max(0, $end->getTimestamp() - $cm->provisioning_started_at->getTimestamp()) : null,

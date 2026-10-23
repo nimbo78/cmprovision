@@ -101,31 +101,47 @@ class UsbPrep
         return null;
     }
 
-    /** Saves the firmware and the settings, and makes the image the boards download. */
+    /** Saves the firmware and the settings, and makes the image the boards download. The image comes first: what the store
+     *  does not have, or what does not fit the bootloader, is refused with the saved ones left as they were. */
     public function save(string $firmware, string $settings): void
     {
-        EepromImage::forFirmware($firmware, $settings);   // refuses what the store does not have, before anything is kept
+        $settings = EepromImage::normalizeConfig($settings);
+        $this->write($firmware, $settings);
         $this->put('usb_prep_firmware', $firmware);
-        $this->put('usb_prep_settings', EepromImage::normalizeConfig($settings));
-        $this->build();
+        $this->put('usb_prep_settings', $settings);
     }
 
-    /** The image of the firmware and the settings as they are now; its checksum goes with the script. */
+    /** The image of the firmware and the settings as they are now (a firmware nobody chose is the newest of the store);
+     *  its checksum goes with the script. */
     public function build(): void
     {
-        $data = EepromImage::forFirmware((string) $this->firmware(), $this->settings());
+        $this->write((string) $this->firmware(), $this->settings());
+    }
+
+    protected function write(string $firmware, string $settings): void
+    {
+        $data = EepromImage::forFirmware($firmware, $settings);
         $target = public_path(self::IMAGE);
-        $tmp = $target.'.part';
+        $tmp = $target.'.'.bin2hex(random_bytes(4)).'.part';   // one file per writer: two boards cannot share a half-written one
         if (@file_put_contents($tmp, $data) === false || !rename($tmp, $target)) {
+            @unlink($tmp);
             throw new RuntimeException("Error writing '$target'");
         }
         $this->put('usb_prep_sha256', hash('sha256', $data));
+        $this->put('usb_prep_built', $this->key($firmware, $settings));
     }
 
-    /** The image is there for the board that asks (a restore without the uploads loses it). */
+    protected function key(string $firmware, string $settings): string
+    {
+        return $firmware.'|'.hash('sha256', EepromImage::normalizeConfig($settings));
+    }
+
+    /** The image is there for the board that asks, and is the one of the firmware and the settings now: a restore without
+     *  the uploads loses the file, and a newer firmware may have come into the store since. */
     public function ensureImage(): void
     {
-        if (!is_file(public_path(self::IMAGE)) || $this->imageSha() === null) {
+        if (!is_file(public_path(self::IMAGE)) || $this->imageSha() === null
+            || $this->get('usb_prep_built') !== $this->key((string) $this->firmware(), $this->settings())) {
             $this->build();
         }
     }

@@ -452,6 +452,7 @@ exit 1
         $prep->touch();
         $server = $this->moduleServer($req);
         $name = 'Flash EEPROM firmware ('.$prep->firmware().')';
+        $this->cm->firmware = $prep->firmware();
         $this->cm->eeprom_config_after = EepromImage::normalizeConfig($prep->settings());
         $this->cm->setPhase('preinstall', $name)->save();
         $this->logInfo('USB prep started: the bootloader only, no image. Utility OS: '.$this->cm->utilityOsLabel().'.');

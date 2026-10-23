@@ -75,7 +75,10 @@ class EepromImage
         $data = in_array($firmware, $known, true) && is_file($source) ? @file_get_contents($source) : false;
         if ($data === false)
             throw new \RuntimeException("EEPROM firmware '$firmware' is no longer available in the firmware store; the module EEPROM will not be updated");
-        if (!self::setConfig($data, self::normalizeConfig($settings)))
+        $config = self::normalizeConfig($settings);
+        if (strlen($config) > self::MAX_BOOTCONF_SIZE)
+            throw new \RuntimeException('The settings are '.strlen($config).' bytes: the bootloader holds at most '.self::MAX_BOOTCONF_SIZE.'.');
+        if (!self::setConfig($data, $config))
             throw new \RuntimeException("EEPROM firmware '$firmware' could not be parsed for its configuration");
 
         return $data;

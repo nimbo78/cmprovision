@@ -86,6 +86,14 @@ class UsbPrepPagesTest extends TestCase
         $this->assertStringNotContainsString('e4:5f:01:62:9f:d7', $html, 'an ordinary board is not a prepared one');
     }
 
+    public function test_a_board_that_went_quiet_while_flashing_says_so()
+    {
+        $this->board(['phase' => 'postinstall', 'provisioning_complete_at' => null, 'provisioning_started_at' => now()->subMinutes(30),
+            'progress_updated_at' => now()->subMinutes(30)]);
+
+        Livewire::test(UsbPrepPanel::class)->assertSee('no report')->assertDontSee('flashing');
+    }
+
     public function test_the_card_in_settings_shows_the_defaults_with_the_network_first()
     {
         $this->actingAs(User::factory()->create());
