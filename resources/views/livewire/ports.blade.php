@@ -115,7 +115,7 @@
             </section>
             @endforeach
             @if ($map)
-                <p class="text-xs text-fg-muted">The last 4 characters of the MAC address and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
+                <p class="text-xs text-fg-muted">The last 4 characters of the MAC address and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; the cmprovision mark: the provisioner itself; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
             @endif
             </div>
 
@@ -190,6 +190,8 @@
                         <p class="mb-2">Link up for {{ \Carbon\CarbonInterval::seconds($tile['changed'])->cascade()->forHumans(['parts' => 1]) }}, and nothing has talked from this port: a quiet device, a member of a link aggregation, or the provisioner's own port after a long idle time.</p>
                     @elseif ($tile['link'])
                         <p class="mb-2">The link to {{ $tile['link'] }}: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
+                    @elseif ($tile['state'] === 'uplink' && !empty($tile['server']))
+                        <p class="mb-2">The provisioner (this server) is on this port.{{ $tile['mac_count'] > 1 ? ' '.$tile['mac_count'].' MAC addresses behind it.' : '' }}</p>
                     @elseif ($tile['state'] === 'uplink')
                         <p class="mb-2">Uplink: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @endif

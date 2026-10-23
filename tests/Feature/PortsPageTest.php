@@ -128,7 +128,21 @@ class PortsPageTest extends TestCase
             ->assertSee('2 of 3 ports free')
             ->assertSeeHtml('<span class="label">1 done</span>')   // the chip text has a box of its own to trim (app.css)
             ->assertSee('All done: the batch can be replaced')
-            ->assertSeeHtml('<span class="short">UP</span>');
+            ->assertDontSeeHtml('<span class="short">UP</span>')   // the uplink is the provisioner: its mark stands there
+            ->assertSeeHtml('class="ports-logo"');
+    }
+
+    public function test_the_provisioners_port_shows_the_mark_of_the_top_bar_and_says_so()
+    {
+        $this->switchWithModule();
+        $page = Livewire::test(Ports::class)
+            ->assertSeeHtml('title="192.0.2.10 XGE0/0/1 · the provisioner"')
+            ->assertSeeHtml('aria-label="192.0.2.10 XGE0/0/1: the provisioner"')
+            ->assertSeeHtml('id="cmp-ports-s1p30"')   // a gradient id of its own: the top bar has one too
+            ->call('select', 's1p30')
+            ->assertSee('The provisioner (this server) is on this port.')
+            ->assertDontSee('Uplink:');
+        $this->assertSame(1, substr_count($page->html(), 'id="cmp-ports-s1p30"'));
     }
 
     public function test_the_block_line_names_the_switch_first_then_its_serial_mac_address_and_model()
