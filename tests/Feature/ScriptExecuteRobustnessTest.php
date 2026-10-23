@@ -61,7 +61,7 @@ class ScriptExecuteRobustnessTest extends TestCase
 
         Carbon::setTestNow(now()->addSeconds(ResolveBoards::GIVE_UP_SECONDS));
         (new ResolveBoards)->handle();
-        $warning = Cmlog::where('cm', self::SERIAL)->where('loglevel', 'warning')->first();
+        $warning = Cmlog::where('cm', 'e4:5f:01:00:00:02')->where('loglevel', 'warning')->first();
         $this->assertNotNull($warning, 'the failed switch lookup should be visible in the web log');
         $this->assertStringContainsString('192.0.2.1', $warning->msg);
     }
@@ -76,7 +76,7 @@ class ScriptExecuteRobustnessTest extends TestCase
         $response->assertOk()->assertHeader('Content-Type', 'text/plain; charset=UTF-8');
         $this->assertStringContainsString('Provisioning server error', $response->getContent());
         $this->assertStringContainsString("\nfinish fail\n", $response->getContent(), 'the module shows the failure on its LEDs');
-        $entry = Cmlog::where('cm', self::SERIAL)->where('loglevel', 'error')->first();
+        $entry = Cmlog::where('cm', 'e4:5f:01:00:00:02')->where('loglevel', 'error')->first();
         $this->assertNotNull($entry);
         $this->assertStringContainsString('Provisioning server error', $entry->msg);
     }
@@ -88,6 +88,6 @@ class ScriptExecuteRobustnessTest extends TestCase
         $this->get('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=40')->assertOk();
 
         $this->assertNotNull(Cm::where('serial', self::SERIAL)->firstOrFail()->provisioning_complete_at);
-        $this->assertStringContainsString('Provisioning completed', Cmlog::where('cm', self::SERIAL)->latest('id')->firstOrFail()->msg);
+        $this->assertStringContainsString('Provisioning completed', Cmlog::where('cm', 'e4:5f:01:00:00:02')->latest('id')->firstOrFail()->msg);
     }
 }

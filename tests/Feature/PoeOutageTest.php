@@ -16,7 +16,7 @@ class PoeOutageTest extends TestCase
     protected function outage(array $attributes = [])
     {
         return PoeOutage::create(array_merge(['switch_host' => '192.0.2.10', 'if_index' => 8, 'port' => 'GE0/0/3',
-            'oid' => '.1.3.6.1.4.1.2011.5.25.195.3.1.3.8', 'on_value' => 1, 'cm_serial' => '10000000e611110c',
+            'oid' => '.1.3.6.1.4.1.2011.5.25.195.3.1.3.8', 'on_value' => 1, 'cm_mac' => 'e4:5f:01:62:9f:d3',
             'user' => 'igor', 'off_at' => now()], $attributes));
     }
 

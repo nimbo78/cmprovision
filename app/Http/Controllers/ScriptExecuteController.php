@@ -166,6 +166,53 @@ exit 1
         return ModuleOperationLock::run([$this->serial], fn () => $this->startLockedProvisioning($req));
     }
 
+    /* The module of a start. The MAC is its key: a module is found by it first. One that comes with another MAC but a
+       serial the server knows is the same board (a new network adapter): it keeps its row. */
+    protected function findForStart(Request $req): ?Cm
+    {
+        $mac = Cm::normalizeMac($req->query('mac'));
+
+        return ($mac !== '' ? Cm::where('mac', $mac)->first() : null) ?? Cm::where('serial', $this->serial)->first();
+    }
+
+    /* The MAC the module said; without one the row's own, and for a module the server has not met, one made of its serial. */
+    protected function macOf(Request $req): string
+    {
+        return Cm::normalizeMac($req->query('mac')) ?: (Cm::where('serial', $this->serial)->value('mac') ?: Cm::pseudoMac($this->serial));
+    }
+
+    /* The row takes a new MAC; its lines of the log go with it. */
+    protected function adoptMac(Cm $cm, string $mac): void
+    {
+        if ($cm->mac !== $mac)
+        {
+            Cmlog::where('cm', $cm->mac)->update(['cm' => $mac]);
+            Cmlog::create(['cm' => $mac, 'board' => $cm->provisioning_board, 'loglevel' => 'warning', 'ip' => request()->ip(),
+                'msg' => 'The module has a new MAC address: it was '.$cm->mac.' and its serial is the same.']);
+        }
+    }
+
+    /* The row of the start: the one found, with the MAC and the serial the module says now, or a new one. A serial that
+       another row has stays with that row: the MAC is the key, and the module keeps the serial it had. */
+    protected function placeModule(?Cm $previous, array $fields): Cm
+    {
+        if (!$previous)
+            return Cm::create($fields + ['serial' => $this->serial]);
+
+        $this->adoptMac($previous, $fields['mac']);
+        if ($previous->serial !== $this->serial)
+        {
+            if (Cm::where('serial', $this->serial)->where('id', '!=', $previous->id)->exists())
+                Cmlog::create(['cm' => $fields['mac'], 'loglevel' => 'warning', 'ip' => request()->ip(),
+                    'msg' => 'The module says its serial is '.$this->serial.', which another module has: it keeps '.$previous->serial.'.']);
+            else
+                $fields['serial'] = $this->serial;
+        }
+        $previous->fill($fields)->save();
+
+        return $previous;
+    }
+
     protected function startLockedProvisioning(Request $req)
     {
         if ($reason = ReprovisionIntent::guard($this->serial, Project::getActive(), $req->query('mac')))
@@ -176,7 +223,7 @@ exit 1
            start it. That run fails and the module waits (no second write); its start after that is a new run. A USB boot
            is the operator re-flashing it, and a start long after the reboot finds a run whose timeout was lost: both close
            the waiting run and go on as a new run. */
-        $previous = Cm::where('serial', $this->serial)->first();
+        $previous = $this->findForStart($req);
         if ($previous && $previous->phase === 'firstboot')
         {
             $this->cm = $previous;
@@ -219,8 +266,7 @@ exit 1
             }
         }
 
-        $this->cm = Cm::updateOrCreate(['serial' => $this->serial], array_merge($this->moduleFields($req, $lookUp), [
-            'serial' => $this->serial,
+        $this->cm = $this->placeModule($previous, array_merge($this->moduleFields($req, $lookUp), [
             'firmware' => $project ? $project->eeprom_firmware : null,
             'diagnostics_token' => Str::random(40),
             'storage_diagnostics' => null,
@@ -378,6 +424,7 @@ exit 1
         $total = (int) $image->uncompressed_size;
         $lookUp = $req->query('mac') && EthernetSwitch::exists();
         $this->cm = $previous;
+        $this->adoptMac($previous, $this->macOf($req));
         $this->cm->fill(array_merge($this->moduleFields($req, $lookUp), [
             'temp2' => null,
             'script_return_code' => null,
@@ -430,8 +477,7 @@ exit 1
             $board = $jumper.' ('.bindec($jumper).')';
         }
         return [
-            'mac'    => $req->query('mac') ? $req->query('mac')
-                        : "b8:27:eb:".substr($this->serial, -6, 2).":".substr($this->serial, -4, 2).":".substr($this->serial, -2, 2),
+            'mac'    => $this->macOf($req),
             'model'  => $req->query('model'),
             'memory_in_gb' => $req->query("memorysize") ? round( ($req->query("memorysize")+200000)/1024/1024 ) : null,
             'storage' => $req->query('storagesize') ? $req->query('storagesize')*512 : null,
@@ -871,7 +917,7 @@ exit 1
             if ($report['context'] === 'failure' && $summary['issues'] && $previousReport !== $report)
             {
                 foreach ($summary['issues'] as $issue)
-                    Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'ip' => $req->ip(),
+                    Cmlog::create(['cm' => $cm->mac, 'board' => $cm->provisioning_board, 'ip' => $req->ip(),
                         'loglevel' => 'error', 'msg' => 'Module diagnostics: '.$issue['title'].'. '.
                             ($issue['evidence'] ? $issue['evidence']."\n" : '').$issue['advice']]);
             }
@@ -969,7 +1015,7 @@ exit 1
     public function logInfo($msg, $loglevel = 'info')
     {
         Cmlog::create([
-            'cm' => $this->serial,
+            'cm' => $this->cm?->mac ?: $this->serial,
             'board' => $this->cm ? $this->cm->provisioning_board : null,
             'loglevel' => $loglevel,
             'ip' => request()->ip(),

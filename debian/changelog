@@ -1,3 +1,24 @@
+cmprovision4 (2.11.0~dev1) unstable; urgency=medium
+
+  * The MAC address is the key of a module. The table of modules keeps it
+    unique and in one spelling, the card is at /cms/<MAC> (the links with the
+    serial still open it), and the log of a module and the PoE outage of its
+    port are kept under its MAC. A start finds a module by its MAC, then by
+    its serial: a board that comes with a new MAC but a serial the server
+    knows keeps its row and its log (a line in the log says so). A module
+    that did not tell its MAC gets a locally administered one made of its
+    serial instead of the made-up b8:27:eb one. The serial is still what a
+    module sends in its requests after the first, so the utility OS and the
+    scripts on the modules are unchanged.
+  * The migration writes the MACs in one way, keeps a MAC two modules share
+    with the one updated last (the other gets a locally administered one),
+    adds the unique index and moves the log and the outage of every module
+    that exists to its MAC (the lines of deleted modules stay under their
+    serial). Rehearsed on a copy of the provisioner's database; running it
+    again changes nothing and rolling it back restores the serials.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 23 Oct 2026 15:00:00 +0300
+
 cmprovision4 (2.10.0) unstable; urgency=medium
 
   * A module is named by its host name, or by its MAC address while it has

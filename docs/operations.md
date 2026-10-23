@@ -26,7 +26,14 @@ any carrier board) and, once the system written to it has started, by its **host
 and the messages to chats show the host name when there is one and the MAC address when there is not; the MAC is shown
 beside the host name. The **serial number** of the board is the small print: the Serial column of the CMs list, a row on
 the module card, `S/N` on the HDMI device card, `serial` in the JSON of a webhook. The label placeholders `$mac`,
-`$serial` and `$hostname` all stay. The address of a module card, `/cms/<serial>`, is the same as before.
+`$serial` and `$hostname` all stay.
+
+The MAC address is also what a module is **kept under**: it is unique in the table of modules, the address of the module
+card is `/cms/<MAC>` (`/cms/e4:5f:01:62:9f:d3`; the older `/cms/<serial>` links still open the same card), and the log
+lines of a module and the PoE outage of its port name its MAC. A board that shows up with a new MAC (another network
+adapter) but a serial the server knows keeps its row and its log, and a line in the log says so; a module that never
+told its MAC gets a locally administered one (`02:…`) made of its serial. The serial is still what the module sends in
+its requests after the first, so nothing on the module side or in the utility OS changes.
 
 ## The Settings page
 

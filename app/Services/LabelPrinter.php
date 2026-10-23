@@ -64,6 +64,6 @@ class LabelPrinter
 
     protected static function log(Cm $cm, ?string $ip, string $level, string $msg): void
     {
-        Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => $level, 'ip' => $ip, 'msg' => $msg]);
+        Cmlog::create(['cm' => $cm->mac, 'board' => $cm->provisioning_board, 'loglevel' => $level, 'ip' => $ip, 'msg' => $msg]);
     }
 }

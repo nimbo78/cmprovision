@@ -42,10 +42,10 @@ class PoeRestartTest extends TestCase
         $this->assertSame([[self::OID8, 'i', PoeControl::OFF], [self::OID8, 'i', PoeControl::ON]], $this->fake->sets);
         Sleep::assertSequence([Sleep::for(PoeRestart::OFF_SECONDS)->seconds()]);
         $outage = PoeOutage::sole();
-        $this->assertSame([1, '192.0.2.10', 8, 'sw01 GE0/0/3', self::OID8, 1, '10000000e611110c', 'igor'],
-            [$outage->switch_id, $outage->switch_host, $outage->if_index, $outage->port, $outage->oid, $outage->on_value, $outage->cm_serial, $outage->user]);
+        $this->assertSame([1, '192.0.2.10', 8, 'sw01 GE0/0/3', self::OID8, 1, 'e4:5f:01:62:9f:d3', 'igor'],
+            [$outage->switch_id, $outage->switch_host, $outage->if_index, $outage->port, $outage->oid, $outage->on_value, $outage->cm_mac, $outage->user]);
         $this->assertNotNull($outage->on_at);
-        $this->assertDatabaseHas('cmlogs', ['cm' => '10000000e611110c', 'board' => 'sw01 GE0/0/3', 'loglevel' => 'info',
+        $this->assertDatabaseHas('cmlogs', ['cm' => 'e4:5f:01:62:9f:d3', 'board' => 'sw01 GE0/0/3', 'loglevel' => 'info',
                                             'msg' => 'PoE restart of sw01 GE0/0/3 by igor: off for 5 s']);
         $this->assertSame(['text' => 'Restarted sw01 GE0/0/3 (e4:5f:01:62:9f:d3): PoE was off for 5 s.', 'error' => false],
             PoeRestart::message($result));

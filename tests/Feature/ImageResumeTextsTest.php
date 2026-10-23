@@ -81,7 +81,7 @@ class ImageResumeTextsTest extends TestCase
             ->assertDontSee('the next start continues from');
 
         $this->assertNull($cm->fresh()->durable_bytes);
-        $this->assertTrue(Cmlog::where('cm', $cm->serial)
+        $this->assertTrue(Cmlog::where('cm', $cm->mac)
             ->where('msg', 'Start over: the next start writes the image from the beginning (by igor).')->exists());
     }
 

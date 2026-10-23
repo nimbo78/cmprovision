@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -89,6 +90,39 @@ class Cm extends Model
     {
         return in_array($this->phase, ['done', 'failed'], true) && $this->polled_at
             && $this->polled_at->getTimestamp() >= now()->getTimestamp() - self::ON_BENCH_SECONDS;
+    }
+
+    /** A MAC in the one way the table holds it: lowercase, with colons. What is not a MAC is lowercased and trimmed. */
+    public static function normalizeMac(?string $mac): string
+    {
+        return strtolower(str_replace('-', ':', trim((string) $mac)));
+    }
+
+    /** The MAC of a module that did not say one: locally administered (so it cannot meet a real one), made of its serial. */
+    public static function pseudoMac(string $serial): string
+    {
+        $hex = substr(str_pad(preg_replace('/[^0-9a-f]/', '0', strtolower($serial)), 10, '0', STR_PAD_LEFT), -10);
+
+        return '02:'.implode(':', str_split($hex, 2));
+    }
+
+    /** A module by what the address of its card says: its MAC (in any spelling), or, for the links of before 2.11, its serial. */
+    public static function findByKey(?string $key): ?self
+    {
+        $key = trim((string) $key);
+
+        return $key === '' ? null : (static::where('mac', static::normalizeMac($key))->first() ?? static::where('serial', $key)->first());
+    }
+
+    /** The lines of the module's log: under its MAC, and the older ones under its serial. */
+    public function logLines()
+    {
+        return Cmlog::whereIn('cm', [$this->mac, $this->serial]);
+    }
+
+    protected function mac(): Attribute
+    {
+        return Attribute::make(set: fn ($value) => static::normalizeMac($value));
     }
 
     /** What a person calls the module: the host name its new system has, else its MAC address; the serial number only

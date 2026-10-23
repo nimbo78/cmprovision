@@ -23,7 +23,7 @@ class PoeOutagesTest extends TestCase
     protected function outage(array $attributes = [])
     {
         return PoeOutage::create(array_merge(['switch_host' => '192.0.2.10', 'if_index' => 8, 'port' => 'GE0/0/3',
-            'oid' => Poe::OID_HW_ENABLE.'.8', 'on_value' => 1, 'cm_serial' => '10000000e611110c', 'user' => 'igor',
+            'oid' => Poe::OID_HW_ENABLE.'.8', 'on_value' => 1, 'cm_mac' => 'e4:5f:01:62:9f:d3', 'user' => 'igor',
             'off_at' => now()], $attributes));
     }
 
@@ -168,8 +168,8 @@ class PoeOutagesTest extends TestCase
     {
         Sleep::fake();
         $this->stand();
-        $first = $this->outage(['error' => 'noAccess', 'cm_serial' => null]);
-        $second = $this->outage(['error' => 'noAccess', 'cm_serial' => null, 'if_index' => 7, 'port' => 'GE0/0/2', 'oid' => Poe::OID_HW_ENABLE.'.7']);
+        $first = $this->outage(['error' => 'noAccess', 'cm_mac' => null]);
+        $second = $this->outage(['error' => 'noAccess', 'cm_mac' => null, 'if_index' => 7, 'port' => 'GE0/0/2', 'oid' => Poe::OID_HW_ENABLE.'.7']);
         Livewire::test(PoeOutages::class)
             ->call('powerOn', $first->id)->assertSee('PoE on GE0/0/3 is on again.')
             ->call('forget', $second->id);

@@ -72,7 +72,7 @@ class ImageWriteServerTest extends TestCase
         $cm = Cm::where('serial', self::SERIAL)->first();
         $this->assertSame($timeline, $cm->timeline);
         $this->assertSame(2048 * 512, $cm->progress_bytes);
-        $this->assertTrue(Cmlog::where('cm', self::SERIAL)
+        $this->assertTrue(Cmlog::where('cm', 'e4:5f:01:62:9f:d3')
             ->where('msg', 'Download resumed at 1.2 GB of 1.6 GB (the connection broke: curl exit 56).')->exists());
     }
 

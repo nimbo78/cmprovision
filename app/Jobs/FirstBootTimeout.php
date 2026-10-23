@@ -40,7 +40,7 @@ class FirstBootTimeout implements ShouldQueue
 
         $cm->os_check = 'failed';
         $cm->markFailed(Cm::OS_NO_REPORT)->save();
-        Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => 'error',
+        Cmlog::create(['cm' => $cm->mac, 'board' => $cm->provisioning_board, 'loglevel' => 'error',
             'msg' => Cm::OS_NO_REPORT.': the new system did not start, has no network to the server, or the module was unplugged.']);
         if ($cm->notification_batch_id)
             NotificationBatch::whereKey($cm->notification_batch_id)->update(['last_event_at' => now()]);

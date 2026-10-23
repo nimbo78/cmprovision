@@ -14,7 +14,7 @@ use App\Support\StandMap;
 use App\Support\ModuleDiagnostics;
 use Livewire\Component;
 
-/* The module card (/cms/<serial>): the last run step by step, the bootloader before and after, the
+/* The module card (/cms/<mac>): the last run step by step, the bootloader before and after, the
    script logs and the module's history; for a failed or silent module where it stopped and what to do */
 class CmCard extends Component
 {
@@ -26,10 +26,12 @@ class CmCard extends Component
     public $powerLoaded = false;
     public $diagnosticsMessage = null;
 
-    public function mount($serial)
+    /* The address says the MAC; a serial (the links of before 2.11, a test) finds the module as well. The component works
+       with the serial: it is what the module's requests, its run and its diagnostics are keyed by. */
+    public function mount($mac = '', $serial = '')
     {
-        Cm::where('serial', $serial)->firstOrFail();
-        $this->serial = $serial;
+        $cm = Cm::findByKey($mac !== '' ? $mac : $serial) ?? throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(Cm::class);
+        $this->serial = $cm->serial;
     }
 
     /* The Power row asks the switch, which may be slow or silent: the card shows first, then the row (wire:init) */
@@ -58,7 +60,7 @@ class CmCard extends Component
         $cm->durable_bytes = null;
         $cm->durable_at = null;
         $cm->save();
-        Cmlog::create(['cm' => $cm->serial, 'board' => $cm->provisioning_board, 'loglevel' => 'info',
+        Cmlog::create(['cm' => $cm->mac, 'board' => $cm->provisioning_board, 'loglevel' => 'info',
             'msg' => 'Start over: the next start writes the image from the beginning (by '.(auth()->user()->name ?? 'unknown').').']);
     }
 
@@ -109,7 +111,7 @@ class CmCard extends Component
             'advice' => FailureAdvice::for($cm),
             'resumeFrom' => $cm->resumableFrom(),
             'settings' => self::settingsDiff($cm->eeprom_config_before, $cm->eeprom_config_after),
-            'history' => Cmlog::where('cm', $this->serial)->orderByDesc('id')->limit(self::HISTORY_ROWS)->get(),
+            'history' => $cm->logLines()->orderByDesc('id')->limit(self::HISTORY_ROWS)->get(),
             'zone' => config('app.display_timezone'),
             'power' => $this->powerLoaded ? $this->power($cm) : null,
             'powerPending' => !$this->powerLoaded && EthernetSwitch::exists(),

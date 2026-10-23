@@ -101,7 +101,7 @@ class OsCheckModuleScriptTest extends TestCase
         $this->assertSame('skipped', $this->cm()->os_check);
         $this->assertStringNotContainsString('/tmp/oscheck', $script);
         $this->assertStringContainsString("\nfinish done\n", $script);
-        $this->assertSame(1, Cmlog::where('cm', self::SERIAL)->where('msg', 'like', '%OS check skipped: the module booted over USB.%')->count());
+        $this->assertSame(1, Cmlog::where('cm', 'e4:5f:01:62:9f:d3')->where('msg', 'like', '%OS check skipped: the module booted over USB.%')->count());
     }
 
     public function test_the_service_takes_the_projects_first_boot_scripts_and_packages()

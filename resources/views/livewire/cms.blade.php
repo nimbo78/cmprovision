@@ -24,7 +24,7 @@
             <tbody>
                 @forelse ($CMs as $c)
                     <tr wire:key="cm-{{ $c->id }}">
-                        <td class="mono"><a href="{{ route('cm', $c->serial) }}" class="text-link hover:underline">{{ $c->mac ?: $c->serial }}</a></td>
+                        <td class="mono"><a href="{{ route('cm', $c->mac) }}" class="text-link hover:underline">{{ $c->mac ?: $c->serial }}</a></td>
                         <td class="mono">{{ $c->hostname }}</td>
                         <td class="mono text-fg-muted">{{ $c->serial }}</td>
                         <td>{{ $c->model }}</td>
@@ -39,7 +39,7 @@
                         </td>
                         <td class="tabular-nums text-fg-muted whitespace-nowrap">{{ $c->provisioning_complete_at ? $c->provisioning_complete_at->local()->format('Y-m-d H:i:s') : '—' }}</td>
                         <td class="text-right whitespace-nowrap">
-                            <a href="{{ route('cm', $c->serial) }}" class="text-link font-semibold mr-3">View</a>
+                            <a href="{{ route('cm', $c->mac) }}" class="text-link font-semibold mr-3">View</a>
                             <button type="button" wire:click="delete({{ $c->id }})" wire:confirm="Delete CM {{ $c->displayName() }}?" class="text-fg-muted hover:text-neg" title="Delete" aria-label="Delete CM {{ $c->displayName() }}">
                                 <svg class="inline w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M8 2h4a1 1 0 011 1v1h4v2H3V4h4V3a1 1 0 011-1zm-3 6h10l-.8 9.2A2 2 0 0112.2 19H7.8a2 2 0 01-2-1.8L5 8z"/></svg>
                             </button>
