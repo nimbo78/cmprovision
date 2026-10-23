@@ -198,6 +198,11 @@ EOF
     # the metrics by device (2.5.3): NetworkManager reads its conf.d again, connections take them when they connect
     nmcli general reload conf >/dev/null 2>&1 || true
 
+    # The newest five snapshots stay (2.17.0): the upgrade's own snapshot is made by the old version's script, which does not trim
+    if [ -x /usr/sbin/cmprovision-backup ]; then
+        /usr/sbin/cmprovision-backup --prune || true
+    fi
+
     # Read the dedicated diagnostic-device rule on the next hotplug; do not retrigger other USB devices.
     if command -v udevadm >/dev/null 2>&1; then
         udevadm control --reload-rules >/dev/null 2>&1 || true

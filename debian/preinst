@@ -1,7 +1,9 @@
 #!/bin/sh
-# Before an upgrade from a version older than 2.5 keep a snapshot of the data (2.0: Laravel 13 and new database
-# columns; 2.4: the switches in a table of their own; 2.5: new services, the database in WAL, notifications through
-# the queue): cmprovision-restore <snapshot> puts the old version back.
+# Before an upgrade keep a snapshot of the data: cmprovision-restore <snapshot> puts the old version back. From a version
+# older than 2.5 the upgrade changed so much (2.0: Laravel 13 and new database columns; 2.4: the switches in a table of their
+# own; 2.5: new services, the database in WAL, notifications through the queue) that it stops when no snapshot can be made.
+# From 2.5 on (2.17.0) a snapshot that cannot be made is told and the upgrade goes on; the newest five snapshots stay
+# (cmprovision-backup --prune, run by postinst).
 # Uploaded images are not in it: the upgrade leaves them alone.
 set -e
 
@@ -32,6 +34,13 @@ pack_old_version() {
     return $ret
 }
 
+# Room for a snapshot: twice what the application holds (without the uploads) must be free under /var/backups
+enough_space() {
+    need=$(du -sk --exclude=uploads /var/lib/cmprovision 2>/dev/null | cut -f1)
+    have=$(df -Pk /var/backups 2>/dev/null | awk 'NR==2 {print $4}')
+    [ -z "$need" ] || [ -z "$have" ] || [ "$have" -gt $((need * 2)) ]
+}
+
 # The old version's cmprovision-backup takes the snapshot. On a server in use it can fail (tar sees the
 # database or a log change while it reads), so it gets three tries; without a snapshot the upgrade stops
 # and the old version stays installed, unless CMPROVISION_NO_SNAPSHOT is set.
@@ -55,17 +64,23 @@ take_snapshot() {
     return 1
 }
 
-if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.5.0~"; then
+if [ "$1" = "upgrade" ] && [ -n "$2" ]; then
+    # a snapshot is a must below 2.5 (the upgrade stops without one) and a courtesy from 2.5 on
+    if dpkg --compare-versions "$2" lt "2.5.0~"; then must=1; else must=0; fi
     if [ -n "${CMPROVISION_NO_SNAPSHOT:-}" ]; then
         echo "cmprovision: CMPROVISION_NO_SNAPSHOT is set: upgrading from $2 without a snapshot" >&2
     elif [ ! -x /usr/sbin/cmprovision-backup ]; then
         echo "cmprovision: $2 has no cmprovision-backup: upgrading without a snapshot" >&2
+    elif [ "$must" = 0 ] && ! enough_space; then
+        echo "cmprovision: not enough room in /var/backups for a snapshot of $2: upgrading without one (cmprovision-backup --prune removes the older snapshots)" >&2
     elif take_snapshot "$2"; then
         if ! ls "$snap"/cmprovision4_*.deb > /dev/null 2>&1; then
             pack_old_version "$snap" \
                 || echo "cmprovision: could not pack $2 into $snap; install its .deb again before cmprovision-restore" >&2
         fi
         echo "cmprovision: snapshot of $2 in $snap: cmprovision-restore $snap goes back"
+    elif [ "$must" = 0 ]; then
+        echo "cmprovision: no snapshot of $2 could be taken (see above): upgrading without one. Take one with cmprovision-backup when no module is on the stand if you want a way back." >&2
     else
         echo "cmprovision: no snapshot of $2 could be taken (see above). The upgrade stops and $2 stays installed." >&2
         echo "cmprovision: try again when no module is on the stand, or upgrade without a way back:" >&2
