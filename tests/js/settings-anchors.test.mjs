@@ -11,6 +11,7 @@ test('an old link to a section opens the tab that holds it', () => {
     assert.equal(SettingsAnchors.redirect('/settings', '', '#reprovision-key'), '/settings?tab=provisioning#reprovision-key');
     assert.equal(SettingsAnchors.redirect('/settings', '', '#reprovision-accounts'), '/settings?tab=provisioning#reprovision-accounts');
     assert.equal(SettingsAnchors.redirect('/settings', '', '#utility-os'), '/settings?tab=provisioning#utility-os');
+    assert.equal(SettingsAnchors.redirect('/settings', '', '#usb-prep'), '/settings?tab=provisioning#usb-prep');
     assert.equal(SettingsAnchors.redirect('/settings', '', '#hdmi-display'), '/settings?tab=provisioning#hdmi-display');
 });
 
@@ -40,7 +41,7 @@ test('every section id of the tab views is in the table', async () => {
     const { readFileSync, readdirSync } = await import('node:fs');
     const dir = new URL('../../resources/views/livewire/', import.meta.url);
     const ids = new Set();
-    const files = ['wifi-settings', 'switch-settings', 'notification-settings', 'utility-os-settings', 'wallboard-settings']
+    const files = ['wifi-settings', 'switch-settings', 'notification-settings', 'utility-os-settings', 'usb-prep-settings', 'wallboard-settings']
         .map((f) => `${f}.blade.php`)
         .concat(['settings/status.blade.php', 'settings/network.blade.php', 'settings/provisioning.blade.php']);
     for (const f of files) {

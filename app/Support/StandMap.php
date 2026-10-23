@@ -247,6 +247,8 @@ class StandMap
     {
         if ($cm->isActive())
             return $cm->silentFor() ? 'stale' : 'run';
+        if ($cm->usb_prep_at !== null && $cm->phase === 'done')
+            return 'unknown';   // prepared over USB, not provisioned: the stand has nothing to count
         if ($cm->phase === 'done')
             return 'ok';
         if ($cm->phase === 'failed')
