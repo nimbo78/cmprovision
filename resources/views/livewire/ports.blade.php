@@ -193,6 +193,47 @@
                     @elseif ($tile['state'] === 'uplink')
                         <p class="mb-2">Uplink: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @endif
+                    @if (!empty($tile['neighbors']))
+                        {{-- what the device itself says over LLDP or CDP; the texts are the device's own and escaped --}}
+                        <div class="mb-3">
+                            <p class="font-semibold mb-1">Says about itself</p>
+                            @foreach ($tile['neighbors'] as $neighbor)
+                                <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 mb-2">
+                                    <dt class="text-fg-muted">{{ strtoupper($neighbor['protocol']) }}</dt>
+                                    <dd class="break-all">{{ $neighbor['name'] !== '' ? $neighbor['name'] : ($neighbor['chassis'] !== '' ? $neighbor['chassis'] : 'no name') }}</dd>
+                                    @if ($neighbor['description'] !== '')
+                                        <dt class="text-fg-muted">System</dt>
+                                        <dd class="break-words">{{ $neighbor['description'] }}</dd>
+                                    @endif
+                                    @if ($neighbor['platform'] !== '')
+                                        <dt class="text-fg-muted">Platform</dt>
+                                        <dd class="break-words">{{ $neighbor['platform'] }}</dd>
+                                    @endif
+                                    @if ($neighbor['port'] !== '')
+                                        <dt class="text-fg-muted">Its port</dt>
+                                        <dd class="break-all">{{ $neighbor['port'] }}</dd>
+                                    @endif
+                                    @if ($neighbor['address'])
+                                        <dt class="text-fg-muted">Address</dt>
+                                        <dd class="ports-serial break-all">{{ $neighbor['address'] }}</dd>
+                                    @endif
+                                    @if ($neighbor['mac'])
+                                        <dt class="text-fg-muted">MAC</dt>
+                                        <dd class="ports-serial break-all">{{ $neighbor['mac'] }}</dd>
+                                    @endif
+                                    @if ($neighbor['capabilities'])
+                                        <dt class="text-fg-muted">Is a</dt>
+                                        <dd>{{ implode(', ', $neighbor['capabilities']) }}</dd>
+                                    @endif
+                                </dl>
+                            @endforeach
+                        </div>
+                    @endif
+                    @if ($vendors)
+                        <p class="mb-3 text-fg-muted">Made by, from the MAC address:
+                            @foreach ($vendors as $mac => $vendor)<span class="ports-serial break-all">{{ $mac }}</span> {{ $vendor }}{{ $loop->last ? '' : '; ' }}@endforeach
+                        </p>
+                    @endif
                     @if ($writable && $restart['blocker'] === null)
                         <div class="mb-3">
                             <button type="button" wire:click="restart('{{ $tile['key'] }}')" wire:confirm="{{ $restart['confirm'] }}" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary cmp-btn-small">

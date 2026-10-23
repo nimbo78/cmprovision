@@ -1,3 +1,20 @@
+cmprovision4 (2.13.0) unstable; urgency=medium
+
+  * Ports: the details of a port show what the device on it says about itself
+    over LLDP and CDP (name, system, platform, its port, address, MAC, what it
+    is), read from the switch's tables over SNMP; the line of each switch says
+    how many neighbors it knows. A device that talks both protocols is one
+    neighbor. For an unrecognized device that says nothing the maker of its
+    MAC address is named (Raspberry Pi blocks built in, the ieee-data package
+    recommended for the IEEE registries).
+  * A neighbor that is another switch of the stand makes the port a link (by
+    its MAC or its name), and the provisioner is found on its port by its
+    LLDP too.
+  * No migration, no new setting; the switch needs LLDP on (Cisco: lldp run)
+    or CDP, and a read community that reaches those MIBs.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 23 Oct 2026 20:00:00 +0300
+
 cmprovision4 (2.12.4) unstable; urgency=medium
 
   * cmprovision-backup keeps the newest 5 snapshots in /var/backups/cmprovision

@@ -21,6 +21,26 @@ initial window. This timeout changes the display; it does not establish where
 boot stopped. Unrecognized ports are not completed modules and do not keep the
 batch's in-progress counter running indefinitely.
 
+## What the device says about itself (LLDP and CDP)
+
+Many devices announce themselves to the switch they are plugged into: switches, access points, IP phones, printers and
+anything running `lldpd`, WLAN Pi OS included (so a module that has finished and booted its new system shows up by its host
+name). The Ports page reads the switch's LLDP and CDP tables over SNMP with every snapshot. Click a port to see **Says about
+itself**: the name, the system description, the platform (CDP), the device's own port, its management address and MAC, and what
+it is (`bridge`, `router`, `wlan-ap`, `telephone`, `station`, ...). A device that talks both protocols is shown once. The line
+of each switch says how many neighbors it knows (`2 neighbors via LLDP/CDP`), or `LLDP/CDP on, no neighbors`, or
+`no LLDP/CDP data` when the switch tells nothing.
+
+- **A plain Raspberry Pi says nothing.** Raspberry Pi OS and the utility OS do not send LLDP or CDP. For such a device the port
+  shows **Made by, from the MAC address** (the Raspberry Pi blocks are built in; the `ieee-data` package, a recommended
+  dependency, adds the IEEE registries). A randomly generated or virtual MAC has no maker.
+- **The switch must send and answer.** Cisco IOS needs `lldp run` for LLDP (CDP is on by default); Huawei switches usually have
+  LLDP on. The SNMP user of the switch must be allowed to read LLDP-MIB (`1.0.8802.1.1.2`) and CISCO-CDP-MIB.
+- **The text is the device's own.** Anything on the cable can send any name, so these lines help to find out what was plugged
+  in; they do not prove it. They are shown as plain text and shortened.
+- **Links between switches.** A neighbor that says it is another switch of the stand (by the MAC it answers from, or by its
+  name) makes the port a link, also when that switch's own MAC is not in the table. The provisioner announces itself the same way.
+
 ## Investigate a new M4+ on wlanpi-da2
 
 Leave the target connected in its current state and note its **switch/port, MAC

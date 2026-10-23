@@ -521,4 +521,46 @@ class PortsPageTest extends TestCase
             ->call('restartFailed')
             ->assertSee('Restarted 192.0.2.10 GE0/0/3 (e4:5f:01:62:9f:d3): PoE was off for 5 s.');
     }
+
+    public function test_a_device_that_says_what_it_is_is_described_on_its_port_and_its_maker_is_named()
+    {
+        $this->switchWithModule();
+        // GE0/0/1 (ifIndex 6) comes up with a device nobody knows that talks LLDP; the MAC table lists it
+        $t =& $this->fake->tables[''];
+        $t[SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;
+        $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;   // 00:0a:95:dd:ee:ff
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 8 => 'eth0', 9 => 'ap-<script>alert(1)</script>', 10 => 'Access point firmware 1.2',
+                  12 => hex2bin('10')] as $column => $value)
+            $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+        $dir = sys_get_temp_dir().'/cmprov-oui-'.bin2hex(random_bytes(4));
+        mkdir($dir);
+        file_put_contents($dir.'/oui.txt', "000A95     (base 16)\t\tExample Networks Ltd\n");
+        config(['cmprovision.ieee_data_dir' => $dir]);
+
+        try
+        {
+            Livewire::test(Ports::class)
+                ->assertSee('1 neighbor via LLDP/CDP')
+                ->call('select', 's1p6')
+                ->assertSee('Unrecognized device')
+                ->assertSee('Says about itself')
+                ->assertSee('Access point firmware 1.2')
+                ->assertSee('wlan-ap')
+                ->assertSeeHtml('ap-&lt;script&gt;alert(1)&lt;/script&gt;')
+                ->assertDontSeeHtml('<script>alert(1)')
+                ->assertSee('Made by, from the MAC address')
+                ->assertSee('Example Networks Ltd');
+        }
+        finally
+        {
+            @unlink($dir.'/oui.txt');
+            @rmdir($dir);
+        }
+    }
+
+    public function test_a_switch_that_tells_nothing_about_its_neighbours_says_so_in_its_line()
+    {
+        $this->switchWithModule();
+        Livewire::test(Ports::class)->assertSee('no LLDP/CDP data')->assertDontSee('Says about itself');
+    }
 }

@@ -1,0 +1,40 @@
+OUI                                                         Organization                                 
+IAB Range                                                   Organization                                 
+                                                            Address                                      
+
+40-D8-55                      (hex)                         Avant Technologies                           
+0D7000-0D7FFF                 (base 16)                     Avant Technologies                           
+                                                            Road 156 Caguas West Ind. Park               
+                                                            Caguas    00726                              
+                                                            PR                                           
+
+00-50-C2                      (hex)                         RF Code                                      
+F71000-F71FFF                 (base 16)                     RF Code                                      
+                                                            9229 Waterford Centre Blvd #500              
+                                                            Austin  TX  78758                            
+                                                            US                                           
+
+00-50-C2                      (hex)                         Hirotech inc.                                
+9CC000-9CCFFF                 (base 16)                     Hirotech inc.                                
+                                                            Shinyokohama I.O Bldg. #602, 1-3-10, Shinyokohama, Kohoku-ku
+                                                            Yokohama City  Kanagawa  222-0033            
+                                                            JP                                           
+
+00-50-C2                      (hex)                         Talleres de Escoriaza SA                     
+414000-414FFF                 (base 16)                     Talleres de Escoriaza SA                     
+                                                            Barrio Ventas, 35                            
+                                                            Irun  Gipuzkoa  20305                        
+                                                            ES                                           
+
+00-50-C2                      (hex)                         Abest Communication Corp.                    
+1F5000-1F5FFF                 (base 16)                     Abest Communication Corp.                    
+                                                            19-7 Ting-Tien-Liao, Hsien-Jenli Tamshui     
+                                                            Taipei    251                                
+                                                            TW                                           
+
+00-50-C2                      (hex)                         ESI Ventures, LLC                            
+F05000-F05FFF                 (base 16)                     ESI Ventures, LLC                            
+                                                            902 Incentive Drive                          
+                                                            Fort Wayne    46825                          
+                                                            US                                           
+

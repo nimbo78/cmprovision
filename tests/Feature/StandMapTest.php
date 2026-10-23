@@ -557,4 +557,83 @@ class StandMapTest extends TestCase
         $this->assertSame('off', StandMap::poeText(['state' => 'disabled', 'class' => null, 'watts' => null]));
         $this->assertSame('none', StandMap::poeText(null));
     }
+
+    /* What a port's device says over LLDP: [protocol, name, MAC] and the rest empty */
+    protected function neighbour(string $name, ?string $mac = null): array
+    {
+        return ['protocol' => 'lldp', 'name' => $name, 'description' => '', 'platform' => '', 'port' => 'eth0', 'chassis' => '',
+                'mac' => $mac, 'port_mac' => null, 'address' => null, 'capabilities' => []];
+    }
+
+    public function test_the_neighbours_of_a_port_reach_its_tile()
+    {
+        $says = $this->neighbour('printer-2f', '00:0a:95:dd:ee:ff');
+        $map = $this->build([$this->port(3, 'Gi0/3', true, ['00:0a:95:dd:ee:ff']) + ['neighbors' => [$says]], $this->port(4, 'Gi0/4')]);
+        $this->assertSame([$says], $map['tiles']['s1p3']['neighbors']);
+        $this->assertSame([], $map['tiles']['s1p4']['neighbors'], 'an older snapshot, or a port that says nothing');
+        $this->assertSame('foreign', $map['tiles']['s1p3']['state'], 'what a device says does not make it a module');
+    }
+
+    public function test_the_provisioner_is_found_by_what_it_says_when_the_mac_table_does_not_list_it()
+    {
+        $map = $this->build([$this->port(8, 'Gi0/8', true, []) + ['neighbors' => [$this->neighbour('wlanpi-da2', self::SERVER)]],
+                             $this->port(9, 'Gi0/9', true, []) + ['neighbors' => [$this->neighbour('somebody', '00:0a:95:dd:ee:ff')]]]);
+        $this->assertSame(['uplink', true], [$map['tiles']['s1p8']['state'], $map['tiles']['s1p8']['server']]);
+        $this->assertFalse($map['tiles']['s1p9']['server']);
+    }
+
+    public function test_a_neighbour_that_is_another_switch_of_the_stand_makes_the_port_a_link()
+    {
+        $says = fn ($name, $mac = null) => ['neighbors' => [$this->neighbour($name, $mac)]];
+        $map = (new StandMap([
+            // sw01 Gi0/23 says its neighbour is sw02 by name (with a domain), Gi0/24 by the MAC sw02 answers from
+            $this->part(1, 'sw01', [$this->port(23, 'Gi0/23') + $says('SW02.lab.local'), $this->port(24, 'Gi0/24') + $says('x', '00:57:d2:97:a1:80'),
+                                    $this->port(25, 'Gi0/25') + $says('printer-2f')]),
+            $this->part(2, 'sw02', [$this->port(1, 'Gi0/1')], ['00:57:d2:97:a1:80']),
+        ], [], self::SERVER))->build();
+        $this->assertSame('sw02', $map['tiles']['s1p23']['link']);
+        $this->assertSame('sw02', $map['tiles']['s1p24']['link']);
+        $this->assertNull($map['tiles']['s1p25']['link'], 'a neighbour with another name is not a switch of the stand');
+        $this->assertSame([23 => 2, 24 => 2], $map['switches'][1]['links']);
+    }
+
+    public function test_a_module_port_is_not_a_link_because_a_neighbour_has_a_switchs_name()
+    {
+        // the name is only compared with the other switches of the stand, never with the port's own switch
+        $map = (new StandMap([
+            $this->part(1, 'sw01', [$this->port(1, 'Gi0/1') + ['neighbors' => [$this->neighbour('sw01')]]]),
+        ], [], self::SERVER))->build();
+        $this->assertNull($map['tiles']['s1p1']['link']);
+    }
+
+    public function test_a_name_alone_makes_a_link_only_when_the_neighbour_says_no_mac()
+    {
+        // a module running lldpd and named like a switch of the stand says its own MAC: it is not that switch
+        $module = $this->port(1, 'Gi0/1', true, ['e4:5f:01:00:00:a1']) + ['neighbors' => [$this->neighbour('sw02', 'e4:5f:01:00:00:a1')]];
+        $cdp = $this->port(2, 'Gi0/2') + ['neighbors' => [['protocol' => 'cdp'] + $this->neighbour('SW02.lab.local')]];
+        $map = (new StandMap([
+            $this->part(1, 'sw01', [$module, $cdp]),
+            $this->part(2, 'sw02', [$this->port(1, 'Gi0/1')], ['00:57:d2:97:a1:80']),
+        ], [$this->module('10000000000000a1', 'e4:5f:01:00:00:a1')], self::SERVER))->build();
+        $this->assertNull($map['tiles']['s1p1']['link'], 'it says a MAC that is not the switch\'s');
+        $this->assertSame('module', $map['tiles']['s1p1']['state']);
+        $this->assertSame('sw02', $map['tiles']['s1p2']['link'], 'CDP says no MAC: the name does');
+    }
+
+    public function test_a_switch_named_by_its_address_is_not_matched_by_the_first_number_of_it()
+    {
+        $map = (new StandMap([
+            $this->part(1, 'sw01', [$this->port(1, 'Gi0/1') + ['neighbors' => [['protocol' => 'cdp'] + $this->neighbour('172.20.0.9')]]]),
+            $this->part(2, '172.20.233.78', [$this->port(1, 'Gi0/1')]),
+        ], [], self::SERVER))->build();
+        $this->assertNull($map['tiles']['s1p1']['link']);
+    }
+
+    public function test_the_provisioner_is_found_by_the_mac_of_the_interface_that_sent_the_frame_too()
+    {
+        // lldpd's chassis id is the MAC of its first interface; the port id is that of the one on the stand
+        $neighbour = ['port_mac' => self::SERVER] + $this->neighbour('wlanpi-da2', 'e4:5f:01:00:00:01');
+        $map = $this->build([$this->port(8, 'Gi0/8') + ['neighbors' => [$neighbour]]]);
+        $this->assertTrue($map['tiles']['s1p8']['server']);
+    }
 }

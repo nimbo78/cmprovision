@@ -73,4 +73,7 @@ return [
     /* tests only: allows plain http to loopback addresses (a local test server); nothing in production sets it */
     'image_test_loopback' => false,
 
+    /* The IEEE registries of the ieee-data package: the maker of a device from its MAC on the Ports page (2.13.0). */
+    'ieee_data_dir' => env('CMPROVISION_IEEE_DATA_DIR', '/usr/share/ieee-data'),
+
 ];

@@ -4,6 +4,7 @@ namespace App\Http\Livewire;
 
 use App\Models\Cm;
 use App\Models\PoeOutage;
+use App\Services\OuiVendors;
 use App\Services\Snmp\SnmpClient;
 use App\Services\Switch\PoeControl;
 use App\Services\Switch\PoeRestart;
@@ -88,6 +89,9 @@ class Ports extends Component
             'asOf' => self::asOf($stand['switches']),
             'map' => $stand['map'],
             'tile' => $tile,
+            // who made the device behind a port that says nothing: only for the ports whose device is not a module
+            'vendors' => $tile && in_array($tile['state'], ['foreign', 'boot', 'quiet'], true) && $tile['macs']
+                ? array_filter(OuiVendors::names(array_slice($tile['macs'], 0, 8))) : [],
             'usbReport' => $tile && $tile['macs'] ? \App\Models\UsbDiagnosticReport::whereIn('mac', $tile['macs'])
                 ->where('received_at', '>', now()->subMinutes(15))->orderByDesc('received_at')->first() : null,
             'now' => $now,
@@ -138,7 +142,20 @@ class Ports extends Component
             $model,
             $snapshot ? 'polled '.max(0, $now - $snapshot['taken_at']).' s ago' : null,
             $watts !== null ? 'PoE '.number_format($watts, 1).' W' : null,
+            $snapshot ? self::discovery($snapshot) : null,
         ]));
+    }
+
+    /* Whether the switch tells what is plugged into it (LLDP, CDP): how many neighbours it knows, or that it says nothing */
+    protected static function discovery(array $snapshot): string
+    {
+        $count = 0;
+        foreach ($snapshot['ports'] as $port)
+            $count += count($port['neighbors'] ?? []);
+        $on = !empty($snapshot['discovery']['lldp']) || !empty($snapshot['discovery']['cdp']);
+        if ($count > 0)
+            return $count.' '.($count === 1 ? 'neighbor' : 'neighbors').' via LLDP/CDP';
+        return $on ? 'LLDP/CDP on, no neighbors' : 'no LLDP/CDP data';
     }
 
     /* The verdict's start while switches do not answer: what the stand looked like and who is silent */

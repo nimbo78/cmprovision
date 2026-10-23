@@ -73,7 +73,7 @@ class StandMap
         $links = $this->links($ports);
         $uplinks = [];
         foreach ($ports as $key => $p)
-            $uplinks[$key] = isset($links[$key]) || ($this->serverMac && in_array($this->serverMac, $p['macs'], true))
+            $uplinks[$key] = isset($links[$key]) || $this->hasServer($p)
                 || $this->foreign($p) > self::UPLINK_MACS;
         $owners = $this->owners($ports, $uplinks);
 
@@ -98,9 +98,51 @@ class StandMap
                 'owners' => $owners, 'blocks' => $first ? $first['blocks'] : []];
     }
 
+    /* The provisioner is on this port: its MAC is in the switch's table, or the port's neighbour (LLDP) is the provisioner */
+    protected function hasServer(array $p): bool
+    {
+        if (!$this->serverMac)
+            return false;
+        if (in_array($this->serverMac, $p['macs'], true))
+            return true;
+        foreach ($p['port']['neighbors'] ?? [] as $neighbour)
+            if (($neighbour['mac'] ?? null) === $this->serverMac || ($neighbour['port_mac'] ?? null) === $this->serverMac)
+                return true;
+        return false;
+    }
+
+    /* The port's neighbour (LLDP, CDP) is that switch: it says a MAC the switch answers from, or, when it says no MAC
+       (CDP does not), the switch's name. A neighbour that says another MAC is another device, whatever it calls itself
+       (a module running lldpd names itself by its host name, and the stand's switches have names too) */
+    protected function neighbourIs(array $p, array $other): bool
+    {
+        $names = array_filter([self::shortName($other['name']), self::shortName((string) ($other['snapshot']['identity']['name'] ?? ''))]);
+        foreach ($p['port']['neighbors'] ?? [] as $neighbour)
+        {
+            $macs = array_filter([$neighbour['mac'] ?? null, $neighbour['port_mac'] ?? null]);
+            if ($macs)
+            {
+                if (array_intersect($macs, $other['own_macs']))
+                    return true;
+                continue;
+            }
+            $name = self::shortName((string) ($neighbour['name'] ?? ''));
+            if ($name !== '' && in_array($name, $names, true))
+                return true;
+        }
+        return false;
+    }
+
+    /* A device name before its domain; an address stays whole */
+    protected static function shortName(string $name): string
+    {
+        $name = strtolower(trim($name));
+        return filter_var($name, FILTER_VALIDATE_IP) !== false ? $name : (string) strtok($name, '.');
+    }
+
     /* A port towards another switch of the stand: it shows one of that switch's own MACs (the address it answers from
-       is learnt there), or it was found so before and that switch is silent now. A port that shows several switches
-       leads to the nearest of them (nearest()) */
+       is learnt there), or its neighbour says it is that switch, or it was found so before and that switch is silent
+       now. A port that shows several switches leads to the nearest of them (nearest()) */
     protected function links(array $ports): array
     {
         $seen = [];   // switch id => [port key => its MACs]: where each switch sees the others
@@ -115,7 +157,7 @@ class StandMap
             $remembered = $this->parts[$p['switch']]['links'];
             $candidates = [];
             foreach ($this->parts as $id => $other)
-                if ($id !== $p['switch'] && (array_intersect($p['macs'], $other['own_macs'])
+                if ($id !== $p['switch'] && (array_intersect($p['macs'], $other['own_macs']) || $this->neighbourIs($p, $other)
                         || (!$other['answering'] && (int) ($remembered[$p['port']['ifIndex']] ?? 0) === $id)))
                     $candidates[] = $id;
             if ($candidates)
@@ -359,8 +401,10 @@ class StandMap
             'board_port' => $boardPort,
             'board' => trim($part['name'].' '.$boardPort),
             'link' => isset($links[$key]) ? $this->parts[$links[$key]]['name'] : null,
+            // what LLDP and CDP say about the device on the port (Neighbors)
+            'neighbors' => $port['neighbors'] ?? [],
             // the provisioner itself is on this port (not behind a link to another switch): the HDMI display says "cm" there
-            'server' => $this->serverMac !== null && !isset($links[$key]) && in_array($this->serverMac, $p['macs'], true),
+            'server' => !isset($links[$key]) && $this->hasServer($p),
             'ifIndex' => $port['ifIndex'],
             'name' => $port['name'],
             'alias' => $port['alias'],
