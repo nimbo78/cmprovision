@@ -53,6 +53,32 @@ class CmsPageTest extends TestCase
             ->assertSeeHtml('<span class="cmp-chip cmp-chip-ok">done</span>');
     }
 
+    public function test_a_click_on_a_header_sorts_the_list_by_it()
+    {
+        [$p78, $test] = $this->cms();   // the project "78" has aaaa0001 (done now) and aaaa0002 (failed 10 minutes ago), "stage1-test" has bbbb0003
+        Cm::where('serial', '10000000aaaa0002')->update(['hostname' => 'wlanpi-bbb']);
+        Cm::where('serial', '10000000aaaa0001')->update(['hostname' => 'wlanpi-aaa']);
+
+        $page = Livewire::test(Cms::class)->set('projectId', 0)->call('sortBy', 'hostname')
+            ->assertSet('sort', 'hostname')->assertSet('dir', 'asc')
+            ->assertSeeInOrder(['wlanpi-aaa', 'wlanpi-bbb', '10000000bbbb0003'])->assertSeeHtml('aria-sort="ascending"');   // no host name: last
+        $page->call('sortBy', 'hostname')->assertSeeInOrder(['wlanpi-bbb', 'wlanpi-aaa', '10000000bbbb0003']);
+
+        $page->call('sortBy', 'project')->assertSet('sort', 'project')->assertSet('dir', 'asc')
+            ->assertSeeInOrder(['10000000aaaa0001', '10000000aaaa0002', '10000000bbbb0003']);   // "78" before "stage1-test"
+        $page->call('sortBy', 'project')->call('sortBy', 'project')->assertSet('sort', '')
+            ->assertSeeInOrder(['10000000bbbb0003', '10000000aaaa0001', '10000000aaaa0002']);   // running first, then the latest flashed
+    }
+
+    public function test_the_finished_column_starts_with_the_latest_and_a_module_still_running_is_last()
+    {
+        $this->cms();
+        Livewire::test(Cms::class)->set('projectId', 0)->call('sortBy', 'finished')->assertSet('dir', 'desc')
+            ->assertSeeInOrder(['10000000aaaa0001', '10000000aaaa0002', '10000000bbbb0003'])
+            ->call('sortBy', 'finished')->assertSet('dir', 'asc')
+            ->assertSeeInOrder(['10000000aaaa0002', '10000000aaaa0001', '10000000bbbb0003']);
+    }
+
     public function test_search_finds_a_part_of_the_serial_or_the_mac_in_any_case()
     {
         $this->cms();

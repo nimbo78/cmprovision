@@ -2,8 +2,10 @@
 
 namespace App\Http\Livewire;
 
+use App\Http\Livewire\Concerns\SortsColumns;
 use App\Models\Cm;
 use App\Models\Project;
+use App\Support\ColumnSort;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
@@ -11,8 +13,26 @@ use Livewire\Component;
 #[Title('CMs')]
 class Cms extends Component
 {
+    use SortsColumns;
+
     public $projectId = -1;
     public $search = '';
+
+    /* The columns that sort the list by a click on their header; with none chosen the order is Cm::newestFirst() */
+    protected function columns(): array
+    {
+        $result = ['failed' => 0, 'preinstall' => 1, 'write' => 2, 'verify' => 3, 'postinstall' => 4, 'firstboot' => 5, 'done' => 6];
+        return [
+            'mac' => ['first' => 'asc', 'value' => fn (Cm $cm) => $cm->mac ?: null],
+            'hostname' => ['first' => 'asc', 'value' => fn (Cm $cm) => trim((string) $cm->hostname) !== '' ? $cm->hostname : null],
+            'serial' => ['first' => 'asc', 'value' => fn (Cm $cm) => $cm->serial],
+            'model' => ['first' => 'asc', 'value' => fn (Cm $cm) => trim((string) $cm->model) !== '' ? $cm->model : null],
+            'project' => ['first' => 'asc', 'value' => fn (Cm $cm) => $cm->project?->name],
+            'board' => ['first' => 'asc', 'value' => fn (Cm $cm) => trim((string) $cm->provisioning_board) !== '' ? (string) $cm->provisioning_board : null],
+            'result' => ['first' => 'asc', 'value' => fn (Cm $cm) => $result[$cm->phase] ?? null],
+            'finished' => ['first' => 'desc', 'value' => fn (Cm $cm) => $cm->finishedAt()?->getTimestamp()],
+        ];
+    }
 
     protected function cms()
     {
@@ -27,7 +47,8 @@ class Cms extends Component
                   ->orWhereRaw("replace(lower(mac), ':', '') like ?", ['%'.str_replace(':', '', $term).'%'])
                   ->orWhereRaw('lower(hostname) like ?', ['%'.$term.'%']);
             });
-        return $query->get()->sort(Cm::newestFirst())->values();
+        [$sort, $dir] = $this->sorting();
+        return ColumnSort::apply($query->get(), $this->columns(), $sort, $dir, Cm::newestFirst());
     }
 
     public function render()
@@ -37,6 +58,8 @@ class Cms extends Component
 
         return view('livewire.cms', [
             'CMs' => $this->cms(),
+            'sort' => $this->sorting()[0],
+            'dir' => $this->sorting()[1],
             'total' => Cm::count(),
             'projects' => Project::withCount('cms')->orderBy('name')->get(),
         ]);

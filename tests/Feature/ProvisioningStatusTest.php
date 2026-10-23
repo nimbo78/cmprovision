@@ -141,6 +141,56 @@ class ProvisioningStatusTest extends TestCase
             ->assertSeeInOrder(['e4:5f:01:00:00:05', 'e4:5f:01:00:00:04', 'e4:5f:01:00:00:02', 'e4:5f:01:00:00:01', 'e4:5f:01:00:00:03']);
     }
 
+    /* Three finished modules, the boards 10, 2 and 3 in the order of the time they were flashed: 3, 10, 2 (names without a slash: the
+       text of an update of a Livewire test is JSON, which writes the slash as \/) */
+    protected function threeBoards(): void
+    {
+        $this->module('1000000000000f10', ['provisioning_board' => 'port-10', 'phase' => 'done', 'provisioning_started_at' => now()->subMinutes(30),
+                                           'phase_started_at' => now()->subMinutes(20), 'provisioning_complete_at' => now()->subMinutes(20)]);
+        $this->module('1000000000000f02', ['provisioning_board' => 'port-2', 'phase' => 'done', 'provisioning_started_at' => now()->subMinutes(50),
+                                           'phase_started_at' => now()->subMinutes(40), 'provisioning_complete_at' => now()->subMinutes(40)]);
+        $this->module('1000000000000f03', ['provisioning_board' => 'port-3', 'phase' => 'done', 'provisioning_started_at' => now()->subMinutes(15),
+                                           'phase_started_at' => now()->subMinutes(5), 'provisioning_complete_at' => now()->subMinutes(5)]);
+    }
+
+    public function test_a_click_on_a_header_sorts_the_table_again_turns_it_round_and_the_third_gives_the_time_order_back()
+    {
+        $this->threeBoards();
+        $page = Livewire::test(ProvisioningStatus::class)->assertSeeInOrder(['port-3', 'port-10', 'port-2'])
+            ->assertSeeHtml('aria-sort="none"')->assertDontSeeHtml('aria-sort="ascending"');
+
+        $page->call('sortBy', 'board')->assertSet('sort', 'board')->assertSet('dir', 'asc')
+            ->assertSeeInOrder(['port-2', 'port-3', 'port-10'])->assertSeeHtml('aria-sort="ascending"');
+        $page->call('sortBy', 'board')->assertSet('dir', 'desc')->assertSeeInOrder(['port-10', 'port-3', 'port-2'])->assertSeeHtml('aria-sort="descending"');
+        $page->call('sortBy', 'board')->assertSet('sort', '')->assertSet('dir', '')->assertSeeInOrder(['port-3', 'port-10', 'port-2']);
+    }
+
+    public function test_the_time_header_starts_with_the_latest_and_then_turns_to_the_oldest()
+    {
+        $this->threeBoards();
+        Livewire::test(ProvisioningStatus::class)->call('sortBy', 'board')->call('sortBy', 'time')->assertSet('sort', 'time')->assertSet('dir', 'desc')
+            ->assertSeeInOrder(['port-3', 'port-10', 'port-2'])
+            ->call('sortBy', 'time')->assertSet('dir', 'asc')->assertSeeInOrder(['port-2', 'port-10', 'port-3']);
+    }
+
+    public function test_a_column_that_does_not_exist_is_not_sorted_and_the_address_may_ask_for_one()
+    {
+        $this->threeBoards();
+        Livewire::test(ProvisioningStatus::class)->call('sortBy', 'nope')->assertSet('sort', '')->call('sortBy', ['board'])->assertSet('sort', '')
+            ->set('sort', 'nonsense')->set('dir', 'sideways')->assertSeeInOrder(['port-3', 'port-10', 'port-2'])->assertDontSeeHtml('aria-sort="ascending"');
+        Livewire::withQueryParams(['sort' => 'time', 'dir' => 'asc'])->test(ProvisioningStatus::class)
+            ->assertSeeInOrder(['port-2', 'port-10', 'port-3'])->assertSeeHtml('aria-sort="ascending"');
+    }
+
+    public function test_a_module_with_no_board_is_last_whichever_way_the_boards_go()
+    {
+        $this->threeBoards();
+        $this->module('1000000000000f99', ['provisioning_board' => null, 'phase' => 'done', 'provisioning_started_at' => now()->subMinutes(60),
+                                           'phase_started_at' => now()->subMinutes(55), 'provisioning_complete_at' => now()->subMinutes(55)]);
+        $page = Livewire::test(ProvisioningStatus::class)->call('sortBy', 'board')->assertSeeInOrder(['port-2', 'port-3', 'port-10', 'e4:5f:01:00:00:99']);
+        $page->call('sortBy', 'board')->assertSeeInOrder(['port-10', 'port-3', 'port-2', 'e4:5f:01:00:00:99']);
+    }
+
     public function test_a_batch_of_several_days_is_ordered_by_the_day_too_and_shows_the_day_of_what_was_not_today()
     {
         config(['app.display_timezone' => 'UTC']);
