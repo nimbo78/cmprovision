@@ -129,6 +129,13 @@ class ProvisioningStatus extends Component
         return sprintf('%.1f MB/s', $bytesPerSecond / 1048576);
     }
 
+    /* The time of day in the display time zone; with the day and month (d.m) when it was not today: a batch can last days */
+    public static function clock($time)
+    {
+        $local = $time->local();
+        return $local->isToday() ? $local->format('H:i') : $local->format('d.m H:i');
+    }
+
     public static function duration($seconds)
     {
         $seconds = max(0, (int) $seconds);

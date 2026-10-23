@@ -1,10 +1,12 @@
 cmprovision4 (2.14.0) unstable; urgency=medium
 
-  * Dashboard and CMs: the modules are listed by the time they were flashed,
-    the latest on top, the ones that run now above them (it was the port order
-    on the Dashboard and the first appearance on CMs). A module that failed is
-    placed by the time it failed; the Finished column of CMs shows that time
-    too.
+  * Dashboard and CMs: the modules are listed by the date and time they were
+    flashed, the latest on top, the ones that run now above them (it was the
+    port order on the Dashboard and the first appearance on CMs). A module
+    that failed is placed by the time it failed; the Finished column of CMs
+    shows that time too. The Time column of the Dashboard (and the start of
+    the batch) says the day and month of what was not today, for a batch that
+    lasts days.
   * Dashboard: USB prep is a tile at the end of the row of the summary tiles
     (under 1440 pixels, a row of its own under them) with a short text and the
     button "Start" / "Stop" (the title says what it is) and a link to the

@@ -18,7 +18,7 @@
                 <div class="min-w-0">
                     <div class="font-bold">
                         @if ($summary->open)
-                            Project {{ $summary->project?->name }} · batch since {{ $summary->batch->started_at->local()->format('H:i') }}
+                            Project {{ $summary->project?->name }} · batch since {{ $fmt::clock($summary->batch->started_at) }}
                         @else
                             @php($closed = ($summary->batch->closed_at ?? $summary->batch->last_event_at)->local())
                             Last batch, closed {{ $closed->isToday() ? 'at '.$closed->format('H:i') : 'on '.$closed->format('d.m').' at '.$closed->format('H:i') }} · project {{ $summary->project?->name }}
@@ -99,11 +99,11 @@
                         <td class="whitespace-nowrap tabular-nums">
                             @if ($m->provisioning_started_at)
                                 @if ($m->phase === 'done' && $m->provisioning_complete_at)
-                                    took {{ $fmt::duration($m->provisioning_complete_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $m->provisioning_complete_at->local()->format('H:i') }}</span>
+                                    took {{ $fmt::duration($m->provisioning_complete_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $fmt::clock($m->provisioning_complete_at) }}</span>
                                 @elseif ($m->phase === 'failed' && $m->phase_started_at)
-                                    failed after {{ $fmt::duration($m->phase_started_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $m->phase_started_at->local()->format('H:i') }}</span>
+                                    failed after {{ $fmt::duration($m->phase_started_at->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">at {{ $fmt::clock($m->phase_started_at) }}</span>
                                 @else
-                                    {{ $fmt::duration(now()->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">since {{ $m->provisioning_started_at->local()->format('H:i') }}</span>
+                                    {{ $fmt::duration(now()->getTimestamp() - $m->provisioning_started_at->getTimestamp()) }} <span class="text-fg-faint">since {{ $fmt::clock($m->provisioning_started_at) }}</span>
                                 @endif
                             @endif
                         </td>

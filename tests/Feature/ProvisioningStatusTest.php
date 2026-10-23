@@ -141,6 +141,24 @@ class ProvisioningStatusTest extends TestCase
             ->assertSeeInOrder(['e4:5f:01:00:00:05', 'e4:5f:01:00:00:04', 'e4:5f:01:00:00:02', 'e4:5f:01:00:00:01', 'e4:5f:01:00:00:03']);
     }
 
+    public function test_a_batch_of_several_days_is_ordered_by_the_day_too_and_shows_the_day_of_what_was_not_today()
+    {
+        config(['app.display_timezone' => 'UTC']);
+        $batch = $this->openBatch();
+        $batch->update(['started_at' => '2026-10-08 22:00:00', 'last_event_at' => now()->subMinute()]);   // since yesterday evening
+        // now is 2026-10-09 10:00: e01 finished yesterday at 23:50, e02 today at 00:10 (by the clock alone e01 would be the later)
+        $this->module('1000000000000e01', ['phase' => 'done', 'notification_batch_id' => $batch->id, 'provisioning_started_at' => '2026-10-08 23:40:00',
+                                           'phase_started_at' => '2026-10-08 23:50:00', 'provisioning_complete_at' => '2026-10-08 23:50:00']);
+        $this->module('1000000000000e02', ['phase' => 'done', 'notification_batch_id' => $batch->id, 'provisioning_started_at' => '2026-10-09 00:00:00',
+                                           'phase_started_at' => '2026-10-09 00:10:00', 'provisioning_complete_at' => '2026-10-09 00:10:00']);
+
+        $html = Livewire::test(ProvisioningStatus::class)->assertSeeInOrder(['e4:5f:01:00:00:02', 'e4:5f:01:00:00:01'])->html();
+        $this->assertStringContainsString('at 00:10<', $html, 'today: the time only');
+        $this->assertStringContainsString('at 08.10 23:50<', $html, 'the day before: with the day and month');
+        $this->assertStringContainsString('batch since 08.10 22:00', $html);
+        $this->assertSame('08.10 23:50', ProvisioningStatus::clock(Carbon::parse('2026-10-08 23:50:00')));
+    }
+
     public function test_a_module_that_finishes_leaves_the_running_ones_and_stands_first_among_the_finished()
     {
         $this->module('1000000000000c01', ['phase' => 'done', 'provisioning_started_at' => now()->subMinutes(40),
