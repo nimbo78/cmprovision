@@ -185,6 +185,15 @@ body { background: var(--page); color: var(--text); }
         font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-align: left; padding: 6px var(--cell-x);
         border-bottom: 1px solid var(--panel-line); white-space: nowrap; }
     .cmp-table.in-scroll :where(th) { top: 0; }
+    /* A header that sorts by a click (2.15.0): the text of the header, a mark that shows on hover and stays on the sorted column */
+    .cmp-sort { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; cursor: pointer;
+        font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+    .cmp-sort:hover, .cmp-sort.on { color: var(--text); }
+    .cmp-sort:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; border-radius: 2px; }
+    .cmp-sort-mark { width: 8px; height: 8px; flex: none; opacity: 0; transition: opacity .12s ease; }
+    .cmp-sort:hover .cmp-sort-mark, .cmp-sort:focus-visible .cmp-sort-mark { opacity: .45; }
+    .cmp-sort.on .cmp-sort-mark { opacity: 1; }
+    th[aria-sort="descending"] .cmp-sort-mark { transform: rotate(180deg); }
     /* A table card narrower than xl scrolls sideways and is then its header's scroll container (the header sticks to
        the card's top); from xl the card clips its corners and the header sticks under the top bar */
     .cmp-card-scroll { overflow-x: auto; }

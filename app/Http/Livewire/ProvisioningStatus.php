@@ -2,6 +2,7 @@
 
 namespace App\Http\Livewire;
 
+use App\Http\Livewire\Concerns\SortsColumns;
 use App\Models\Cm;
 use App\Models\EthernetSwitch;
 use App\Models\NotificationBatch;
@@ -9,6 +10,7 @@ use App\Models\Project;
 use App\Services\Switch\PoeControl;
 use App\Services\Switch\PoeRestart;
 use App\Support\BatchSummary;
+use App\Support\ColumnSort;
 use Livewire\Component;
 
 /* Dashboard panel: the batch on the stand (its totals and modules), modules running outside it, and modules
@@ -67,6 +69,21 @@ class ProvisioningStatus extends Component
         $this->dispatch('poe-outages-changed');   // a port left off shows in the banner at once
     }
 
+    use SortsColumns;
+
+    /* The columns of the table that sort the rows by a click on their header; with none chosen the order is Cm::newestFirst() */
+    protected function columns(): array
+    {
+        $step = ['failed' => 0, 'preinstall' => 1, 'write' => 2, 'verify' => 3, 'postinstall' => 4, 'firstboot' => 5, 'done' => 6];
+        return [
+            'board' => ['first' => 'asc', 'value' => fn (Cm $cm) => $cm->board_pending_since || trim((string) $cm->provisioning_board) === '' ? null : (string) $cm->provisioning_board],
+            'module' => ['first' => 'asc', 'value' => fn (Cm $cm) => (string) ($cm->mac ?: $cm->serial)],
+            'step' => ['first' => 'asc', 'value' => fn (Cm $cm) => $step[$cm->phase] ?? null],
+            'progress' => ['first' => 'desc', 'value' => fn (Cm $cm) => $cm->progressPercent()],
+            'time' => ['first' => 'desc', 'value' => fn (Cm $cm) => $cm->flashedAt()?->getTimestamp()],
+        ];
+    }
+
     public function render()
     {
         $summary = BatchSummary::forDashboard();
@@ -86,9 +103,10 @@ class ProvisioningStatus extends Component
             ->orderByDesc('provisioning_started_at')
             ->limit(self::MAX_ROWS)
             ->get()
-            // what runs now first, then by the time they were flashed, the latest on top (Cm::newestFirst())
-            ->sort(Cm::newestFirst())
             ->values();
+        // what runs now first, then by the time they were flashed, the latest on top (Cm::newestFirst()), or by the chosen column
+        [$sort, $dir] = $this->sorting();
+        $modules = ColumnSort::apply($modules, $this->columns(), $sort, $dir, Cm::newestFirst());
 
         // a module's switch must take writes; one found before 2.4 (no switch_id) needs any switch that does
         $writable = EthernetSwitch::all()->filter(function ($switch) { return PoeControl::writable($switch->config()); })->modelKeys();
@@ -104,6 +122,8 @@ class ProvisioningStatus extends Component
         return view('livewire.provisioning-status', [
             'summary' => $summary,
             'modules' => $modules,
+            'sort' => $sort,
+            'dir' => $dir,
             'activeCount' => $modules->filter->isActive()->count(),
             'canRestart' => $canRestart,
             'activeProject' => $active,

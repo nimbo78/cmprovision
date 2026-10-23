@@ -19,7 +19,17 @@
     <div class="cmp-card cmp-card-scroll">
         <table class="cmp-table">
             <thead>
-                <tr><th>MAC</th><th>Host name</th><th>Serial</th><th>Model</th><th>Project</th><th>Board</th><th>Result</th><th>Finished</th><th></th></tr>
+                <tr>
+                    <x-sort-th column="mac" :sort="$sort" :dir="$dir">MAC</x-sort-th>
+                    <x-sort-th column="hostname" :sort="$sort" :dir="$dir">Host name</x-sort-th>
+                    <x-sort-th column="serial" :sort="$sort" :dir="$dir">Serial</x-sort-th>
+                    <x-sort-th column="model" :sort="$sort" :dir="$dir">Model</x-sort-th>
+                    <x-sort-th column="project" :sort="$sort" :dir="$dir">Project</x-sort-th>
+                    <x-sort-th column="board" :sort="$sort" :dir="$dir">Board</x-sort-th>
+                    <x-sort-th column="result" :sort="$sort" :dir="$dir">Result</x-sort-th>
+                    <x-sort-th column="finished" :sort="$sort" :dir="$dir">Finished</x-sort-th>
+                    <th></th>
+                </tr>
             </thead>
             <tbody>
                 @forelse ($CMs as $c)

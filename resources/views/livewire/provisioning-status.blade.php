@@ -51,7 +51,14 @@
         @else
             <table class="cmp-table">
                 <thead>
-                    <tr><th>Board</th><th>Module</th><th>Step</th><th>Progress</th><th>Time</th><th></th></tr>
+                    <tr>
+                        <x-sort-th column="board" :sort="$sort" :dir="$dir">Board</x-sort-th>
+                        <x-sort-th column="module" :sort="$sort" :dir="$dir">Module</x-sort-th>
+                        <x-sort-th column="step" :sort="$sort" :dir="$dir">Step</x-sort-th>
+                        <x-sort-th column="progress" :sort="$sort" :dir="$dir">Progress</x-sort-th>
+                        <x-sort-th column="time" :sort="$sort" :dir="$dir">Time</x-sort-th>
+                        <th></th>
+                    </tr>
                 </thead>
                 <tbody>
                 @foreach ($modules as $m)

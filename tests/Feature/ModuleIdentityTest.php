@@ -57,7 +57,7 @@ class ModuleIdentityTest extends TestCase
         $this->cm(['hostname' => 'wlanpi-sensor1']);
 
         $html = Livewire::test(Cms::class)->html();
-        $this->assertMatchesRegularExpression('~<th>MAC</th>\s*<th>Host name</th>\s*<th>Serial</th>~', $html);
+        $this->assertMatchesRegularExpression("~sortBy\('mac'\)[^<]*>MAC.*?sortBy\('hostname'\)[^<]*>Host name.*?sortBy\('serial'\)[^<]*>Serial~s", $html, 'the columns in this order');
         $this->assertMatchesRegularExpression('~<a href="[^"]*/cms/'.self::MAC.'"[^>]*>'.self::MAC.'</a>~', $html, 'the MAC is the link to the card');
         $this->assertStringContainsString('Delete CM wlanpi-sensor1?', $html, 'the host name when there is one, else the MAC');
         $this->assertStringContainsString('MAC, host name or serial', $html);

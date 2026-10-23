@@ -8,6 +8,7 @@ For a CM4 that cannot enter normal network boot, use [USB provisioning](usb-prov
 For direct diagnosis on a target's screen and keyboard, use its [tty2 console](local-console.md).
 The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connectors and USB roles.
 
+- [The order of the lists](#the-order-of-the-lists)
 - [How a module is named](#how-a-module-is-named)
 - [The Settings page](#the-settings-page)
 - [First-boot OS check](#first-boot-os-check)
@@ -18,6 +19,16 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 - [Wi-Fi networks](#wi-fi-networks)
 - [Switches and PoE restart](#switches-and-poe-restart)
 - [Network access](#network-access)
+
+## The order of the lists
+
+The table of the **Dashboard** and the list on the **CMs** page put what runs now first, then the modules by the date and time they
+were flashed, the latest on top (a module that failed stands at the time it failed; the day and month are written for what was not
+today). A click on the header of a column sorts by it: the first click goes from A to Z, or from the latest and the highest for a time
+or a progress; the second turns it round; the third gives the order by time back. Rows with nothing in the column (a module that has no
+board yet, no host name) are always last, and rows that tie keep the order by time. The column is in the address
+(`/dashboard?sort=time&dir=asc`, `/cms?sort=hostname`), so it stays through a reload and a link carries it; the CSV export of CMs
+follows the order on the screen.
 
 ## How a module is named
 

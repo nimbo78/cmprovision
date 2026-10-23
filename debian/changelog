@@ -1,3 +1,14 @@
+cmprovision4 (2.15.0) unstable; urgency=medium
+
+  * Dashboard and CMs: a click on the header of a column sorts the list by it
+    (board, module, step, progress, time; MAC, host name, serial, model,
+    project, board, result, finished). The second click turns the direction,
+    the third gives the order by time back. Rows with nothing in the column
+    are last. The choice is in the address (?sort=...&dir=...), and the CSV
+    export of CMs follows it.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 24 Oct 2026 02:00:00 +0300
+
 cmprovision4 (2.14.0) unstable; urgency=medium
 
   * Dashboard and CMs: the modules are listed by the date and time they were
