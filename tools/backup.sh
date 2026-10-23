@@ -1,6 +1,7 @@
 #!/bin/sh
 # Snapshot of an installed cmprovision4 for rolling back a package upgrade.
-#   sudo cmprovision-backup [--with-uploads] [destination-dir]      (installed by the package; tools/backup.sh in a checkout)
+#   sudo cmprovision-backup [--with-uploads] [--keep N|all] [destination-dir]    (installed by the package; tools/backup.sh in a checkout)
+#   sudo cmprovision-backup --prune [--keep N|all] [destination-dir]             only removes the old snapshots, makes none
 # Default destination: /var/backups/cmprovision/<timestamp>-<installed version>/ containing
 #   app.tar.gz           /var/lib/cmprovision (.env, firmware, storage, dnsmasq.conf; uploads only with --with-uploads)
 #   database.sqlite      consistent copy of the database (SQLite online backup)
@@ -8,11 +9,69 @@
 #   cmprovision4_*.deb   reinstallable copy of the installed package (needs dpkg-repack)
 #   packages.txt         versions of the package and its runtime dependencies
 # Restore with cmprovision-restore <that directory>.
+# Only the newest 5 snapshots stay (--keep N, or CMPROVISION_BACKUP_KEEP; "all" keeps everything): after a snapshot in the
+# default destination the older <date>-<time>-<version> directories are removed. A destination given by hand is trimmed only
+# by --prune; other files and directories in it are never touched.
 set -e
 APP=/var/lib/cmprovision
+DEFAULT_DEST=/var/backups/cmprovision
 WITH_UPLOADS=0
-[ "$1" = "--with-uploads" ] && { WITH_UPLOADS=1; shift; }
-DEST=${1:-/var/backups/cmprovision}
+PRUNE=0
+KEEP=${CMPROVISION_BACKUP_KEEP:-5}
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --with-uploads) WITH_UPLOADS=1 ;;
+        --prune) PRUNE=1 ;;
+        --keep)
+            [ $# -ge 2 ] || { echo "--keep needs a number or 'all'" >&2; exit 2; }
+            KEEP=$2
+            shift ;;
+        --keep=*) KEEP=${1#--keep=} ;;
+        --) shift; break ;;
+        -*) echo "unknown option $1" >&2; exit 2 ;;
+        *) break ;;
+    esac
+    shift
+done
+case "$KEEP" in
+    all) ;;
+    ''|*[!0-9]*|0|0[0-9]*) echo "the number of snapshots to keep is 1 or more, or 'all'" >&2; exit 2 ;;
+esac
+DEST=${1:-$DEFAULT_DEST}
+
+# The snapshots of this script are the directories named <date>-<time>-<version>; the names sort by time.
+prune() {
+    if [ "$KEEP" = all ]; then
+        return 0
+    fi
+    removed=0
+    seen=0
+    for name in $(ls -1 "$DEST" 2>/dev/null | grep -E '^[0-9]{8}-[0-9]{6}-' | sort -r); do
+        path="$DEST/$name"
+        # a file or a link with such a name is not a snapshot and does not take a place among the newest
+        if [ ! -d "$path" ] || [ -L "$path" ]; then
+            continue
+        fi
+        seen=$((seen + 1))
+        if [ "$seen" -le "$KEEP" ] || [ "$path" = "${OUT:-}" ]; then
+            continue
+        fi
+        if rm -rf "$path"; then
+            removed=$((removed + 1))
+        else
+            echo "could not remove $path" >&2
+        fi
+    done
+    if [ "$removed" != 0 ]; then
+        echo "removed $removed older snapshot(s) from $DEST, kept the newest $KEEP"
+    fi
+}
+
+if [ "$PRUNE" = 1 ]; then
+    prune
+    exit 0
+fi
+
 VER=$(dpkg-query -W -f='${Version}' cmprovision4 2>/dev/null || echo unknown)
 OUT="$DEST/$(date +%Y%m%d-%H%M%S)-$VER"
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
@@ -48,5 +107,9 @@ else
     echo "dpkg-repack not installed: no reinstallable copy of the package in this backup" >&2
 fi
 dpkg -l cmprovision4 nginx 'php*-fpm' dnsmasq-base rpiboot 2>/dev/null | grep '^ii' > "$OUT/packages.txt" || true
+
+if [ "$DEST" = "$DEFAULT_DEST" ]; then
+    prune
+fi
 
 du -sh "$OUT" | awk '{print "backup written to '"$OUT"' (" $1 ")"}'
