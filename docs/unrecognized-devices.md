@@ -31,7 +31,12 @@ it is (`bridge`, `router`, `wlan-ap`, `telephone`, `station`, ...). A device tha
 of each switch says how many neighbors it knows (`2 neighbors via LLDP/CDP`), or `LLDP/CDP on, no neighbors`, or
 `no LLDP/CDP data` when the switch tells nothing.
 
-- **A plain Raspberry Pi says nothing.** Raspberry Pi OS and the utility OS do not send LLDP or CDP. For such a device the port
+- **The utility OS says who it is (from 2026.10.2).** A module that booted our utility OS names itself to the switch over LLDP:
+  the name is `cm-` and the MAC of its Ethernet port (`cm-e45f01629fd3`), the description `cmprovision utility OS 2026.10.2 (Linux ...)`.
+  So a module that booted but never reached the server (no DHCP, no route to the server) is not a stranger on the port any more:
+  the Ports page says that the utility OS of the stand runs on it and has not asked for its script, and the HDMI display lists it
+  by its name. The utility OS only sends (`lldp status tx-only`): it reads no frame of a neighbour.
+- **A plain Raspberry Pi says nothing.** Raspberry Pi OS and the utility OS of before 2026.10.2 do not send LLDP or CDP. For such a device the port
   shows **Made by, from the MAC address** (the Raspberry Pi blocks are built in; the `ieee-data` package, a recommended
   dependency, adds the IEEE registries). A randomly generated or virtual MAC has no maker.
 - **The switch must send and answer.** Cisco IOS needs `lldp run` for LLDP (CDP is on by default); Huawei switches usually have

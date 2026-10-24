@@ -572,6 +572,23 @@ class PortsPageTest extends TestCase
         }
     }
 
+    public function test_a_device_that_says_it_is_the_utility_os_of_the_stand_is_told_apart_from_a_stranger()
+    {
+        $this->switchWithModule();
+        $t =& $this->fake->tables[''];
+        $t[SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;
+        $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 8 => 'eth0', 9 => 'cm-000a95ddeeff',
+                  10 => 'cmprovision utility OS 2026.10.2 (Linux 6.18.50-cmprovision aarch64)', 12 => hex2bin('10')] as $column => $value)
+            $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+
+        Livewire::test(Ports::class)->call('select', 's1p6')
+            ->assertSee('Unrecognized device')
+            ->assertSee('The utility OS of this stand (2026.10.2) runs on it, and it has not asked the server for its script.')
+            ->assertDontSee('may have booted its installed OS')
+            ->assertSee('cm-000a95ddeeff');
+    }
+
     public function test_a_switch_that_tells_nothing_about_its_neighbours_says_so_in_its_line()
     {
         $this->switchWithModule();

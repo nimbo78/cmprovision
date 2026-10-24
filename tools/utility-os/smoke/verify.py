@@ -75,8 +75,15 @@ except (AssertionError, IndexError, ValueError):
     pass
 check(agent_ok, 'USB diagnostics: shipped agent exchanges a valid snapshot with the built OS tools')
 
+# lldpd announces the module as cm-<MAC of eth0> and says which OS it is (S61lldpname)
+lldp = text.get('lldp', '')
+check(re.search(r'^\s*SysName:\s+cm-525400123456$', lldp, re.M) is not None, 'lldp: the name is cm- and the MAC of eth0')
+check(re.search(r'^\s*SysDescr:\s+cmprovision utility OS ' + re.escape(VERSION) + r' \(Linux ', lldp, re.M) is not None,
+      'lldp: the description names this OS')
+check(re.search(r'^\s*ChassisID:\s+mac 52:54:00:12:34:56$', lldp, re.M) is not None, 'lldp: the chassis is the MAC of eth0')
+
 tools = sections.get('versions', [])
-check(len(tools) == 21, 'tools: 21 tools answered')
+check(len(tools) == 22, 'tools: 22 tools answered')
 for line in tools:
     m = re.match(r'(\S+) rc=(\d+) ?(.*)', line)
     good = m and int(m.group(2)) not in (126, 127, 132, 134, 139) and 'error while loading shared libraries' not in line
