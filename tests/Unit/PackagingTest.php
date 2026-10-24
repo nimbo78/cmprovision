@@ -310,6 +310,21 @@ class PackagingTest extends TestCase
             'before dnsmasq starts again');
     }
 
+    public function test_the_scripts_that_build_the_package_outside_the_provisioner_are_valid_shell_and_name_their_way()
+    {
+        foreach (['tools/build-deb.sh', 'tools/build-deb-wsl.sh'] as $script)
+        {
+            $path = dirname(__DIR__, 2).'/'.$script;
+            if (trim((string) shell_exec('command -v sh 2>/dev/null')) !== '')
+                $this->assertSame('', trim((string) shell_exec('sh -n '.escapeshellarg($path).' 2>&1')), $script);
+            $this->assertStringContainsString('set -e', $this->file($script));
+        }
+        $build = $this->file('tools/build-deb.sh');
+        $this->assertStringContainsString('dpkg-buildpackage -b -us -uc', $build);
+        $this->assertStringContainsString('COMPOSER_BIN_COMPAT=symlink', $build, 'no .bat launchers of a build in WSL');
+        $this->assertStringContainsString('tools/build-deb.sh', $this->file('tools/build-deb-wsl.sh'));
+    }
+
     public function test_the_package_recommends_the_registry_of_mac_blocks()
     {
         // the Ports page names the maker of an unknown device from the ieee-data files, and works without them
