@@ -30,6 +30,8 @@ The package recipes and current acceptance status are in
 
 The default is off. Turning it off removes the section from the WLAN Pi menu;
 normal WLAN Pi functions continue to work. On Lite the panel says the integration is off.
+The integration settings are included in normal cmprovision backups. A restore stops
+both display consumers before replacing the database, then starts their watchers again.
 
 ## Pages and buttons
 

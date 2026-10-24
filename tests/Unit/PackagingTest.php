@@ -30,6 +30,17 @@ class PackagingTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('#^\s*"\$APP/artisan"#m', $restore);
     }
 
+    public function test_fpms_preferences_are_backed_up_and_restore_stops_the_shared_reader()
+    {
+        $this->assertStringContainsString('/etc/default/cmprovision-fpms.json', $this->file('tools/backup.sh'));
+        $restore = $this->file('tools/restore.sh');
+        $stop = strpos($restore, 'systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data');
+        $this->assertNotFalse($stop);
+        $this->assertLessThan(strpos($restore, 'if [ "$DATA_ONLY" = 1 ]'), $stop);
+        $this->assertStringContainsString('systemctl restart cmprovision-fpms', $restore);
+        $this->assertStringContainsString('rm -f /etc/default/cmprovision-fpms.json', $this->file('debian/postrm'));
+    }
+
     public function test_going_back_below_2_5_stops_the_image_worker()
     {
         // the unit file leaves with the package; without this the worker runs the old code until a reboot
