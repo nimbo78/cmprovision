@@ -2,6 +2,12 @@
 
 set -e
 
+# Release the optional FPMS data consumer before application code changes or leaves.
+# The normal FPMS process belongs to its own package and continues to run.
+if [ "$1" = "upgrade" ] || [ "$1" = "remove" ]; then
+    deb-systemd-invoke stop cmprovision-fpms.service cmprovision-fpms-data.service >/dev/null || true
+fi
+
 # Going back to a version without the image checksum worker (older than 2.5): its unit file leaves with this package,
 # so stop and disable the worker now, or it would run the old code next to the old worker until a reboot
 if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.5.0~"; then

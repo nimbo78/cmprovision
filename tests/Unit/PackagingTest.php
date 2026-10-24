@@ -36,7 +36,8 @@ class PackagingTest extends TestCase
         $restore = $this->file('tools/restore.sh');
         $stop = strpos($restore, 'systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data');
         $this->assertNotFalse($stop);
-        $this->assertLessThan(strpos($restore, 'if [ "$DATA_ONLY" = 1 ]'), $stop);
+        $this->assertLessThan(strpos($restore, 'restoring the data into'), $stop);
+        $this->assertStringContainsString('deb-systemd-invoke stop cmprovision-fpms.service cmprovision-fpms-data.service', $this->file('debian/prerm'));
         $this->assertStringContainsString('systemctl restart cmprovision-fpms', $restore);
         $this->assertStringContainsString('rm -f /etc/default/cmprovision-fpms.json', $this->file('debian/postrm'));
     }
@@ -249,7 +250,7 @@ class PackagingTest extends TestCase
         $this->assertStringContainsString('dpkg --compare-versions "$2" lt "2.7.5~"', $prerm);
         $this->assertStringContainsString("deb-systemd-invoke stop cmprovision-wallboard-data.service >/dev/null || true\n", $prerm);
         $restore = $this->file('tools/restore.sh');
-        $this->assertStringContainsString("systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-wallboard-data 2>/dev/null || true\n", $restore);
+        $this->assertStringContainsString("systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data 2>/dev/null || true\n", $restore);
         // the stop comes before the database is swapped, the watcher comes back at the end
         $this->assertLessThan(strpos($restore, 'restoring the data into'), strpos($restore, 'cmprovision-wallboard-data'));
         $this->assertStringContainsString("systemctl restart cmprovision-wallboard 2>/dev/null || true\n", $restore);
