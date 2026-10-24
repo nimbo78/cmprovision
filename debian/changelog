@@ -1,3 +1,16 @@
+cmprovision4 (2.21.0) unstable; urgency=medium
+
+  * CMs -> Export for NetBox: CSV files for NetBox's bulk import of the
+    modules of the list that finished: the devices (name, role,
+    manufacturer, device type, status, site, serial, comments), their
+    interfaces and, for NetBox 4.2 and newer, the MAC addresses (before
+    4.2 the MAC is a column of the interfaces). A host name that is not
+    a plain name, or that two modules share, is replaced by cm- and the
+    MAC. Settings -> Provisioning -> NetBox export keeps the site, role,
+    manufacturer, device type, status and interface the files carry.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 24 Oct 2026 18:00:00 +0300
+
 cmprovision4 (2.20.0) unstable; urgency=medium
 
   * Settings → Status → Backup: Download backup gives one file with the
