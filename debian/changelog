@@ -1,3 +1,17 @@
+cmprovision4 (2.19.0) unstable; urgency=medium
+
+  * A module that runs well past what the finished modules of its batch took
+    is flagged "Slow +m:ss" on the Dashboard, counted in the batch tile
+    ("2 slower than the rest") and marked "/ SLOW +m:ss" on the HDMI display.
+    The typical time is the median of the finished runs (three are needed);
+    a module is slow past one and a half times that and two minutes more.
+    A slow module is not a failure: the top bar, the tab and the bots do
+    not change.
+  * The package is built in WSL (tools/build-deb-wsl.sh), not on the
+    provisioner: a build there slowed the modules that were writing an image.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 24 Oct 2026 17:30:00 +0300
+
 cmprovision4 (2.18.0) unstable; urgency=medium
 
   * Images, Projects, Scripts, Labels and USB diagnostics: a click on the

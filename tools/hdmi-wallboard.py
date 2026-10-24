@@ -364,12 +364,17 @@ def phase(module):
     return safe(module.get('phase', 'unknown')).upper()
 
 
+def slow_suffix(m):
+    """' / SLOW +3:20': the run is that long past what the finished modules of its batch took; empty for a module that is not slow."""
+    return (' / SLOW +' + duration(m['slow'])) if m.get('slow') else ''
+
+
 def progress_text(m):
     """63% / 25.0 MiB/s / ETA 1:00 of a module that writes, as the device card says it; None when it has no percent or is done."""
     if m.get('percent') is None or m.get('phase') == 'done':
         return None
     speed = ('%.1f MiB/s / ' % (m['speed'] / 1048576)) if m.get('speed') else ''
-    return str(m['percent']) + '% / ' + speed + 'ETA ' + duration(m.get('eta'))
+    return str(m['percent']) + '% / ' + speed + 'ETA ' + duration(m.get('eta')) + slow_suffix(m)
 
 
 def header(c, data, now):
@@ -520,8 +525,9 @@ def table_rows(modules, unknown):
     that says what it is over LLDP or CDP, or only who made its adapter): so the table tells what was plugged into the switch."""
     rows = []
     for m in modules:
-        result = progress_text(m) or (m.get('detail') or 'Cycle ' + duration(m.get('cycle')))
-        rows.append((safe(m['port']) + ' / ' + safe(m['name']), phase(m), result, INK.get(m['state'], 'dim')))
+        result = progress_text(m) or ((m.get('detail') or 'Cycle ' + duration(m.get('cycle'))) + slow_suffix(m))
+        ink = 'warn' if m.get('slow') and m['state'] == 'run' else INK.get(m['state'], 'dim')
+        rows.append((safe(m['port']) + ' / ' + safe(m['name']), phase(m), result, ink))
     for u in unknown:
         quiet = u.get('state') == 'quiet'
         rows.append((safe(u.get('port')) + ' / ' + safe(u.get('name')), 'LNK' if quiet else 'UNR',

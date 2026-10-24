@@ -56,7 +56,9 @@ so the table tells what was plugged in: the phase says `UNR` (an unrecognized de
 it), the name is what the device calls itself over LLDP or CDP with its system, address and abilities in the result column, and for
 a device that says nothing it is the maker of its MAC address (the Raspberry Pi blocks are built in, the `ieee-data` package adds
 the others) with the MAC itself. Texts that come from a device are cleaned before they reach the screen. The `flow` cards and the
-`engineer` view say the speed of a write as the table does: `63% / 25.0 MiB/s / ETA 1:00`.
+`engineer` view say the speed of a write as the table does: `63% / 25.0 MiB/s / ETA 1:00`. A module that runs well past what the
+finished ones of its batch took (2.19.0, [how it is decided](operations.md#a-module-that-takes-longer-than-the-rest)) gets
+`/ SLOW +3:20` after its time left, and its row is drawn in the warning colour.
 
 The four display themes match the web UI: **Warm / Dark**, **Warm / Light**, **Neutral / Dark**, and **Neutral / Light**.
 The renderer reads the same `resources/css/app.css` tokens for the page, text, muted text, accent and status colors.

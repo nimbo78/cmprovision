@@ -612,6 +612,37 @@ class SpeedInTheTableTest(unittest.TestCase):
         self.assertNotIn('MiB/s', row)
 
 
+class SlowModuleTest(unittest.TestCase):
+    """A module that runs well past what the finished ones of its batch took says so in the table and on the cards."""
+
+    def row(self, module, cols=137):
+        data = snapshot()
+        data['modules'] = [module]
+        c = w.frame(data, cols, 38, view='desk', now=1001)
+        return next(line for line in c.plain().splitlines() if 'sw01 Gi0/1 / ' in line)
+
+    def test_a_slow_module_shows_how_long_it_is_past_the_others_after_its_time_left(self):
+        self.assertIn('63% / 25.0 MiB/s / ETA 1:00 / SLOW +3:20', self.row(dict(device(), slow=200)))
+
+    def test_a_module_that_is_not_slow_shows_no_flag(self):
+        for module in (device(), dict(device(), slow=None), dict(device(), slow=0)):
+            self.assertNotIn('SLOW', self.row(module))
+
+    def test_a_slow_module_without_a_percent_yet_is_flagged_too(self):
+        row = self.row(dict(device(phase='preinstall'), percent=None, speed=None, eta=None, detail='Running the scripts', slow=75))
+        self.assertIn('Running the scripts / SLOW +1:15', row)
+
+    def test_a_slow_module_is_drawn_in_the_warning_colour_and_a_finished_one_keeps_its_own(self):
+        rows = w.table_rows([dict(device(), slow=200), dict(device(state='ok', phase='done'), slow=200)], [])
+        self.assertEqual(['warn', 'good'], [row[3] for row in rows])
+
+    def test_the_card_and_the_engineer_view_say_it_as_well(self):
+        data = snapshot()
+        data['modules'] = [dict(device(), slow=200)]
+        self.assertIn('SLOW +3:20', w.frame(data, 137, 38, view='desk', now=1001).plain())
+        self.assertIn('SLOW +3:20', w.frame(data, 137, 38, view='engineer', now=1001).plain())
+
+
 class ProgressBarTest(unittest.TestCase):
     def test_the_bar_and_its_percent_fit_the_device_card_at_every_width(self):
         for cols in (100, 112, 137, 172):   # below 100 columns there is no device card

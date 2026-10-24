@@ -9,6 +9,7 @@ For direct diagnosis on a target's screen and keyboard, use its [tty2 console](l
 The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connectors and USB roles.
 
 - [The order of the lists](#the-order-of-the-lists)
+- [A module that takes longer than the rest](#a-module-that-takes-longer-than-the-rest)
 - [How a module is named](#how-a-module-is-named)
 - [The Settings page](#the-settings-page)
 - [First-boot OS check](#first-boot-os-check)
@@ -34,6 +35,24 @@ The same click sorts the lists of **Images** (file name, size of the file), **Pr
 priority as a number), **Labels** (name, type, printer host) and **USB diagnostics** (MAC, serial, time received, context: of the
 latest 50 reports; the report that opens by itself stays the latest). Without a click each list is in the order it always was, by name,
 and the USB reports newest first.
+
+## A module that takes longer than the rest
+
+A batch of modules on the same project and the same image takes about the same time per module. A module that is far past that has
+usually something wrong with it: a slow card, a bad cable, a download that crawls. The Dashboard says so before it fails.
+
+The **typical time** is the median of the runs of the batch that finished (a board that only had its bootloader set over USB is not
+a run). Until three have finished there is nothing to compare with and nothing is flagged. A module that is still running and still
+reporting is flagged **Slow +m:ss** (how long it is past the typical time) once it has been going on for longer than one and a half
+times the typical time **and** for more than two minutes past it: a batch of a minute per module does not flag a module for half a
+minute more, and one of a quarter of an hour not for a minute. The flag is worked out afresh each time the page updates: it goes when the module finishes, or when more modules have finished and the typical time has grown. The batch tile counts them
+(`2 slower than the rest`); the **Slow** chip says in its tooltip how long the finished ones took. A module that stopped reporting has
+its own flag (**No report**) and is not counted here, and a slow module is not a failure: the top bar and the tab do not change colour
+for it. The HDMI display adds `/ SLOW +3:20` to the result of the module and draws its row in the warning colour.
+
+The median is robust against the one run that took an hour; it is also taken from the modules that finished first, which are the
+faster ones, so a module that is only a little slower than the first few can be flagged in the first minutes of a batch and then
+catches up. That is what the two-minute margin and the factor are for; a flag that goes away by itself is not a fault.
 
 ## How a module is named
 
