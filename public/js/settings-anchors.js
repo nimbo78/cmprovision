@@ -30,6 +30,7 @@
         'dhcp': 'network',
         'utility-os': 'provisioning',
         'usb-prep': 'provisioning',
+        'netbox': 'provisioning',
         'reprovision': 'provisioning',
         'reprovision-key': 'provisioning',
         'reprovision-accounts': 'provisioning',

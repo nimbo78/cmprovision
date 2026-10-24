@@ -1,6 +1,7 @@
 <livewire:utility-os-settings />
 
 <livewire:usb-prep-settings />
+<livewire:netbox-settings />
 
 <x-settings-card title="Re-provision" description="Identify and re-provision a sensor that already runs, from its card. These are separate from your web login." id="reprovision">
     <div class="cmp-section-part" id="reprovision-key"><livewire:reprovision-key /></div>

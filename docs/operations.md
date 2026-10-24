@@ -10,6 +10,7 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 
 - [The order of the lists](#the-order-of-the-lists)
 - [A module that takes longer than the rest](#a-module-that-takes-longer-than-the-rest)
+- [Export for NetBox](#export-for-netbox)
 - [How a module is named](#how-a-module-is-named)
 - [The Settings page](#the-settings-page)
 - [First-boot OS check](#first-boot-os-check)
@@ -53,6 +54,25 @@ for it. The HDMI display adds `/ SLOW +3:20` to the result of the module and dra
 The median is robust against the one run that took an hour; it is also taken from the modules that finished first, which are the
 faster ones, so a module that is only a little slower than the first few can be flagged in the first minutes of a batch and then
 catches up. That is what the two-minute margin and the factor are for; a flag that goes away by itself is not a fault.
+
+## Export for NetBox
+
+The provisioned modules can go into NetBox as devices. **CMs → Export for NetBox** gives CSV files for NetBox's bulk import (Devices →
+Import); they hold the modules of the list on the screen (the project and the search you chose, in the order of the list) that **finished**:
+a module that is running, failed, or that only had its bootloader set over USB is left out. Import in this order:
+
+1. **Devices**: `name, role, manufacturer, device_type, status, site, serial, comments`. The name is the host name of the module's system when
+   it is a plain name (letters, digits, `.`, `_`, `-`) that no other module in the file has; otherwise `cm-` and the MAC address without the
+   colons. The serial number is the one of the module; the comments say it was provisioned by cmprovision, the project and the time (UTC).
+2. **Interfaces**: `device, name, type`: one `eth0` of type `1000base-t` for each device.
+3. **MAC addresses** (NetBox 4.2 and newer): `mac_address, device, interface, is_primary`: the MAC of the module's Ethernet port, made the
+   primary address of the interface. Before NetBox 4.2 the interface has a `mac_address` column instead; the setting below puts the MAC
+   there and the third file goes.
+
+The site, role, manufacturer, device type and the rest are set once in **Settings → Provisioning → NetBox export** (the defaults are `Default`,
+`Sensor`, `Raspberry Pi`, `Compute Module 4`, status `active`, interface `eth0`, `1000base-t`). They have to exist in NetBox before the import:
+it refuses a device whose site, role or type it does not know. The files are made from what the modules reported; nothing is sent to NetBox,
+and no NetBox address or token is kept here.
 
 ## How a module is named
 
