@@ -12,6 +12,7 @@ use App\Http\Livewire\Firmwares;
 use App\Http\Livewire\Settings;
 use App\Http\Controllers\AddImageController;
 use App\Http\Controllers\AddPackageController;
+use App\Http\Controllers\BackupDownloadController;
 
 /*
 |--------------------------------------------------------------------------
@@ -44,5 +45,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/labels', Labels::class)->name('labels');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/firmware', Firmwares::class)->name('firmware');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/settings', Settings::class)->name('settings');
+// the copy of the data holds the application key and every password of the server: the password is asked again
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])->get('/settings/backup', BackupDownloadController::class)->name('settings.backup');
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/diagnostics/{id?}', \App\Http\Livewire\UsbDiagnostics::class)->whereNumber('id')->name('diagnostics');

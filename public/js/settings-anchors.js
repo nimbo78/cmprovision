@@ -24,6 +24,7 @@
     /* the section (its id) => the tab that holds it; the same table as Settings::TABS and the views */
     var TAB_OF = {
         'services': 'status',
+        'backup': 'status',
         'wifi': 'network',
         'switches': 'network',
         'dhcp': 'network',
