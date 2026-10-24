@@ -61,7 +61,7 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..ed7f0f9
+index 0000000..bfc7ac6
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
 @@ -0,0 +1,452 @@
@@ -401,10 +401,10 @@ index 0000000..ed7f0f9
 +                        row.get("port"),
 +                        row.get("mac"),
 +                        row.get("phase") or row.get("state"),
++                        slow(row.get("slow")),
 +                        row.get("detail"),
 +                        rate(row.get("speed")),
 +                        remaining(row.get("eta")),
-+                        slow(row.get("slow")),
 +                        diag.get("title"),
 +                        row.get("advice"),
 +                    ]
@@ -913,10 +913,10 @@ index 0000000..0e0ea7f
 +WantedBy=multi-user.target
 diff --git a/tests/test_cmprovision.py b/tests/test_cmprovision.py
 new file mode 100644
-index 0000000..355209c
+index 0000000..5399439
 --- /dev/null
 +++ b/tests/test_cmprovision.py
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,333 @@
 +import json
 +import os
 +import signal
@@ -1241,6 +1241,15 @@ index 0000000..355209c
 +    adapter.tick(publish=False)  # the main loop of the stock menu calls this
 +    adapter.show()
 +    assert shown == []
++
++
++def test_the_slow_flag_of_a_module_reaches_its_card(panel):
++    panel.data["modules"][1]["slow"] = 215
++    panel.page = 2
++    panel.index = 1
++    panel.key("CENTER")
++    row = panel.detail_row()
++    assert row["slow"] == 215 and slow(row["slow"]) == "SLOW +3:35"
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
