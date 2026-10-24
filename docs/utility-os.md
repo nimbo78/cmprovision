@@ -57,6 +57,13 @@ Settings показывает его, а тесты сверяют с файла
 - `utility-os/versions.env` — единственное место с версиями и SHA256.
 - XZ-образы распаковывает `xz-utils`: он сообщает об ошибке формата, где BusyBox xz может завершиться молча.
   В BusyBox включена математика awk, а в util-linux — `ipcmk`, чтобы сохранить возможности прежней ОС.
+- lldpd (с 2026.10.2): модуль называет себя коммутатору по LLDP. `S60lldpd` из buildroot запускает демон на `eth0` (`/etc/default/lldpd`,
+  `-I eth0`), `S61lldpname` даёт ему имя `cm-<MAC eth0 без двоеточий>` и описание `cmprovision utility OS <версия> (Linux <ядро> <архитектура>)`
+  и ставит `lldp status tx-only`: ОС только говорит и кадры соседей не разбирает. Из протоколов собран один LLDP (CDP, FDP, EDP, SONMP,
+  LLDP-MED, DOT1, DOT3 и свои TLV выключены). Работа скрипта идёт в фоне, сбой оставляет имя по умолчанию и загрузку не задерживает.
+  Страница Ports по описанию узнаёт нашу ОС на порту (`StandMap::utilityOs()`): модуль, который загрузился, но не дошёл до сервера,
+  называется «утилитарная ОС стенда работает, скрипт не запрашивала», а не чужим устройством. Тесты — `UtilityOsLldpTest`,
+  проверка в QEMU — раздел `lldp` в `tools/utility-os/smoke/check.sh`.
 - Патч `patches/flashrom/` возвращает сообщение `identical` при пропущенной записи EEPROM. Скрипт модуля
   различает по нему уже совпадающий образ и выполненную запись. В QEMU оба случая проверяются настоящим flashrom
   на файловой эмуляции SPI-микросхемы (`dummy`), без обращения к оборудованию хоста.
@@ -128,6 +135,7 @@ GitHub выключает расписание после 60 дней без к�
 В ОС — программы под GPL (ядро, BusyBox и другие). Исходники всех компонентов и тексты лицензий собирает
 `make legal-info` (`$UOS_WORK/output/legal-info`). Архив публикуется GitHub Release `utility-os-<версия>`, а CI кладёт
 его в артефакты каждого прогона.
+Для 2026.10.2 — [исходники и лицензии в GitHub Release](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10.2).
 Для 2026.10.1 — [исходники и лицензии в GitHub Release](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10.1).
 [Архив 2026.10](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10) также доступен.
 

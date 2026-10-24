@@ -445,6 +445,16 @@ class StandMap
         return true;
     }
 
+    /* The utility OS of this stand runs on the device of a port (2026.10.2 on: S61lldpname makes it say so over LLDP): its version,
+       or null. A module that booted but never reached the server shows that way, whatever the age of the link. */
+    public static function utilityOs(array $tile): ?string
+    {
+        foreach ($tile['neighbors'] ?? [] as $neighbor)
+            if (preg_match('/^cmprovision utility OS ([0-9A-Za-z.-]{1,32})(?: |$)/', (string) ($neighbor['description'] ?? ''), $m))
+                return $m[1];
+        return null;
+    }
+
     /* The step that flashes the project's bootloader EEPROM (ScriptExecuteController names it "Flash EEPROM firmware") */
     public static function writingEeprom(Cm $cm): bool
     {

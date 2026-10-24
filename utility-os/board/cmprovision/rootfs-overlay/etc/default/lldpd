@@ -1,0 +1,2 @@
+# read by S60lldpd of buildroot: lldpd works on the Ethernet port of the module only (not on the USB gadget or anything else)
+LLDPD_ARGS="-I eth0"

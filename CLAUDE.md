@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Целевая среда — Raspberry Pi OS на Pi 4: пакет `cmprovision4` ставится в `/var/lib/cmprovision` и работает поверх nginx + php-fpm, dnsmasq, rpiboot и systemd. Код вызывает Linux-утилиты (`systemctl`, `journalctl`, `sudo`, `bash`, `gzip`/`xz`/`bunzip2`, `sha256sum`), поэтому страница Settings и подсчёт хешей образов работают только на Linux, а сквозной провижининг проверяется только на Pi с подключёнными модулями.
 
-Приложение требует исправленных версий PHP: 8.3.36+ для ветки 8.3, 8.4.27+ для 8.4, 8.5.12+ для 8.5 (CVE-2026-109618/109619), и ставится на Debian 13 / Raspberry Pi OS Trixie. `debian/control` требует реальные версионированные пакеты CLI и FPM: версия метапакета `php-fpm` не отражает патч PHP. `composer.json` закрепляет `config.platform.php = 8.3.36`, чтобы lock подходил для поддерживаемых веток; `composer check-platform-reqs --lock --no-dev` проверяет фактический CLI, и сборка Docker выполняет эту проверку. Upload Progress остаётся с настройкой PHP по умолчанию; исправление обеспечивает обновлённый PHP. Ветка 1.6.x (Laravel 8, PHP 7.4) заморожена на теге `v1.6.11`; рабочий провижинер пользователя — Raspberry Pi OS Trixie (Debian 13, PHP 8.4, NetworkManager) на WLAN Pi M4+ с версией 2.21.0.
+Приложение требует исправленных версий PHP: 8.3.36+ для ветки 8.3, 8.4.27+ для 8.4, 8.5.12+ для 8.5 (CVE-2026-109618/109619), и ставится на Debian 13 / Raspberry Pi OS Trixie. `debian/control` требует реальные версионированные пакеты CLI и FPM: версия метапакета `php-fpm` не отражает патч PHP. `composer.json` закрепляет `config.platform.php = 8.3.36`, чтобы lock подходил для поддерживаемых веток; `composer check-platform-reqs --lock --no-dev` проверяет фактический CLI, и сборка Docker выполняет эту проверку. Upload Progress остаётся с настройкой PHP по умолчанию; исправление обеспечивает обновлённый PHP. Ветка 1.6.x (Laravel 8, PHP 7.4) заморожена на теге `v1.6.11`; рабочий провижинер пользователя — Raspberry Pi OS Trixie (Debian 13, PHP 8.4, NetworkManager) на WLAN Pi M4+ с версией 2.22.0.
 
 ## Команды
 
@@ -125,12 +125,19 @@ EEPROM «до и после»: сервер хранит доложенный з
   собираются и убираются из образа в `post-build.sh`. Загрузочные файлы прошивки и `bootfiles.bin` usbboot качаются
   отдельными файлами по тегу.
 - Собранный каталог `scriptexecute64/` и `tests/fixtures/utility-os/messages.txt` коммитятся (пакет собирается без сети),
-  только когда новая версия ОС принята. Версия ОС — `ГГГГ.ММ` (`2026.10.1` — вторая за месяц).
+  только когда новая версия ОС принята. Версия ОС — `ГГГГ.ММ` (`2026.10.1` — вторая за месяц, `2026.10.2` — третья).
 - Init `board/cmprovision/rootfs-overlay/etc/init.d/S99scriptexec` (POSIX sh, без `set -e`) подставляет в шаблон
   `script=` из `cmdline.txt` те же значения в тех же форматах, что старый, плюс `uos=`; перемычки читает `pinctrl`
   (номера GPIO в sysfs с ядра 6.6 сдвинуты). Полностью скачанный ответ 200 исполняет, 5xx и обрыв повторяет через 10 с, другой код печатает и
   останавливается; вернувшийся скрипт второй раз не запускает. Пути `/proc`, `/sys`, `/tmp` переопределяются
   переменными `UOS_PROC`, `UOS_SYS`, `UOS_TMP` (так его гоняет тест).
+- lldpd (2026.10.2): модуль называет себя коммутатору по LLDP. `BR2_PACKAGE_LLDPD=y` без CDP, FDP, EDP, SONMP, LLDP-MED, DOT1, DOT3 и своих TLV;
+  `S60lldpd` buildroot (читает `/etc/default/lldpd`: `LLDPD_ARGS="-I eth0"`) и наш `S61lldpname` (POSIX sh, имя `cm-<MAC eth0 без двоеточий>`,
+  описание `cmprovision utility OS <версия> (Linux <ядро> <архитектура>)`, `lldp status tx-only`: кадры соседей не разбираются; работа в фоне,
+  `UOS_FOREGROUND=1` ждёт её в тесте, `UOS_SYS` и `UOS_ETC` двигают `/sys` и `/etc`). Сервер узнаёт нашу ОС по началу описания
+  (`StandMap::utilityOs()`): на странице Ports порт с неузнанным устройством говорит, что на нём работает утилитарная ОС стенда и скрипт
+  она не запрашивала. Тесты — `UtilityOsLldpTest`, `PortsPageTest`; в QEMU `smoke/check.sh` читает `lldpcli show chassis`, `verify.py` сверяет
+  имя, описание и chassis ID, а `test.sh` — что `lldpd`, `lldpcli`, `S60lldpd`, `S61lldpname` и `/etc/default/lldpd` есть в образе.
 - Состав — надмножество `utility-os/legacy-commands.txt` (команды старой ОС без камеры и мультимедиа rpi-userland);
   консоль как у старой: ход на tty1, getty на tty2; служб входа по сети нет (`CONFIG_TELNETD` выключен, `test.sh`
   сверяет список `/etc/init.d/S*`).

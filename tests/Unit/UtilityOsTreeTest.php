@@ -64,7 +64,8 @@ class UtilityOsTreeTest extends TestCase
                   'BR2_LINUX_KERNEL_LICENSE_FILES="COPYING LICENSES/preferred/GPL-2.0.cmprovision LICENSES/exceptions/Linux-syscall-note"',
                   'BR2_TARGET_GENERIC_HOSTNAME="scriptexecute"', 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"', 'BR2_SYSTEM_DHCP=""',
                   'BR2_PACKAGE_LIBCURL_TLS_NONE=y', 'BR2_PACKAGE_UTIL_LINUX_BINARIES=y', 'BR2_PACKAGE_E2FSPROGS_RESIZE2FS=y',
-                  'BR2_PACKAGE_FLASHROM=y', 'BR2_PACKAGE_CMP_RPI_UTILS=y', 'BR2_PACKAGE_CMP_RPI_BOOT_FILES=y',
+                  'BR2_PACKAGE_FLASHROM=y', 'BR2_PACKAGE_LLDPD=y', '# BR2_PACKAGE_LLDPD_CDP is not set', '# BR2_PACKAGE_LLDPD_DOT3 is not set',
+                  'BR2_PACKAGE_CMP_RPI_UTILS=y', 'BR2_PACKAGE_CMP_RPI_BOOT_FILES=y',
                   'BR2_PACKAGE_CMP_USBBOOT_BOOTFILES=y', 'BR2_TARGET_ROOTFS_CPIO_XZ=y', '# BR2_TARGET_ROOTFS_TAR is not set'] as $line)
             $this->assertStringContainsString($line."\n", $defconfig, $line);
         $this->assertStringNotContainsString('BR2_TARGET_GENERIC_ROOT_PASSWD="', $defconfig, 'root on tty2 without a password, as the spec says');

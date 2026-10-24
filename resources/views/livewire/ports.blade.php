@@ -180,10 +180,17 @@
                                 <p class="mb-2 text-fg-muted">The initial 3-minute discovery window has passed. This does not prove a hardware fault.</p>
                             @endif
                             <p class="mb-2">A new module is added automatically when its utility OS reports to the server. No manual registration is needed.</p>
-                            <p class="text-fg-muted">The device may have booted its installed OS or stopped before reaching the provisioning server. Check DHCP and boot-file delivery on the provisioner, then the target console or USB recovery if needed.</p>
+                            @if ($utilityOs)
+                                <p class="font-semibold">The utility OS of this stand ({{ $utilityOs }}) runs on it, and it has not asked the server for its script. Check that it got an address (DHCP) and can reach the server; its console on tty2 shows what it waits for.</p>
+                            @else
+                                <p class="text-fg-muted">The device may have booted its installed OS or stopped before reaching the provisioning server. Check DHCP and boot-file delivery on the provisioner, then the target console or USB recovery if needed.</p>
+                            @endif
                         </div>
                     @elseif ($tile['state'] === 'boot' && $tile['macs'])
                         <p class="mb-2">A Raspberry Pi is on this port and has not asked the server yet: <span class="ports-serial">{{ implode(', ', $tile['macs']) }}</span></p>
+                        @if ($utilityOs)
+                            <p class="mb-2">The utility OS of this stand ({{ $utilityOs }}) is already running on it.</p>
+                        @endif
                     @elseif ($tile['state'] === 'boot')
                         <p class="mb-2">Link up, nothing has talked to the server from this port yet.</p>
                     @elseif ($tile['state'] === 'quiet')

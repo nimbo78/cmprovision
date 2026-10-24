@@ -84,6 +84,14 @@ else
     fail "USB diagnostics: init or agent is not executable"
 fi
 
+# lldpd names the module to its switch: the daemon, its client and the script that gives it the name
+if [ -x "$TARGET/usr/sbin/lldpd" ] && [ -x "$TARGET/usr/sbin/lldpcli" ] && [ -x "$TARGET/etc/init.d/S61lldpname" ] \
+    && [ -x "$TARGET/etc/init.d/S60lldpd" ] && grep -q 'LLDPD_ARGS="-I eth0"' "$TARGET/etc/default/lldpd"; then
+    ok "lldp: lldpd, lldpcli, S60lldpd and S61lldpname are there"
+else
+    fail "lldp: lldpd, lldpcli, S60lldpd, S61lldpname or /etc/default/lldpd is missing"
+fi
+
 # --- size
 size=$(( $(wc -c < "$TFTP/kernel8.img") + $(wc -c < "$TFTP/scriptexecute.img") ))
 mib=$(( (size + 1048575) / 1048576 ))
