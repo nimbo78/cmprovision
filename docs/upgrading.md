@@ -38,6 +38,21 @@ Replace `<snapshot>` with the actual snapshot directory. By default, backups omi
 
 Snapshots take 100–150 MB each, so only the newest five stay: after a snapshot in `/var/backups/cmprovision` the older ones are removed. `--keep N` (or `CMPROVISION_BACKUP_KEEP=N` in the environment) sets another number, `--keep all` keeps every snapshot. `sudo cmprovision-backup --prune` applies the limit without making a snapshot, for example after an upgrade that left a long list. Only directories named `<date>-<time>-<version>` are ever removed; a destination you give by hand is trimmed only by `--prune`.
 
+### A copy to keep away from this server
+
+The snapshots stay on the server they were made on, so they do not help when its card or disk is lost. **Settings → Status → Backup → Download backup** (since 2.20.0) gives one file to keep somewhere else; the web password is asked again before it. It holds the database, the settings, the firmware store, the SSH key of Re-provision, `.env` and the DHCP config. The images and the packages of the OS check are not in it (they are gigabytes), nor is the system config (the nginx site, php.ini, the network).
+
+The file holds the application key and every password the server keeps (switches, printers, chat bots, sensor accounts), so it is as sensitive as the server itself: keep it where you keep passwords, and do not send it by chat or e-mail. Each download is written to the Laravel log (who, the size).
+
+To put it back on a server where `cmprovision4` is installed (a new one, or this one after a reinstall):
+
+```sh
+tar xf cmprovision-backup-<host>-<date>-<version>.tar
+sudo cmprovision-restore --data-only <date>-<version>
+```
+
+The file is a tar of one folder, named like the snapshots above, with `database.sqlite` and `app.tar.gz` in it, and `--data-only` is what takes it. It puts back the data, runs the migrations of the installed version and restarts the services. Upload the images again, or restore them from a `cmprovision-backup --with-uploads` made on the server.
+
 Without the old package in the snapshot, `cmprovision-restore` refuses to restore it over a different installed version. The helpers are installed with the package; their source is [`tools/backup.sh`](../tools/backup.sh) and [`tools/restore.sh`](../tools/restore.sh).
 
 If you deliberately accept upgrading without an automatic rollback snapshot, the escape hatch is:

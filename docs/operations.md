@@ -76,7 +76,7 @@ Settings has four tabs, each at its own address (`/settings?tab=network`), so a 
 
 | Tab | Holds |
 | --- | --- |
-| **Status** | The services of the server (dnsmasq, rpiboot, the USB diagnostics receiver, both queue workers, the cold spare, the web interface) with a running or stopped chip and **View log** for each, and the utility OS modules get now. |
+| **Status** | The services of the server (dnsmasq, rpiboot, the USB diagnostics receiver, both queue workers, the cold spare, the web interface) with a running or stopped chip and **View log** for each, and the utility OS modules get now. **Backup**: a file with the data of the server to keep elsewhere, after the password is asked again ([what is in it and how to put it back](upgrading.md#a-copy-to-keep-away-from-this-server)). |
 | **Network** | Wi-Fi networks, Ethernet switches, DHCP static addresses. |
 | **Provisioning** | Utility OS, Re-provision (the provisioner key and the saved sensor accounts), the HDMI display. |
 | **Notifications** | Notification channels and the current batch. |

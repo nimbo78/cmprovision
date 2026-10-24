@@ -1,3 +1,14 @@
+cmprovision4 (2.20.0) unstable; urgency=medium
+
+  * Settings → Status → Backup: Download backup gives one file with the
+    database (a consistent copy), .env, the firmware store with the SSH
+    key, and the DHCP config, to keep away from this server. The password
+    is asked again first, the download is written to the log. It is a tar
+    of a folder that cmprovision-restore --data-only takes as it is. The
+    images and packages are not in it.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 24 Oct 2026 17:45:00 +0300
+
 cmprovision4 (2.19.0) unstable; urgency=medium
 
   * A module that runs well past what the finished modules of its batch took
