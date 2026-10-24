@@ -9,7 +9,21 @@
             @endforeach
         </select>
         <input type="search" wire:model.live.debounce.300ms="search" class="cmp-field w-60" placeholder="MAC, host name or serial" aria-label="Search by MAC, host name or serial">
-        <button type="button" wire:click="exportCSV()" class="cmp-btn cmp-btn-secondary ml-auto">Export CSV</button>
+        <div class="ml-auto flex flex-wrap gap-2">
+            {{-- a disclosure: Tab walks the files, Escape closes it and gives the focus back to the button --}}
+            <div class="relative" x-data="{ open: false }" @keydown.escape.window="if (open) { open = false; $refs.netbox.focus() }" @click.outside="open = false">
+                <button type="button" x-ref="netbox" class="cmp-btn cmp-btn-secondary" @click="open = ! open" aria-controls="cms-netbox-files" :aria-expanded="open.toString()">Export for NetBox ▾</button>
+                <div id="cms-netbox-files" x-show="open" x-cloak class="cmp-menu" aria-label="Files for NetBox">
+                    <p class="px-2.5 py-2 text-xs text-fg-muted">{{ $netboxCount === 0 ? 'No finished module in this list.' : $netboxCount.($netboxCount === 1 ? ' finished module' : ' finished modules').' of this list. Import in this order; the site, role and device type come from Settings → Provisioning.' }}</p>
+                    <button type="button" wire:click="exportNetBox('devices')" @click="open = false">1. Devices (CSV)</button>
+                    <button type="button" wire:click="exportNetBox('interfaces')" @click="open = false">2. Interfaces (CSV)</button>
+                    @if ($netboxMacFile)
+                        <button type="button" wire:click="exportNetBox('macs')" @click="open = false">3. MAC addresses (CSV)</button>
+                    @endif
+                </div>
+            </div>
+            <button type="button" wire:click="exportCSV()" class="cmp-btn cmp-btn-secondary">Export CSV</button>
+        </div>
     </div>
 
     @if (session()->has('message'))

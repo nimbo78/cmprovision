@@ -25,6 +25,15 @@ diag_nonce=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 printf 'CMPDIAG1 HELLO %s\nCMPDIAG1 REPORT %s %s discovery\n' "$diag_nonce" "$diag_nonce" "$diag_boot" \
     | CMP_DIAG_PROC="$diag_proc" CMP_DIAG_STATE=/tmp/diagnostic-state /usr/sbin/cmprovision-diagnostics-agent --stdio >> "$R" 2>/dev/null
 
+# lldpd runs and carries the name and the description S61lldpname gave it (it works in the background: asked for a while)
+section lldp
+n=0
+while [ "$n" -lt 40 ]; do
+    lldpcli show chassis > /tmp/lldp.txt 2>&1 && grep -q 'SysName:.*cm-' /tmp/lldp.txt && break
+    n=$((n + 1)); sleep 1
+done
+grep -E 'ChassisID|SysName|SysDescr' /tmp/lldp.txt >> "$R"
+
 # every tool starts: a missing library or a wrong binary shows as 126, 127, 132, 134 or 139, or in the first line
 section versions
 while read -r name args; do
@@ -33,6 +42,7 @@ while read -r name args; do
 done <<'EOF'
 busybox
 curl --version
+lldpcli -v
 e2fsck -V
 mke2fs -V
 resize2fs

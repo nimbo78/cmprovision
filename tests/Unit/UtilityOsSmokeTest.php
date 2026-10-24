@@ -28,7 +28,10 @@ class UtilityOsSmokeTest extends TestCase
             'usb-agent' => "CMPDIAG1 STATUS $nonce 1000000000000001 $boot $boot discovery 123 0 -\n"
                 ."CMPDIAG1 BEGIN $nonce 1000000000000001 $boot ".strlen($snapshot).' '.hash('sha256', $snapshot)." -\n"
                 .base64_encode($snapshot)."\nCMPDIAG1 END $nonce",
-            'versions' => implode("\n", array_map(fn ($n) => 'tool'.$n.' rc=0 version', range(1, 21))),
+            'versions' => implode("\n", array_map(fn ($n) => 'tool'.$n.' rc=0 version', range(1, 22))),
+            // what lldpcli says of the chassis (plain format, indented): the name S61lldpname gave it, the OS, the MAC of eth0
+            'lldp' => "  ChassisID:    mac 52:54:00:12:34:56\n  SysName:      cm-525400123456\n"
+                .'  SysDescr:     cmprovision utility OS 2026.10 (Linux 6.18.50-cmprovision aarch64)',
             'gz-whole' => str_repeat('a', 64), 'xz-whole' => str_repeat('a', 64), 'bz2-whole' => str_repeat('a', 64),
             'od' => '3', 'base64' => 'hello', 'zeros' => '0', 'awk' => '1099511627777',
             'cmp' => 'rc=0', 'dd-flags' => 'rc=0', 'curl' => '404 rc=22',
@@ -65,6 +68,20 @@ class UtilityOsSmokeTest extends TestCase
 
         $this->assertSame(0, $code, $output);
         $this->assertStringContainsString('utility OS 2026.10, recorded', file_get_contents($this->dir.'/messages.txt'));
+    }
+
+    public function test_a_module_that_does_not_announce_itself_over_lldp_fails_the_run()
+    {
+        $result = file_get_contents($this->dir.'/result.txt');
+        foreach (['SysName:      cm-525400123456' => 'SysName:      scriptexecute',
+                  'cmprovision utility OS 2026.10 (Linux' => 'Buildroot 2025.02 (Linux',
+                  'ChassisID:    mac 52:54:00:12:34:56' => 'ChassisID:    mac 02:00:00:00:00:01'] as $good => $bad)
+        {
+            file_put_contents($this->dir.'/result.txt', str_replace($good, $bad, $result));
+            [$code, $out] = $this->verify();
+            $this->assertSame(1, $code, $bad);
+            $this->assertStringContainsString('FAIL lldp:', $out, $bad);
+        }
     }
 
     public function test_a_failed_guest_report_preserves_the_previous_fixture()

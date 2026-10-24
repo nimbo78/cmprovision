@@ -5,6 +5,7 @@ namespace App\Http\Livewire;
 use App\Http\Livewire\Concerns\SortsColumns;
 use App\Models\Cm;
 use App\Models\Project;
+use App\Services\NetBoxExport;
 use App\Support\ColumnSort;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -56,8 +57,11 @@ class Cms extends Component
         if ($this->projectId == -1)
             $this->projectId = Project::getActiveId();
 
+        $list = $this->cms();
         return view('livewire.cms', [
-            'CMs' => $this->cms(),
+            'CMs' => $list,
+            'netboxCount' => NetBoxExport::exportable($list)->count(),
+            'netboxMacFile' => NetBoxExport::settings()['mac_style'] !== 'column',
             // not 'sort' and 'dir': the properties of the same names (what the address says) would be the ones the view sees
             'sortKey' => $this->sorting()[0],
             'sortDir' => $this->sorting()[1],
@@ -70,6 +74,22 @@ class Cms extends Component
     {
         Cm::destroy($id);
         session()->flash('message', 'Cm deleted.');
+    }
+
+    /* The files for NetBox (2.21.0): the devices, the interfaces or the MAC addresses of the modules of this list that finished, in the
+       order of the list; Settings → Provisioning says what they carry */
+    public function exportNetBox(string $kind)
+    {
+        abort_unless(in_array($kind, NetBoxExport::KINDS, true), 404);
+        $list = $this->cms();
+        if (NetBoxExport::exportable($list)->isEmpty())
+        {
+            session()->flash('message', 'No finished module in this list: nothing to export for NetBox.');
+            return null;
+        }
+        return response()->streamDownload(function () use ($kind, $list) {
+            echo NetBoxExport::csv($kind, $list);
+        }, 'netbox-'.$kind.'-'.date('Ymd').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     public function exportCSV()

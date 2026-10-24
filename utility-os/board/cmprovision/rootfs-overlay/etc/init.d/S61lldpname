@@ -1,0 +1,53 @@
+#!/bin/sh
+# cmprovision utility OS (2026.10.2, docs/utility-os.md): the module tells its switch who it is over LLDP. lldpd starts in
+# S60lldpd (buildroot); here it is given the name the server knows the module by, cm- and the MAC of eth0 without the
+# colons (the same name the NetBox export falls back to), and a description that says which OS this is. So the Ports page
+# and the HDMI display of the server show a module that boots but never reaches the server (no DHCP, no route) as the
+# utility OS of the stand, not as a stranger. It only sends: no frame of a neighbour is read (lldp status tx-only).
+# Nothing here may hold the boot or stop it: the work is done in the background and a failure leaves lldpd's own name.
+# UOS_SYS and UOS_ETC move /sys and /etc, UOS_FOREGROUND=1 waits for the work (tests/Feature/UtilityOsLldpTest.php).
+
+case "$1" in
+    start) ;;
+    *) exit 0 ;;
+esac
+
+SYS=${UOS_SYS:-/sys}
+ETC=${UOS_ETC:-/etc}
+
+say() { echo "cmprovision: $*"; }
+
+identify() {
+    # eth0 is there a moment after the kernel started
+    n=0
+    while [ ! -r "$SYS/class/net/eth0/address" ] && [ "$n" -lt 30 ]; do
+        sleep 1
+        n=$((n + 1))
+    done
+    mac=$(tr -d ':\n' < "$SYS/class/net/eth0/address" 2>/dev/null)
+    if [ -z "$mac" ]; then
+        say "lldp: eth0 has no address: the module keeps the name lldpd gives it"
+        return 0
+    fi
+    version=$(cat "$ETC/cmprovision-uos" 2>/dev/null)
+    # lldpd is a second behind this script at times: asked again until it answers
+    n=0
+    until lldpcli configure system hostname "cm-$mac" > /dev/null 2>&1; do
+        n=$((n + 1))
+        if [ "$n" -ge 15 ]; then
+            say "lldp: lldpd does not answer: the module keeps the name lldpd gives it"
+            return 0
+        fi
+        sleep 1
+    done
+    lldpcli configure system description "cmprovision utility OS ${version:-unknown} (Linux $(uname -r) $(uname -m))" > /dev/null 2>&1
+    lldpcli configure ports eth0 lldp status tx-only > /dev/null 2>&1
+    say "lldp: announcing the module as cm-$mac"
+}
+
+if [ -n "$UOS_FOREGROUND" ]; then
+    identify
+else
+    identify &
+fi
+exit 0

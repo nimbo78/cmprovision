@@ -14,3 +14,5 @@ printf 'cmprovision utility OS %s\n\n' "$UOS_VERSION" > "$TARGET/etc/issue"
 # Same collector as the server-generated scripts; USB fallback works before any network download.
 install -D -m 644 "$BR2_EXTERNAL_CMPROVISION_PATH/../resources/shell/module-diagnostics.sh" "$TARGET/usr/lib/cmprovision/module-diagnostics.sh"
 chmod 755 "$TARGET/etc/init.d/S98diagnostics" "$TARGET/usr/sbin/cmprovision-diagnostics-agent"
+# lldpd (S60lldpd of buildroot) and the script that gives it the module's name
+chmod 755 "$TARGET/etc/init.d/S61lldpname"

@@ -89,6 +89,8 @@ class Ports extends Component
             'asOf' => self::asOf($stand['switches']),
             'map' => $stand['map'],
             'tile' => $tile,
+            // the utility OS of the stand runs on the device (it says so over LLDP): it booted and has not reached the server
+            'utilityOs' => $tile ? StandMap::utilityOs($tile) : null,
             // who made the device behind a port that says nothing: only for the ports whose device is not a module
             'vendors' => $tile && in_array($tile['state'], ['foreign', 'boot', 'quiet'], true) && $tile['macs']
                 ? array_filter(OuiVendors::names(array_slice($tile['macs'], 0, 8))) : [],
