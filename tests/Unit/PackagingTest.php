@@ -37,6 +37,9 @@ class PackagingTest extends TestCase
         $stop = strpos($restore, 'systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data');
         $this->assertNotFalse($stop);
         $this->assertLessThan(strpos($restore, 'restoring the data into'), $stop);
+        $secondStop = strpos($restore, 'systemctl stop cmprovision-wallboard', $stop + 1);
+        $this->assertGreaterThan(strpos($restore, 'apt-get install -y --allow-downgrades'), $secondStop);
+        $this->assertLessThan(strpos($restore, 'echo "restoring $APP"'), $secondStop);
         $this->assertStringContainsString('deb-systemd-invoke stop cmprovision-fpms.service cmprovision-fpms-data.service', $this->file('debian/prerm'));
         $this->assertStringContainsString('systemctl restart cmprovision-fpms', $restore);
         $this->assertStringContainsString('rm -f /etc/default/cmprovision-fpms.json', $this->file('debian/postrm'));

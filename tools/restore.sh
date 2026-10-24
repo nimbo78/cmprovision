@@ -61,6 +61,10 @@ else
         apt-get install -y --allow-downgrades "$DEB" || dpkg -i "$DEB"
     fi
 
+    # postinst may have started the watchers again. Release their readers before
+    # replacing the application and database from the snapshot below.
+    systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data 2>/dev/null || true
+
     echo "restoring $APP"
     tar xzf "$SRC/app.tar.gz" -C /
 fi
