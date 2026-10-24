@@ -61,10 +61,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..3690b1b
+index 0000000..ed7f0f9
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,425 @@
+@@ -0,0 +1,452 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -74,6 +74,8 @@ index 0000000..3690b1b
 +import json
 +import math
 +import os
++import pwd
++import stat
 +import tempfile
 +import threading
 +import time
@@ -100,16 +102,39 @@ index 0000000..3690b1b
 +PAGES = ("Overview", "Ports", "Devices", "Errors", "Station")
 +
 +
-+def read_json(path, limit=4096):
++def trusted_owners():
++    """Who may own a file this process reads (FPMS runs as root): root, the web user that writes the snapshot, and
++    whoever runs us (the tests)."""
++    owners = {0, os.geteuid()}
 +    try:
-+        with Path(path).open("rb") as stream:
++        owners.add(pwd.getpwnam("www-data").pw_uid)
++    except KeyError:
++        pass
++    return frozenset(owners)
++
++
++def read_json(path, limit=4096):
++    """A bounded read of a small file that another user may have prepared: a link is not followed, a pipe is not waited
++    for (a FIFO or /dev/watchdog put in its place would hang or reboot the box), only a regular file of a trusted owner
++    counts, and anything else is an empty answer."""
++    fd = None
++    try:
++        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
++        info = os.fstat(fd)
++        if not stat.S_ISREG(info.st_mode) or info.st_size > limit or info.st_uid not in trusted_owners():
++            return {}
++        with os.fdopen(fd, "rb") as stream:
++            fd = None
 +            raw = stream.read(limit + 1)
 +        if len(raw) > limit:
 +            return {}
 +        value = json.loads(raw)
 +        return value if isinstance(value, dict) else {}
-+    except (OSError, ValueError, TypeError):
++    except (OSError, ValueError, TypeError, RecursionError):
 +        return {}
++    finally:
++        if fd is not None:
++            os.close(fd)
 +
 +
 +def settings(path=CONFIG):
@@ -148,13 +173,31 @@ index 0000000..3690b1b
 +
 +
 +def number(value, default=0):
-+    return value if type(value) in (int, float) and math.isfinite(value) else default
++    if type(value) not in (int, float):
++        return default
++    try:
++        return value if math.isfinite(value) else default
++    except OverflowError:  # an integer beyond the range of a float
++        return default
 +
 +
 +def rate(value):
 +    if type(value) in (int, float):
 +        return f"{number(value) / 1048576:.1f} MiB/s" if number(value) > 0 else ""
 +    return text(value)
++
++
++def slow(value):
++    """SLOW +3:20: the run is that long past what the finished modules of its batch took (cmprovision 2.19.0)"""
++    seconds = int(number(value)) if type(value) in (int, float) else 0
++    return f"SLOW +{seconds // 60}:{seconds % 60:02d}" if seconds > 0 else ""
++
++
++def identity(row):
++    """What pins an open device card to one device: its serial, else its MAC, else its port and name (a silent device
++    on a port has neither a serial nor a MAC, and its name is the same "unknown device" as the next one's)"""
++    port = text(row.get("port"))
++    return text(row.get("serial") or row.get("mac") or ((port + " " if port else "") + text(row.get("name"))))
 +
 +
 +def remaining(value):
@@ -200,11 +243,7 @@ index 0000000..3690b1b
 +                self.problem = "Unsupported data" if data else "Waiting for data"
 +                self.data, self.age, self.detail = {}, None, None
 +                return
-+            if (
-+                type(generated) not in (int, float)
-+                or not math.isfinite(generated)
-+                or generated > now
-+            ):
++            if number(generated, None) is None or generated > now:
 +                self.data, self.problem, self.age, self.detail = (
 +                    {},
 +                    "Invalid timestamp",
@@ -218,7 +257,7 @@ index 0000000..3690b1b
 +    def rows(self):
 +        if self.page == 1:
 +            rows = []
-+            for switch in objects(self.data.get("switches"), 64):
++            for s_index, switch in enumerate(objects(self.data.get("switches"), 64)):
 +                if switch.get("answering") is False:
 +                    rows.append(
 +                        {
@@ -235,6 +274,8 @@ index 0000000..3690b1b
 +                                name=text(switch.get("name"))
 +                                + " "
 +                                + text(port.get("name")),
++                                # two switches may have the same name: the place of the switch in the list tells them apart
++                                pin=f"{s_index}:{text(port.get('name'))}",
 +                            )
 +                        )
 +            return rows[:512]
@@ -288,37 +329,22 @@ index 0000000..3690b1b
 +                    )
 +                    # Pin by identity: a port disappearing must not show another device's details.
 +                    self.detail = (
-+                        ("port", text(row.get("name")))
++                        ("port", text(row.get("pin") or row.get("name")))
 +                        if self.page == 1 and not serials
-+                        else (
-+                            "module",
-+                            text(
-+                                serials[0]
-+                                if serials
-+                                else row.get("serial")
-+                                or row.get("mac")
-+                                or row.get("name")
-+                            ),
-+                        )
++                        else ("module", text(serials[0]) if serials else identity(row))
 +                    )
 +                    self.scroll = 0
 +            return True
 +
 +    def detail_row(self):
-+        kind, identity = self.detail
++        kind, pinned = self.detail
 +        if kind == "port":
 +            return next(
-+                (p for p in self.rows() if text(p.get("name")) == identity), None
++                (p for p in self.rows() if text(p.get("pin") or p.get("name")) == pinned),
++                None,
 +            )
 +        rows = objects(self.data.get("modules")) + objects(self.data.get("unknown"))
-+        return next(
-+            (
-+                m
-+                for m in rows
-+                if text(m.get("serial") or m.get("mac") or m.get("name")) == identity
-+            ),
-+            None,
-+        )
++        return next((m for m in rows if identity(m) == pinned), None)
 +
 +    def frame(self):
 +        with self.lock:
@@ -378,6 +404,7 @@ index 0000000..3690b1b
 +                        row.get("detail"),
 +                        rate(row.get("speed")),
 +                        remaining(row.get("eta")),
++                        slow(row.get("slow")),
 +                        diag.get("title"),
 +                        row.get("advice"),
 +                    ]
@@ -492,13 +519,17 @@ index 0000000..3690b1b
 +            return image
 diff --git a/fpms/integrations/cmprovision_menu.py b/fpms/integrations/cmprovision_menu.py
 new file mode 100644
-index 0000000..dbecbed
+index 0000000..7621bb6
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_menu.py
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,98 @@
 +"""Adapter for the existing FPMS menu; the existing process owns all hardware."""
 +
++import logging
++
 +from .cmprovision import Panel, heartbeat, settings
++
++log = logging.getLogger(__name__)
 +
 +
 +class CmprovisionMenu:
@@ -532,6 +563,13 @@ index 0000000..dbecbed
 +        self.state["button_press_count"] += 1
 +
 +    def tick(self, publish=True):
++        # The stock menu's main loop calls this: nothing a snapshot holds may stop it.
++        try:
++            self._tick(publish)
++        except Exception:
++            log.exception("cmprovision menu tick failed")
++
++    def _tick(self, publish):
 +        with self.panel.lock:
 +            if publish:
 +                heartbeat(self.hardware)
@@ -559,16 +597,20 @@ index 0000000..dbecbed
 +
 +    def show(self):
 +        with self.panel.lock:
-+            self.panel.refresh()
-+            if not self.panel.enabled:
++            try:
++                self.panel.refresh()
++                if not self.panel.enabled:
++                    self.leave()
++                    return
++                self.state.update(
++                    start_up=False, display_state="page", option_selected=self.action
++                )
++                image = self.panel.frame()
++                self.state["image"] = image
++                self.draw_image(image)
++            except Exception:
++                log.exception("cmprovision page failed")
 +                self.leave()
-+                return
-+            self.state.update(
-+                start_up=False, display_state="page", option_selected=self.action
-+            )
-+            image = self.panel.frame()
-+            self.state["image"] = image
-+            self.draw_image(image)
 +
 +    def key(self, key):
 +        with self.panel.lock:
@@ -581,14 +623,15 @@ index 0000000..dbecbed
 +            return True
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..6721cf7
+index 0000000..614637c
 --- /dev/null
 +++ b/fpms/lite.py
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,145 @@
 +"""Compact station menu. No imports from the WLAN Pi application/provider."""
 +
 +import argparse
 +import json
++import logging
 +import signal
 +import time
 +from datetime import timedelta
@@ -676,12 +719,18 @@ index 0000000..6721cf7
 +                if now - last_heartbeat >= 3:
 +                    heartbeat(True)
 +                    last_heartbeat = now
-+                panel.refresh()
++                try:
++                    panel.refresh()
++                except Exception:
++                    logging.getLogger(__name__).exception("snapshot not usable")
 +                if args.sleep and now - last_key >= args.sleep and not sleeping:
 +                    screen.sleep()
 +                    sleeping = True
 +                if not sleeping and now - last_frame >= 2:
-+                    screen.drawImage(panel.frame().rotate(args.rotate))
++                    try:
++                        screen.drawImage(panel.frame().rotate(args.rotate))
++                    except Exception:
++                        logging.getLogger(__name__).exception("page not drawn")
 +                    last_frame = now
 +                if buttons.wait_edge_events(timedelta(seconds=0.2)):
 +                    for event in buttons.read_edge_events():
@@ -864,18 +913,21 @@ index 0000000..0e0ea7f
 +WantedBy=multi-user.target
 diff --git a/tests/test_cmprovision.py b/tests/test_cmprovision.py
 new file mode 100644
-index 0000000..e3468b1
+index 0000000..355209c
 --- /dev/null
 +++ b/tests/test_cmprovision.py
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,324 @@
 +import json
++import os
++import signal
 +import subprocess
 +import sys
 +from pathlib import Path
 +
 +import pytest
 +
-+from fpms.integrations.cmprovision import Panel, rate, remaining, settings
++from fpms.integrations import cmprovision
++from fpms.integrations.cmprovision import Panel, rate, read_json, remaining, settings, slow
 +from fpms.integrations.cmprovision_menu import CmprovisionMenu
 +
 +
@@ -1093,6 +1145,102 @@ index 0000000..e3468b1
 +    bridge.leave()
 +    bridge.tick(publish=False)
 +    assert not bridge.selected()
++
++
++def within(seconds, function, *args):
++    """A call that would hang on a pipe fails the test instead of the whole run."""
++    signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError("blocked")))
++    signal.alarm(seconds)
++    try:
++        return function(*args)
++    finally:
++        signal.alarm(0)
++
++
++def test_a_pipe_in_place_of_the_snapshot_does_not_hang_the_menu(panel, tmp_path):
++    # the web user owns the directory of the snapshot: it can put anything under that name
++    fifo = tmp_path / "fifo.json"
++    os.mkfifo(fifo)
++    assert within(5, read_json, fifo) == {}
++    panel.snapshot = fifo
++    within(5, panel.refresh, 102, True)
++    assert panel.data == {} and panel.problem in ("Waiting for data", "Unsupported data")
++
++
++def test_a_link_in_place_of_the_snapshot_is_not_followed(panel, tmp_path):
++    target = tmp_path / "elsewhere.json"
++    target.write_text(json.dumps({"version": 1, "generated_at": 100}))
++    link = tmp_path / "link.json"
++    link.symlink_to(target)
++    assert read_json(target) != {}
++    assert read_json(link) == {}
++    assert read_json(tmp_path) == {}  # a directory is not a snapshot
++
++
++def test_a_file_of_a_stranger_is_not_read(tmp_path, monkeypatch):
++    path = tmp_path / "a.json"
++    path.write_text("{}")
++    path.write_text(json.dumps({"a": 1}))
++    assert read_json(path) == {"a": 1}
++    monkeypatch.setattr(cmprovision, "trusted_owners", lambda: frozenset({os.geteuid() + 1}))
++    assert read_json(path) == {}
++
++
++@pytest.mark.parametrize("value", [10**400, -(10**400), 1e999, True, "100"])
++def test_an_absurd_timestamp_is_invalid_not_a_crash(panel, value):
++    data = json.loads(panel.snapshot.read_text())
++    data["generated_at"] = value
++    text = json.dumps(data).replace("Infinity", "1e999")
++    panel.snapshot.write_text(text)
++    panel.refresh(now=101, force=True)
++    assert panel.problem in ("Invalid timestamp", "Waiting for data", "Unsupported data")
++    assert panel.data == {}
++    assert panel.frame().size == (128, 128)
++
++
++def test_silent_devices_with_the_same_name_keep_their_own_cards(panel):
++    panel.data["unknown"] = [
++        {"port": "sw Gi0/3", "state": "quiet", "name": "unknown device", "mac": None, "detail": "first"},
++        {"port": "sw Gi0/4", "state": "quiet", "name": "unknown device", "mac": None, "detail": "second"},
++    ]
++    panel.page = 3
++    rows = panel.rows()
++    second = next(i for i, row in enumerate(rows) if row.get("detail") == "second")
++    panel.index = second
++    panel.key("CENTER")
++    assert panel.detail_row()["detail"] == "second"
++    panel.data["unknown"] = panel.data["unknown"][1:]
++    assert panel.detail_row()["detail"] == "second"
++    panel.data["unknown"] = []
++    assert panel.detail_row() is None
++
++
++def test_two_switches_with_the_same_name_do_not_share_a_port_card(panel):
++    one = {"name": "sw", "answering": True, "blocks": [{"ports": [{"name": "Gi0/1", "serials": [], "state": "free", "note": "one"}]}]}
++    two = {"name": "sw", "answering": True, "blocks": [{"ports": [{"name": "Gi0/1", "serials": [], "state": "free", "note": "two"}]}]}
++    panel.data["switches"] = [one, two]
++    panel.page = 1
++    panel.index = 1
++    panel.key("CENTER")
++    assert panel.detail_row()["note"] == "two"
++    panel.data["switches"] = [one]
++    assert panel.detail_row() is None  # the second switch left: not the first one's port
++
++
++def test_a_run_past_its_batch_is_told_on_the_card():
++    assert slow(200) == "SLOW +3:20"
++    assert slow(None) == slow(0) == slow(10**400) == slow("5") == ""
++
++
++def test_the_menu_survives_a_snapshot_that_breaks_the_panel(panel, monkeypatch):
++    state = {"display_state": "menu", "button_press_count": 0}
++    menu = []
++    shown = []
++    adapter = CmprovisionMenu(state, menu, shown.append, hardware=False, panel=panel)
++    monkeypatch.setattr(cmprovision.Panel, "refresh", lambda *a, **k: (_ for _ in ()).throw(OverflowError("boom")))
++    adapter.tick(publish=False)  # the main loop of the stock menu calls this
++    adapter.show()
++    assert shown == []
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08

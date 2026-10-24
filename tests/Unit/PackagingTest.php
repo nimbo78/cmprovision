@@ -40,7 +40,8 @@ class PackagingTest extends TestCase
         $secondStop = strpos($restore, 'systemctl stop cmprovision-wallboard', $stop + 1);
         $this->assertGreaterThan(strpos($restore, 'apt-get install -y --allow-downgrades'), $secondStop);
         $this->assertLessThan(strpos($restore, 'echo "restoring $APP"'), $secondStop);
-        $this->assertStringContainsString('deb-systemd-invoke stop cmprovision-fpms.service cmprovision-fpms-data.service', $this->file('debian/prerm'));
+        $this->assertStringContainsString('deb-systemd-invoke stop cmprovision-fpms.service cmprovision-fpms-data.service cmprovision-wallboard-data.service', $this->file('debian/prerm'),
+            'the shared data producer runs PHP: an upgrade must not leave it on the old code');
         $this->assertStringContainsString('systemctl restart cmprovision-fpms', $restore);
         $this->assertStringContainsString('rm -f /etc/default/cmprovision-fpms.json', $this->file('debian/postrm'));
     }

@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Cm;
 use App\Models\Project;
 use App\Models\UsbDiagnosticReport;
+use App\Services\Fpms;
 use App\Services\OuiVendors;
 use App\Services\Switch\Stand;
 
@@ -84,7 +85,8 @@ class WallboardSnapshot
             'host' => gethostname(), 'app_version' => AppVersion::text(), 'project' => $project?->name,
             'batch' => $batch ? ['title' => $batch->title(), 'open' => $batch->open, 'counts' => $batch->counts] : null,
             'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown,
-            'station' => DisplayStation::current()];
+            // for the FPMS panel only: the address and the interface come from NetworkManager and iw, which HDMI never needed
+            'station' => app(Fpms::class)->settings()['enabled'] ? DisplayStation::current() : null];
     }
 
     /* A port with a device that is not a module and is not booting: what it says about itself over LLDP or CDP, or else

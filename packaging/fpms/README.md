@@ -26,9 +26,10 @@ The WLAN Pi build remains the normal `wlanpi-fpms` package, with a distinct
 cmprovision itself never edits files under `/opt/wlanpi-fpms`.
 
 Both variants install `/usr/share/fpms/cmprovision.json` (protocol 1). Their display
-process writes a heartbeat to `/run/fpms/cmprovision.json`, including whether it
-actually owns a hardware display. The cmprovision watcher starts a data consumer
-only when enabled and that heartbeat is current. Old FPMS packages are not assumed compatible.
+process writes a heartbeat to `/run/fpms/cmprovision.json`, including whether an SPI
+device for the display exists (the display itself is write-only and cannot be read back). The
+cmprovision watcher starts a data consumer only when enabled and that heartbeat is current. Old
+FPMS packages are not assumed compatible. Raspberry Pi OS needs `dtparam=spi=on` for the Lite package.
 
 ## Validation status
 

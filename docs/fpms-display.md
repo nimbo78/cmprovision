@@ -24,14 +24,40 @@ The package recipes and current acceptance status are in
 3. Check **Enable cmprovision in FPMS**, then **Save FPMS settings**.
 4. Optionally check **Open cmprovision when FPMS starts**. On WLAN Pi it takes effect
    at the next FPMS startup; saving it does not interrupt someone using another page.
-5. Check the displayed status. `running` means the hardware display process is alive
-   and the shared snapshot is fresh. `not installed`, `incompatible`, `no hardware`
-   and `waiting for FPMS` distinguish missing support from a missing or stopped display.
+5. Check the displayed status. `running` means the FPMS display process is alive, an SPI device
+   for the display exists and the shared snapshot is fresh. The panel itself is write-only: nothing can
+   read back whether a screen is really connected, so `running` with a dark screen means a wiring or
+   power fault. `not installed`, `incompatible`, `no hardware` (no SPI device) and `waiting for FPMS`
+   distinguish missing support from a missing or stopped display process.
 
 The default is off. Turning it off removes the section from the WLAN Pi menu;
 normal WLAN Pi functions continue to work. On Lite the panel says the integration is off.
-The integration settings are included in normal cmprovision backups. A restore stops
-both display consumers before replacing the database, then starts their watchers again.
+The integration settings are included in normal cmprovision backups (a `--data-only` restore does not bring them back:
+enable the panel again). A restore stops both display consumers before replacing the database, then starts their watchers
+again. `apt remove` keeps `/etc/default/cmprovision-fpms.json`, so a WLAN Pi menu entry that was enabled stays and says
+`Waiting for data`; `apt purge` removes the file.
+
+## Raspberry Pi OS Lite: turn SPI on first
+
+Raspberry Pi OS ships with SPI off. Add `dtparam=spi=on` to `/boot/firmware/config.txt` and reboot, or the
+service stays idle and the status says `no hardware`. While `/dev/spidev0.0` does not exist the service
+touches no GPIO line at all. Once it exists, the service takes the display lines and pulls up the eight button
+lines (GPIO 5, 6, 13, 16, 19, 20, 21, 26): do not install it on a board where those pins serve something else.
+
+## Keeping the patched FPMS on WLAN Pi OS
+
+The package of the WLAN Pi profile is the upstream `wlanpi-fpms` with the version suffix `+cmprovision1`. The next
+upstream release in the WLAN Pi apt repository is newer than it, and `apt upgrade` would replace it with a stock
+FPMS: the cmprovision entry disappears and the status says `not installed`. Hold the package until a build of the new
+upstream version with the patch is ready: `sudo apt-mark hold wlanpi-fpms`, and `sudo apt-mark unhold wlanpi-fpms` to release it.
+
+## What the panel trusts
+
+The snapshot is written by the web user, and FPMS runs as root. The panel opens the snapshot without following a link
+and without waiting on a pipe, takes only a regular file of root or of the web user, bounds its size, and treats any
+value it cannot read as missing: a bad snapshot shows `Waiting for data` or `Invalid timestamp` and never stops the menu
+(a failure inside the cmprovision page returns to the stock menu). The root watcher of cmprovision does not open the
+snapshot at all: it judges the data by the age of the file.
 
 ## Pages and buttons
 
