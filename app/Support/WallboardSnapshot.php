@@ -19,6 +19,7 @@ class WallboardSnapshot
         // A display may be a little behind: it takes the Ports cache up to WALLBOARD_SECONDS old and asks a switch itself
         // only when that has run out, instead of every few seconds around the clock (the web UI's own polls refresh it too).
         $stand = Stand::current(null, 0, [], self::WALLBOARD_SECONDS);
+        $batch = BatchSummary::forDashboard();
         $map = $stand['map'] ?? null;
         $modules = $switches = $unknown = [];
         foreach ($map['switches'] ?? [] as $id => $switch)
@@ -36,7 +37,7 @@ class WallboardSnapshot
                     foreach ($tile['modules'] as $cm)
                     {
                         $serials[] = $cm->serial;
-                        $modules[$cm->serial] = $this->module($cm, $tile['label']);
+                        $modules[$cm->serial] = $this->module($cm, $tile['label'], $batch?->slow[$cm->id] ?? null);
                     }
                     $ports[] = ['name' => $tile['name'], 'number' => $tile['panel_number'] ?? $tile['number'],
                         'state' => $tile['state'] === 'foreign' ? 'unrecognized' : $tile['state'],
@@ -61,7 +62,7 @@ class WallboardSnapshot
             foreach (Cm::where('polled_at', '>', now()->subSeconds(Cm::ON_BENCH_SECONDS))
                 ->orWhere(function ($q) { $q->whereIn('phase', Cm::ACTIVE_PHASES)->where('provisioning_started_at', '>', now()->subHours(Cm::ACTIVE_HOURS)); })
                 ->orderBy('serial')->limit(96)->get() as $cm)
-                $modules[$cm->serial] = $this->module($cm, 'Port unknown');
+                $modules[$cm->serial] = $this->module($cm, 'Port unknown', $batch?->slow[$cm->id] ?? null);
 
         // USB observations are separate from provisioning runs and never increase batch success/failure counts.
         foreach (UsbDiagnosticReport::where('received_at', '>', now()->subSeconds(Cm::ON_BENCH_SECONDS))
@@ -78,7 +79,6 @@ class WallboardSnapshot
         $counts = ['done' => 0, 'running' => 0, 'failed' => 0, 'stale' => 0, 'unknown' => 0];
         foreach ($modules as $module)
             $counts[['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'stale'][$module['state']] ?? 'unknown']++;
-        $batch = BatchSummary::forDashboard();
         $project = Project::getActive();
         return ['version' => 1, 'generated_at' => now()->getTimestamp(), 'clock' => now()->format('Y-m-d H:i:s T'),
             'host' => gethostname(), 'app_version' => AppVersion::text(), 'project' => $project?->name,
@@ -108,7 +108,8 @@ class WallboardSnapshot
             'mac' => $mac, 'detail' => $detail, 'says' => (bool) $says];
     }
 
-    protected function module(Cm $cm, string $port): array
+    /* $slow: the seconds the run is past what the finished modules of its batch took (SlowRuns), null when it is not slow */
+    protected function module(Cm $cm, string $port, ?int $slow = null): array
     {
         $end = $cm->provisioning_complete_at ?? ($cm->phase === 'failed' ? $cm->phase_started_at : null) ?? now();
         // A module is named by its host name or its MAC; the serial only identifies the row (it matches the ports)
@@ -118,7 +119,7 @@ class WallboardSnapshot
             'percent' => $cm->progressPercent(), 'speed' => $cm->bytesPerSecond(), 'eta' => $cm->secondsLeft(),
             'bytes' => $cm->progress_bytes, 'total' => $cm->progress_total,
             'cycle' => $cm->provisioning_started_at ? max(0, $end->getTimestamp() - $cm->provisioning_started_at->getTimestamp()) : null,
-            'silent' => $cm->silentFor(), 'os_state' => $cm->os_state,
+            'silent' => $cm->silentFor(), 'slow' => $slow, 'os_state' => $cm->os_state,
             'diagnostics' => $this->diagnostics($cm->storage_diagnostics, $cm->storage_diagnostics_at),
             'steps' => array_values(array_unique(array_column($cm->timeline ?: [], 'phase'))),
             'advice' => FailureAdvice::for($cm)['advice'] ?? null, 'registered' => true];

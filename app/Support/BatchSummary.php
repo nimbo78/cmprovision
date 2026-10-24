@@ -7,13 +7,13 @@ use App\Models\NotificationBatch;
 
 /**
  * A batch as the top bar, the browser tab and the dashboard show it: its modules by state, the average time of a
- * finished module, how long the running ones still need, and the tab's state (a failure outweighs a module that
+ * finished module, how long the running ones still need, which of them are slow (SlowRuns), and the tab's state (a failure outweighs a module that
  * stopped reporting, which outweighs running modules). counts are the bots' (NotificationBatch::counts()); silent
  * modules are among their active ones, and running is the active ones that still report.
  */
 class BatchSummary
 {
-    public $batch, $project, $modules, $open, $counts, $silent, $running, $averageSeconds, $leftSeconds, $state;
+    public $batch, $project, $modules, $open, $counts, $silent, $running, $averageSeconds, $typicalSeconds, $slow, $leftSeconds, $state;
 
     /* The open batch, or null */
     public static function current()
@@ -47,6 +47,9 @@ class BatchSummary
         $durations = $done->filter(function ($cm) { return $cm->provisioning_started_at && $cm->provisioning_complete_at; })
             ->map(function ($cm) { return $cm->provisioning_complete_at->getTimestamp() - $cm->provisioning_started_at->getTimestamp(); });
         $this->averageSeconds = $durations->isEmpty() ? null : (int) round($durations->avg());
+        // the median of the finished runs, and the running ones that are well past it: [module id => seconds past it]
+        $this->typicalSeconds = SlowRuns::typical($this->modules);
+        $this->slow = SlowRuns::among($reporting, $this->typicalSeconds);
         // a silent module's estimate is frozen at its last report: only the reporting ones count
         $left = $reporting->map(function ($cm) { return $cm->secondsLeft(); })->filter(function ($s) { return $s !== null; });
         $this->leftSeconds = $left->isEmpty() ? null : (int) $left->max();

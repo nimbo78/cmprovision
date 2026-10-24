@@ -25,7 +25,7 @@
                         @endif
                     </div>
                     {{-- one string (escaped parts, the silent ones in the warning colour): Livewire's markers would split a sentence of inline ifs --}}
-                    @php($facts = array_filter([e($summary->modules->count().($summary->modules->count() === 1 ? ' module' : ' modules')), $summary->averageSeconds ? e($fmt::duration($summary->averageSeconds).' per module') : null, $summary->silent ? '<span class="text-warn">'.$summary->silent.' no report</span>' : null, $summary->open && $summary->leftSeconds !== null ? e('the running ones finish in '.($summary->leftSeconds < 60 ? 'under a minute' : 'about '.ceil($summary->leftSeconds / 60).' min')) : null]))
+                    @php($facts = array_filter([e($summary->modules->count().($summary->modules->count() === 1 ? ' module' : ' modules')), $summary->averageSeconds ? e($fmt::duration($summary->averageSeconds).' per module') : null, $summary->silent ? '<span class="text-warn">'.$summary->silent.' no report</span>' : null, $summary->open && $summary->slow ? '<span class="text-warn">'.count($summary->slow).' slower than the rest</span>' : null, $summary->open && $summary->leftSeconds !== null ? e('the running ones finish in '.($summary->leftSeconds < 60 ? 'under a minute' : 'about '.ceil($summary->leftSeconds / 60).' min')) : null]))
                     <div class="text-fg-muted">{!! implode(' · ', $facts) !!}</div>
                 </div>
                 @if ($summary->open)
@@ -64,6 +64,7 @@
                 @foreach ($modules as $m)
                     @php($percent = $m->progressPercent())
                     @php($silent = $m->silentFor())
+                    @php($slow = $summary?->slow[$m->id] ?? null)
                     @php($speed = $m->bytesPerSecond())
                     @php($left = $m->secondsLeft())
                     @php($step = $m->phase === 'failed' && $m->phase_detail ? 'Failed: '.$m->phase_detail : $m->phaseLabel())
@@ -86,6 +87,9 @@
                                 @endif
                                 @if ($silent)
                                     <span class="cmp-chip cmp-chip-stale ml-1">No report for {{ intdiv($silent, 60) }} min</span>
+                                @elseif ($slow !== null)
+                                    {{-- well past what the finished modules of the batch took as a rule --}}
+                                    <span class="cmp-chip cmp-chip-stale ml-1" title="The finished modules of this batch took {{ $fmt::duration($summary->typicalSeconds) }} as a rule">Slow +{{ $fmt::duration($slow) }}</span>
                                 @endif
                             </div>
                         </td>
