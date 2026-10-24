@@ -105,6 +105,7 @@ class SettingsTabsTest extends TestCase
             ->assertSeeLivewire(ReprovisionKey::class)
             ->assertSeeLivewire(ReprovisionAccounts::class)
             ->assertSeeLivewire(WallboardSettings::class)
+            ->assertSeeLivewire(\App\Http\Livewire\FpmsSettings::class)
             ->assertDontSeeLivewire(WifiSettings::class)
             ->assertDontSeeLivewire(NotificationSettings::class);
     }

@@ -9,7 +9,7 @@ class Wallboard extends Command
 {
     protected $signature = 'wallboard:snapshot {--watch : Keep producing a snapshot every two seconds}
         {--output= : Write each snapshot to this file (atomically, readable by everyone) instead of stdout}';
-    protected $description = 'Local read-only data for the HDMI wallboard';
+    protected $description = 'Shared local read-only data for HDMI and FPMS displays';
 
     public function handle(WallboardSnapshot $snapshots): int
     {

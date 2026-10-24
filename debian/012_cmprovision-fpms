@@ -1,0 +1,2 @@
+# No arguments; the helper validates a bounded fixed JSON schema on stdin.
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/fpms-control ""

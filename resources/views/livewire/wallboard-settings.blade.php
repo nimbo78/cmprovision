@@ -1,7 +1,7 @@
 <x-settings-card title="HDMI display" id="hdmi-display" wire:poll.10s
     description="An optional terminal dashboard for the support bench: switch ports, provisioning progress and saved device diagnostics.">
     <x-slot name="help">
-        No desktop or browser required. Auto starts the display at boot or when HDMI is connected, without login or key presses. Read-only display on tty8 (Alt+F8); Alt+F1 returns to the system console. Disconnecting HDMI in Auto stops the renderer and its data reader. A TV in standby may still report HDMI connected.
+        No desktop or browser required. Auto starts the display at boot or when HDMI is connected, without login or key presses. Read-only display on tty8 (Alt+F8); Alt+F1 returns to the system console. Disconnecting HDMI in Auto stops the renderer; data collection stops when neither HDMI nor FPMS needs it. A TV in standby may still report HDMI connected.
     </x-slot>
     <form wire:submit="save" class="space-y-4">
         <p class="text-sm text-fg-muted">HDMI: {{ !empty($status['connected']) ? 'connected' : 'not detected' }} · Display: {{ $status['state'] }}@if(!empty($status['resolution'])) · {{ $status['resolution'] }}@endif</p>

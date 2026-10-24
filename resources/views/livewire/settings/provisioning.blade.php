@@ -8,3 +8,5 @@
 </x-settings-card>
 
 <livewire:wallboard-settings />
+
+<livewire:fpms-settings />

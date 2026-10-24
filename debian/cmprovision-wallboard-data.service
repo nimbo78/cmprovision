@@ -1,7 +1,7 @@
 [Unit]
-Description=cmprovision HDMI stand display data (a read-only snapshot of the stand for the display)
-# Stops and restarts with the display; the display wants it, nothing else does.
-PartOf=cmprovision-wallboard-display.service
+Description=cmprovision shared HDMI and FPMS display data
+# Both consumers want this unit. Stop only after the last consumer releases it.
+StopWhenUnneeded=yes
 
 [Service]
 Type=simple

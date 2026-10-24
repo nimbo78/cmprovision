@@ -1,0 +1,21 @@
+[Unit]
+Description=cmprovision optional FPMS integration watcher
+After=local-fs.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/lib/cmprovision/fpms-control.py watch
+Restart=on-failure
+RestartSec=10
+RuntimeDirectory=cmprovision-fpms
+RuntimeDirectoryMode=0755
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=FPMS consumer of shared cmprovision display data
+PartOf=cmprovision-fpms.service
+Wants=cmprovision-wallboard-data.service
+After=cmprovision-wallboard-data.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/true
+RemainAfterExit=yes
+User=www-data
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes

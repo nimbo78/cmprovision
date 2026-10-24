@@ -34,6 +34,7 @@
         'reprovision-key': 'provisioning',
         'reprovision-accounts': 'provisioning',
         'hdmi-display': 'provisioning',
+        'fpms-display': 'provisioning',
         'notifications': 'notifications'
     };
 

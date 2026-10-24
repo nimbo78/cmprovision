@@ -83,7 +83,8 @@ class WallboardSnapshot
         return ['version' => 1, 'generated_at' => now()->getTimestamp(), 'clock' => now()->format('Y-m-d H:i:s T'),
             'host' => gethostname(), 'app_version' => AppVersion::text(), 'project' => $project?->name,
             'batch' => $batch ? ['title' => $batch->title(), 'open' => $batch->open, 'counts' => $batch->counts] : null,
-            'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown];
+            'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown,
+            'station' => DisplayStation::current()];
     }
 
     /* A port with a device that is not a module and is not booting: what it says about itself over LLDP or CDP, or else

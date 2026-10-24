@@ -183,10 +183,11 @@ class PackagingTest extends TestCase
         $this->assertStringContainsString("\nUser=www-data\n", $data);
         $this->assertStringNotContainsString('TTY', $data);
         $this->assertStringNotContainsString('StandardInput', $data);
-        $this->assertStringContainsString("\nPartOf=cmprovision-wallboard-display.service\n", $data);
+        $this->assertStringNotContainsString('PartOf=', $data, 'disconnecting HDMI must not stop data used by FPMS');
+        $this->assertStringContainsString("\nStopWhenUnneeded=yes\n", $data);
         $this->assertStringContainsString('wallboard:snapshot --watch --no-ansi --output=/run/cmprovision-wallboard-data/snapshot.json', $data);
         $this->assertStringContainsString("\nRuntimeDirectory=cmprovision-wallboard-data\n", $data);
-        $this->assertStringNotContainsString('[Install]', $data, 'only the display starts it');
+        $this->assertStringNotContainsString('[Install]', $data, 'only a display consumer starts it');
         $this->assertStringNotContainsString('[Install]', $display, 'only the watcher starts the display');
         // the renderer reads the file the data unit writes
         $this->assertStringContainsString("Path('/run/cmprovision-wallboard-data/snapshot.json')", $this->file('tools/hdmi-wallboard.py'));
@@ -195,12 +196,12 @@ class PackagingTest extends TestCase
     public function test_the_hdmi_units_are_installed_but_only_the_watcher_is_enabled_and_started()
     {
         $install = $this->file('debian/install');
-        foreach (['cmprovision-wallboard', 'cmprovision-wallboard-display', 'cmprovision-wallboard-data'] as $unit)
+        foreach (['cmprovision-wallboard', 'cmprovision-wallboard-display', 'cmprovision-wallboard-data', 'cmprovision-fpms', 'cmprovision-fpms-data'] as $unit)
             $this->assertStringContainsString("debian/$unit.service lib/systemd/system\n", $install);
         $this->assertStringContainsString("debian/011_cmprovision-wallboard etc/sudoers.d\n", $install);
         $rules = $this->file('debian/rules');
-        $this->assertStringContainsString("\tdh_installsystemd -Xcmprovision-wallboard-display.service -Xcmprovision-wallboard-data.service\n", $rules);
-        $this->assertStringContainsString("\tdh_installsystemd --no-enable --no-start cmprovision-wallboard-display.service cmprovision-wallboard-data.service\n", $rules);
+        $this->assertStringContainsString("\tdh_installsystemd -Xcmprovision-wallboard-display.service -Xcmprovision-wallboard-data.service -Xcmprovision-fpms-data.service\n", $rules);
+        $this->assertStringContainsString("\tdh_installsystemd --no-enable --no-start cmprovision-wallboard-display.service cmprovision-wallboard-data.service cmprovision-fpms-data.service\n", $rules);
         $this->assertStringContainsString("\tinstall -D -m 755 tools/hdmi-wallboard.py debian/cmprovision4/usr/lib/cmprovision/hdmi-wallboard.py\n", $rules);
         $this->assertStringContainsString("\tinstall -D -m 755 tools/wallboard-control debian/cmprovision4/usr/lib/cmprovision/wallboard-control\n", $rules);
         $watcher = $this->file('debian/cmprovision-wallboard.service');

@@ -1,0 +1,24 @@
+name: FPMS display
+on:
+  pull_request:
+    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tests/tools/*fpms*', 'tests/tools/check_display_systemd.py', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
+  push:
+    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tests/tools/*fpms*', 'tests/tools/check_display_systemd.py', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable-panel:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install 'Pillow>=10.1,<13' 'pytest>=8,<10'
+      - run: python -m pytest tests/tools/test_fpms_control.py -q
+      - run: sudo python3 tests/tools/check_display_systemd.py
+      - run: sh packaging/fpms/prepare.sh /tmp/cmprovision-fpms-source
+      - run: python -m pytest tests/test_cmprovision.py tests/test_portable_display.py -q
+        working-directory: /tmp/cmprovision-fpms-source
+      - run: sh /tmp/cmprovision-fpms-source/tools/build-lite-deb.sh /tmp/fpms-packages
