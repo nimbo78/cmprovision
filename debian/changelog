@@ -1,3 +1,12 @@
+cmprovision4 (2.23.0~dev1) unstable; urgency=medium
+
+  * Development build of the FPMS front panel (docs/fpms-display.md): the
+    provisioning status, the ports of the stand as a map, devices, errors
+    and the station on a 128x128 front panel, for Raspberry Pi OS Lite
+    (fpms-lite) and WLAN Pi OS (a patched wlanpi-fpms). Off by default.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Mon, 26 Oct 2026 00:05:00 +0300
+
 cmprovision4 (2.22.1) unstable; urgency=medium
 
   * The cm mark sits in the middle of its tile everywhere. The web mark
