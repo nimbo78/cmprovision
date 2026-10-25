@@ -1,3 +1,17 @@
+cmprovision4 (2.22.1) unstable; urgency=medium
+
+  * The cm mark sits in the middle of its tile everywhere. The web mark
+    (header, sign-in, Ports) and the touch icon had the line a little to
+    the right of the tile's centre, the favicon of the browser tab 5% to
+    the left. The line is now set on the tile's optical centre (the mean
+    of its bounding box and its centre of mass); the favicon, the touch
+    icon, favicon.ico and the PNGs for label editors are rebuilt from it.
+  * CMs -> Export for NetBox: the file name takes its date from the
+    application's clock (the same date; the test no longer depends on
+    the day it runs).
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 25 Oct 2026 23:05:00 +0300
+
 cmprovision4 (2.22.0) unstable; urgency=medium
 
   * Utility OS 2026.10.2: the module names itself to its switch over LLDP
