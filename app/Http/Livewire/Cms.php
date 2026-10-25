@@ -89,7 +89,7 @@ class Cms extends Component
         }
         return response()->streamDownload(function () use ($kind, $list) {
             echo NetBoxExport::csv($kind, $list);
-        }, 'netbox-'.$kind.'-'.date('Ymd').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
+        }, 'netbox-'.$kind.'-'.now()->format('Ymd').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     public function exportCSV()
