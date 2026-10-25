@@ -24,11 +24,14 @@ INK = '#2a1a0c'
 MARK_A, MARK_B = '#ffd37a', '#e2681c'          # T-Premium warm, light mode
 FLAT = '#e8873a'                                 # the gradient's middle, for places without gradients
 
-# B3: one line writes c and runs on into m (48 grid, centre line, stroke 3.6, round caps and joins)
-GLYPH = 'M20.79 18.77A6.1 6.1 0 1 0 18.7 30.6Q24.9 30.6 24.9 25.2V21.2A3 3 0 0 1 30.9 21.2V30.4M30.9 21.2A3 3 0 0 1 36.9 21.2V30.4'
+# B3: one line writes c and runs on into m (48 grid, centre line, stroke 3.6, round caps and joins).
+# Set on the optical centre of the tile (24, 24): the middle of the line's bounding box and its centre of mass, averaged.
+# The round c may reach a little nearer the edge than the straight stem of the m (margins 7.6 and 8.5); the m's weight
+# is what the centre of mass pulls back (it sits 0.5 right of the tile centre, the box 0.5 left of it).
+GLYPH = 'M19.58 18.54A6.1 6.1 0 1 0 17.49 30.37Q23.69 30.37 23.69 24.97V20.97A3 3 0 0 1 29.69 20.97V30.17M29.69 20.97A3 3 0 0 1 35.69 20.97V30.17'
 GLYPH_STROKE = 3.6
 # favicon cut: the same line, larger and heavier on a full-bleed tile
-FAV_SCALE, FAV_CENTRE, FAV_STROKE = 1.22, (26.9, 24.5), 4.6
+FAV_SCALE, FAV_CENTRE, FAV_STROKE = 1.22, (24.0, 24.0), 4.6   # scaled about the tile centre: stays centred
 
 
 def parse(d):
@@ -132,7 +135,7 @@ write('cmprovision-glyph-white.svg', P(glyph, '#fff'))
 write('cmprovision-knockout-black.svg', P(knockout, '#000'))
 
 # favicon cut: full-bleed tile, the line larger and heavier so it survives 16 px
-fav_line = scaled(parse(GLYPH), FAV_SCALE, *FAV_CENTRE, tx=24.0, ty=24.3)
+fav_line = scaled(parse(GLYPH), FAV_SCALE, *FAV_CENTRE, tx=24.0, ty=24.0)
 fav_glyph = stroked(fav_line, FAV_STROKE)
 fav_tile = rrect(0, 0, 48, 48, 12)
 write('cmprovision-favicon.svg', GRAD + P(fav_tile, 'url(#cmp-tile)') + P(fav_glyph, INK))
