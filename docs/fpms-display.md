@@ -64,23 +64,25 @@ snapshot at all: it judges the data by the age of the file.
 | Page | What it shows |
 | --- | --- |
 | Overview | Active project and counts of running, completed, failed and other devices |
-| Ports | Switch ports and their current states; select a module's port to see its details |
+| Ports | A map: the front panel of one switch as small cubes, eight columns to a screen (`1/3` when the switch has more), laid out as on the switch; the captions under the map name the selected port and its module, phase and progress |
 | Devices | Modules currently on the stand |
 | Errors | Failed, silent and unrecognized devices |
 | Station | Host/version, management address, provisioning interface and free storage |
 
+On the Ports map a filled cube is a module (green finished, blue running, red failed, amber silent), a hollow cube is a free port, an outlined one is another device or a booting board, and the cube marked `cm` is the port of the provisioner itself. The frame around a cube is the selected port; up/down move it through all the ports of all switches (the map changes to the switch of the selected port), the joystick centre opens the card of its module. A switch that does not answer is shown with `No response`.
+
 | Control | Action |
 | --- | --- |
-| Left / right | Previous / next page; left on Overview returns to the WLAN Pi menu (nothing on Lite) |
+| Left / right | Previous / next page |
 | Up / down | Select a row; scroll text in details |
 | Joystick centre | Open details; close details when already inside |
 | Button 1 | Overview |
 | Button 2 | Ports |
-| Button 3 | Close the details; nothing else (it never leaves the panel) |
+| Button 3 | Back: closes the details; with none open, returns to the WLAN Pi menu (Overview on Lite) |
 
 Outside the cmprovision page the buttons are the stock WLAN Pi ones: button 1 cycles the shortcuts (Reachability, LLDP, IP),
-button 2 rotates the display, button 3 jumps to the Reboot/Shutdown shortcut. That is why button 3 never leaves the cmprovision
-page: the next press would be the stock one.
+button 2 rotates the display, button 3 jumps to the Reboot/Shutdown shortcut. So the press of button 3 that comes within two seconds
+after leaving the cmprovision page is swallowed: a double press must not reach the Reboot shortcut.
 
 The controls cannot erase storage, start provisioning, change a project or switch off PoE.
 Inside a device card, the identity stays pinned: if it disconnects, the display says

@@ -11,7 +11,7 @@ index 3a71614..60579ab 100755
  execute_before_dh_clean:
  	rm -f splash/fpms-splash
 diff --git a/fpms/fpms.py b/fpms/fpms.py
-index 8873b80..7df543e 100755
+index 8873b80..497a1bc 100755
 --- a/fpms/fpms.py
 +++ b/fpms/fpms.py
 @@ -62,6 +62,7 @@ from .modules.reg_domain import RegDomain
@@ -22,18 +22,19 @@ index 8873b80..7df543e 100755
  
  FPMS_CONF_FILE = "/etc/wlanpi-fpms.conf"
  
-@@ -984,6 +985,10 @@ optional options:
+@@ -984,6 +985,11 @@ optional options:
              if item["name"] == "Apps":
                  menu.remove(item)
  
 +    cmprovision_menu = CmprovisionMenu(g_vars, menu, oled.drawImage,
-+                                     hardware=type(oled.device).__name__ != 'Virtual')
++                                     hardware=type(oled.device).__name__ != 'Virtual',
++                                     redraw=lambda: Page(g_vars).draw_page(g_vars, menu))
 +    cmprovision_menu.tick()
 +
      def button_press(gpio_pin, g_vars=g_vars):
          DOWN_KEY = BUTTONS_PINS["down"]
          UP_KEY = BUTTONS_PINS["up"]
-@@ -1022,6 +1027,10 @@ optional options:
+@@ -1022,6 +1028,10 @@ optional options:
              wakeup_screen()
              return
  
@@ -44,7 +45,7 @@ index 8873b80..7df543e 100755
          if gpio_pin == DOWN_KEY:
              g_vars["sig_fired"] = True
              menu_down()
-@@ -1281,6 +1290,7 @@ optional options:
+@@ -1281,6 +1291,7 @@ optional options:
  
      while running:
          try:
@@ -61,10 +62,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..0ffb2bd
+index 0000000..1caa8fa
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,455 @@
+@@ -0,0 +1,587 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -98,7 +99,11 @@ index 0000000..0ffb2bd
 +    "good": "#7ee2a0",
 +    "bad": "#ff9d93",
 +    "warn": "#ffcf7a",
++    "info": "#7fb2ff",
 +}
++MAP_COLUMNS = 8   # columns of the front panel on a screen: 8 cubes of 12 pixels with their gaps fill the width
++MAP_TOP = 49
++CUBE, GAP, BLOCK_GAP = 12, 2, 3
 +PAGES = ("Overview", "Ports", "Devices", "Errors", "Station")
 +
 +
@@ -225,6 +230,7 @@ index 0000000..0ffb2bd
 +        self.font = ImageFont.load_default(size=10)
 +        self.small = ImageFont.load_default(size=9)
 +        self.large = ImageFont.load_default(size=18)
++        self.tiny = ImageFont.load_default(size=8)
 +
 +    def refresh(self, now=None, force=False):
 +        now = time.time() if now is None else now
@@ -276,6 +282,7 @@ index 0000000..0ffb2bd
 +                                + text(port.get("name")),
 +                                # two switches may have the same name: the place of the switch in the list tells them apart
 +                                pin=f"{s_index}:{text(port.get('name'))}",
++                                portname=text(port.get("name")),
 +                            )
 +                        )
 +            return rows[:512]
@@ -296,14 +303,14 @@ index 0000000..0ffb2bd
 +        return rows[self.index] if rows else None
 +
 +    def key(self, key):
-+        """False means leave this integration (left on the first page, as the stock menu goes back with left). No operation
-+        writes to a device. Button 3 only closes a card: it never leaves, because the next press of the same button in the
-+        stock menu is the Reboot/Shutdown shortcut."""
++        """False means leave this integration: button 3 closes a card, and leaves when no card is open. Left and right only
++        turn the pages. No operation writes to a device."""
 +        with self.lock:
 +            if key == "KEY3":
-+                self.detail, self.scroll = None, 0
-+            elif key == "LEFT" and self.detail is None and self.page == 0:
-+                return False
++                if self.detail is not None:
++                    self.detail, self.scroll = None, 0
++                else:
++                    return False
 +            elif key == "KEY1":
 +                self.page, self.index, self.detail = 0, 0, None
 +            elif key == "KEY2":
@@ -347,8 +354,122 @@ index 0000000..0ffb2bd
 +        rows = objects(self.data.get("modules")) + objects(self.data.get("unknown"))
 +        return next((m for m in rows if identity(m) == pinned), None)
 +
++    def map_view(self):
++        """The ports of every switch as the columns of its front panel, in the order of rows(): [{name, answering, first,
++        columns: [(top, bottom, block)]}], where top and bottom are indexes into rows() or None. A block of two rows is read
++        column by column (1 above 2, 3 above 4); a block of one row (uplinks, SFP) sits on the lower row, as on the switch."""
++        views, n = [], 0
++        for switch in objects(self.data.get("switches"), 64):
++            view = {
++                "name": text(switch.get("name")),
++                "answering": switch.get("answering") is not False,
++                "first": n,
++                "columns": [],
++            }
++            if not view["answering"]:
++                n += 1
++            for b, block in enumerate(objects(switch.get("blocks"), 32)):
++                indexes = list(range(n, n + len(objects(block.get("ports"), 256))))
++                n += len(indexes)
++                if number(block.get("rows"), 1) >= 2:
++                    for i in range(0, len(indexes), 2):
++                        view["columns"].append(
++                            (indexes[i], indexes[i + 1] if i + 1 < len(indexes) else None, b)
++                        )
++                else:
++                    view["columns"] += [(None, i, b) for i in indexes]
++            views.append(view)
++        return views
++
++    def map_cells(self):
++        """What the map page draws: (switch name, bank, banks, switch answers, cells) for the switch of the selected row;
++        a cell is (x, y, index into rows())."""
++        self.selected()
++        for view in self.map_view():
++            columns = view["columns"]
++            mine = [
++                i
++                for i, (top, bottom, _) in enumerate(columns)
++                if self.index in (top, bottom)
++            ]
++            if not mine and not (not view["answering"] and view["first"] == self.index):
++                continue
++            banks = max(1, -(-len(columns) // MAP_COLUMNS))
++            bank = (mine[0] // MAP_COLUMNS) if mine else 0
++            cells, x, last = [], 4, None
++            for top, bottom, block in columns[bank * MAP_COLUMNS : (bank + 1) * MAP_COLUMNS]:
++                if last is not None and block != last:
++                    x += BLOCK_GAP
++                last = block
++                for y, index in ((MAP_TOP, top), (MAP_TOP + CUBE + GAP, bottom)):
++                    if index is not None and index < 512:
++                        cells.append((x, y, index))
++                x += CUBE + GAP
++            return view["name"], bank, banks, view["answering"], cells
++        return "", 0, 1, True, []
++
++    @staticmethod
++    def map_style(row):
++        """(fill, outline, ink) as names of COLORS: hollow is free, filled is a module, outlined is something else."""
++        filt, state = text(row.get("filter")), text(row.get("state"))
++        if row.get("server"):
++            return "accent", "accent", "bg"
++        if state == "module" or filt in ("ok", "run", "fail", "stale"):
++            key = {"ok": "good", "run": "info", "fail": "bad", "stale": "warn"}.get(filt, "muted")
++            return key, key, "bg"
++        key = {"free": "muted", "uplink": "accent", "boot": "info"}.get(state, "warn")
++        return None, key, key
++
++    def draw_map(self, draw, label):
++        rows = self.rows()
++        name, bank, banks, answering, cells = self.map_cells()
++        label(4, 36, name + (f"  {bank + 1}/{banks}" if banks > 1 else ""), "text", self.small, 120)
++        if not answering:
++            label(5, 60, "No response", "warn")
++        for x, y, index in cells:
++            row = rows[index] if index < len(rows) else {}
++            fill, outline, ink = self.map_style(row)
++            draw.rectangle(
++                (x, y, x + CUBE - 1, y + CUBE - 1),
++                fill=COLORS[fill] if fill else None,
++                outline=COLORS[outline],
++            )
++            caption = "cm" if row.get("server") else text(row.get("number"))
++            width = draw.textlength(caption, font=self.tiny)
++            draw.text(
++                (x + (CUBE - width) / 2, y + 1), caption, font=self.tiny, fill=COLORS[ink]
++            )
++            if index == self.index:
++                draw.rectangle((x - 1, y - 1, x + CUBE, y + CUBE), outline=COLORS["text"])
++        row = rows[self.index] if rows and self.index < len(rows) else None
++        if row:
++            module = next(
++                (
++                    m
++                    for m in objects(self.data.get("modules"))
++                    if text(m.get("serial")) in [text(s) for s in (row.get("serials") or [])]
++                ),
++                None,
++            )
++            port = text(row.get("portname")) or text(row.get("name"))
++            if module:
++                label(4, 82, text(module.get("name")), "text", self.small, 120)
++                percent = module.get("percent")
++                progress = f" {int(percent)}%" if type(percent) in (int, float) and math.isfinite(percent) else ""
++                label(4, 92, port + "  " + text(module.get("phase") or module.get("state")) + progress, "muted", self.small, 120)
++            else:
++                label(4, 82, port, "text", self.small, 120)
++                label(4, 92, text(row.get("state")), "muted", self.small, 120)
++        for x, fill, title in ((3, "good", "done"), (38, "info", "run"), (66, "bad", "fail"), (94, "muted", "free")):
++            hollow = title == "free"
++            draw.rectangle(
++                (x, 104, x + 6, 110), fill=None if hollow else COLORS[fill], outline=COLORS[fill]
++            )
++            label(x + 10, 102, title, "muted", self.small, 24)
++
 +    def frame(self):
 +        with self.lock:
++            scrollable = False
 +            image = Image.new("RGB", (128, 128), COLORS["bg"])
 +            draw = ImageDraw.Draw(image)
 +
@@ -423,13 +544,23 @@ index 0000000..0ffb2bd
 +                            wrapped.append(part)
 +                    self.scroll = min(self.scroll, max(0, len(wrapped) - 5))
 +                    for i, line in enumerate(wrapped[self.scroll : self.scroll + 5]):
-+                        label(5, 40 + i * 13, line)
++                        label(5, 40 + i * 13, line, width=114)
++                    if len(wrapped) > 5:
++                        # a bar on the right: where the window is among the lines, so the end of a card is seen as the end
++                        scrollable = True
++                        draw.rectangle((124, 40, 125, 104), fill=COLORS["line"])
++                        top = 40 + int(65 * self.scroll / len(wrapped))
++                        bottom = 40 + int(65 * (self.scroll + 5) / len(wrapped))
++                        draw.rectangle((124, top, 125, max(top + 2, bottom)), fill=COLORS["text"])
 +                    pct = row.get("percent")
 +                    if type(pct) in (int, float) and math.isfinite(pct):
++                        shade = {"ok": "good", "done": "good", "fail": "bad", "failed": "bad", "stale": "warn", "run": "info"}.get(
++                            text(row.get("state")), "accent"
++                        )
 +                        draw.rectangle((5, 108, 122, 111), fill=COLORS["line"])
 +                        draw.rectangle(
 +                            (5, 108, 5 + int(117 * max(0, min(100, pct)) / 100), 111),
-+                            fill=COLORS["accent"],
++                            fill=COLORS[shade],
 +                        )
 +            elif self.page == 0:
 +                label(
@@ -456,7 +587,9 @@ index 0000000..0ffb2bd
 +                        value += max(0, int(number(counts.get("stale"))))
 +                    label(x + 3, y + 1, str(min(999, value)), color, self.large, 32)
 +                    label(x + 27, y + 16, title, "muted", self.small, 30)
-+            elif self.page in (1, 2, 3):
++            elif self.page == 1:
++                self.draw_map(draw, label)
++            elif self.page in (2, 3):
 +                rows = self.rows()
 +                self.selected()
 +                if not rows:
@@ -513,32 +646,39 @@ index 0000000..0ffb2bd
 +            label(
 +                4,
 +                117,
-+                "Up/down scroll   3 Back"
++                ("Up/down scroll   3 Back" if scrollable else "3 Back")
 +                if self.detail
-+                else ("< Menu  > Page  OK" if self.page == 0 else "< > Page   OK Details"),
++                else ("< > Page   OK  3 Menu" if self.page in (1, 2, 3) else "< > Page   3 Menu"),
 +                "muted",
 +                self.small,
 +            )
 +            return image
 diff --git a/fpms/integrations/cmprovision_menu.py b/fpms/integrations/cmprovision_menu.py
 new file mode 100644
-index 0000000..7621bb6
+index 0000000..c8fe58e
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_menu.py
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,118 @@
 +"""Adapter for the existing FPMS menu; the existing process owns all hardware."""
 +
 +import logging
++import time
 +
 +from .cmprovision import Panel, heartbeat, settings
 +
 +log = logging.getLogger(__name__)
 +
++# In the stock menu button 3 is the Reboot/Shutdown shortcut: the press that follows a leave is not meant for it
++LEAVE_GUARD_SECONDS = 2.0
++
 +
 +class CmprovisionMenu:
-+    def __init__(self, state, menu, draw, hardware, panel=None):
++    def __init__(self, state, menu, draw, hardware, panel=None, redraw=None):
 +        self.state, self.menu, self.draw_image = state, menu, draw
 +        self.hardware = hardware
++        # draws the stock menu again: the screen shows our last frame until something does (found on a real panel)
++        self.redraw = redraw
++        self.left_at = -1e9
 +        self.panel = panel or Panel()
 +        self.started = False
 +
@@ -564,6 +704,12 @@ index 0000000..7621bb6
 +            start_up=False,
 +        )
 +        self.state["button_press_count"] += 1
++        self.left_at = time.monotonic()
++        if self.redraw:
++            try:
++                self.redraw()
++            except Exception:
++                log.exception("stock menu not redrawn")
 +
 +    def tick(self, publish=True):
 +        # The stock menu's main loop calls this: nothing a snapshot holds may stop it.
@@ -609,7 +755,13 @@ index 0000000..7621bb6
 +                    start_up=False, display_state="page", option_selected=self.action
 +                )
 +                image = self.panel.frame()
-+                self.state["image"] = image
++                # The stock menu draws with an ImageDraw that belongs to state["image"] and shows that very object: the frame
++                # goes into it, the object is not replaced (a replaced image left the stock pages drawn out of sight and our
++                # last frame on the screen, whatever the buttons did).
++                shared = self.state.get("image")
++                if shared is not None and shared.size == image.size and shared.mode == image.mode:
++                    shared.paste(image)
++                    image = shared
 +                self.draw_image(image)
 +            except Exception:
 +                log.exception("cmprovision page failed")
@@ -618,7 +770,8 @@ index 0000000..7621bb6
 +    def key(self, key):
 +        with self.panel.lock:
 +            if not self.selected():
-+                return False
++                # a second press of button 3 right after leaving would be the stock Reboot shortcut: it is swallowed
++                return key == "KEY3" and time.monotonic() - self.left_at < LEAVE_GUARD_SECONDS
 +            if not self.panel.key(key):
 +                self.leave()
 +            else:
@@ -916,10 +1069,10 @@ index 0000000..0e0ea7f
 +WantedBy=multi-user.target
 diff --git a/tests/test_cmprovision.py b/tests/test_cmprovision.py
 new file mode 100644
-index 0000000..bba4d5b
+index 0000000..2202f84
 --- /dev/null
 +++ b/tests/test_cmprovision.py
-@@ -0,0 +1,367 @@
+@@ -0,0 +1,472 @@
 +import json
 +import os
 +import signal
@@ -1031,9 +1184,7 @@ index 0000000..bba4d5b
 +    assert panel.frame().size == (128, 128)
 +    panel.key("KEY3")
 +    assert panel.detail is None
-+    assert panel.key("KEY3") is True  # button 3 never leaves
-+    panel.key("KEY1")
-+    assert panel.key("LEFT") is False  # left on the first page does
++    assert panel.key("KEY3") is False  # with no card open button 3 leaves
 +
 +
 +def test_all_pages_render_and_errors_include_unregistered_devices(panel):
@@ -1126,9 +1277,6 @@ index 0000000..bba4d5b
 +    assert bridge.selected()
 +    assert bridge.key("KEY2")
 +    assert bridge.key("KEY3")
-+    assert bridge.selected()  # button 3 only closes cards
-+    assert bridge.key("KEY1")
-+    assert bridge.key("LEFT")  # left on the first page goes back to the stock menu
 +    assert not bridge.selected()
 +    bridge.action()
 +    panel.config.write_text(json.dumps({"enabled": False, "open_on_start": False}))
@@ -1136,6 +1284,8 @@ index 0000000..bba4d5b
 +    bridge.tick(publish=False)
 +    assert [m["name"] for m in menu] == ["Network", "System"]
 +    assert state["display_state"] == "menu"
++    assert bridge.key("KEY3")  # the press right after the leave is swallowed (the stock Reboot shortcut)
++    bridge.left_at = -1e9
 +    assert not bridge.key("KEY3")  # normal FPMS shortcuts work outside the integration
 +
 +
@@ -1260,33 +1410,141 @@ index 0000000..bba4d5b
 +    assert row["slow"] == 215 and slow(row["slow"]) == "SLOW +3:35"
 +
 +
-+def test_button_3_never_leaves_and_left_on_the_first_page_does(panel):
-+    # in the stock menu the next press of button 3 is the Reboot/Shutdown shortcut: it must not be one press away
-+    assert panel.key("KEY3") is True and panel.page == 0
++def test_button_3_closes_a_card_then_leaves_and_left_and_right_only_turn_the_pages(panel):
++    assert panel.key("LEFT") is True and panel.page == len(cmprovision.PAGES) - 1  # round the end
++    assert panel.key("RIGHT") is True and panel.page == 0
 +    panel.key("RIGHT")
-+    assert panel.page == 1
-+    assert panel.key("KEY3") is True and panel.page == 1
 +    panel.key("CENTER")
 +    assert panel.detail is not None
-+    assert panel.key("KEY3") is True and panel.detail is None
-+    assert panel.key("LEFT") is True and panel.page == 0
-+    assert panel.key("LEFT") is False
-+    panel.key("RIGHT")
-+    panel.key("CENTER")
-+    assert panel.key("LEFT") is True and panel.detail is None and panel.page == 1  # left closes a card first
++    assert panel.key("KEY3") is True and panel.detail is None  # the first press closes the card
++    assert panel.key("KEY3") is False  # the second leaves
 +
 +
-+def test_the_menu_leaves_to_the_stock_menu_with_left_on_the_first_page(panel):
++def test_the_press_after_a_leave_is_swallowed_and_a_later_one_is_the_stock_menus(panel, monkeypatch):
++    from fpms.integrations import cmprovision_menu
++
++    clock = {"now": 100.0}
++    monkeypatch.setattr(cmprovision_menu.time, "monotonic", lambda: clock["now"])
 +    state = {"display_state": "menu", "button_press_count": 0, "option_selected": None, "current_menu_location": [0]}
-+    menu = []
-+    adapter = CmprovisionMenu(state, menu, lambda image: None, hardware=False, panel=panel)
++    adapter = CmprovisionMenu(state, [], lambda image: None, hardware=False, panel=panel)
 +    adapter.tick(publish=False)
 +    adapter.show()
-+    assert adapter.selected()
-+    assert adapter.key("KEY3") is True and adapter.selected()
-+    assert adapter.key("LEFT") is True
++    assert adapter.key("KEY3") is True   # leaves
 +    assert not adapter.selected() and state["display_state"] == "menu"
-+    assert adapter.key("KEY3") is False   # now it is the stock menu's button
++    clock["now"] += 0.5
++    assert adapter.key("KEY3") is True   # in a hurry: the stock Reboot shortcut must not get it
++    clock["now"] += 3
++    assert adapter.key("KEY3") is False  # later: the stock menu's own button
++    assert adapter.key("KEY2") is False  # other buttons are never held back
++
++
++def test_the_frame_goes_into_the_image_of_the_stock_menu_and_does_not_replace_it(panel):
++    from PIL import Image
++
++    shared = Image.new("RGB", (128, 128))
++    state = {"display_state": "menu", "button_press_count": 0, "option_selected": None, "current_menu_location": [0], "image": shared}
++    drawn = []
++    adapter = CmprovisionMenu(state, [], drawn.append, hardware=False, panel=panel)
++    adapter.show()
++    assert state["image"] is shared, "the stock pages draw with an ImageDraw bound to this object"
++    assert drawn == [shared]
++    assert shared.getbbox() is not None and shared.tobytes() == panel.frame().tobytes()
++
++
++def test_leaving_redraws_the_stock_menu(panel):
++    state = {"display_state": "menu", "button_press_count": 0, "option_selected": None, "current_menu_location": [0]}
++    redraws = []
++    adapter = CmprovisionMenu(state, [], lambda image: None, hardware=False, panel=panel, redraw=lambda: redraws.append(1))
++    adapter.tick(publish=False)
++    adapter.show()
++    assert adapter.key("KEY3") is True
++    assert state["display_state"] == "menu" and redraws == [1]
++    # a stock drawing that fails must not stop the menu
++    broken = CmprovisionMenu(state, [], lambda image: None, hardware=False, panel=panel, redraw=lambda: 1 / 0)
++    broken.leave()
++
++
++def map_snapshot(count=20, rows=2):
++    """one switch of $count ports in a block, and a second that does not answer"""
++    ports = []
++    states = [("ok", "module", ["m1"]), ("run", "module", ["m2"]), ("fail", "module", ["m3"]), ("free", "free", []), ("stale", "module", ["m4"]), ("uplink", "uplink", [])]
++    for i in range(count):
++        filt, state, serials = states[i % len(states)]
++        ports.append({"name": f"Gi0/{i + 1}", "number": i + 1, "state": state, "filter": filt, "serials": serials, "server": False})
++    return {
++        "switches": [{"name": "sw-one", "answering": True, "blocks": [{"rows": rows, "ports": ports}]},
++                     {"name": "sw-two", "answering": False, "blocks": []}],
++        "modules": [{"serial": "m1", "name": "wlanpi-one", "phase": "done", "state": "ok", "percent": 100},
++                    {"serial": "m2", "name": "wlanpi-two", "phase": "write", "state": "run", "percent": 42}],
++    }
++
++
++def test_the_ports_page_is_a_map_of_cubes_filled_by_state(panel):
++    panel.data.update(map_snapshot())
++    panel.page, panel.index = 1, 0
++    name, bank, banks, answering, cells = panel.map_cells()
++    assert (name, bank, answering) == ("sw-one", 0, True) and banks == 2
++    image = panel.frame()
++    colors = {index: image.getpixel((x + 1, y + 1)) for x, y, index in cells}
++    rgb = lambda key: tuple(int(cmprovision.COLORS[key][i : i + 2], 16) for i in (1, 3, 5))
++    assert colors[0] == rgb("good") and colors[1] == rgb("info") and colors[2] == rgb("bad")
++    assert colors[3] == rgb("bg") and colors[4] == rgb("warn")   # a free port is hollow: the inside is the background
++
++
++def test_a_free_port_is_an_outline_and_the_cursor_marks_the_selected_one(panel):
++    panel.data.update(map_snapshot())
++    panel.page, panel.index = 1, 3
++    x, y, _ = next(c for c in panel.map_cells()[4] if c[2] == 3)
++    image = panel.frame()
++    assert image.getpixel((x + 2, y + 2)) == (0, 0, 0)
++    assert image.getpixel((x - 1, y - 1)) != (0, 0, 0)   # the cursor goes round the cube
++
++
++def test_the_map_turns_to_the_bank_of_the_selected_port_and_goes_on_through_the_ports(panel):
++    panel.data.update(map_snapshot(count=20))   # ten columns: two banks of eight
++    panel.page, panel.index = 1, 0
++    assert panel.map_cells()[1:3] == (0, 2)
++    for _ in range(17):
++        panel.key("DOWN")
++    name, bank, banks, answering, cells = panel.map_cells()
++    assert (bank, banks) == (1, 2) and panel.index == 17
++    assert all(index >= 16 for _, _, index in cells)   # the ports 17 to 20 are on the second screen
++    assert panel.frame().size == (128, 128)
++
++
++def test_a_switch_that_does_not_answer_is_said_so_on_the_map(panel):
++    panel.data.update(map_snapshot(count=4))
++    panel.page, panel.index = 1, 4   # the row of the second switch
++    assert panel.map_cells()[0] == "sw-two" and panel.map_cells()[3] is False
++    assert panel.frame().size == (128, 128)
++
++
++def test_uplinks_sit_on_the_lower_row_and_blocks_are_told_apart(panel):
++    data = map_snapshot(count=4)
++    data["switches"][0]["blocks"] = [
++        {"rows": 2, "ports": [{"name": "Gi0/1", "number": 1, "state": "free", "filter": "free", "serials": []}, {"name": "Gi0/2", "number": 2, "state": "free", "filter": "free", "serials": []}]},
++        {"rows": 1, "ports": [{"name": "Gi0/9", "number": 9, "state": "uplink", "filter": "uplink", "serials": []}]},
++    ]
++    panel.data.update(data)
++    panel.page, panel.index = 1, 0
++    cells = {index: (x, y) for x, y, index in panel.map_cells()[4]}
++    assert cells[0][1] < cells[1][1] and cells[0][0] == cells[1][0]   # 1 above 2
++    assert cells[2][1] == cells[1][1]                                 # the uplink on the lower row
++    assert cells[2][0] - cells[1][0] == cmprovision.CUBE + cmprovision.GAP + cmprovision.BLOCK_GAP
++
++
++def test_the_card_has_a_scroll_bar_only_when_there_is_more_and_the_bar_of_progress_has_the_colour_of_the_state(panel):
++    rgb = lambda key: tuple(int(cmprovision.COLORS[key][i : i + 2], 16) for i in (1, 3, 5))
++    panel.page = 2
++    panel.index = 0
++    panel.key("CENTER")
++    row = panel.detail_row()
++    row.update(percent=100, detail="x " * 80)
++    image = panel.frame()
++    assert image.getpixel((125, 45)) != (0, 0, 0)       # the bar of the scroll is on the right
++    assert image.getpixel((60, 109)) == rgb("bad")      # this module failed: its bar is red, whatever the percent
++    panel.data["modules"][0].update(detail="short", percent=100)
++    assert panel.frame().getpixel((125, 45)) == (0, 0, 0)  # nothing more below: no bar
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
