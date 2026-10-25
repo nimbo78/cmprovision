@@ -6,7 +6,10 @@
 # cmprovision brand
 
 One line writes the c and, without lifting, runs on into the m: a batch of modules going through the stand. The line
-sits on a warm tile, and the name is set in Nunito Bold, the app's own typeface.
+sits on a warm tile, and the name is set in Nunito Bold, the app's own typeface. The line is set on the tile's optical
+centre, the mean of the middle of its bounding box and its centre of mass: the round c reaches a little nearer the edge
+than the straight stem of the m (7.6 and 8.5 of 44 units), and the heavier m is what the centre of mass balances. The
+favicon is the same line scaled about that centre.
 
 ## Files
 

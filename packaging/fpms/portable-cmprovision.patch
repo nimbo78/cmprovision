@@ -62,10 +62,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..1caa8fa
+index 0000000..7317f36
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,587 @@
+@@ -0,0 +1,590 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -436,8 +436,10 @@ index 0000000..1caa8fa
 +            )
 +            caption = "cm" if row.get("server") else text(row.get("number"))
 +            width = draw.textlength(caption, font=self.tiny)
++            # digits stand one pixel from the top; the lowercase "cm" has no height above its x-height: one pixel higher
++            top = y if row.get("server") else y + 1
 +            draw.text(
-+                (x + (CUBE - width) / 2, y + 1), caption, font=self.tiny, fill=COLORS[ink]
++                (x + (CUBE - width) / 2, top), caption, font=self.tiny, fill=COLORS[ink]
 +            )
 +            if index == self.index:
 +                draw.rectangle((x - 1, y - 1, x + CUBE, y + CUBE), outline=COLORS["text"])
@@ -481,7 +483,8 @@ index 0000000..1caa8fa
 +                draw.text((x, y), value, font=font, fill=COLORS[color])
 +
 +            draw.rounded_rectangle((3, 3, 21, 19), radius=3, fill=COLORS["accent"])
-+            draw.text((5, 5), "cm", font=self.small, fill=COLORS["bg"])
++            # the tile is 3..21 by 3..19 and the lettering is 13 px wide (x 6..18) and 5 px high (y 9..13): the same margin on both sides
++            draw.text((6, 5), "cm", font=self.small, fill=COLORS["bg"])
 +            label(
 +                27,
 +                4,
@@ -1069,10 +1072,10 @@ index 0000000..0e0ea7f
 +WantedBy=multi-user.target
 diff --git a/tests/test_cmprovision.py b/tests/test_cmprovision.py
 new file mode 100644
-index 0000000..2202f84
+index 0000000..c9665fd
 --- /dev/null
 +++ b/tests/test_cmprovision.py
-@@ -0,0 +1,472 @@
+@@ -0,0 +1,502 @@
 +import json
 +import os
 +import signal
@@ -1545,6 +1548,36 @@ index 0000000..2202f84
 +    assert image.getpixel((60, 109)) == rgb("bad")      # this module failed: its bar is red, whatever the percent
 +    panel.data["modules"][0].update(detail="short", percent=100)
 +    assert panel.frame().getpixel((125, 45)) == (0, 0, 0)  # nothing more below: no bar
++
++
++def centre_of_ink(image, box, background):
++    """The middle of the pixels of box that are clearly not the background colour."""
++    x0, y0, x1, y1 = box
++    points = [
++        (x, y)
++        for x in range(x0, x1 + 1)
++        for y in range(y0, y1 + 1)
++        if sum(abs(a - b) for a, b in zip(image.getpixel((x, y)), background)) > 150
++    ]
++    xs, ys = [p[0] for p in points], [p[1] for p in points]
++    return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
++
++
++def test_the_cm_of_the_header_tile_sits_in_the_middle_of_it(panel):
++    rgb = lambda key: tuple(int(cmprovision.COLORS[key][i : i + 2], 16) for i in (1, 3, 5))
++    cx, cy = centre_of_ink(panel.frame(), (5, 5, 19, 17), rgb("accent"))   # the tile is (3, 3)-(21, 19)
++    assert abs(cx - 12) <= 0.5 and abs(cy - 11) <= 0.5
++
++
++def test_the_cm_of_the_provisioners_cube_sits_in_the_middle_of_it(panel):
++    rgb = lambda key: tuple(int(cmprovision.COLORS[key][i : i + 2], 16) for i in (1, 3, 5))
++    data = map_snapshot(count=4)
++    data["switches"][0]["blocks"][0]["ports"][0]["server"] = True
++    panel.data.update(data)
++    panel.page, panel.index = 1, 1
++    x, y, _ = next(c for c in panel.map_cells()[4] if c[2] == 0)
++    cx, cy = centre_of_ink(panel.frame(), (x, y, x + cmprovision.CUBE - 1, y + cmprovision.CUBE - 1), rgb("accent"))
++    assert abs(cx - (x + (cmprovision.CUBE - 1) / 2)) <= 0.5 and abs(cy - (y + (cmprovision.CUBE - 1) / 2)) <= 0.5
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
