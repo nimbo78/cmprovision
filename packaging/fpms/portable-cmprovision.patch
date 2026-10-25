@@ -61,10 +61,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..bfc7ac6
+index 0000000..0ffb2bd
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,452 @@
+@@ -0,0 +1,455 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -296,13 +296,14 @@ index 0000000..bfc7ac6
 +        return rows[self.index] if rows else None
 +
 +    def key(self, key):
-+        """False means leave this integration. No operation writes to a device."""
++        """False means leave this integration (left on the first page, as the stock menu goes back with left). No operation
++        writes to a device. Button 3 only closes a card: it never leaves, because the next press of the same button in the
++        stock menu is the Reboot/Shutdown shortcut."""
 +        with self.lock:
 +            if key == "KEY3":
-+                if self.detail is not None:
-+                    self.detail, self.scroll = None, 0
-+                else:
-+                    return False
++                self.detail, self.scroll = None, 0
++            elif key == "LEFT" and self.detail is None and self.page == 0:
++                return False
 +            elif key == "KEY1":
 +                self.page, self.index, self.detail = 0, 0, None
 +            elif key == "KEY2":
@@ -512,7 +513,9 @@ index 0000000..bfc7ac6
 +            label(
 +                4,
 +                117,
-+                "Up/down scroll   3 Back" if self.detail else "< > Page   OK Details",
++                "Up/down scroll   3 Back"
++                if self.detail
++                else ("< Menu  > Page  OK" if self.page == 0 else "< > Page   OK Details"),
 +                "muted",
 +                self.small,
 +            )
@@ -913,10 +916,10 @@ index 0000000..0e0ea7f
 +WantedBy=multi-user.target
 diff --git a/tests/test_cmprovision.py b/tests/test_cmprovision.py
 new file mode 100644
-index 0000000..5399439
+index 0000000..bba4d5b
 --- /dev/null
 +++ b/tests/test_cmprovision.py
-@@ -0,0 +1,333 @@
+@@ -0,0 +1,367 @@
 +import json
 +import os
 +import signal
@@ -1028,7 +1031,9 @@ index 0000000..5399439
 +    assert panel.frame().size == (128, 128)
 +    panel.key("KEY3")
 +    assert panel.detail is None
-+    assert panel.key("KEY3") is False
++    assert panel.key("KEY3") is True  # button 3 never leaves
++    panel.key("KEY1")
++    assert panel.key("LEFT") is False  # left on the first page does
 +
 +
 +def test_all_pages_render_and_errors_include_unregistered_devices(panel):
@@ -1121,6 +1126,9 @@ index 0000000..5399439
 +    assert bridge.selected()
 +    assert bridge.key("KEY2")
 +    assert bridge.key("KEY3")
++    assert bridge.selected()  # button 3 only closes cards
++    assert bridge.key("KEY1")
++    assert bridge.key("LEFT")  # left on the first page goes back to the stock menu
 +    assert not bridge.selected()
 +    bridge.action()
 +    panel.config.write_text(json.dumps({"enabled": False, "open_on_start": False}))
@@ -1250,6 +1258,35 @@ index 0000000..5399439
 +    panel.key("CENTER")
 +    row = panel.detail_row()
 +    assert row["slow"] == 215 and slow(row["slow"]) == "SLOW +3:35"
++
++
++def test_button_3_never_leaves_and_left_on_the_first_page_does(panel):
++    # in the stock menu the next press of button 3 is the Reboot/Shutdown shortcut: it must not be one press away
++    assert panel.key("KEY3") is True and panel.page == 0
++    panel.key("RIGHT")
++    assert panel.page == 1
++    assert panel.key("KEY3") is True and panel.page == 1
++    panel.key("CENTER")
++    assert panel.detail is not None
++    assert panel.key("KEY3") is True and panel.detail is None
++    assert panel.key("LEFT") is True and panel.page == 0
++    assert panel.key("LEFT") is False
++    panel.key("RIGHT")
++    panel.key("CENTER")
++    assert panel.key("LEFT") is True and panel.detail is None and panel.page == 1  # left closes a card first
++
++
++def test_the_menu_leaves_to_the_stock_menu_with_left_on_the_first_page(panel):
++    state = {"display_state": "menu", "button_press_count": 0, "option_selected": None, "current_menu_location": [0]}
++    menu = []
++    adapter = CmprovisionMenu(state, menu, lambda image: None, hardware=False, panel=panel)
++    adapter.tick(publish=False)
++    adapter.show()
++    assert adapter.selected()
++    assert adapter.key("KEY3") is True and adapter.selected()
++    assert adapter.key("LEFT") is True
++    assert not adapter.selected() and state["display_state"] == "menu"
++    assert adapter.key("KEY3") is False   # now it is the stock menu's button
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08

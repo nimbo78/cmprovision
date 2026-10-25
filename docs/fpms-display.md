@@ -71,12 +71,16 @@ snapshot at all: it judges the data by the age of the file.
 
 | Control | Action |
 | --- | --- |
-| Left / right | Previous / next page |
+| Left / right | Previous / next page; left on Overview returns to the WLAN Pi menu (nothing on Lite) |
 | Up / down | Select a row; scroll text in details |
 | Joystick centre | Open details; close details when already inside |
 | Button 1 | Overview |
 | Button 2 | Ports |
-| Button 3 | Back; from a top-level page, return to the WLAN Pi menu (Overview on Lite) |
+| Button 3 | Close the details; nothing else (it never leaves the panel) |
+
+Outside the cmprovision page the buttons are the stock WLAN Pi ones: button 1 cycles the shortcuts (Reachability, LLDP, IP),
+button 2 rotates the display, button 3 jumps to the Reboot/Shutdown shortcut. That is why button 3 never leaves the cmprovision
+page: the next press would be the stock one.
 
 The controls cannot erase storage, start provisioning, change a project or switch off PoE.
 Inside a device card, the identity stays pinned: if it disconnects, the display says
