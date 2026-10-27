@@ -19,8 +19,9 @@ class Host extends Model
         {
             for ($j = 0; $j < 256; $j++)
             {
-                if ($i == 0 && ($j == 0 || $j == 1))
-                    continue; /* Skip network IP 172.20.0.0 and our IP 172.20.0.1 */
+                if ($i == 0 && $j <= 10)
+                    continue; /* 172.20.0.0 is the network, .1 the provisioner, .2 to .10 are kept for hosts set by hand (a second
+                                 station on the stand); the DHCP pool of dnsmasq.conf starts at .11 too */
 
                 $ip = "$net.$i.$j";
                 if (!Host::firstWhere('ip', $ip))

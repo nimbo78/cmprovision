@@ -289,6 +289,36 @@ class PackagingTest extends TestCase
         $this->assertStringContainsString("Restart=on-failure\nRestartSec=2\n", $rpiboot);
     }
 
+    public function test_the_dhcp_pool_starts_at_eleven_in_the_live_file_and_the_shipped_conffile_stays()
+    {
+        // the first ten addresses of the stand are for fixed hosts (the provisioner .1, a second station .2, ...), not leases;
+        // the shipped conffile keeps its pool (a changed copy would stop an upgrade at dpkg's question), postinst moves the live one
+        $postinst = $this->file('debian/postinst');
+        $this->assertSame(1, preg_match("#^\s*runuser -u www-data -- sed -i '([^']+)' /var/lib/cmprovision/etc/dnsmasq\.conf \|\|#m", $postinst, $m),
+            'the live file is edited as the web user: etc/ is its directory');
+        $this->assertLessThan(strpos($postinst, 'deb-systemd-invoke restart cmprovision-dnsmasq'), strpos($postinst, $m[0]),
+            'an upgrade restarts dnsmasq with the new pool');
+        $this->assertLessThan(strpos($postinst, '#DEBHELPER#'), strpos($postinst, $m[0]));
+        $shipped = $this->file('etc/dnsmasq.conf');
+        $this->assertStringContainsString("dhcp-range=172.20.0.2,172.20.255.255,255.255.0.0\n", $shipped);
+
+        $sed = function (string $text) use ($m): string {
+            $file = tempnam(sys_get_temp_dir(), 'dnsmasq');
+            file_put_contents($file, $text);
+            exec('sed -i '.escapeshellarg($m[1]).' '.escapeshellarg($file), $out, $code);
+            $this->assertSame(0, $code);
+            $result = file_get_contents($file);
+            unlink($file);
+            return $result;
+        };
+        $moved = $sed($shipped);
+        $this->assertStringContainsString("dhcp-range=172.20.0.11,172.20.255.255,255.255.0.0\n", $moved);
+        $this->assertSame($shipped, str_replace('dhcp-range=172.20.0.11,', 'dhcp-range=172.20.0.2,', $moved), 'nothing else changes');
+        $this->assertSame($moved, $sed($moved), 'the next upgrade changes nothing');
+        $own = "dhcp-range=172.20.0.50,172.20.0.200,255.255.0.0\n";
+        $this->assertSame($own, $sed($own), 'a pool set by hand stays');
+    }
+
     public function test_going_below_2_7_points_the_link_at_the_legacy_os_and_purge_removes_it()
     {
         // the older package has no scriptexecute64/, and tftp-root stays on the link

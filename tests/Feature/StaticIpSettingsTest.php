@@ -36,6 +36,24 @@ class StaticIpSettingsTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_the_suggested_address_leaves_the_first_ten_of_the_stand_to_fixed_hosts()
+    {
+        // .1 is the provisioner, .2 to .10 are kept for hosts set by hand (a second station on the same stand); the pool starts at .11
+        Livewire::test(Settings::class)->call('addStaticIP')->assertSet('ip', '172.20.0.11');
+        Host::create(['ip' => '172.20.0.11', 'mac' => 'e4:5f:01:00:00:11']);
+        Livewire::test(Settings::class)->call('addStaticIP')->assertSet('ip', '172.20.0.12');
+    }
+
+    public function test_an_address_among_the_first_ten_can_still_be_given_by_hand()
+    {
+        Livewire::test(Settings::class)
+            ->call('addStaticIP')
+            ->set('ip', '172.20.0.5')->set('mac', 'E4:5F:01:00:00:05')
+            ->call('storeStaticIP');
+
+        $this->assertStringContainsString("dhcp-host=e4:5f:01:00:00:05,set:client_is_a_pi,172.20.0.5\n", file_get_contents($this->conf));
+    }
+
     public function test_adding_a_static_ip_writes_it_to_dnsmasq_conf_and_restarts_dnsmasq()
     {
         Livewire::test(Settings::class)
