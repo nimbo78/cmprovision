@@ -137,6 +137,10 @@ POOLCONF
     # The shipped conffile stays unchanged, so an upgrade needs no dpkg config-file prompt.
     runuser -u www-data -- /usr/lib/cmprovision/boot-link fix /var/lib/cmprovision || echo "Could not set up the utility OS link in /var/lib/cmprovision/etc"
 
+    # The DHCP pool starts at .11 (2.22.2): the first ten addresses of the stand are for fixed hosts (the provisioner .1,
+    # a second station .2, ...), not for leases. Only the shipped pool moves; a pool set by hand stays. As the web user, like the link.
+    runuser -u www-data -- sed -i 's/^dhcp-range=172\.20\.0\.2,172\.20\.255\.255,255\.255\.0\.0$/dhcp-range=172.20.0.11,172.20.255.255,255.255.0.0/' /var/lib/cmprovision/etc/dnsmasq.conf || echo "Could not move the DHCP pool in /var/lib/cmprovision/etc/dnsmasq.conf"
+
     # Uploaded images pass through PHP's temporary directory. Keep it on disk next to the images:
     # on Debian 13 /tmp is RAM-backed (half the memory at most), and renaming is instant.
     UPLOAD_TMP=/var/lib/cmprovision/storage/app/upload-tmp
