@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..e1ea538
+index 0000000..5d6b926
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,638 @@
+@@ -0,0 +1,642 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10497,6 +10497,10 @@ index 0000000..e1ea538
 +
 +    def frame(self):
 +        with self.lock:
++            if self.theme() == "new":
++                from . import cmprovision_new
++
++                return cmprovision_new.render(self)
 +            scrollable = False
 +            image = Image.new("RGB", (128, 128), COLORS["bg"])
 +            draw = ImageDraw.Draw(image)
@@ -11031,6 +11035,291 @@ index 0000000..ba50d9d
 +            else:
 +                self.show()
 +            return True
+diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
+new file mode 100644
+index 0000000..8d264d0
+--- /dev/null
++++ b/fpms/integrations/cmprovision_new.py
+@@ -0,0 +1,279 @@
++"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
++
++Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
++saturated colours, whole tiles of colour for what needs a look. The layout follows the approved mockups
++(docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py in the cmprovision repository); every screen is checked by the
++tests for texts that touch, leave the screen or sit off the centre of their box.
++"""
++
++from PIL import Image, ImageDraw
++
++from . import cmprovision_fonts as fonts
++
++P = {
++    "bg": (0, 0, 0), "fg": (255, 255, 255), "muted": (170, 170, 170), "dim": (110, 110, 110), "line": (70, 70, 74),
++    "panel": (30, 30, 34), "accent": (255, 122, 26), "good": (40, 225, 110), "run": (70, 150, 255), "bad": (255, 50, 40),
++    "warn": (255, 196, 0), "ink": (0, 0, 0),
++}
++# a module's state: its colour and its word
++STATE = {"fail": ("bad", "FAILED"), "stale": ("warn", "SILENT"), "run": ("run", "RUNNING"), "ok": ("good", "DONE"),
++         "unknown": ("dim", "UNKNOWN")}
++TILES = (("failed", "FAILED", "bad"), ("stale", "SILENT", "warn"), ("running", "RUNNING", "run"), ("done", "DONE", "good"))
++TILE_H = 38
++MIN_GAP = 4          # empty rows at least between a count and its word
++LINE_W = 125         # a line of text from x 2: its last ink column stays on the screen
++
++
++def render(panel):
++    """The frame of the page or card the panel is on."""
++    from .cmprovision import PAGES
++
++    img = Image.new("RGB", (128, 128), P["bg"])
++    d = ImageDraw.Draw(img)
++    if not panel.data:
++        header(img, d, panel, "cmprovision")
++        message(img, panel)
++    elif panel.detail:
++        page_placeholder(img, d, panel, "Device")
++    else:
++        draw = [overview, ports, devices, errors, station][panel.page]
++        draw(img, d, panel) if draw is overview else page_placeholder(img, d, panel, PAGES[panel.page])
++    until = panel.prompt_until
++    now = panel.clock()
++    if until is not None and now < until:
++        from .cmprovision import PROMPT_SECONDS
++
++        leave_prompt(img, d, (until - now) / PROMPT_SECONDS)
++    return img
++
++
++# ---- parts ----
++
++def cap(f):
++    return f.asc - f.ink_top("H")
++
++
++def mid_y(f, top, height, s="H"):
++    """y that puts the ink of s (no descenders) in the middle of the band top..top+height-1."""
++    t = f.ink_top(s)
++    return top + (height - (f.asc - t)) // 2 - t
++
++
++def cap_mid(f, y):
++    """The middle row of the capitals of a text drawn at y."""
++    return y + (f.ink_top("H") + f.asc - 1) / 2
++
++
++def chip(img, d, right, center, word, key, f=None, padx=3, pady=2):
++    """A filled tag sized by the ink of its word, equal margins all round, its middle on the row center; its width."""
++    f = f or fonts.font("body")
++    ix0, iy0, ix1, iy1 = fonts.ink_bbox(f, word)
++    w, h = ix1 - ix0 + 1 + 2 * padx, iy1 - iy0 + 1 + 2 * pady
++    top = round(center - (h - 1) / 2)
++    box = (right - w + 1, top, right, top + h - 1)
++    d.rounded_rectangle(box, radius=2, fill=P[key])
++    fonts.draw_centered(f, img, box, word, P["fg"] if key in ("line", "dim") else P["ink"])
++    return w
++
++
++def header(img, d, panel, title):
++    """The cm tile, the title, and at the right the dots of the pages, or the age of old data in yellow; on Errors the
++    red count of modules that need a look."""
++    from .cmprovision import PAGES
++
++    body, title_font = fonts.font("body"), fonts.font("title")
++    d.rounded_rectangle((0, 0, 17, 13), radius=3, fill=P["accent"])
++    fonts.draw_centered(fonts.font("mark"), img, (0, 0, 17, 13), "cm", P["ink"])     # the mark, the same everywhere
++    right = 127
++    # Overview tells the age in its yellow band instead of the project line
++    age = panel.age_label() if panel.page != 0 or panel.detail else ""
++    if age:
++        right -= chip(img, d, right, 6.5, age, "warn") + 3
++    else:
++        for i in range(len(PAGES)):
++            cx = 104 + i * 5
++            if i == panel.page and not panel.detail:
++                d.rectangle((cx - 1, 5, cx + 2, 8), fill=P["fg"])
++            else:
++                d.rectangle((cx, 6, cx + 1, 7), fill=P["dim"])
++        right = 97
++    if panel.data and panel.page == 3 and not panel.detail and panel.error_count():
++        right -= chip(img, d, right, 6.5, str(min(99, panel.error_count())), "bad") + 3
++    title_font.draw(img, 21, mid_y(title_font, 0, 14), fonts.fit(title_font, title, right - 21), P["fg"])
++    d.line((0, 15, 127, 15), fill=P["line"])
++    return body
++
++
++def message(img, panel):
++    """No data to show: why, and where to look."""
++    body = fonts.font("body")
++    lines = ["Enable in Settings", "FPMS display"] if not panel.enabled else [panel.problem or "Waiting for data", "Check the web UI"]
++    y = 52
++    for i, line in enumerate(lines):
++        body.draw(img, (128 - body.width(line)) // 2, y, line, P["accent" if i == 0 else "muted"])
++        y += body.h + 2
++
++
++def page_placeholder(img, d, panel, title):
++    header(img, d, panel, title)
++
++
++def leave_prompt(img, d, left):
++    """Button 2 on a page: the first press asks, a second within 3 s leaves; the orange bar runs out with the time."""
++    body = fonts.font("body")
++    top = 97
++    fonts.hide_below(top)                                   # what the plate covers is not on the screen
++    d.rectangle((0, top, 127, 127), fill=P["fg"])
++    d.rectangle((0, top, max(0, int(127 * left)), top + 1), fill=P["accent"])
++    y = mid_y(body, top + 4, 13)
++    x = body.draw(img, 4, y, "Press", P["ink"]) + 3
++    ix0, _, ix1, _ = fonts.ink_bbox(body, "2")
++    right = x + (ix1 - ix0 + 1) + 2 * 4 - 1
++    chip(img, d, right, cap_mid(body, y), "2", "accent", body, padx=4, pady=2)
++    body.draw(img, right + 4, y, "again", P["ink"])
++    body.draw(img, 4, top + 18, "to leave cmprovision", P["ink"])
++
++
++# ---- Overview ----
++
++def counts(panel):
++    c = panel.data.get("counts") if isinstance(panel.data.get("counts"), dict) else {}
++    from .cmprovision import number
++
++    return {k: max(0, int(number(c.get(k)))) for k in ("failed", "stale", "running", "done")}
++
++
++def batch_line(panel):
++    """The project (orange) and what its batch did ("37 done", ETA "6:20"), as much as fits, the ETA going first."""
++    from .cmprovision import number, objects, text
++
++    batch = panel.data.get("batch") if isinstance(panel.data.get("batch"), dict) else {}
++    done = (batch.get("counts") or {}).get("done") if isinstance(batch.get("counts"), dict) else None
++    left = batch.get("left_seconds")
++    parts = []
++    if type(done) is int and done >= 0:
++        parts.append(f"{done} done")
++    if type(left) in (int, float) and number(left, None) is not None and left >= 0:
++        parts.append(f"{int(left) // 60}:{int(left) % 60:02d}")
++    project = text(panel.data.get("project")) or "No active project"
++    return project, parts
++
++
++def overview(img, d, panel):
++    body, big = header(img, d, panel, "Overview"), fonts.font("big")
++    band = cap(body) + 5
++    age = panel.age_label()
++    if age:                                                 # only when the data is 10 s old or older
++        d.rectangle((0, 17, 127, 17 + band - 1), fill=P["warn"])
++        body.draw(img, 2, mid_y(body, 17, band), f"Updated {age} ago", P["ink"])
++    else:
++        # the project in orange, the batch in grey after it: the colour parts them, a dot would cost the ETA its room
++        project, parts = batch_line(panel)
++        y = mid_y(body, 17, band)
++        while parts and body.width(project + " " + " ".join(parts)) > LINE_W:
++            parts.pop()
++        x = body.draw(img, 2, y, fonts.fit(body, project, LINE_W), P["accent"])
++        if parts:
++            body.draw(img, x, y, " " + " ".join(parts), P["muted"])
++    n = counts(panel)
++    for i, (key, word, color) in enumerate(TILES):
++        x0, y0 = (i % 2) * 65, 31 + (i // 2) * (TILE_H + 2)
++        loud = key in ("failed", "stale") and n[key] > 0
++        d.rounded_rectangle((x0, y0, x0 + 62, y0 + TILE_H - 1), radius=3, fill=P[color] if loud else P["panel"])
++        num_c = P["ink"] if loud else (P[color] if n[key] else P["dim"])
++        lab_c = P["ink"] if loud else (P["fg"] if n[key] else P["dim"])
++        value = str(min(999, n[key]))
++        # the count hangs from the top, the word stands on the bottom: at least MIN_GAP empty rows between
++        big.draw(img, x0 + 5, y0 + 4 - big.ink_top(value), value, num_c)
++        body.draw(img, x0 + 5, y0 + TILE_H - 4 - body.asc, word, lab_c)
++        hint = x0 + 58 - body.width("OK >")
++        # the centre opens Errors; the hint gives way to a count of three digits
++        if loud and key == "failed" and panel.error_count() and x0 + 5 + big.width(value) + 2 < hint:
++            body.draw(img, hint, y0 + 4 - body.ink_top("OK"), "OK >", P["ink"])
++    size, cells = mini_map(panel.data.get("switches"))
++    if size:
++        for x, y, port in cells:
++            fill, outline = port_style(port)
++            d.rectangle((x, y, x + size - 1, y + size - 1), fill=P[fill] if fill else None, outline=P[outline])
++    else:
++        stand = [c for c in _switch_columns(panel.data.get("switches")) if c]
++        ports = sum(1 for columns in stand for top_port, bottom_port, _ in columns for p in (top_port, bottom_port) if p)
++        switches = len(stand)
++        if ports:
++            line = f"{ports} ports, {switches} switch{'es' if switches != 1 else ''}"
++            body.draw(img, (128 - body.width(line)) // 2, 114, line, P["muted"])
++
++
++def port_style(port):
++    """(fill, outline) as names of P: a module in the colour of its state, the provisioner orange, free a hollow cell."""
++    from .cmprovision import text
++
++    if port.get("server"):
++        return "accent", "accent"
++    key = {"ok": "good", "run": "run", "fail": "bad", "stale": "warn"}.get(text(port.get("filter")))
++    if key and text(port.get("state")) == "module":
++        return key, key
++    if text(port.get("state")) == "uplink":
++        return "dim", "dim"
++    if text(port.get("state")) in ("unrecognized", "quiet", "boot"):
++        return None, "warn"
++    return None, "line"
++
++
++def _switch_columns(switches):
++    """Per switch, its ports as the columns of its front panel: [[(top, bottom, block), ...], ...]"""
++    from .cmprovision import number, objects
++
++    out = []
++    for switch in objects(switches, 64):
++        columns = []
++        for b, block in enumerate(objects(switch.get("blocks"), 32)):
++            ports = objects(block.get("ports"), 256)
++            if number(block.get("rows"), 2) >= 2:
++                columns += [(ports[i], ports[i + 1] if i + 1 < len(ports) else None, b) for i in range(0, len(ports), 2)]
++            else:
++                columns += [(None, p, b) for p in ports]
++        out.append(columns)
++    return out
++
++
++def _band(stand, size, gap, top):
++    """Switches side by side in one band of two rows: (width, [(x, y, port)])."""
++    block_gap, switch_gap = gap + 2, gap + 5
++    cells, x = [], 0
++    for s, columns in enumerate(stand):
++        if s:
++            x += switch_gap
++        last = None
++        for top_port, bottom_port, block in columns:
++            if last is not None and block != last:
++                x += block_gap
++            last = block
++            for row, port in ((0, top_port), (1, bottom_port)):
++                if port is not None:
++                    cells.append((x, top + row * (size + gap), port))
++            x += size + gap
++    return x - gap, cells
++
++
++def mini_map(switches, width=124, top=113):
++    """The stand at the bottom of Overview: every port of every switch as a small cell, odd above even, a gap between
++    the blocks of a switch and a wider one between switches. (size, [(x, y, port)]) with the largest cells that fit in
++    one band (6 px down to 3 px); a bigger stand takes two bands of 3 px cells, its switches split between them; (None, [])
++    when even that does not fit."""
++    stand = [columns for columns in _switch_columns(switches) if columns]
++    if not stand:
++        return None, []
++    for size, gap in ((6, 2), (5, 1), (4, 1), (3, 1)):
++        total, cells = _band(stand, size, gap, top)
++        if total <= width:
++            return size, [(cx + (128 - total) // 2, cy, port) for cx, cy, port in cells]
++    for split in range(1, len(stand)):
++        bands = [_band(stand[:split], 3, 1, top), _band(stand[split:], 3, 1, top + 8)]
++        if all(total <= width for total, _ in bands):
++            return 3, [(cx + (128 - total) // 2, cy, port) for total, cells in bands for cx, cy, port in cells]
++    return None, []
++
++
++# pages drawn in the next steps
++ports = devices = errors = station = page_placeholder
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
 index 0000000..8fd3e8a
@@ -11323,10 +11612,10 @@ index 0000000..0e0ea7f
 +WantedBy=multi-user.target
 diff --git a/tests/test_cmprovision.py b/tests/test_cmprovision.py
 new file mode 100644
-index 0000000..439954f
+index 0000000..9fd7ede
 --- /dev/null
 +++ b/tests/test_cmprovision.py
-@@ -0,0 +1,485 @@
+@@ -0,0 +1,488 @@
 +import json
 +import os
 +import signal
@@ -11399,6 +11688,8 @@ index 0000000..439954f
 +                    "provisioning": "eth0.42 up",
 +                    "storage": "21 GiB free",
 +                },
++                # these tests describe the classic look; the new one has tests of its own (test_cmprovision_v2.py)
++                "panel": {"theme": "classic", "ports_map": "pages"},
 +            }
 +        )
 +    )
@@ -11709,6 +12000,7 @@ index 0000000..439954f
 +        filt, state, serials = states[i % len(states)]
 +        ports.append({"name": f"Gi0/{i + 1}", "number": i + 1, "state": state, "filter": filt, "serials": serials, "server": False})
 +    return {
++        "panel": {"theme": "classic"},
 +        "switches": [{"name": "sw-one", "answering": True, "blocks": [{"rows": rows, "ports": ports}]},
 +                     {"name": "sw-two", "answering": False, "blocks": []}],
 +        "modules": [{"serial": "m1", "name": "wlanpi-one", "phase": "done", "state": "ok", "percent": 100},
@@ -11913,10 +12205,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..a038086
+index 0000000..6c82d3a
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,249 @@
+@@ -0,0 +1,362 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -12166,6 +12458,119 @@ index 0000000..a038086
 +    adapter.key("KEY2")
 +    assert not adapter.selected()
 +    assert adapter.key("KEY3") is False      # outside, right after the leave as later: the stock Reboot shortcut
++
++
++# ---- the new look: header, Overview, the leave prompt ----
++
++from fpms.integrations import cmprovision_fonts as fonts  # noqa: E402
++from fpms.integrations import cmprovision_new as new  # noqa: E402
++
++BAD, PANEL = (255, 50, 40), (30, 30, 34)
++
++
++def drawn(p):
++    """The frame of the panel, the ink boxes of its texts and its centred texts."""
++    fonts.start_recording()
++    img = p.frame()
++    ink, centred = fonts.stop_recording()
++    return img, ink, centred
++
++
++def strings(ink):
++    return [b[4] for b in ink]
++
++
++def box_of(ink, s, nth=0):
++    return [b for b in ink if b[4] == s][nth][:4]
++
++
++def test_overview_counts_the_stand_and_the_batch_in_one_line(tmp_path):
++    img, ink, _ = drawn(panel_with(tmp_path))
++    s = strings(ink)
++    assert "stage1-test" in s and any("37 done" in t and "6:20" in t for t in s)
++    project, batch = box_of(ink, "stage1-test"), next(b for b in ink if "37 done" in b[4])
++    assert project[1] == batch[1] and batch[0] > project[2]     # one line, the batch after the project
++    for word, n in (("FAILED", "2"), ("SILENT", "1"), ("RUNNING", "2"), ("DONE", "2")):
++        assert word in s and n in s
++    assert fonts.overlaps(ink) == []
++
++
++def test_the_project_line_drops_the_eta_first(tmp_path):
++    snap = demo_snapshot()
++    snap["project"] = "a-project-with-a-rather-long-name"
++    img, ink, _ = drawn(panel_with(tmp_path, snap))
++    line = " ".join(t for t in strings(ink) if "done" in t or "project" in t)
++    assert "6:20" not in line
++    assert fonts.overlaps(ink) == []
++
++
++def test_loud_tiles_are_filled_only_above_zero(tmp_path):
++    img, _, _ = drawn(panel_with(tmp_path))
++    assert img.getpixel((60, 50)) == BAD
++    snap = demo_snapshot()
++    snap["counts"]["failed"] = 0
++    img, _, _ = drawn(panel_with(tmp_path, snap))
++    assert img.getpixel((60, 50)) == PANEL
++
++
++@pytest.mark.parametrize("n", [0, 9, 12, 100, 999])
++def test_numbers_keep_four_pixels_from_their_words(tmp_path, n):
++    snap = demo_snapshot()
++    snap["counts"] = {"done": n, "running": n, "failed": n, "stale": n, "unknown": 0}
++    img, ink, _ = drawn(panel_with(tmp_path, snap))
++    for nth, word in enumerate(("FAILED", "SILENT", "RUNNING", "DONE")):
++        number = box_of(ink, str(n), nth)
++        label = box_of(ink, word)
++        assert label[1] - number[3] - 1 >= 4, (word, number, label)
++    assert fonts.overlaps(ink) == []
++
++
++def test_the_stale_tag_shows_from_ten_seconds(tmp_path):
++    _, ink, _ = drawn(panel_with(tmp_path, now=105))
++    assert not any("Updated" in t for t in strings(ink))
++    p = panel_with(tmp_path, now=112)
++    _, ink, _ = drawn(p)
++    assert "Updated 12 s ago" in strings(ink) and "stage1-test" not in strings(ink)
++    assert "12 s" not in strings(ink)              # told once: the band, not the header too
++    p.page = 2
++    _, ink, centred = drawn(p)
++    assert "12 s" in strings(ink)
++    assert fonts.off_centre(centred) == []
++
++
++def test_the_leave_prompt(tmp_path):
++    p = panel_with(tmp_path, clock=Clock())
++    p.key("KEY2")
++    img, ink, centred = drawn(p)
++    s = strings(ink)
++    for word in ("Press", "2", "again", "to leave cmprovision"):
++        assert word in s
++    assert "FAILED" in s and "RUNNING" not in s      # the plate covers the lower tiles
++    # a tag built around its text is centred exactly; the cm of the mark sits on its optical centre on purpose
++    assert fonts.off_centre([c for c in centred if c[2] != "cm"], tolerance=0) == []
++    assert fonts.off_centre(centred) == []
++    assert fonts.overlaps(ink) == []
++
++
++def big_stand(switches):
++    snap = demo_snapshot()
++    for k in range(switches - 1):
++        ports = [{"name": f"Gi1/0/{n}", "number": n, "state": "free", "filter": "free", "serials": [], "server": False}
++                 for n in range(1, 49)]
++        snap["switches"].append({"name": f"sw-{k}", "answering": True, "blocks": [{"rows": 2, "ports": ports}]})
++    return snap
++
++
++def test_the_mini_map_shrinks_for_a_big_stand(tmp_path):
++    size, cells = new.mini_map(big_stand(2)["switches"])
++    assert size >= 3 and len(cells) == 60
++    assert all(0 <= x and x + size - 1 <= 127 for x, y, _ in cells)
++    snap = big_stand(4)
++    del snap["switches"][0]                     # three switches of 48
++    size, cells = new.mini_map(snap["switches"])
++    assert size is None and cells == []
++    _, ink, _ = drawn(panel_with(tmp_path, snap))
++    assert "144 ports, 3 switches" in strings(ink)
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
