@@ -96,6 +96,8 @@ class WallboardTest extends TestCase
         $data = app(WallboardSnapshot::class)->current();
         $this->assertSame([$cm->serial], array_column($data['modules'], 'serial'));
         $this->assertFalse($data['switches'][0]['answering']);
+        // since when it has not answered: the front panel says "silent 2 min"
+        $this->assertSame(now()->getTimestamp(), $data['switches'][0]['silent_since']);
     }
 
     public function test_without_switches_only_current_reports_or_recent_runs_are_displayed()

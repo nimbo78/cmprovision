@@ -11040,10 +11040,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..68301c7
+index 0000000..df49024
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,592 @@
+@@ -0,0 +1,876 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11080,7 +11080,7 @@ index 0000000..68301c7
 +        header(img, d, panel, "cmprovision")
 +        message(img, panel)
 +    elif panel.detail:
-+        page_placeholder(img, d, panel, "Device")
++        card(img, d, panel)
 +    else:
 +        draw = [overview, ports, devices, errors, station][panel.page]
 +        if draw is page_placeholder:
@@ -11634,8 +11634,292 @@ index 0000000..68301c7
 +        y += row_h + 2
 +
 +
-+# pages drawn in the next steps
-+station = page_placeholder
++# ---- cards ----
++
++def card(img, d, panel):
++    """A module or a port, everything the panel knows of it: a band of its colour with the port and the state (or the
++    age of old data), the name, the step and its bar; below, scrolling with up and down, what went wrong and what to do,
++    the codes, the diagnostics, MAC, serial and switch."""
++    from .cmprovision import rate, remaining, slow, text
++
++    body, title, code, error = fonts.font("body"), fonts.font("title"), fonts.font("code"), fonts.font("error")
++    row = panel.detail_row()
++    if row is None:
++        header(img, d, panel, "Device")
++        body.draw(img, (128 - body.width("Device left stand")) // 2, 56, "Device left stand", P["warn"])
++        return
++    kind = panel.detail[0]
++    module = row if kind == "module" else None
++    if kind == "module":
++        key, word = (("dim", "USB") if row.get("registered") is False else STATE.get(text(row.get("state")), STATE["unknown"]))
++        port = short_port(row) if row.get("port") else "Device"
++    else:
++        key, word = port_state(row, None)
++        port = text(row.get("portname")) or text(row.get("name"))
++    d.rectangle((0, 0, 127, 15), fill=P[key])
++    ink = P["fg"] if key in ("dim", "line") else P["ink"]
++    age = panel.age_label()
++    right = 125
++    if age:
++        right -= chip(img, d, 126, 7.5, age, "warn") + 2
++    else:
++        body.draw(img, 125 - body.width(word), mid_y(body, 0, 16, word), word, ink)
++        right -= body.width(word) + 4
++    title.draw(img, 3, mid_y(title, 0, 16), fonts.fit(title, port, right - 3), ink)
++    y = 18
++    lines = []
++    if module is not None:
++        name = text(row.get("name")) or text(row.get("mac")) or "Unknown"
++        f = title if title.width(name) <= 124 and ":" not in name else code
++        f.draw(img, 2, y, fonts.fit(f, name, 124), P["fg"])
++        y += f.h + 1
++        percent = row.get("percent")
++        step = text(row.get("step")) or text(row.get("phase"))
++        if type(percent) in (int, float) and 0 <= percent < 100:
++            step += f"  {int(percent)}%"
++        if step:
++            body.draw(img, 2, y, fonts.fit(body, step, LINE_W), P["muted"])
++            y += body.h + 1
++        if slow(row.get("slow")):
++            body.draw(img, 2, y, slow(row.get("slow")), P["warn"])
++            y += body.h + 1
++        if type(percent) in (int, float) and 0 <= percent <= 100:
++            bar(d, 2, y, 125, percent / 100, key)
++            y += 4
++        lines = module_lines(row, body, code, error)
++        speed = "  ".join(t for t in (rate(row.get("speed")), remaining(row.get("eta"))) if t)
++        if speed and text(row.get("state")) == "run":
++            lines.insert(0, ("muted", body, speed))
++    else:
++        lines = port_lines(panel, row, body, error)
++    y += 1
++    d.line((0, y, 127, y), fill=P["line"])
++    scroll_lines(img, d, panel, lines, y + 2)
++
++
++def module_lines(row, body, code, error):
++    """The scrolling part of a module card: (colour, font, text) per line."""
++    from .cmprovision import objects, text
++
++    lines = []
++
++    def para(colour, f, value, width=120):
++        if value:
++            lines.extend((colour, f, line) for line in fonts.wrap(f, value, width))
++
++    if row.get("registered") is False:
++        para("fg", error, "USB, no provisioning run")
++    para("fg", error, text(row.get("reason")) or (text(row.get("cause")) if text(row.get("state")) in ("fail", "stale") else ""))
++    para("muted", error, text(row.get("advice")))
++    if row.get("code"):
++        para("warn", error, "Code " + text(row.get("code")))
++    diag = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
++    issues = objects(diag.get("issues"), 4)
++    if issues:                                              # a healthy report has no title worth a line
++        para("fg", error, text(diag.get("title")))
++        for issue in issues:
++            if text(issue.get("title")) != text(diag.get("title")):
++                para("fg", error, text(issue.get("title")))
++            para("muted", error, text(issue.get("advice")))
++    para("muted", code, text(row.get("mac")))
++    para("muted", error, "S/N " + text(row.get("serial")) if row.get("serial") else "")
++    para("muted", error, text(row.get("port")))
++    return lines
++
++
++def port_lines(panel, row, body, error):
++    """The scrolling part of a port card: what is on it, its link and PoE."""
++    from .cmprovision import objects, text
++
++    lines = []
++    label = text(row.get("name"))
++    device = next((u for u in objects(panel.data.get("unknown")) if text(u.get("port")) == label), None)
++    if row.get("server"):
++        lines += [("muted", body, line) for line in fonts.wrap(body, "This server (the provisioner)", 120)]
++    elif device is not None:
++        lines.append(("fg", body, fonts.fit(body, text(device.get("name")) or "Unknown device", 120)))
++        for value in (text(device.get("detail")), text(device.get("mac"))):
++            lines += [("muted", body, line) for line in fonts.wrap(body, value, 120)] if value else []
++    elif text(row.get("state")) == "free":
++        lines.append(("muted", body, "Nothing connected"))
++    facts = "  ".join(t for t in (link_speed(row.get("speed")), _watts(row.get("watts"))) if t)
++    if facts:
++        lines.append(("muted", body, facts))
++    return lines
++
++
++def scroll_lines(img, d, panel, lines, top, right=120):
++    """Lines from top to the bottom of the screen, scrolled by the panel (up and down), with a bar on the right when
++    there are more than fit; the panel's scroll is held at the last screen."""
++    avail = 128 - top
++    fits, used = 0, 0
++    for _, f, _ in lines:
++        if used + f.h > avail:
++            break
++        used += f.h
++        fits += 1
++    # how far can it go: the last start that still fills the screen
++    last, used = len(lines), 0
++    while last > 0 and used + lines[last - 1][1].h <= avail:
++        used += lines[last - 1][1].h
++        last -= 1
++    panel.scroll = max(0, min(panel.scroll, last))
++    y, shown = top, 0
++    for colour, f, line in lines[panel.scroll:]:
++        if y + f.h > 128:
++            break
++        f.draw(img, 2, y, line, P[colour])
++        y += f.h
++        shown += 1
++    if len(lines) > fits:
++        d.rectangle((125, top, 126, 127), fill=P["panel"])
++        t = top + int((127 - top) * panel.scroll / len(lines))
++        b = top + int((127 - top) * (panel.scroll + shown) / len(lines))
++        d.rectangle((125, t, 126, max(t + 2, b)), fill=P["fg"])
++
++
++# ---- Station ----
++
++QUALITY = {"Excellent": "good", "Good": "good", "Fair": "warn", "Weak": "bad"}
++
++
++def signal_bars(d, x, bottom, bars, key):
++    """Four bars of 2 px, 3/5/7/9 px high; the lit ones in the colour of the quality."""
++    for i in range(4):
++        h = 3 + 2 * i
++        d.rectangle((x + i * 3, bottom - h + 1, x + i * 3 + 1, bottom), fill=P[key] if i < bars else P["line"])
++
++
++def station(img, d, panel):
++    """The provisioner itself: who and where it is, how it reaches the management network and how well, and its health,
++    problems first."""
++    from .cmprovision import number, objects, text
++
++    body, title, code = header(img, d, panel, "Station"), fonts.font("title"), fonts.font("code")
++    y = 18
++    version = text(panel.data.get("app_version"))
++    vw = body.width(version) + 6 if version else 0
++    host = text(panel.data.get("host")) or "cmprovision"
++    f = title if title.width(host) <= 124 - vw else body     # a long version takes the room: a smaller name, not a cut one
++    f.draw(img, 2, y + title.asc - f.asc, fonts.fit(f, host, 124 - vw), P["fg"])
++    if version:
++        body.draw(img, 126 - body.width(version), y + title.asc - body.asc, version, P["muted"])
++    y += title.h + 1
++    d.line((0, y, 127, y), fill=P["line"])
++    y += 3
++    st = panel.data.get("station") if isinstance(panel.data.get("station"), dict) else None
++    if st is None:
++        body.draw(img, 2, y, "--", P["muted"])
++        return
++    up = st.get("uplink") if isinstance(st.get("uplink"), dict) else {}
++    state = text(up.get("state"))
++    if state == "wifi":
++        key = QUALITY.get(text(up.get("quality")), "muted")
++        signal = number(up.get("signal"), None)
++        dbm = f"{int(signal)} dBm" if signal is not None else ""
++        signal_bars(d, 2, y + body.asc - 1, int(number(up.get("bars"), 0)), key if key != "muted" else "dim")
++        body.draw(img, 16, y, fonts.fit(body, text(up.get("ssid")) or "Wi-Fi", 108 - body.width(dbm) - 6), P["fg"])
++        if dbm:
++            body.draw(img, 126 - body.width(dbm), y, dbm, P[key])
++        y += body.h + 1
++        x = body.draw(img, 16, y, text(up.get("quality")), P[key]) if up.get("quality") else 16
++        parts = [p for p in (f"{int(number(up.get('rate')))} Mb/s" if number(up.get("rate"), None) else "", text(up.get("band")),
++                             "Wi-Fi " + text(up.get("generation")) if up.get("generation") else "") if p]
++        while parts and x + 6 + body.width("  ".join(parts)) > 126:      # whole parts drop from the end, no "..."
++            parts.pop()
++        if parts:
++            body.draw(img, x + 6, y, "  ".join(parts), P["muted"])
++        y += body.h + 1
++    elif state == "wired":
++        line = " ".join(t for t in (text(up.get("device")), "up", link_speed(up.get("speed"))) if t)
++        body.draw(img, 2, y, fonts.fit(body, line, LINE_W), P["fg"])
++        y += body.h + 1
++    elif state == "wifi_down":
++        signal_bars(d, 2, y + body.asc - 1, 0, "bad")
++        body.draw(img, 16, y, "Wi-Fi not connected", P["bad"])
++        y += body.h + 1
++        body.draw(img, 16, y, fonts.fit(body, f"{text(up.get('device')) or 'Wi-Fi'}: no network", 110), P["muted"])
++        y += body.h + 1
++    else:
++        body.draw(img, 2, y, "No uplink", P["bad"])
++        y += body.h + 1
++    if up.get("spare_active"):
++        body.draw(img, 16, y, "built-in spare in use", P["warn"])
++        y += body.h + 1
++    if state in ("wifi", "wired") and up.get("address"):
++        code.draw(img, 16 if state == "wifi" else 2, y, text(up.get("address")), P["muted"])
++        y += code.h + 1
++    y += 1
++    d.line((0, y, 127, y), fill=P["line"])
++    health_rows(img, d, panel, st, y + 3)
++
++
++def station_rows(panel, st):
++    """(colour, name or None, value) of the health of the station, red ones first, then yellow, then the good ones."""
++    from .cmprovision import number, objects, text
++
++    rows = []
++    links = objects(st.get("links"))
++    stand = next((l for l in links if text(l.get("role")) == "stand"), None)
++    if stand is None:
++        rows.append(("bad", "Stand link", "down"))
++    else:
++        rows.append(("good", "Stand link", " ".join(t for t in (text(stand.get("name")), "up", link_speed(stand.get("speed"))) if t)))
++    for link in links:
++        if text(link.get("role")) in ("other", "backup"):
++            rows.append(("good", text(link.get("name")), " ".join(t for t in ("up", link_speed(link.get("speed"))) if t)))
++    services = st.get("services") if isinstance(st.get("services"), dict) else None
++    if services is not None:
++        stopped = [text(s) for s in services.get("stopped") or [] if text(s)]
++        if len(stopped) == 1:
++            rows.append(("bad", None, f"{stopped[0]} stopped"))
++        elif stopped:
++            rows.append(("bad", None, f"{len(stopped)} services stopped"))
++        else:
++            rows.append(("good", "Services", f"{int(number(services.get('up')))} of {int(number(services.get('total')))} up"))
++    # now on the server's clock: when the snapshot was made, and how old it is
++    generated = number(panel.data.get("generated_at"), None)
++    now = generated + (panel.age or 0) if generated is not None else None
++    switches = objects(panel.data.get("switches"), 64)
++    for switch in switches:
++        name = "Switch" if len(switches) == 1 else text(switch.get("name"))
++        if switch.get("answering") is False:
++            since_t = number(switch.get("silent_since"), None)
++            since = f"silent {int((now - since_t) // 60)} min" if now is not None and since_t else "not answering"
++            # the name may be long: the silence must not be what gets cut
++            rows.append(("bad", name, since))
++        else:
++            rows.append(("good", name, "answering"))
++    if st.get("storage"):
++        rows.append(("warn" if st.get("storage_low") else "good", "Disk", text(st.get("storage"))))
++    order = {"bad": 0, "warn": 1, "good": 2}
++    return sorted(rows, key=lambda r: order[r[0]])
++
++
++def health_rows(img, d, panel, st, top):
++    body = fonts.font("body")
++    rows = station_rows(panel, st)
++    step = body.h + 1
++    fits = max(1, (128 - top) // step)
++    scrolls = fits < len(rows)
++    right = 122 if scrolls else 126                         # room for the scroll bar when the rows go on
++    panel.scroll = max(0, min(panel.scroll, len(rows) - fits))
++    if scrolls:
++        d.rectangle((125, top, 126, 127), fill=P["panel"])
++        t = top + (127 - top) * panel.scroll // len(rows)
++        d.rectangle((125, t, 126, t + max(2, (127 - top) * fits // len(rows))), fill=P["fg"])
++    y = top
++    for key, name, value in rows[panel.scroll:panel.scroll + fits]:
++        mid = round(cap_mid(body, y))
++        d.rectangle((2, mid - 2, 6, mid + 2), fill=P[key])
++        colour = P["fg"] if key == "good" else P[key]
++        if name and body.width(value) + 6 + body.width("Switch") <= right - 10:
++            # the value whole on the right, the name in what is left (a long switch name is the part that gets cut)
++            body.draw(img, 10, y, fonts.fit(body, name, right - 10 - body.width(value) - 6), P["muted"])
++            body.draw(img, right - body.width(value), y, value, colour)
++        else:                                               # a problem tells itself: "dnsmasq stopped"
++            body.draw(img, 10, y, fonts.fit(body, value, right - 10), colour)
++        y += step
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
 index 0000000..8fd3e8a
@@ -12521,10 +12805,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..5ea3f56
+index 0000000..60c5ba3
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,571 @@
+@@ -0,0 +1,799 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -13096,6 +13380,234 @@ index 0000000..5ea3f56
 +    _, ink, _ = drawn(p)
 +    assert "Writing image failed" in strings(ink)
 +    assert "None" not in " ".join(strings(ink))
++
++
++# ---- the new look: cards and Station ----
++
++GOOD, WARN = (40, 225, 110), (255, 196, 0)
++
++
++def colours(img, box):
++    """The colours of the ink inside a box (the background left out)."""
++    return {img.getpixel((x, y)) for x in range(box[0], box[2] + 1) for y in range(box[1], box[3] + 1)} - {(0, 0, 0)}
++
++
++def card_of(p, page, index):
++    p.page, p.index = page, index
++    p.key("CENTER")
++    assert p.detail is not None
++    return p
++
++
++def test_a_failed_card(tmp_path):
++    p = card_of(panel_with(tmp_path), 3, 0)
++    img, ink, _ = drawn(p)
++    s = strings(ink)
++    assert {"Gi0/3", "FAILED", "wlanpi-c18", "Writing image  63%"} <= set(s)
++    assert any(t.startswith("The connection to the") for t in s)
++    seen = set(s)
++    for _ in range(30):
++        p.key("DOWN")
++        _, ink, _ = drawn(p)
++        seen |= set(strings(ink))
++        assert fonts.overlaps(ink) == []
++    assert "Code curl 18, exit 1" in seen and "S/N 10000000aaaa0003" in seen and "e4:5f:01:aa:00:03" in seen
++    end = p.scroll
++    p.key("DOWN")
++    p.frame()
++    assert p.scroll == end                    # no further than the end
++
++
++def test_a_running_card_shows_speed_eta_and_slow(tmp_path):
++    snap = demo_snapshot()
++    snap["modules"][1]["slow"] = 200
++    p = card_of(panel_with(tmp_path, snap), 2, 1)
++    img, ink, _ = drawn(p)
++    s = strings(ink)
++    assert "25.0 MiB/s  ETA 1:00" in s and "SLOW +3:20" in s and "RUNNING" in s
++    assert WARN in colours(img, box_of(ink, "SLOW +3:20"))
++    assert fonts.overlaps(ink) == []
++
++
++def test_a_healthy_card_has_no_diagnostics_title(tmp_path):
++    snap = demo_snapshot()
++    snap["modules"][0]["diagnostics"] = {"received_at": 90, "source": "Ethernet", "title": "No recognized warnings",
++                                         "severity": "ok", "facts": {}, "issues": []}
++    p = card_of(panel_with(tmp_path, snap), 2, 0)
++    _, ink, _ = drawn(p)
++    assert "No recognized warnings" not in strings(ink)
++
++
++def test_a_usb_observation_card(tmp_path):
++    snap = demo_snapshot()
++    snap["modules"].append({"serial": "10000000bbbb0001", "mac": "e4:5f:01:bb:00:01", "hostname": None,
++                            "name": "e4:5f:01:bb:00:01", "port": "USB / port unknown", "phase": "unregistered",
++                            "state": "unknown", "detail": "USB observation; no provisioning run", "percent": None,
++                            "diagnostics": {"received_at": 90, "source": "USB", "title": "Storage missing", "severity": "bad",
++                                            "facts": {}, "issues": [{"title": "Storage missing", "advice": "Check the eMMC.",
++                                                                     "evidence": "no mmcblk0"}]},
++                            "registered": False})
++    p = panel_with(tmp_path, snap)
++    p.page = 3
++    p.index = [r.get("serial") for r in p.rows()].index("10000000bbbb0001")
++    p.key("CENTER")
++    seen = set()
++    for _ in range(10):
++        _, ink, _ = drawn(p)
++        seen |= set(strings(ink))
++        assert fonts.overlaps(ink) == []
++        p.key("DOWN")
++    # Silkscreen wraps the line: "USB, no provisioning" / "run"
++    assert "USB" in seen and "USB, no provisioning" in seen and "Storage missing" in seen
++
++
++def test_a_port_card(tmp_path):
++    p = card_of(panel_with(tmp_path), 1, 8)            # Gi0/9: a device that is not a module
++    _, ink, _ = drawn(p)
++    s = strings(ink)
++    assert {"Gi0/9", "UNKNOWN", "iPhone of Anna"} <= set(s)
++    assert any("100M" in t for t in s) and any("2.1 W" in t for t in s)
++    assert not any("MiB/s" in t for t in s)
++    p = card_of(panel_with(tmp_path), 1, 9)            # Gi0/10: free
++    _, ink, _ = drawn(p)
++    assert {"Gi0/10", "FREE", "Nothing connected"} <= set(strings(ink))
++
++
++def test_the_card_follows_its_device(tmp_path):
++    p = card_of(panel_with(tmp_path), 3, 0)
++    p.data["modules"] = [m for m in p.data["modules"] if m["name"] != "wlanpi-c18"]
++    _, ink, _ = drawn(p)
++    assert "Device left stand" in strings(ink)
++
++
++def test_the_card_shows_the_age_over_its_state_word(tmp_path):
++    p = card_of(panel_with(tmp_path, now=112), 3, 0)
++    img, ink, centred = drawn(p)
++    s = strings(ink)
++    assert "12 s" in s and "FAILED" not in s
++    assert fonts.off_centre(centred) == []
++
++
++def station_of(tmp_path, change=None, **kw):
++    snap = demo_snapshot()
++    if change:
++        change(snap["station"])
++    p = panel_with(tmp_path, snap, **kw)
++    p.page = 4
++    return p
++
++
++def test_station_wifi_block(tmp_path):
++    img, ink, _ = drawn(station_of(tmp_path))
++    s = strings(ink)
++    assert {"wlanpi-da2", "2.23.0~dev2", "78", "-61 dBm", "Good", "192.168.68.237"} <= set(s)
++    assert GOOD in colours(img, box_of(ink, "-61 dBm"))
++    assert any("866 Mb/s" in t for t in s) and not any("..." in t for t in s)
++    assert fonts.overlaps(ink) == []
++
++    def weak(station):
++        station["uplink"].update(signal=-79, quality="Weak", bars=1, rate=58)
++    img, ink, _ = drawn(station_of(tmp_path, weak))
++    assert BAD in colours(img, box_of(ink, "-79 dBm")) and BAD in colours(img, box_of(ink, "Weak"))
++
++    def fair(station):
++        station["uplink"].update(signal=-72, quality="Fair", bars=2)
++    img, ink, _ = drawn(station_of(tmp_path, fair))
++    assert WARN in colours(img, box_of(ink, "Fair"))
++
++
++def test_station_without_wifi(tmp_path):
++    def down(station):
++        station["uplink"] = {"state": "wifi_down", "device": "wlan0", "address": None, "ssid": None, "signal": None,
++                             "quality": None, "bars": None, "band": None, "generation": None, "rate": None, "speed": None,
++                             "spare_active": False}
++    img, ink, _ = drawn(station_of(tmp_path, down))
++    assert "Wi-Fi not connected" in strings(ink) and "wlan0: no network" in strings(ink)
++    assert BAD in colours(img, box_of(ink, "Wi-Fi not connected"))
++
++    def wired(station):
++        station["uplink"] = dict(station["uplink"], state="wired", device="eth1", address="198.51.100.7", ssid=None,
++                                 signal=None, quality=None, bars=None, speed=1000)
++    _, ink, _ = drawn(station_of(tmp_path, wired))
++    assert "eth1 up 1G" in strings(ink) and "198.51.100.7" in strings(ink)
++
++    def none(station):
++        station["uplink"] = {"state": "none", "spare_active": False}
++    _, ink, _ = drawn(station_of(tmp_path, none))
++    assert "No uplink" in strings(ink)
++
++    def spare(station):
++        station["uplink"]["spare_active"] = True
++    img, ink, _ = drawn(station_of(tmp_path, spare))
++    assert "built-in spare in use" in strings(ink)
++    assert WARN in colours(img, box_of(ink, "built-in spare in use"))
++
++
++def test_station_rows(tmp_path):
++    def usb(station):
++        station["links"].append({"name": "eth1", "kind": "ethernet", "role": "other", "up": True, "speed": 1000,
++                                 "address": None})
++    p = station_of(tmp_path, usb)
++    seen = set()
++    for _ in range(6):
++        _, ink, _ = drawn(p)
++        seen |= set(strings(ink))
++        assert fonts.overlaps(ink) == []
++        p.key("DOWN")
++    assert {"Stand link", "eth0 up 1G", "eth1", "up 1G", "Services", "6 of 6 up", "Switch", "answering", "Disk",
++            "41.2 GiB free"} <= seen
++    assert "Project" not in seen
++
++
++def test_station_puts_problems_first(tmp_path):
++    def trouble(station):
++        station["services"] = {"up": 5, "total": 6, "stopped": ["dnsmasq"]}
++        station["storage"], station["storage_low"] = "1.8 GiB free", True
++    snap_now = 101 + 120
++    p = station_of(tmp_path, trouble, now=snap_now)
++    p.data["switches"][0]["answering"] = False
++    p.data["switches"][0]["silent_since"] = 100      # the snapshot is 121 s old: silent for 2 min now
++    img, ink, _ = drawn(p)
++    below = sorted((b for b in ink if b[1] > 70), key=lambda b: b[1])
++    lines = []                      # the texts of each row, rows by their place from the top
++    for b in below:
++        if lines and abs(b[1] - lines[-1][0]) <= 3:
++            lines[-1][1].append(b[4])
++        else:
++            lines.append((b[1], [b[4]]))
++    assert lines[0][1] == ["dnsmasq stopped"] and "silent 2 min" in lines[1][1]
++    assert BAD in colours(img, box_of(ink, "dnsmasq stopped"))
++    seen = set(strings(ink))
++    for _ in range(4):
++        p.key("DOWN")
++        _, ink, _ = drawn(p)
++        seen |= set(strings(ink))
++    assert "1.8 GiB free" in seen
++
++
++def test_station_scrolls_when_rows_do_not_fit(tmp_path):
++    def many(station):
++        station["links"] += [{"name": f"eth{n}", "kind": "ethernet", "role": "other", "up": True, "speed": 100,
++                              "address": None} for n in range(1, 4)]
++    p = station_of(tmp_path, many)
++    img, ink, _ = drawn(p)
++    assert all(b[2] <= 122 for b in ink if b[1] > 80)             # values give the scroll bar its room
++    assert any(img.getpixel((126, y)) != (0, 0, 0) for y in range(90, 127))   # the scroll bar
++    first = set(strings(ink))
++    p.key("DOWN")
++    p.key("DOWN")
++    _, ink, _ = drawn(p)
++    assert set(strings(ink)) - first
++
++
++def test_station_without_station_data(tmp_path):
++    snap = demo_snapshot()
++    snap["station"] = None
++    p = panel_with(tmp_path, snap)
++    p.page = 4
++    _, ink, _ = drawn(p)
++    assert "wlanpi-da2" in strings(ink) and "--" in strings(ink)
++    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08

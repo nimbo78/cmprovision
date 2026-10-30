@@ -50,13 +50,14 @@ class WallboardSnapshot
             }
             $switches[] = ['name' => $switch['name'], 'model' => $switch['panel']['model'] ?? ($state['snapshot']['model'] ?? ''),
                 'verified_layout' => $switch['panel'] !== null, 'answering' => Stand::answering($state),
-                'checked_at' => $state['checked_at'], 'blocks' => $blocks];
+                'checked_at' => $state['checked_at'], 'silent_since' => $state['error']['since'] ?? null, 'blocks' => $blocks];
         }
         // A switch which has never answered has no map yet. Keep its outage visible too.
         foreach ($stand['switches'] ?? [] as $id => $state)
             if (!isset($map['switches'][$id]) && !$state['same_as'])
                 $switches[] = ['name' => $state['switch']->hostname(), 'model' => '', 'verified_layout' => false,
-                    'answering' => false, 'checked_at' => $state['checked_at'], 'blocks' => []];
+                    'answering' => false, 'checked_at' => $state['checked_at'], 'silent_since' => $state['error']['since'] ?? null,
+                    'blocks' => []];
 
         // No map: no switch configured, or none has answered yet. The modules that are on the bench still count.
         if (!$map)
