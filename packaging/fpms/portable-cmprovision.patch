@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..5d6b926
+index 0000000..721a9d2
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,642 @@
+@@ -0,0 +1,645 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10154,7 +10154,8 @@ index 0000000..5d6b926
 +def text(value):
 +    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
 +        return ""
-+    return "".join(c if c.isprintable() else " " for c in str(value))[:512]
++    # the no-break space stays: it keeps a code with its word when a cause wraps ("(curl 18)", cmprovision ShortCause)
++    return "".join(c if c.isprintable() or c == " " else " " for c in str(value))[:512]
 +
 +
 +def number(value, default=0):
@@ -10298,11 +10299,13 @@ index 0000000..5d6b926
 +            return rows[:512]
 +        modules = objects(self.data.get("modules"))
 +        if self.page == 3:
-+            modules = [
-+                m for m in modules if m.get("state") in ("fail", "stale", "unknown")
++            # the modules that need a look first, then USB observations, then devices on ports that are not modules
++            # (kind keeps what they are: unrecognized or quiet)
++            modules = [m for m in modules if m.get("state") in ("fail", "stale")] + [
++                m for m in modules if m.get("state") == "unknown"
 +            ]
 +            modules += [
-+                dict(m, state="unknown", name=text(m.get("name")) or text(m.get("mac")))
++                dict(m, kind=text(m.get("state")), state="unknown", name=text(m.get("name")) or text(m.get("mac")))
 +                for m in objects(self.data.get("unknown"))
 +            ]
 +        return modules
@@ -11037,10 +11040,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..3ff959a
+index 0000000..68301c7
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,465 @@
+@@ -0,0 +1,592 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11504,8 +11507,135 @@ index 0000000..3ff959a
 +        d.rectangle((x0, y, x0 + int((x1 - x0) * min(1, frac)), y + h - 1), fill=P[key])
 +
 +
++# ---- Devices and Errors ----
++
++def short_port(row):
++    """Gi0/3 of "t-iof-sw01-provision Gi0/3"; USB for a module seen over USB; Port ? when the server does not know it."""
++    from .cmprovision import text
++
++    port = text(row.get("port"))
++    if port.startswith("USB"):
++        return "USB"
++    if not port or port.lower() == "port unknown":
++        return "Port ?"
++    return port.rsplit(" ", 1)[-1]
++
++
++def short_step(step):
++    """Flash EEPROM of "Pre-install: Flash EEPROM": the script tells more than the phase."""
++    return step.split(": ", 1)[-1]
++
++
++def window(heights, selected, top, bottom=128, gap=0):
++    """The rows to draw, as (first, last + 1): from the top, scrolled just enough to show the selected row whole."""
++    first = 0
++    while first < selected and sum(heights[first:selected + 1]) + gap * (selected - first) > bottom - top:
++        first += 1
++    last, used = first, 0
++    while last < len(heights) and used + heights[last] <= bottom - top:
++        used += heights[last] + gap
++        last += 1
++    return first, max(last, min(len(heights), first + 1))
++
++
++def devices(img, d, panel):
++    from .cmprovision import slow, text
++
++    body, code = header(img, d, panel, "Devices"), fonts.font("code")
++    rows = panel.rows()
++    panel.selected()
++    if not rows:
++        body.draw(img, (128 - body.width("No devices")) // 2, 56, "No devices", P["muted"])
++        return
++    row_h = body.h + max(body.h, code.h) + 6
++    first, last = window([row_h] * len(rows), panel.index, 18)
++    y = 18
++    for i in range(first, last):
++        m = rows[i]
++        state = text(m.get("state"))
++        key, word = STATE.get(state, STATE["unknown"])
++        if i == panel.index:
++            d.rounded_rectangle((0, y, 127, y + row_h - 2), radius=3, fill=P["panel"], outline=P["fg"])
++        d.rectangle((3, y + 3, 5, y + row_h - 5), fill=P[key])
++        port = short_port(m)
++        x = body.draw(img, 9, y + 2, port, P["fg"])
++        percent = m.get("percent")
++        flag = slow(m.get("slow"))
++        if flag:
++            right, colour = flag, "warn"
++        elif state == "run" and type(percent) in (int, float) and 0 <= percent < 100:
++            right, colour = f"{int(percent)}%", "run"
++        elif state == "run":
++            right, colour = short_step(text(m.get("step")) or text(m.get("phase"))), "run"
++        else:
++            right, colour = word, key
++        right = fonts.fit(body, right, 124 - x - 6)
++        body.draw(img, 124 - body.width(right), y + 2, right, P[colour])
++        name = text(m.get("name")) or text(m.get("mac")) or "Unknown"
++        f = code if ":" in name else body
++        f.draw(img, 9, y + 3 + body.h, fonts.fit(f, name, 115), P["muted"])
++        if state == "run" and type(percent) in (int, float) and 0 <= percent <= 100:
++            bar(d, 9, y + row_h - 4, 124, percent / 100, key, h=2)
++        y += row_h
++
++
++UNKNOWN_KIND = {"unrecognized": "UNKNOWN", "quiet": "QUIET"}
++
++
++def error_lines(row, error):
++    """What went wrong with a row of Errors, in up to two lines: the short cause of the server; a module without one by
++    its step; a device that is not a module by what it says of itself."""
++    from .cmprovision import text
++
++    kind = text(row.get("kind"))
++    if kind:                                                # a device on a port, not a module
++        lines = [text(row.get("name")) or "Unknown device", text(row.get("detail")) or text(row.get("mac"))]
++        return [fonts.fit(error, line, 115) for line in lines if line][:2]
++    cause = text(row.get("cause"))
++    if not cause:
++        state = text(row.get("state"))
++        step = text(row.get("step")) or text(row.get("phase"))
++        cause = (step + " failed") if state == "fail" and step else ("No report" if state == "stale" else
++                                                                     text(row.get("detail")) or "USB, no provisioning run")
++    lines = fonts.wrap(error, cause, 115)
++    return lines[:1] + [fonts.fit(error, " ".join(lines[1:]), 115)] if len(lines) > 2 else lines
++
++
++def errors(img, d, panel):
++    from .cmprovision import text
++
++    body, title, error = header(img, d, panel, "Errors"), fonts.font("title"), fonts.font("error")
++    rows = panel.rows()
++    panel.selected()
++    if not rows:
++        body.draw(img, (128 - body.width("No errors")) // 2, 56, "No errors", P["muted"])
++        return
++    lines = [error_lines(r, error) for r in rows]
++    heights = [3 + title.h + len(ls) * error.h + 2 for ls in lines]
++    first, last = window(heights, panel.index, 18, gap=2)
++    y = 18
++    for i in range(first, last):
++        row, row_h = rows[i], heights[i]
++        kind = text(row.get("kind"))
++        if kind or text(row.get("state")) == "unknown":
++            key, word = "dim", UNKNOWN_KIND.get(kind, "USB" if not kind else "UNKNOWN")
++        else:
++            key, word = STATE.get(text(row.get("state")), STATE["unknown"])
++        selected = i == panel.index
++        if selected:
++            d.rounded_rectangle((0, y, 127, y + row_h - 1), radius=3, fill=P["panel"], outline=P["fg"])
++        d.rectangle((3, y + 3, 5, y + row_h - 4), fill=P[key])
++        w = chip(img, d, 124, cap_mid(title, y + 2), word, key)
++        title.draw(img, 9, y + 2, fonts.fit(title, short_port(row), 124 - w - 13), P["fg"])
++        ly = y + 3 + title.h
++        for line in lines[i]:
++            error.draw(img, 9, ly, line, P["fg"] if selected else P["muted"])
++            ly += error.h
++        y += row_h + 2
++
++
 +# pages drawn in the next steps
-+devices = errors = station = page_placeholder
++station = page_placeholder
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
 index 0000000..8fd3e8a
@@ -12391,10 +12521,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..b1b08d9
+index 0000000..5ea3f56
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,481 @@
+@@ -0,0 +1,571 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -12876,6 +13006,96 @@ index 0000000..b1b08d9
 +    p = on_port(panel_with(tmp_path, snap), 13)           # the row after the 12 ports of the first switch
 +    _, ink, _ = drawn(p)
 +    assert "sw-two" in strings(ink) and "No response" in strings(ink)
++
++
++# ---- the new look: Devices and Errors ----
++
++RUN = (70, 150, 255)
++
++
++def test_devices_in_port_order_with_state_or_step(tmp_path):
++    p = panel_with(tmp_path)
++    p.page = 2
++    img, ink, _ = drawn(p)
++    s = strings(ink)
++    assert [t for t in s if t.startswith("Gi0/")][:3] == ["Gi0/1", "Gi0/2", "Gi0/3"]
++    assert "DONE" in s and "63%" in s and "FAILED" in s and "wlanpi-a71" in s
++    assert any(img.getpixel((x, y)) == RUN for x in range(9, 125) for y in range(40, 80))   # the bar of the running one
++    assert fonts.overlaps(ink) == []
++    p.index = 3                                          # the fourth row scrolls into view
++    _, ink, _ = drawn(p)
++    s = strings(ink)
++    assert "Gi0/4" in s and "e4:5f:01:9b:31:07" in s and "Flash EEPROM" in s
++    assert fonts.overlaps(ink) == []
++
++
++def test_a_slow_module_says_so_in_devices(tmp_path):
++    snap = demo_snapshot()
++    snap["modules"][1]["slow"] = 200
++    p = panel_with(tmp_path, snap)
++    p.page = 2
++    _, ink, _ = drawn(p)
++    assert "SLOW +3:20" in strings(ink) and "63%" not in strings(ink)
++
++
++def test_errors_list_failed_and_silent_first_then_unknown_greyed(tmp_path):
++    p = panel_with(tmp_path)
++    p.page = 3
++    assert [r.get("name") for r in p.rows()] == ["wlanpi-c18", "wlanpi-4ae", "e4:5f:01:9b:31:6c", "iPhone of Anna"]
++    p.index = 3
++    img, ink, _ = drawn(p)
++    s = strings(ink)
++    assert "UNKNOWN" in s and "iPhone of Anna" in s and "Gi0/9" in s
++    assert fonts.overlaps(ink) == []
++
++
++def test_the_error_counter_counts_only_modules(tmp_path):
++    snap = demo_snapshot()
++    snap["unknown"] += [dict(snap["unknown"][0], port=f"{SWITCH} Gi0/1{n}", name=f"phone {n}") for n in range(3)]
++    p = panel_with(tmp_path, snap)
++    p.page = 3
++    _, ink, centred = drawn(p)
++    assert "3" in strings(ink)
++    assert fonts.off_centre(centred) == []
++    p.page = 0
++    _, ink, _ = drawn(p)
++    assert "OK >" in strings(ink)
++
++
++def test_a_cause_takes_two_lines_and_keeps_its_code(tmp_path):
++    p = panel_with(tmp_path)
++    p.page = 3
++    _, ink, _ = drawn(p)
++    s = strings(ink)
++    assert "Download cut" in s and "(curl 18)" in s
++    assert box_of(ink, "(curl 18)")[1] > box_of(ink, "Download cut")[3]
++
++
++def test_twenty_errors_scroll_and_keep_the_selection_whole(tmp_path):
++    snap = demo_snapshot()
++    snap["modules"] = [module(n, f"wlanpi-e{n:02d}", "fail", "failed", "Writing image", 10,
++                              cause=f"Server unreachable (curl{NBSP}7)" if n % 2 else "eMMC I/O error",
++                              port=f"{SWITCH} Gi0/{n}") for n in range(1, 21)]
++    snap["unknown"] = []
++    p = panel_with(tmp_path, snap)
++    p.page, p.index = 3, 14
++    img, ink, _ = drawn(p)
++    assert "Gi0/15" in strings(ink)
++    assert fonts.overlaps(ink) == []
++    p.index = 19
++    _, ink, _ = drawn(p)
++    assert "Gi0/20" in strings(ink) and fonts.overlaps(ink) == []
++
++
++def test_without_a_cause_the_step_is_shown(tmp_path):
++    snap = demo_snapshot()
++    for m in snap["modules"]:
++        m["cause"] = None
++    p = panel_with(tmp_path, snap)
++    p.page = 3
++    _, ink, _ = drawn(p)
++    assert "Writing image failed" in strings(ink)
++    assert "None" not in " ".join(strings(ink))
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
