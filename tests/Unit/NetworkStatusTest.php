@@ -146,6 +146,9 @@ class NetworkStatusTest extends TestCase
         $status = new NetworkStatus($this->root.'/net', $this->root.'/route', fn () => null, fn () => $addresses);
 
         $this->assertSame('2c:cf:67:30:7d:a2', $status->serverMac());
+        // its link to the stand is eth0 all the same: Station must not call it down
+        $roles = array_column(array_filter($this->readStatus($addresses)['links'], fn ($l) => $l['name'] === 'eth0'), 'role');
+        $this->assertSame(['stand'], $roles);
         $this->assertTrue(NetworkStatus::isStationAddress('172.20.0.1'));
         $this->assertTrue(NetworkStatus::isStationAddress('172.20.0.10'));
         $this->assertFalse(NetworkStatus::isStationAddress('172.20.0.11'));

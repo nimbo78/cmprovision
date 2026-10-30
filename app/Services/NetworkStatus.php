@@ -130,7 +130,9 @@ class NetworkStatus
                 continue;
             }
             $iface = $known[$name] ?? $this->describe($name, $addresses, null);
-            $role = $modules !== null && $modules['name'] === $name ? 'stand'
+            // the stand's link: the interface of 172.20.0.1, or on a second station the one with its stand address (.2)
+            $onStand = $modules === null && array_filter($addresses[$name] ?? [], fn ($a) => self::inStand(explode('/', $a)[0]));
+            $role = ($modules !== null && $modules['name'] === $name) || $onStand ? 'stand'
                 : ($uplink !== null && $uplink['name'] === $name ? 'uplink'
                     : (in_array($name, array_column($backups, 'name'), true) ? 'backup' : 'other'));
             $links[$name] = $iface + ['role' => $role, 'speed' => null];
