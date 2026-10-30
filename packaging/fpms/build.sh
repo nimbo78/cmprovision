@@ -10,7 +10,9 @@ trap 'rm -rf "$WORK"' EXIT
 sh "$HERE/prepare.sh" "$WORK/source"
 mkdir -p "$OUT"
 if [ "$PROFILE" = lite ]; then
-    sh "$WORK/source/tools/build-lite-deb.sh" "$OUT"
+    # fpms-lite goes with the cmprovision it was made for: its version, so apt sees each one as an upgrade
+    CMP_VERSION=$(dpkg-parsechangelog -l "$HERE/../../debian/changelog" -S Version)
+    sh "$WORK/source/tools/build-lite-deb.sh" "$OUT" "$CMP_VERSION"
 else
     # dh-virtualenv builds native dependencies: use an arm64 Debian 13 builder for the Pi package.
     [ "$(dpkg --print-architecture)" = arm64 ] || { echo 'WLAN Pi package requires an arm64 builder' >&2; exit 2; }

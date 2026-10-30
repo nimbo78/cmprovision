@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..117e33d
+index 0000000..ed1ba87
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,375 @@
+@@ -0,0 +1,381 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10154,8 +10154,14 @@ index 0000000..117e33d
 +def text(value):
 +    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
 +        return ""
-+    # the no-break space stays: it keeps a code with its word when a cause wraps ("(curl 18)", cmprovision ShortCause)
-+    return "".join(c if c.isprintable() or c == " " else " " for c in str(value))[:512]
++    # the no-break space stays: it keeps a code with its word when a cause wraps ("(curl 18)", cmprovision ShortCause);
++    # the typographic marks the server sends (Neighbors::text cuts with "\u2026") have no glyph in the panel's fonts
++    value = str(value).translate(ASCII_MARKS)
++    return "".join(c if c.isprintable() or c == "\u00a0" else " " for c in value)[:512]
++
++
++ASCII_MARKS = str.maketrans({"\u2026": "...", "\u2013": "-", "\u2014": "-", "\u2018": "'", "\u2019": "'",
++                             "\u201c": '"', "\u201d": '"'})
 +
 +
 +def number(value, default=0):
@@ -11135,10 +11141,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..28545c7
+index 0000000..9d72cc7
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,939 @@
+@@ -0,0 +1,949 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11178,11 +11184,7 @@ index 0000000..28545c7
 +    elif panel.detail:
 +        card(img, d, panel)
 +    else:
-+        draw = [overview, ports, devices, errors, station][panel.page]
-+        if draw is page_placeholder:
-+            page_placeholder(img, d, panel, PAGES[panel.page])
-+        else:
-+            draw(img, d, panel)
++        [overview, ports, devices, errors, station][panel.page](img, d, panel)
 +    until = panel.prompt_until
 +    now = panel.clock()
 +    if until is not None and now < until:
@@ -11257,10 +11259,6 @@ index 0000000..28545c7
 +    for i, line in enumerate(lines):
 +        body.draw(img, (128 - body.width(line)) // 2, y, line, P["accent" if i == 0 else "muted"])
 +        y += body.h + 2
-+
-+
-+def page_placeholder(img, d, panel, title):
-+    header(img, d, panel, title)
 +
 +
 +def leave_prompt(img, d, left):
@@ -11374,7 +11372,7 @@ index 0000000..28545c7
 +        columns = []
 +        for b, block in enumerate(objects(switch.get("blocks"), 32)):
 +            ports = objects(block.get("ports"), 256)
-+            if number(block.get("rows"), 2) >= 2:
++            if number(block.get("rows"), 1) >= 2:              # as Panel.map_view() reads a block without rows
 +                columns += [(ports[i], ports[i + 1] if i + 1 < len(ports) else None, b) for i in range(0, len(ports), 2)]
 +            else:
 +                columns += [(None, p, b) for p in ports]
@@ -11446,6 +11444,8 @@ index 0000000..28545c7
 +    state = text(row.get("state"))
 +    if state == "module":
 +        return STATE.get(FILTER_STATE.get(text(row.get("filter")), "unknown"), STATE["unknown"])
++    if state == "No response":                              # the row of a switch that does not answer
++        return "warn", "SILENT"
 +    return PORT_STATES.get(state, ("dim", state.upper()[:8] or "PORT"))
 +
 +
@@ -11505,20 +11505,25 @@ index 0000000..28545c7
 +        return
 +    band = cap(body) + 5
 +    yb = mid_y(body, 17, band, "t")
-+    if not view["answering"]:
++    if not view["answering"] and not view["columns"]:
 +        body.draw(img, 2, yb, fonts.fit(body, view["name"], LINE_W), P["muted"])
 +        body.draw(img, (128 - body.width("No response")) // 2, 52, "No response", P["warn"])
 +        return
++    # a switch that stopped answering keeps its last map: the ports as they were, said to be old
 +    cells, numbered, bank, banks, detail_y = map_layout(view["columns"], panel.ports_map(), panel.index)
 +    pages = f"{bank + 1}/{banks}" if banks > 1 else ""
-+    right = 126 - (body.width(pages) + 4 if pages else 0)
++    tag, tag_colour = ("not answering", "warn") if not view["answering"] else (pages, "fg")
++    right = 126 - (body.width(tag) + 4 if tag else 0)
 +    body.draw(img, 2, yb, fonts.fit(body, view["name"], right - 2), P["muted"])
++    if tag:
++        body.draw(img, 126 - body.width(tag), yb, tag, P[tag_colour])
 +    if pages:
-+        body.draw(img, 126 - body.width(pages), yb, pages, P["fg"])
 +        for b in range(banks):                              # where this screen is among the pages
 +            cx = 64 - (banks * 6) // 2 + b * 6
 +            d.rectangle((cx, 60, cx + 3, 60), fill=P["fg"] if b == bank else P["dim"])
 +    for x, y, w, h, index in cells:
++        if index >= len(rows):                              # past the 512 ports a list holds
++            continue
 +        row = rows[index]
 +        fill, outline = port_style(row)
 +        box = (x, y, x + w - 1, y + h - 1)
@@ -11570,6 +11575,11 @@ index 0000000..28545c7
 +        return
 +    if row.get("server"):
 +        for line in fonts.wrap(body, "This server (the provisioner)", 124):
++            body.draw(img, 2, y, line, P["muted"])
++            y += body.h
++        return
++    if text(row.get("state")) == "No response":
++        for line in fonts.wrap(body, "The switch does not answer", 124):
 +            body.draw(img, 2, y, line, P["muted"])
 +            y += body.h
 +        return
@@ -11874,6 +11884,8 @@ index 0000000..28545c7
 +    device = next((u for u in objects(panel.data.get("unknown")) if text(u.get("port")) == label), None)
 +    if row.get("server"):
 +        lines += [("muted", body, line) for line in fonts.wrap(body, "This server (the provisioner)", 120)]
++    elif text(row.get("state")) == "No response":
++        lines += [("muted", body, line) for line in fonts.wrap(body, "The switch does not answer", 120)]
 +    elif device is not None:
 +        lines.append(("fg", body, fonts.fit(body, text(device.get("name")) or "Unknown device", 120)))
 +        for value in (text(device.get("detail")), text(device.get("mac"))):
@@ -12010,6 +12022,10 @@ index 0000000..28545c7
 +
 +    def link_row(name, link):
 +        up = link.get("up") is not False
++        signal = number(link.get("signal"), None)
++        if up and text(link.get("kind")) == "wifi" and text(link.get("ssid")):
++            # a Wi-Fi link: its network and signal, as the uplink block tells its own
++            return "good", name, " ".join(t for t in (text(link.get("ssid")), f"{int(signal)} dBm" if signal is not None else "") if t)
 +        return ("good" if up else "bad", name, " ".join(t for t in (text(link.get("name")) if name == "Stand link" else "",
 +                                                                   "up" if up else "down",
 +                                                                   link_speed(link.get("speed")) if up else "") if t))
@@ -12964,10 +12980,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..a50606d
+index 0000000..6f83b3d
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1124 @@
+@@ -0,0 +1,1179 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -14092,6 +14108,61 @@ index 0000000..a50606d
 +        seen += [b for b in ink if b[4] == "e4:5f:01:aa:00:03"]
 +        p.key("DOWN")
 +    assert seen and all(b[3] - b[1] + 1 <= 6 for b in seen)       # Silkscreen: 5 px capitals
++
++
++# ---- the deferred minors ----
++
++from fpms.integrations.cmprovision import text as clean_text  # noqa: E402
++
++
++def test_a_stand_of_more_than_512_ports_draws_its_ports(tmp_path):
++    snap = big_stand(13)                                 # 12 + 12 x 48 ports
++    p = panel_with(tmp_path, snap)
++    p.page = 1
++    for index in (0, 300, 511, 600):
++        p.index = index
++        _, ink, _ = drawn(p)
++        assert fonts.overlaps(ink) == []
++
++
++def test_a_silent_switch_keeps_its_last_map(tmp_path):
++    snap = demo_snapshot()
++    snap["switches"][0]["answering"] = False
++    p = panel_with(tmp_path, snap)
++    p.page, p.index = 1, 3                               # Gi0/3: the row before the ports is the switch itself
++    _, ink, _ = drawn(p)
++    s = strings(ink)
++    assert {"1", "3", "5", "7"} <= set(s) and any("not answering" in t for t in s)
++    p.index = 0                                          # the switch itself
++    p.key("CENTER")
++    _, ink, _ = drawn(p)
++    assert "NO RESPO" not in strings(ink) and "SILENT" in strings(ink)
++    assert fonts.overlaps(ink) == []
++
++
++def test_typographic_punctuation_from_the_server_is_drawn_as_ascii():
++    assert clean_text("a… b – c — “d” ‘e’") == 'a... b - c - "d" \'e\''
++
++
++def test_a_block_without_rows_is_one_row_on_overview_as_on_ports(tmp_path):
++    snap = demo_snapshot()
++    for block in snap["switches"][0]["blocks"]:
++        del block["rows"]
++    size, cells = new.mini_map(snap["switches"])
++    assert len({y for _, y, _ in cells}) == 1            # one row, as map_view() reads a block without rows
++
++
++def test_a_wifi_backup_link_shows_its_network(tmp_path):
++    def backup(station):
++        station["links"].append({"name": "wlan0", "kind": "wifi", "role": "backup", "up": True, "speed": None,
++                                 "address": "192.168.68.236", "ssid": "78", "signal": -60})
++    p = station_of(tmp_path, backup)
++    seen = []
++    for _ in range(4):
++        _, ink, _ = drawn(p)
++        seen += strings(ink)
++        p.key("DOWN")
++    assert "wlan0" in seen and "78 -60 dBm" in seen
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08

@@ -30,7 +30,9 @@ class DisplayStation
                 'uplink' => self::uplink($network),
                 'links' => array_map(fn ($l) => ['name' => $l['name'], 'kind' => $l['kind'] ?? 'other', 'role' => $l['role'] ?? 'other',
                     'up' => (bool) ($l['up'] ?? false), 'speed' => $l['speed'] ?? null,
-                    'address' => isset($l['addresses'][0]) ? explode('/', $l['addresses'][0])[0] : null], $network['links'] ?? []),
+                    'address' => isset($l['addresses'][0]) ? explode('/', $l['addresses'][0])[0] : null,
+                    // a Wi-Fi link tells its network and signal, as the uplink does
+                    'ssid' => $l['wifi']['ssid'] ?? null, 'signal' => $l['wifi']['signal'] ?? null], $network['links'] ?? []),
                 'services' => self::services(),
             ];
         });

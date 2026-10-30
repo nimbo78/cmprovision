@@ -30,6 +30,14 @@ class PackagingTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('#^\s*"\$APP/artisan"#m', $restore);
     }
 
+    /* fpms-lite was built as 0.1.0~cmprovision1 every time and apt saw no upgrade: it takes the version of cmprovision */
+    public function test_fpms_lite_takes_the_version_of_cmprovision()
+    {
+        $build = $this->file('packaging/fpms/build.sh');
+        $this->assertStringContainsString('dpkg-parsechangelog -l "$HERE/../../debian/changelog" -S Version', $build);
+        $this->assertStringContainsString('build-lite-deb.sh" "$OUT" "$CMP_VERSION"', $build);
+    }
+
     public function test_fpms_preferences_are_backed_up_and_restore_stops_the_shared_reader()
     {
         $this->assertStringContainsString('/etc/default/cmprovision-fpms.json', $this->file('tools/backup.sh'));

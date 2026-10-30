@@ -135,10 +135,16 @@ class FpmsTest extends TestCase
         $this->network(['links' => [
             ['name' => 'eth0', 'kind' => 'ethernet', 'role' => 'stand', 'up' => true, 'speed' => 1000, 'addresses' => ['172.20.0.1/16']],
             ['name' => 'eth1', 'kind' => 'ethernet', 'role' => 'other', 'up' => true, 'speed' => 100, 'addresses' => []],
+            ['name' => 'wlan0', 'kind' => 'wifi', 'role' => 'backup', 'up' => true, 'addresses' => ['192.0.2.9/24'], 'wifi' => self::WIFI],
         ]]);
         $this->assertSame([
-            ['name' => 'eth0', 'kind' => 'ethernet', 'role' => 'stand', 'up' => true, 'speed' => 1000, 'address' => '172.20.0.1'],
-            ['name' => 'eth1', 'kind' => 'ethernet', 'role' => 'other', 'up' => true, 'speed' => 100, 'address' => null],
+            ['name' => 'eth0', 'kind' => 'ethernet', 'role' => 'stand', 'up' => true, 'speed' => 1000, 'address' => '172.20.0.1',
+                'ssid' => null, 'signal' => null],
+            ['name' => 'eth1', 'kind' => 'ethernet', 'role' => 'other', 'up' => true, 'speed' => 100, 'address' => null,
+                'ssid' => null, 'signal' => null],
+            // a Wi-Fi backup link tells its network and signal, as the uplink does
+            ['name' => 'wlan0', 'kind' => 'wifi', 'role' => 'backup', 'up' => true, 'speed' => null, 'address' => '192.0.2.9',
+                'ssid' => 'private-ssid', 'signal' => -61],
         ], DisplayStation::current()['links']);
     }
 
