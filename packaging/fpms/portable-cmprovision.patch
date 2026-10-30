@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..7317f36
+index 0000000..e1ea538
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,590 @@
+@@ -0,0 +1,638 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10083,6 +10083,8 @@ index 0000000..7317f36
 +MAP_TOP = 49
 +CUBE, GAP, BLOCK_GAP = 12, 2, 3
 +PAGES = ("Overview", "Ports", "Devices", "Errors", "Station")
++PROMPT_SECONDS = 3.0   # the leave prompt waits this long for the second press of button 2
++AGE_SHOWN = 10         # data younger than this is not called old
 +
 +
 +def trusted_owners():
@@ -10199,7 +10201,12 @@ index 0000000..7317f36
 +
 +
 +class Panel:
-+    def __init__(self, config=CONFIG, snapshot=SNAPSHOT):
++    def __init__(self, config=CONFIG, snapshot=SNAPSHOT, can_leave=True, clock=time.monotonic):
++        """can_leave: there is a menu to go back to (WLAN Pi); on Lite the panel is the whole screen.
++        clock: monotonic seconds, for the leave prompt (the tests turn it)."""
++        self.can_leave, self.clock = can_leave, clock
++        # button 2 on a page asks first: until this time a second press leaves (PROMPT_SECONDS)
++        self.prompt_until = None
 +        self.config, self.snapshot = Path(config), Path(snapshot)
 +        self.page, self.index, self.detail, self.scroll = 0, 0, None, 0
 +        self.data, self.problem, self.age = {}, "Waiting for data", None
@@ -10236,7 +10243,32 @@ index 0000000..7317f36
 +                )
 +                return
 +            self.data, self.age = data, int(now - generated)
-+            self.problem = "Stale data" if self.age > 20 else ""
++            # old data stays on the screen, told by its age (age_label): the values are the last ones saved
++            self.problem = ""
++
++    def age_label(self):
++        """'' while the data is fresh (under AGE_SHOWN seconds), then '12 s', and from a minute '3 min'."""
++        if self.age is None or self.age < AGE_SHOWN:
++            return ""
++        return f"{self.age} s" if self.age < 60 else f"{self.age // 60} min"
++
++    def _panel_setting(self, key, values):
++        panel = self.data.get("panel") if isinstance(self.data.get("panel"), dict) else {}
++        value = panel.get(key)
++        return value if isinstance(value, str) and value in values else values[0]
++
++    def theme(self):
++        """new or classic (Settings → Provisioning → FPMS display); new when the server does not say."""
++        return self._panel_setting("theme", ("new", "classic"))
++
++    def ports_map(self):
++        """pages (12 px cells with numbers, 8 columns to a screen) or whole (every port of a switch at once)."""
++        return self._panel_setting("ports_map", ("pages", "whole"))
++
++    def error_count(self):
++        """The modules that failed or went silent: the red counter of Errors and the OK > of Overview. Devices on ports
++        that are not modules are listed in Errors too, but a phone plugged in for good must not keep the counter red."""
++        return sum(1 for m in objects(self.data.get("modules")) if m.get("state") in ("fail", "stale"))
 +
 +    def rows(self):
 +        if self.page == 1:
@@ -10281,18 +10313,28 @@ index 0000000..7317f36
 +        return rows[self.index] if rows else None
 +
 +    def key(self, key):
-+        """False means leave this integration: button 3 closes a card, and leaves when no card is open. Left and right only
-+        turn the pages. No operation writes to a device."""
++        """False means leave this integration. Button 2 goes back: it closes a card, and on a page it asks first, so a
++        second press within PROMPT_SECONDS leaves (on Lite, with no menu to go to, it is Overview). Button 3 does nothing
++        here: in the stock menu it is the Reboot/Shutdown shortcut, whose Confirm the next press of the centre would take.
++        Button 1 is Overview. Left and right turn the pages. No operation writes to a device."""
 +        with self.lock:
++            now = self.clock()
++            if self.prompt_until is not None:
++                asked, self.prompt_until = now < self.prompt_until, None
++                if asked:
++                    # the second press leaves; any other button only takes the question away
++                    return key != "KEY2"
 +            if key == "KEY3":
++                pass
++            elif key == "KEY1":
++                self.page, self.index, self.detail, self.scroll = 0, 0, None, 0
++            elif key == "KEY2":
 +                if self.detail is not None:
 +                    self.detail, self.scroll = None, 0
++                elif self.can_leave:
++                    self.prompt_until = now + PROMPT_SECONDS
 +                else:
-+                    return False
-+            elif key == "KEY1":
-+                self.page, self.index, self.detail = 0, 0, None
-+            elif key == "KEY2":
-+                self.page, self.index, self.detail = 1, 0, None
++                    self.page, self.index, self.scroll = 0, 0, 0
 +            elif self.detail is not None:
 +                if key in ("LEFT", "CENTER"):
 +                    self.detail, self.scroll = None, 0
@@ -10300,11 +10342,17 @@ index 0000000..7317f36
 +                    self.scroll = max(0, self.scroll + (1 if key == "DOWN" else -1))
 +            elif key in ("LEFT", "RIGHT"):
 +                self.page = (self.page + (1 if key == "RIGHT" else -1)) % len(PAGES)
-+                self.index = 0
++                self.index, self.scroll = 0, 0
++            elif key in ("UP", "DOWN") and self.page == 4:
++                # Station scrolls when its rows do not fit
++                self.scroll = max(0, self.scroll + (1 if key == "DOWN" else -1))
 +            elif key in ("UP", "DOWN"):
 +                self.index = (self.index + (1 if key == "DOWN" else -1)) % max(
 +                    1, len(self.rows())
 +                )
++            elif key == "CENTER" and self.page == 0:
++                if self.error_count():
++                    self.page, self.index = 3, 0
 +            elif key == "CENTER" and self.page in (1, 2, 3):
 +                row = self.selected()
 +                if row:
@@ -10860,10 +10908,10 @@ index 0000000..cf9fab1
 +    return bad
 diff --git a/fpms/integrations/cmprovision_menu.py b/fpms/integrations/cmprovision_menu.py
 new file mode 100644
-index 0000000..c8fe58e
+index 0000000..ba50d9d
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_menu.py
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,119 @@
 +"""Adapter for the existing FPMS menu; the existing process owns all hardware."""
 +
 +import logging
@@ -10873,7 +10921,8 @@ index 0000000..c8fe58e
 +
 +log = logging.getLogger(__name__)
 +
-+# In the stock menu button 3 is the Reboot/Shutdown shortcut: the press that follows a leave is not meant for it
++# The panel is left by a second press of button 2; in the stock menu button 2 turns the display upside down, so a press
++# of it that follows a leave (one more, in a hurry) is not meant for the stock menu
 +LEAVE_GUARD_SECONDS = 2.0
 +
 +
@@ -10975,8 +11024,8 @@ index 0000000..c8fe58e
 +    def key(self, key):
 +        with self.panel.lock:
 +            if not self.selected():
-+                # a second press of button 3 right after leaving would be the stock Reboot shortcut: it is swallowed
-+                return key == "KEY3" and time.monotonic() - self.left_at < LEAVE_GUARD_SECONDS
++                # one more press of button 2 right after leaving would turn the display over: it is swallowed
++                return key == "KEY2" and time.monotonic() - self.left_at < LEAVE_GUARD_SECONDS
 +            if not self.panel.key(key):
 +                self.leave()
 +            else:
@@ -10984,7 +11033,7 @@ index 0000000..c8fe58e
 +            return True
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..614637c
+index 0000000..8fd3e8a
 --- /dev/null
 +++ b/fpms/lite.py
 @@ -0,0 +1,145 @@
@@ -11029,7 +11078,8 @@ index 0000000..614637c
 +        "--seconds", type=int, choices=range(1, 601), help="Bounded hardware test"
 +    )
 +    args = parser.parse_args()
-+    panel = Panel(args.config, args.snapshot)
++    # the panel is the whole screen here: button 2 goes back to Overview instead of leaving
++    panel = Panel(args.config, args.snapshot, can_leave=False)
 +    panel.refresh(force=True)
 +    if args.preview:
 +        panel.frame().save(args.preview)
@@ -11110,8 +11160,7 @@ index 0000000..614637c
 +                                    "KEY1": "KEY3",
 +                                    "KEY3": "KEY1",
 +                                }.get(key, key)
-+                            if not panel.key(key):
-+                                panel.key("KEY1")
++                            panel.key(key)
 +                            if args.seconds:
 +                                print(
 +                                    json.dumps(
@@ -11274,10 +11323,10 @@ index 0000000..0e0ea7f
 +WantedBy=multi-user.target
 diff --git a/tests/test_cmprovision.py b/tests/test_cmprovision.py
 new file mode 100644
-index 0000000..c9665fd
+index 0000000..439954f
 --- /dev/null
 +++ b/tests/test_cmprovision.py
-@@ -0,0 +1,502 @@
+@@ -0,0 +1,485 @@
 +import json
 +import os
 +import signal
@@ -11381,15 +11430,14 @@ index 0000000..c9665fd
 +
 +
 +def test_port_opens_correct_module_and_never_switches_identity_when_it_leaves(panel):
-+    panel.key("KEY2")
++    panel.page = 1
 +    panel.key("CENTER")
 +    assert panel.detail_row()["serial"] == "first"
 +    panel.data["modules"] = panel.data["modules"][1:]
 +    assert panel.detail_row() is None
 +    assert panel.frame().size == (128, 128)
-+    panel.key("KEY3")
++    panel.key("LEFT")
 +    assert panel.detail is None
-+    assert panel.key("KEY3") is False  # with no card open button 3 leaves
 +
 +
 +def test_all_pages_render_and_errors_include_unregistered_devices(panel):
@@ -11425,7 +11473,7 @@ index 0000000..c9665fd
 +
 +def test_stale_snapshot_is_explicit_and_disable_clears_device_data(panel):
 +    panel.refresh(now=150, force=True)
-+    assert panel.problem == "Stale data" and panel.age == 50
++    assert panel.problem == "" and panel.age == 50 and panel.age_label() == "50 s"
 +    assert panel.data["modules"]
 +    panel.config.write_text(json.dumps({"enabled": False, "open_on_start": False}))
 +    panel.refresh(force=True)
@@ -11480,8 +11528,8 @@ index 0000000..c9665fd
 +    assert state["display_state"] == "menu"  # Enabling does not steal the current page.
 +    bridge.action()
 +    assert bridge.selected()
-+    assert bridge.key("KEY2")
-+    assert bridge.key("KEY3")
++    assert bridge.key("KEY2")      # asks
++    assert bridge.key("KEY2")      # leaves
 +    assert not bridge.selected()
 +    bridge.action()
 +    panel.config.write_text(json.dumps({"enabled": False, "open_on_start": False}))
@@ -11489,9 +11537,10 @@ index 0000000..c9665fd
 +    bridge.tick(publish=False)
 +    assert [m["name"] for m in menu] == ["Network", "System"]
 +    assert state["display_state"] == "menu"
-+    assert bridge.key("KEY3")  # the press right after the leave is swallowed (the stock Reboot shortcut)
++    assert bridge.key("KEY2")  # the press right after the leave is swallowed (the stock rotation)
 +    bridge.left_at = -1e9
-+    assert not bridge.key("KEY3")  # normal FPMS shortcuts work outside the integration
++    assert not bridge.key("KEY2")  # normal FPMS buttons work outside the integration
++    assert not bridge.key("KEY3")
 +
 +
 +def test_startup_preference_is_used_once_only(panel):
@@ -11615,32 +11664,15 @@ index 0000000..c9665fd
 +    assert row["slow"] == 215 and slow(row["slow"]) == "SLOW +3:35"
 +
 +
-+def test_button_3_closes_a_card_then_leaves_and_left_and_right_only_turn_the_pages(panel):
++def test_left_and_right_only_turn_the_pages_and_button_2_closes_a_card_then_asks_to_leave(panel):
 +    assert panel.key("LEFT") is True and panel.page == len(cmprovision.PAGES) - 1  # round the end
 +    assert panel.key("RIGHT") is True and panel.page == 0
 +    panel.key("RIGHT")
 +    panel.key("CENTER")
 +    assert panel.detail is not None
-+    assert panel.key("KEY3") is True and panel.detail is None  # the first press closes the card
-+    assert panel.key("KEY3") is False  # the second leaves
-+
-+
-+def test_the_press_after_a_leave_is_swallowed_and_a_later_one_is_the_stock_menus(panel, monkeypatch):
-+    from fpms.integrations import cmprovision_menu
-+
-+    clock = {"now": 100.0}
-+    monkeypatch.setattr(cmprovision_menu.time, "monotonic", lambda: clock["now"])
-+    state = {"display_state": "menu", "button_press_count": 0, "option_selected": None, "current_menu_location": [0]}
-+    adapter = CmprovisionMenu(state, [], lambda image: None, hardware=False, panel=panel)
-+    adapter.tick(publish=False)
-+    adapter.show()
-+    assert adapter.key("KEY3") is True   # leaves
-+    assert not adapter.selected() and state["display_state"] == "menu"
-+    clock["now"] += 0.5
-+    assert adapter.key("KEY3") is True   # in a hurry: the stock Reboot shortcut must not get it
-+    clock["now"] += 3
-+    assert adapter.key("KEY3") is False  # later: the stock menu's own button
-+    assert adapter.key("KEY2") is False  # other buttons are never held back
++    assert panel.key("KEY2") is True and panel.detail is None  # the first press closes the card
++    assert panel.key("KEY2") is True  # the second asks
++    assert panel.key("KEY2") is False  # the third leaves
 +
 +
 +def test_the_frame_goes_into_the_image_of_the_stock_menu_and_does_not_replace_it(panel):
@@ -11662,7 +11694,7 @@ index 0000000..c9665fd
 +    adapter = CmprovisionMenu(state, [], lambda image: None, hardware=False, panel=panel, redraw=lambda: redraws.append(1))
 +    adapter.tick(publish=False)
 +    adapter.show()
-+    assert adapter.key("KEY3") is True
++    assert adapter.key("KEY2") is True and adapter.key("KEY2") is True
 +    assert state["display_state"] == "menu" and redraws == [1]
 +    # a stock drawing that fails must not stop the menu
 +    broken = CmprovisionMenu(state, [], lambda image: None, hardware=False, panel=panel, redraw=lambda: 1 / 0)
@@ -11879,6 +11911,261 @@ index 0000000..d024b09
 +    body.draw(img, 2, 100, "Press 2", (0, 0, 0))
 +    ink, _ = fonts.stop_recording()
 +    assert fonts.overlaps(ink) == []
+diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
+new file mode 100644
+index 0000000..a038086
+--- /dev/null
++++ b/tests/test_cmprovision_v2.py
+@@ -0,0 +1,249 @@
++"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
++
++The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
++ports as on wlanpi-da2 with modules in every state, and for the bigger cases a second switch of 48 ports.
++"""
++
++import copy
++import json
++
++import pytest
++
++from fpms.integrations import cmprovision
++from fpms.integrations.cmprovision import Panel
++from fpms.integrations.cmprovision_menu import CmprovisionMenu
++
++SWITCH = "t-iof-sw01-provision"
++NBSP = " "
++
++
++def module(n, name, state, phase, step, percent=None, **more):
++    row = {"serial": f"10000000aaaa00{n:02x}", "mac": f"e4:5f:01:aa:00:{n:02x}", "hostname": None if ":" in name else name,
++           "name": name, "port": f"{SWITCH} Gi0/{n}", "phase": phase, "state": state, "step": step, "detail": None,
++           "percent": percent, "speed": None, "eta": None, "cycle": 300, "silent": None, "slow": None, "os_state": None,
++           "diagnostics": None, "steps": [], "cause": None, "reason": None, "code": None, "advice": None, "registered": True}
++    row.update(more)
++    return row
++
++
++def demo_snapshot():
++    modules = [
++        module(1, "wlanpi-fd3", "ok", "done", "Done", 100),
++        module(2, "wlanpi-a71", "run", "write", "Writing image", 63, speed=25 * 1048576, eta=60),
++        module(3, "wlanpi-c18", "fail", "failed", "Writing image", 63, cause=f"Download cut (curl{NBSP}18)",
++               reason="The connection to the provisioning server was closed before the download finished: server "
++                      "timeout, network problem or server restart.",
++               advice="The partition table was cleared, so the module starts from the network again. Restart the "
++                      "module (power cycle) to try again.", code="curl 18, exit 1"),
++        module(4, "e4:5f:01:9b:31:07", "run", "preinstall", "Pre-install: Flash EEPROM"),
++        module(5, "wlanpi-4ae", "stale", "write", "Writing image", 41, silent=360, cause="No report for 6 min",
++               advice="Check its power, the network cable and the switch port, then restart it; provisioning starts over."),
++        module(6, "e4:5f:01:9b:31:6c", "fail", "failed", "Pre-install", None, cause="EEPROM: no SPI chip",
++               advice="flashrom found no SPI flash chip on the module, so the EEPROM was not changed. Restart the "
++                      "module (power cycle) to try again.", code="exit 1"),
++        module(7, "wlanpi-d62", "ok", "done", "Done", 100),
++    ]
++    by_port = {int(m["port"].rsplit("/", 1)[1]): m for m in modules}
++    filt = {"ok": "ok", "run": "run", "fail": "fail", "stale": "stale"}
++
++    def port(n):
++        m = by_port.get(n)
++        if m:
++            return {"name": f"Gi0/{n}", "number": n, "state": "module", "mark": None, "filter": filt[m["state"]],
++                    "serials": [m["serial"]], "server": False, "speed": 1000, "watts": 4.2}
++        if n == 8:
++            return {"name": "Gi0/8", "number": 8, "state": "uplink", "mark": None, "filter": "uplink", "serials": [],
++                    "server": True, "speed": 1000, "watts": None}
++        if n == 9:
++            return {"name": "Gi0/9", "number": 9, "state": "unrecognized", "mark": None, "filter": "foreign",
++                    "serials": [], "server": False, "speed": 100, "watts": 2.1}
++        return {"name": f"Gi0/{n}", "number": n, "state": "free", "mark": None, "filter": "free", "serials": [],
++                "server": False, "speed": None, "watts": None}
++
++    return {
++        "version": 1, "generated_at": 100, "clock": "2026-10-30 16:00:00 MSK", "host": "wlanpi-da2",
++        "app_version": "2.23.0~dev2", "project": "stage1-test",
++        "batch": {"title": "2 failed", "open": True, "counts": {"active": 3, "done": 37, "failed": 2}, "left_seconds": 380},
++        "counts": {"done": 2, "running": 2, "failed": 2, "stale": 1, "unknown": 0},
++        "switches": [{"name": SWITCH, "model": "WS-C2960CX-8PC-L", "verified_layout": True, "answering": True,
++                      "checked_at": 99, "blocks": [
++                          {"rows": 2, "label": "PORTS", "ports": [port(n) for n in range(1, 9)]},
++                          {"rows": 2, "label": "UPLINK", "ports": [port(n) for n in (9, 10)]},
++                          {"rows": 2, "label": "SFP", "ports": [port(n) for n in (11, 12)]}]}],
++        "modules": modules,
++        "unknown": [{"port": f"{SWITCH} Gi0/9", "state": "unrecognized", "name": "iPhone of Anna", "mac": "aa:bb:cc:00:00:09",
++                     "detail": "Apple, Inc.", "says": False}],
++        "station": {"management": "192.168.68.237", "provisioning": "eth0 up", "storage": "41.2 GiB free",
++                     "storage_low": False,
++                     "uplink": {"state": "wifi", "device": "wlan1", "address": "192.168.68.237", "ssid": "78", "signal": -61,
++                                "quality": "Good", "bars": 3, "band": "5 GHz", "generation": "6", "rate": 866,
++                                "speed": None, "spare_active": False},
++                     "links": [{"name": "eth0", "kind": "ethernet", "role": "stand", "up": True, "speed": 1000,
++                                "address": "172.20.0.1"},
++                               {"name": "wlan1", "kind": "wifi", "role": "uplink", "up": True, "speed": None,
++                                "address": "192.168.68.237"}],
++                     "services": {"up": 6, "total": 6, "stopped": []}},
++        "panel": {"theme": "new", "ports_map": "pages"},
++    }
++
++
++class Clock:
++    def __init__(self, now=1000.0):
++        self.now = now
++
++    def __call__(self):
++        return self.now
++
++
++def panel_with(tmp_path, snapshot=None, now=101, **kw):
++    config, path = tmp_path / "config.json", tmp_path / "snapshot.json"
++    config.write_text(json.dumps({"enabled": True, "open_on_start": False}))
++    path.write_text(json.dumps(demo_snapshot() if snapshot is None else snapshot))
++    p = Panel(config, path, **kw)
++    p.refresh(now=now, force=True)
++    return p
++
++
++# ---- buttons ----
++
++def test_key2_on_a_page_asks_then_leaves(tmp_path):
++    clock = Clock()
++    p = panel_with(tmp_path, clock=clock)
++    assert p.key("KEY2") is True and p.prompt_until == pytest.approx(1003.0)
++    clock.now += 1
++    assert p.key("KEY2") is False
++    assert p.prompt_until is None
++
++
++def test_the_prompt_runs_out(tmp_path):
++    clock = Clock()
++    p = panel_with(tmp_path, clock=clock)
++    p.key("KEY2")
++    clock.now += 3.1
++    assert p.key("KEY2") is True and p.prompt_until == pytest.approx(1006.1)   # asks again, does not leave
++
++
++def test_another_key_only_dismisses_the_prompt(tmp_path):
++    clock = Clock()
++    p = panel_with(tmp_path, clock=clock)
++    p.key("KEY2")
++    assert p.key("RIGHT") is True
++    assert p.prompt_until is None and p.page == 0
++
++
++def test_key2_in_a_card_goes_back_without_asking(tmp_path):
++    p = panel_with(tmp_path, clock=Clock())
++    p.page = 2
++    p.key("CENTER")
++    assert p.detail is not None
++    assert p.key("KEY2") is True and p.detail is None and p.prompt_until is None
++
++
++def test_left_in_a_card_goes_back(tmp_path):
++    p = panel_with(tmp_path)
++    p.page = 3
++    p.key("CENTER")
++    assert p.key("LEFT") is True and p.detail is None and p.page == 3
++
++
++def test_key3_does_nothing_inside(tmp_path):
++    p = panel_with(tmp_path)
++    p.page = 2
++    assert p.key("KEY3") is True and p.page == 2 and p.detail is None
++    p.key("CENTER")
++    pinned = p.detail
++    assert p.key("KEY3") is True and p.detail == pinned
++
++
++def test_key1_inside_is_overview(tmp_path):
++    p = panel_with(tmp_path)
++    p.page = 3
++    p.key("CENTER")
++    assert p.key("KEY1") is True and p.page == 0 and p.detail is None
++
++
++def test_center_on_overview_with_failures_opens_errors(tmp_path):
++    p = panel_with(tmp_path)
++    assert p.key("CENTER") is True and p.page == 3 and p.detail is None
++    calm = demo_snapshot()
++    calm["modules"] = [m for m in calm["modules"] if m["state"] not in ("fail", "stale")]
++    q = panel_with(tmp_path, calm)
++    assert q.key("CENTER") is True and q.page == 0
++
++
++def test_lite_key2_returns_to_overview(tmp_path):
++    p = panel_with(tmp_path, can_leave=False, clock=Clock())
++    p.page = 4
++    assert p.key("KEY2") is True and p.page == 0 and p.prompt_until is None
++
++
++def test_up_down_scroll_the_station(tmp_path):
++    p = panel_with(tmp_path)
++    p.page = 4
++    p.key("UP")
++    assert p.scroll == 0
++    p.key("DOWN")
++    p.key("DOWN")
++    assert p.scroll == 2
++    p.key("RIGHT")
++    assert p.scroll == 0
++
++
++# ---- age, theme ----
++
++@pytest.mark.parametrize("age, label", [(9, ""), (10, "10 s"), (59, "59 s"), (60, "1 min"), (185, "3 min")])
++def test_age_label(tmp_path, age, label):
++    p = panel_with(tmp_path, now=100 + age)
++    assert p.age_label() == label
++    assert p.problem == ""      # old data is told by the label, the values stay
++
++
++def test_theme_and_ports_map_come_from_the_snapshot(tmp_path):
++    p = panel_with(tmp_path)
++    assert (p.theme(), p.ports_map()) == ("new", "pages")
++    for panel_field, expect in [({"theme": "classic", "ports_map": "whole"}, ("classic", "whole")),
++                                ({"theme": "rainbow", "ports_map": 3}, ("new", "pages")), (None, ("new", "pages")),
++                                ("bad", ("new", "pages"))]:
++        snap = demo_snapshot()
++        if panel_field is None:
++            del snap["panel"]
++        else:
++            snap["panel"] = panel_field
++        q = panel_with(tmp_path, snap)
++        assert (q.theme(), q.ports_map()) == expect
++
++
++# ---- the adapter of the WLAN Pi menu ----
++
++def adapter_with(panel, monkeypatch, clock):
++    from fpms.integrations import cmprovision_menu
++
++    monkeypatch.setattr(cmprovision_menu.time, "monotonic", clock)
++    state = {"display_state": "menu", "button_press_count": 0, "option_selected": None, "current_menu_location": [0]}
++    adapter = CmprovisionMenu(state, [], lambda image: None, hardware=False, panel=panel)
++    adapter.tick(publish=False)
++    adapter.show()
++    return adapter, state
++
++
++def test_after_a_leave_key2_is_swallowed_for_two_seconds(tmp_path, monkeypatch):
++    clock = Clock()
++    p = panel_with(tmp_path, clock=clock)
++    adapter, state = adapter_with(p, monkeypatch, clock)
++    assert adapter.key("KEY2") is True and adapter.selected()      # asks
++    assert adapter.key("KEY2") is True and not adapter.selected()  # leaves
++    clock.now += 1
++    assert adapter.key("KEY2") is True       # in a hurry: the stock rotation must not get it
++    clock.now += 2
++    assert adapter.key("KEY2") is False      # later: the stock menu's own button
++
++
++def test_key3_is_the_stock_one_outside(tmp_path, monkeypatch):
++    clock = Clock()
++    p = panel_with(tmp_path, clock=clock)
++    adapter, state = adapter_with(p, monkeypatch, clock)
++    assert adapter.key("KEY3") is True and adapter.selected()      # inside: nothing happens, the panel stays
++    adapter.key("KEY2")
++    adapter.key("KEY2")
++    assert not adapter.selected()
++    assert adapter.key("KEY3") is False      # outside, right after the leave as later: the stock Reboot shortcut
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
