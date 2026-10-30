@@ -168,6 +168,12 @@
                     @if ($tile['state'] === 'foreign')
                         <div class="mb-3">
                             <p class="font-semibold mb-1">Unrecognized device</p>
+                            @if (!empty($tile['flashed_by']))
+                                <p class="mb-2">Flashed by cmprovision on {{ $tile['flashed_by']['station'] }}: boot {{ $tile['flashed_by']['boot'] }} of the {{ $tile['flashed_by']['boots'] }} it marks itself for.
+                                    {{ $tile['flashed_by']['verified'] === true ? 'The mark is genuine: it matches the mark key of this provisioner.'
+                                       : ($tile['flashed_by']['verified'] === false ? 'The mark does not match the mark key of this provisioner: another key, or a text copied from another device.'
+                                       : 'This provisioner has no mark key to check it (sensor:mark-key).') }}</p>
+                            @endif
                             @if ($usbReport)
                                 <p class="mb-2"><a href="{{ route('diagnostics', $usbReport->id) }}" class="text-link hover:underline">USB diagnostic report: {{ $usbReport->serial }}</a>
                                     · {{ $usbReport->received_at->local()->format('H:i:s') }}</p>

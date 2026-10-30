@@ -25,6 +25,7 @@ use App\Services\LabelPrinter;
 use App\Support\ImagePieces;
 use App\Support\ModuleDiagnostics;
 use App\Services\ModuleOperationLock;
+use App\Services\Sensor\ModuleMark;
 use App\Services\Sensor\ReprovisionAgent;
 use App\Services\Sensor\ProvisionerKey;
 use App\Services\Sensor\ReprovisionIntent;
@@ -80,7 +81,11 @@ class ScriptExecuteController extends Controller
 
         try
         {
-            if ($req->query("identify"))
+            if ($req->query("markkey"))
+            {
+                return $this->moduleMarkKey();
+            }
+            else if ($req->query("identify"))
             {
                 return $this->identifyPoll($req);
             }
@@ -142,6 +147,17 @@ exit 1
                     ->header('Content-Type', 'text/plain');
             }
         }
+    }
+
+    /* The module's key for the provisioner's mark (ModuleMark), asked for by the agent's installer while its run is in the
+       post-installation step of a project with the mark: that script runs under sh -v, and a key written in it would land
+       in the log. Nothing of it is logged here */
+    protected function moduleMarkKey()
+    {
+        $cm = Cm::where('serial', $this->serial)->first();
+        $project = $cm && $cm->phase === 'postinstall' && $cm->project_id ? Project::find($cm->project_id) : null;
+        $key = $project && $project->reprovision && $project->mark_boots > 0 ? app(ModuleMark::class)->moduleKey($cm->mac) : null;
+        return response($key === null ? '' : $key."\n", $key === null ? 404 : 200)->header('Content-Type', 'text/plain');
     }
 
     /* Address of this server as the module reached it, for the links in the module's script */
@@ -389,7 +405,7 @@ exit 1
             $preinstall_scripts->prepend($fscript);
         }
 
-        $postinstall_scripts = $this->postinstallScripts($project, $image);
+        $postinstall_scripts = $this->postinstallScripts($project, $image, $this->moduleServer($req));
 
         $this->cm->setPhase(count($preinstall_scripts) ? 'preinstall' : ($image ? 'write' : 'postinstall'))->save();
         CmProvisioningStarted::dispatch($this->cm);
@@ -510,7 +526,7 @@ exit 1
             .($this->cm->os_check === 'skipped' ? ' OS check skipped: the module booted over USB.' : ''));
 
         $this->lookUpBoardLater();
-        return $this->moduleScript($req, $project, collect(), $this->postinstallScripts($project, $image),
+        return $this->moduleScript($req, $project, collect(), $this->postinstallScripts($project, $image, $this->moduleServer($req)),
             $this->writeData($this->moduleServer($req), $image, true, $from), true);
     }
 
@@ -562,7 +578,7 @@ exit 1
     }
 
     /* The project's post-install scripts, the generated SHA256 verification first when the project verifies */
-    protected function postinstallScripts(Project $project, ?Image $image)
+    protected function postinstallScripts(Project $project, ?Image $image, string $server)
     {
         $postinstall_scripts = $project->scripts()->where('script_type','postinstall')->orderBy('priority')->orderBy('id')->get();
         if ($project->verify && $image)
@@ -592,8 +608,15 @@ exit 1
             $agent->id = -1;
             $agent->name = 'Re-provision agent';
             $agent->bg = false;
+            // the provisioner's mark over LLDP rides with the agent; the module asks for its key (moduleMarkKey())
+            $mark = null;
+            if ($project->mark_boots > 0)
+                $mark = app(ModuleMark::class)->key() === null
+                    ? ['skip' => 'no mark key on the provisioner (php artisan sensor:mark-key --generate)']
+                    : ['station' => ModuleMark::station(), 'boots' => (int) $project->mark_boots,
+                       'url' => 'http://'.$server.'/scriptexecute?serial='.rawurlencode((string) $this->cm->serial).'&markkey=1'];
             try {
-                $agent->script = app(ReprovisionAgent::class)->install($project->storage, app(ProvisionerKey::class)->ensure());
+                $agent->script = app(ReprovisionAgent::class)->install($project->storage, app(ProvisionerKey::class)->ensure(), $mark);
             } catch (\RuntimeException|\InvalidArgumentException $e) {
                 $agent->script = "#!/bin/sh\nprintf '%s\\n' ".escapeshellarg('agent skipped: '.$e->getMessage())."\nexit 0\n";
             }

@@ -110,6 +110,7 @@ Route::middleware('auth:sanctum')->patch('/projects/{projectId}', function (Requ
         'os_check' => 'sometimes|boolean',
         'split_image' => 'sometimes|boolean',
         'reprovision' => 'sometimes|boolean',
+        'mark_boots' => 'sometimes|integer|min:0|max:'.\App\Services\Sensor\ModuleMark::MAX_BOOTS,
         'scripts' => 'sometimes|array',
         'scripts.*' => 'integer|exists:scripts,id',
     ]);

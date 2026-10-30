@@ -20,6 +20,7 @@ use App\Jobs\ComputeSHA256;
 use App\Services\EepromImage;
 use App\Services\FirmwareNotes;
 use App\Services\ProjectActivator;
+use App\Services\Sensor\ModuleMark;
 
 #[Title('Projects')]
 class Projects extends Component
@@ -31,6 +32,8 @@ class Projects extends Component
     public $projectid, $name, $device, $storage, $image_id, $label_id, $label_moment, $selectedScripts, $offerSettingsReset;
     public $firmware, $eeprom_settings, $verify, $os_check, $selectedPackages, $split_image;
     public $reprovision = false;
+    /** for how many boots the agent's mark names the provisioner over LLDP (ModuleMark); 0, none */
+    public $mark_boots = 0;
     /** the firmware the project had when its form was opened: the choice is shown against it */
     #[Locked]
     public $savedFirmware = '';
@@ -59,6 +62,7 @@ class Projects extends Component
             'os_check' => 'required|boolean',
             'split_image' => 'required|boolean',
             'reprovision' => 'required|boolean',
+            'mark_boots' => 'required|integer|min:0|max:'.ModuleMark::MAX_BOOTS,
         ];
     }
 
@@ -182,6 +186,7 @@ class Projects extends Component
         $this->os_check = false;
         $this->split_image = false;
         $this->reprovision = false;
+        $this->mark_boots = 0;
         $this->selectedPackages = [];
         $this->eeprom_settings = '';
         $this->firmware = $this->savedFirmware = '';
@@ -204,6 +209,7 @@ class Projects extends Component
         $this->os_check = $p->os_check;
         $this->split_image = $p->split_image;
         $this->reprovision = $p->reprovision;
+        $this->mark_boots = (int) $p->mark_boots;
         $this->selectedPackages = $p->packages->map(function ($package) { return strval($package->id); })->all();
         $this->active = $p->isActive();
         $this->selectedScripts = [];
@@ -262,6 +268,7 @@ class Projects extends Component
             'os_check' => (bool) $this->os_check,
             'split_image' => (bool) $this->split_image,
             'reprovision' => (bool) $this->reprovision,
+            'mark_boots' => (int) $this->mark_boots,
         ]);
         $project->scripts()->sync($this->selectedScripts);
         $project->packages()->sync($this->selectedPackages ?: []);

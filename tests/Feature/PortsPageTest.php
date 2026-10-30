@@ -588,6 +588,30 @@ class PortsPageTest extends TestCase
             ->assertDontSee('Unrecognized device');
     }
 
+    public function test_a_module_marked_by_a_station_with_the_same_key_is_named_flashed_by_cmprovision()
+    {
+        $this->switchWithModule();
+        $key = str_repeat('5a', 32);
+        app(\App\Services\Sensor\ModuleMark::class)->set($key);
+        $code = \App\Services\Sensor\ModuleMark::code(hash_hmac('sha256', '00:0a:95:dd:ee:ff', hex2bin($key)), 'wlanpi-da2', 3, 20);
+        $t =& $this->fake->tables[''];
+        $t[SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;
+        $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 6 => 3, 7 => hex2bin('000a95ddeeff'), 8 => "cmprovision mark wlanpi-da2 3/20 $code",
+                  9 => 'wlanpi-fd3', 10 => 'Debian GNU/Linux 13 (trixie)', 12 => hex2bin('10')] as $column => $value)
+            $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+
+        Livewire::test(Ports::class)->call('select', 's1p6')
+            ->assertSee('Flashed by cmprovision on wlanpi-da2')
+            ->assertSee('boot 3 of the 20 it marks itself for')
+            ->assertSee('The mark is genuine: it matches the mark key of this provisioner.');
+
+        app(\App\Services\Sensor\ModuleMark::class)->set(str_repeat('00', 32));
+        Livewire::test(Ports::class)->call('select', 's1p6')
+            ->assertSee('Flashed by cmprovision on wlanpi-da2')
+            ->assertSee('The mark does not match the mark key of this provisioner');
+    }
+
     public function test_a_station_address_alone_is_a_stranger()
     {
         // .2-.10 are kept for fixed hosts, but not every fixed host is a cmprovision station

@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Cm;
 use App\Services\NetworkStatus;
+use App\Services\Sensor\ModuleMark;
 
 /**
  * The stand as the Ports page draws it: the snapshots of its switches and the modules behind their MAC addresses as
@@ -39,6 +40,8 @@ class StandMap
     const STEP_MARKS = ['preinstall' => 'PRE', 'write' => 'WRITE', 'verify' => 'VERIFY', 'postinstall' => 'POST', 'firstboot' => 'OS'];
 
     protected $parts = [], $modules = [], $serverMac;
+    /* ModuleMark, made when the first mark needs checking */
+    protected ?ModuleMark $marks = null;
 
     /**
      * @param array $parts one per switch: ['id' => int, 'name' => string, 'snapshot' => ?array (SwitchSnapshot::take()),
@@ -124,6 +127,16 @@ class StandMap
             if (preg_match(self::STATION, (string) ($neighbour['description'] ?? ''), $m))
                 return ['name' => (string) ($neighbour['name'] ?? ''), 'address' => $neighbour['address'] ?? null, 'version' => $m[1],
                         'provisioner' => ($neighbour['address'] ?? null) === NetworkStatus::SERVER_ADDRESS];
+        return null;
+    }
+
+    /* The provisioner's mark of the device on this port: ModuleMark::check() of the first neighbour whose port description
+       is a mark, or null. The mark key is read only when there is a mark to check */
+    protected function moduleMark(array $p): ?array
+    {
+        foreach ($p['port']['neighbors'] ?? [] as $neighbour)
+            if (ModuleMark::parse($neighbour['port'] ?? null) !== null)
+                return ($this->marks ??= app(ModuleMark::class))->check($neighbour);
         return null;
     }
 
@@ -423,6 +436,8 @@ class StandMap
             'server' => !isset($links[$key]) && $this->hasServer($p),
             // another cmprovision station is on this port (the stand's provisioner, a second station): who it says it is
             'station' => isset($links[$key]) ? null : $this->station($p),
+            // a device flashed with the provisioner's mark says so for its first boots (ModuleMark): what it says, checked
+            'flashed_by' => isset($links[$key]) ? null : $this->moduleMark($p),
             'ifIndex' => $port['ifIndex'],
             'name' => $port['name'],
             'alias' => $port['alias'],

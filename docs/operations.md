@@ -148,6 +148,36 @@ Changes require your web account password. Saved passwords are encrypted with th
 
 Keep up to 10 profiles, with at most 3 enabled for automatic checks. Enabled profiles run in order, identical credentials are tried once, and the first usable login with a matching device and sudo access wins. Automatic attempts run only on the first **Check access** of an operation, at most once per minute per module; manual entry remains available during that interval. A changed SSH host key, network failure or mismatched hardware stops the sequence. Finding a password does not erase anything: the normal identity review and separate wipe confirmation still apply.
 
+### The provisioner's mark over LLDP
+
+**Development preview (2.23.0).** A device flashed elsewhere is an unknown device to a provisioner that did not flash
+it: each provisioner knows only the modules in its own database. With the mark, the device tells the switch for its first
+boots which provisioner flashed it, and any provisioner with the same mark key checks that on the **Ports** page.
+
+1. Make a mark key on one provisioner and give it to the others that should recognise each other's devices (as the web
+   user; the key is kept encrypted with the APP_KEY and goes into backups with it):
+
+   ```sh
+   sudo -u www-data php /var/lib/cmprovision/artisan sensor:mark-key --generate
+   ssh first 'sudo -u www-data php /var/lib/cmprovision/artisan sensor:mark-key --show' \
+     | ssh second 'sudo -u www-data php /var/lib/cmprovision/artisan sensor:mark-key --from=-'
+   ```
+
+   `sensor:mark-key` alone prints the key's fingerprint: equal fingerprints, equal keys.
+2. In the project editor turn on **Re-provision from the web UI** and set **Mark the device over LLDP for the first boots**
+   (up to 100; 0, no mark).
+3. The agent's installer adds the service `cmprovision-mark` to the written system. On every boot up to the last it gives
+   `lldpd` the port description `cmprovision mark <provisioner> <boot>/<boots> <code>`: the code is an HMAC of the text with
+   the device's own key, so it changes on every boot. The boot after the last removes the mark, the device's key and the
+   service, and restarts `lldpd` without it. The system needs `lldpd` (WLAN Pi OS has it) and `openssl`.
+4. The **Ports** page shows a marked device as *Flashed by cmprovision on <provisioner>* with its boot, and whether the
+   mark is genuine for this provisioner's key.
+
+The device's key is an HMAC of its MAC with the mark key: the device holds only its own key, never the mark key, and a
+mark copied to another device does not match. The device asks the server for its key while the agent is installed (the
+post-install scripts run under `sh -v`, which copies their lines into the log), so the key appears in no log. A mark is
+text from the cable like any other neighbour's text: a provisioner without the key shows it unchecked.
+
 ## Images from the internet
 
 **Add from the internet** on the Images page makes the provisioner fetch an image itself instead of you uploading it from your computer. There are three sources:

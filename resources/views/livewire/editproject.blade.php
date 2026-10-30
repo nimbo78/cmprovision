@@ -61,6 +61,10 @@
                   </label>
                   <p class="text-xs text-fg-muted mt-1">Puts the provisioner's public SSH key on this image. Its restricted agent can identify the device and erase its boot structure for re-provisioning. The key stays on each device; keep this off for images that should not permit remote re-provisioning. Requires eMMC/SD, MBR partitioning, an ext4 root on partition 2 and SSH root key access.</p>
                   @error('reprovision') <span class="text-neg">{{ $message }}</span>@enderror
+                  <label for="mark_boots" class="block text-sm mt-3">Mark the device over LLDP for the first boots</label>
+                  <input id="mark_boots" type="number" min="0" max="{{ \App\Services\Sensor\ModuleMark::MAX_BOOTS }}" wire:model="mark_boots" class="cmp-field w-24">
+                  <p class="text-xs text-fg-muted mt-1">With re-provisioning on, the agent tells the switch for this many boots that this provisioner flashed the device, with a code that changes on every boot; then the mark removes itself. A provisioner with the same mark key (php artisan sensor:mark-key) recognises it on the Ports page. 0: no mark. The written system needs lldpd and openssl.</p>
+                  @error('mark_boots') <span class="text-neg">{{ $message }}</span>@enderror
               </div>
               @if ($os_check && count($packages))
               <div class="mb-4">

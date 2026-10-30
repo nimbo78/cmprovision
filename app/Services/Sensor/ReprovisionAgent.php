@@ -17,9 +17,12 @@ class ReprovisionAgent
         return ($sudo ? 'sudo -k -S -p \'\' ' : '').'sh -c '.escapeshellarg($script);
     }
 
-    public function install(string $storage, string $public): string
+    /** $mark: the provisioner's mark (ModuleMark) to install with the agent, ['station', 'boots', 'url' of the module's key],
+        or ['skip' => why there is none] */
+    public function install(string $storage, string $public, ?array $mark = null): string
     {
-        return view('scriptexecute.reprovision-install', ['agent' => $this->script($storage), 'public' => $public])->render();
+        return view('scriptexecute.reprovision-install', ['agent' => $this->script($storage), 'public' => $public, 'mark' => $mark,
+            'markScript' => $mark !== null && !isset($mark['skip']) ? rtrim(view('scriptexecute.module-mark')->render(), "\n") : ''])->render();
     }
 
     public function identity(ShellResult $result): ?array

@@ -604,6 +604,27 @@ class StandMapTest extends TestCase
         $this->assertNull($map['tiles']['s1p11']['station'], 'the utility OS of a module is no station');
     }
 
+    /* A module flashed with the provisioner's mark (ModuleMark) says it in its port description: the tile carries what the
+       mark says and whether this station's mark key confirms it */
+    public function test_a_marked_module_carries_its_mark_checked_with_the_key()
+    {
+        $key = str_repeat('5a', 32);
+        $this->app->instance(\App\Services\Sensor\ModuleMark::class, new \App\Services\Sensor\ModuleMark($key));
+        $mark = fn ($mac, $k) => 'cmprovision mark wlanpi-da2 3/20 '
+            .\App\Services\Sensor\ModuleMark::code(hash_hmac('sha256', $mac, hex2bin($k)), 'wlanpi-da2', 3, 20);
+        $says = fn ($mac, $port) => ['neighbors' => [['port' => $port] + $this->neighbour('wlanpi-fd3', $mac)]];
+        $map = $this->build([
+            $this->port(12, 'Gi0/12', true, ['e4:5f:01:62:9f:d3']) + $says('e4:5f:01:62:9f:d3', $mark('e4:5f:01:62:9f:d3', $key)),
+            $this->port(13, 'Gi0/13', true, ['e4:5f:01:62:9f:d4']) + $says('e4:5f:01:62:9f:d4', $mark('e4:5f:01:62:9f:d4', str_repeat('00', 32))),
+            $this->port(14, 'Gi0/14', true, ['e4:5f:01:62:9f:d5']) + $says('e4:5f:01:62:9f:d5', 'eth0'),
+        ]);
+
+        $this->assertSame(['station' => 'wlanpi-da2', 'boot' => 3, 'boots' => 20, 'verified' => true], $map['tiles']['s1p12']['flashed_by']);
+        $this->assertFalse($map['tiles']['s1p13']['flashed_by']['verified'], 'made with another key');
+        $this->assertNull($map['tiles']['s1p14']['flashed_by']);
+        $this->assertSame('foreign', $map['tiles']['s1p12']['state'], 'still no module of this station');
+    }
+
     public function test_a_neighbour_that_is_another_switch_of_the_stand_makes_the_port_a_link()
     {
         $says = fn ($name, $mac = null) => ['neighbors' => [$this->neighbour($name, $mac)]];
