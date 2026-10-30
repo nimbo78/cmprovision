@@ -65,12 +65,17 @@ class FailureAdvice
 
         if (Str::startsWith($reason, 'Error during dd'))
         {
-            $what = preg_match('/Diagnosis: (.*?)\.?$/s', $reason, $m) ? ': '.$m[1] : '; the log entry below has the output of curl, the decompressor and dd';
+            // the diagnosis ends before the exit codes the server adds (" Codes: curl 18.")
+            $diagnosis = preg_match('/Diagnosis: (.*?)\.?(?: Codes: [^.]*\.)?$/s', $reason, $m) ? $m[1] : null;
+            $what = $diagnosis !== null ? ': '.$diagnosis : '; the log entry below has the output of curl, the decompressor and dd';
             $from = $cm->resumableFrom();
-            return ['step' => $step, 'advice' => 'The image write stopped'.$what.'. The partition table was cleared, so the module '
-                                                 .'starts from the network again. '.($from === null ? self::RESTART : 'Restart it (power cycle): '.self::goesOn($cm, $from)
+            $todo = 'The partition table was cleared, so the module starts from the network again. '
+                .($from === null ? self::RESTART : 'Restart it (power cycle): '.self::goesOn($cm, $from)
                     .(preg_match(self::DAMAGED_DATA, $reason) ? ' If it stops at the same place again, the pieces copy on the server is damaged: '
-                        .'untick Split the image into pieces in the project, remove the pieces on the Images page and tick it again.' : ''))];
+                        .'untick Split the image into pieces in the project, remove the pieces on the Images page and tick it again.' : ''));
+            // reason and todo: the front panel shows the diagnosis and what to do apart, without saying it twice
+            return ['step' => $step, 'advice' => 'The image write stopped'.$what.'. '.$todo,
+                'reason' => $diagnosis !== null ? Str::ucfirst($diagnosis).'.' : null, 'todo' => $todo];
         }
 
         if (Str::startsWith($reason, 'Error during postinstall'))

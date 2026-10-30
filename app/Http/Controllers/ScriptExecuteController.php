@@ -860,6 +860,11 @@ exit 1
             {
                 $msg .= " Diagnosis: $diagnosis.";
             }
+            if ($phase == "dd" && ($codes = self::writeFailureCodes($logfile)))
+            {
+                /* the front panel names it ("Download cut (curl 18)", ShortCause) */
+                $msg .= " Codes: $codes.";
+            }
             if ($phase == "dd" && str_contains($logfile, self::STORAGE_WRITTEN))
             {
                 /* the image resume (2.6.1): what the marks say was written is no longer there */
@@ -1075,6 +1080,13 @@ exit 1
                 return $hint;
         }
         return null;
+    }
+
+    /* "curl 18": the last non-zero exit code of curl in the log of a failed image write, or null */
+    public static function writeFailureCodes($log)
+    {
+        $codes = preg_match_all('/curl exit code (\d+)\b/', (string) $log, $m) ? array_filter($m[1], fn ($c) => $c !== '0') : [];
+        return $codes ? 'curl '.end($codes) : null;
     }
 
     public function logInfo($msg, $loglevel = 'info')

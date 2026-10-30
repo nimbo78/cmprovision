@@ -96,4 +96,22 @@ class ImageWriteServerTest extends TestCase
     {
         $this->assertSame($hint, ScriptExecuteController::diagnoseWriteFailure($log));
     }
+
+    /* The front panel names the curl code ("Download cut (curl 18)"): the failure keeps it, the advice does not repeat it */
+    public function test_the_curl_code_goes_into_the_failure()
+    {
+        $this->assertSame('curl 18', ScriptExecuteController::writeFailureCodes("curl: (18) transfer closed\ncurl exit code 18\n"));
+        $this->assertNull(ScriptExecuteController::writeFailureCodes("the image on the server ends at 1 of 2 bytes (curl exit code 0)\n"));
+        $this->assertNull(ScriptExecuteController::writeFailureCodes("gzip: corrupted data\n"));
+
+        $this->project();
+        $this->get(self::START)->assertOk();
+        $log = \Illuminate\Http\UploadedFile::fake()->createWithContent('dd.log', "curl: (18) transfer closed\ncurl exit code 18\n");
+        $this->post('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => $log])->assertOk();
+
+        $cm = Cm::where('serial', self::SERIAL)->first();
+        $this->assertStringEndsWith('Codes: curl 18.', $cm->phase_detail);
+        $this->assertStringContainsString('Diagnosis: the connection to the provisioning server was closed', $cm->phase_detail);
+        $this->assertStringNotContainsString('Codes', \App\Support\FailureAdvice::for($cm)['advice']);
+    }
 }
