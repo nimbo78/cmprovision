@@ -11037,10 +11037,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..8d264d0
+index 0000000..3ff959a
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,279 @@
+@@ -0,0 +1,465 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11080,7 +11080,10 @@ index 0000000..8d264d0
 +        page_placeholder(img, d, panel, "Device")
 +    else:
 +        draw = [overview, ports, devices, errors, station][panel.page]
-+        draw(img, d, panel) if draw is overview else page_placeholder(img, d, panel, PAGES[panel.page])
++        if draw is page_placeholder:
++            page_placeholder(img, d, panel, PAGES[panel.page])
++        else:
++            draw(img, d, panel)
 +    until = panel.prompt_until
 +    now = panel.clock()
 +    if until is not None and now < until:
@@ -11318,8 +11321,191 @@ index 0000000..8d264d0
 +    return None, []
 +
 +
++# ---- Ports ----
++
++PORT_STATES = {"server": ("accent", "SERVER"), "free": ("line", "FREE"), "uplink": ("dim", "UPLINK"),
++               "unrecognized": ("warn", "UNKNOWN"), "quiet": ("warn", "QUIET"), "boot": ("run", "BOOT")}
++FILTER_STATE = {"ok": "ok", "run": "run", "fail": "fail", "stale": "stale"}
++
++
++def module_of(panel, row):
++    """The module a port row shows, by the serial of the port."""
++    from .cmprovision import objects, text
++
++    serials = [text(s) for s in row.get("serials")] if isinstance(row.get("serials"), list) else []
++    return next((m for m in objects(panel.data.get("modules")) if text(m.get("serial")) in serials), None) if serials else None
++
++
++def port_state(row, module):
++    """(colour, word) of a port: its module's state, else what is on it."""
++    from .cmprovision import text
++
++    if module is not None:
++        return STATE.get(text(module.get("state")), STATE["unknown"])
++    if row.get("server"):
++        return PORT_STATES["server"]
++    state = text(row.get("state"))
++    if state == "module":
++        return STATE.get(FILTER_STATE.get(text(row.get("filter")), "unknown"), STATE["unknown"])
++    return PORT_STATES.get(state, ("dim", state.upper()[:8] or "PORT"))
++
++
++def link_speed(mbps):
++    """1G, 2.5G, 100M: the speed of a link (the port speed is in Mbit/s, never a write rate)."""
++    from .cmprovision import number
++
++    value = number(mbps, None)
++    if value is None or value <= 0:
++        return ""
++    return f"{value / 1000:g}G" if value >= 1000 else f"{int(value)}M"
++
++
++def map_layout(columns, ports_map, selected):
++    """Where the cells of one switch go: (cells [(x, y, w, h, index)], numbers, bank, banks, detail_y).
++    Up to 8 columns the whole switch with numbers, whatever the setting; wider, 8 columns to a page with numbers
++    (pages), or every column in narrow cells without numbers (whole) when they fit."""
++    def place(cols, w, h, gap, top, x_gap):
++        out, x, last = [], 0, None
++        for top_i, bottom_i, block in cols:
++            if last is not None and block != last:
++                x += 3
++            last = block
++            for row, index in ((0, top_i), (1, bottom_i)):
++                if index is not None:
++                    out.append((x, top + row * (h + x_gap), w, h, index))
++            x += w + gap
++        total = x - gap
++        shift = (128 - total) // 2
++        return [(cx + shift, cy, cw, ch, i) for cx, cy, cw, ch, i in out]
++
++    if len(columns) <= 8:
++        return place(columns, 12, 12, 3, 32, 3), True, 0, 1, 63
++    if ports_map == "whole":
++        blocks = len({b for _, _, b in columns}) - 1
++        for w in (4, 3):
++            if len(columns) * (w + 1) - 1 + 3 * blocks <= 124:
++                return place(columns, w, 7, 1, 33, 1), False, 0, 1, 56
++    at = next((c for c, (t, b, _) in enumerate(columns) if selected in (t, b)), 0)
++    bank, banks = at // 8, -(-len(columns) // 8)
++    return place(columns[bank * 8:(bank + 1) * 8], 12, 12, 2, 32, 2), True, bank, banks, 66
++
++
++def ports(img, d, panel):
++    from .cmprovision import text
++
++    body, tiny = header(img, d, panel, "Ports"), fonts.font("tiny")
++    rows = panel.rows()
++    if not rows:
++        for i, line in enumerate(("No switches: add one in", "Settings > Network")):
++            body.draw(img, (128 - body.width(line)) // 2, 52 + i * (body.h + 2), line, P["muted"])
++        return
++    panel.selected()
++    view = next((v for v in panel.map_view() if any(panel.index in (t, b) for t, b, _ in v["columns"])
++                 or (not v["answering"] and v["first"] == panel.index)), None)
++    if view is None:
++        return
++    band = cap(body) + 5
++    yb = mid_y(body, 17, band, "t")
++    if not view["answering"]:
++        body.draw(img, 2, yb, fonts.fit(body, view["name"], LINE_W), P["muted"])
++        body.draw(img, (128 - body.width("No response")) // 2, 52, "No response", P["warn"])
++        return
++    cells, numbered, bank, banks, detail_y = map_layout(view["columns"], panel.ports_map(), panel.index)
++    pages = f"{bank + 1}/{banks}" if banks > 1 else ""
++    right = 126 - (body.width(pages) + 4 if pages else 0)
++    body.draw(img, 2, yb, fonts.fit(body, view["name"], right - 2), P["muted"])
++    if pages:
++        body.draw(img, 126 - body.width(pages), yb, pages, P["fg"])
++        for b in range(banks):                              # where this screen is among the pages
++            cx = 64 - (banks * 6) // 2 + b * 6
++            d.rectangle((cx, 60, cx + 3, 60), fill=P["fg"] if b == bank else P["dim"])
++    for x, y, w, h, index in cells:
++        row = rows[index]
++        fill, outline = port_style(row)
++        box = (x, y, x + w - 1, y + h - 1)
++        d.rectangle(box, fill=P[fill] if fill else None, outline=P[outline])
++        if numbered:
++            label = "cm" if row.get("server") else text(row.get("number"))
++            fonts.draw_centered(tiny, img, box, label, P["ink"] if fill else P["muted" if outline == "line" else outline])
++        if index == panel.index:
++            d.rectangle((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2), outline=P["fg"])
++            d.rectangle((box[0] - 1, box[1] - 1, box[2] + 1, box[3] + 1), outline=P["bg"])
++    port_detail(img, d, panel, detail_y, rows[panel.index])
++
++
++def port_detail(img, d, panel, y, row):
++    """Below the map: the port and its state; the module, its step, and the bar with speed and ETA while it runs, or
++    what went wrong in up to two lines; what else is on the port."""
++    from .cmprovision import objects, rate, remaining, text
++
++    body, title, code, error = fonts.font("body"), fonts.font("title"), fonts.font("code"), fonts.font("error")
++    module = module_of(panel, row)
++    key, word = port_state(row, module)
++    d.line((0, y - 2, 127, y - 2), fill=P["line"])
++    port = text(row.get("portname")) or text(row.get("name"))
++    w = chip(img, d, 127, cap_mid(title, y), word, key)
++    title.draw(img, 2, y, fonts.fit(title, port, 124 - w - 4), P["fg"])
++    y += title.h + 2
++    if module is not None:
++        name = text(module.get("name")) or text(module.get("mac")) or "Unknown"
++        f = code if ":" in name else body
++        f.draw(img, 2, y, fonts.fit(f, name, LINE_W), P["fg"])
++        y += f.h + 1
++        percent = module.get("percent")
++        step = text(module.get("step")) or text(module.get("phase"))
++        if type(percent) in (int, float) and 0 <= percent < 100:
++            step += f"  {int(percent)}%"
++        body.draw(img, 2, y, fonts.fit(body, step, LINE_W), P["muted"])
++        y += body.h + 2
++        if text(module.get("state")) in ("fail", "stale"):
++            for line in fonts.wrap(error, text(module.get("cause")) or text(module.get("detail")) or word, 124)[:2]:
++                error.draw(img, 2, y, line, P["fg"])
++                y += error.h
++            return
++        if type(percent) in (int, float) and 0 <= percent <= 100:
++            bar(d, 2, y, 125, percent / 100, key)
++            y += 6
++        speed = "  ".join(t for t in (rate(module.get("speed")), remaining(module.get("eta"))) if t)
++        if speed:
++            body.draw(img, 2, y, fonts.fit(body, speed, LINE_W), P["muted"])
++        return
++    if row.get("server"):
++        for line in fonts.wrap(body, "This server (the provisioner)", 124):
++            body.draw(img, 2, y, line, P["muted"])
++            y += body.h
++        return
++    label = text(row.get("name"))
++    device = next((u for u in objects(panel.data.get("unknown")) if text(u.get("port")) == label), None)
++    if device is not None:
++        body.draw(img, 2, y, fonts.fit(body, text(device.get("name")) or "Unknown device", LINE_W), P["fg"])
++        y += body.h + 1
++        detail = text(device.get("detail")) or text(device.get("mac"))
++        if detail:
++            body.draw(img, 2, y, fonts.fit(body, detail, LINE_W), P["muted"])
++            y += body.h + 1
++    elif text(row.get("state")) == "free":
++        body.draw(img, 2, y, "Nothing connected", P["muted"])
++        return
++    facts = "  ".join(t for t in (link_speed(row.get("speed")), _watts(row.get("watts"))) if t)
++    if facts:
++        body.draw(img, 2, y, facts, P["muted"])
++
++
++def _watts(value):
++    from .cmprovision import number
++
++    w = number(value, None)
++    return f"{w:.1f} W" if w is not None and w > 0 else ""
++
++
++def bar(d, x0, y, x1, frac, key, h=3):
++    d.rectangle((x0, y, x1, y + h - 1), fill=P["panel"])
++    if frac > 0:
++        d.rectangle((x0, y, x0 + int((x1 - x0) * min(1, frac)), y + h - 1), fill=P[key])
++
++
 +# pages drawn in the next steps
-+ports = devices = errors = station = page_placeholder
++devices = errors = station = page_placeholder
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
 index 0000000..8fd3e8a
@@ -12205,10 +12391,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..6c82d3a
+index 0000000..b1b08d9
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,362 @@
+@@ -0,0 +1,481 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -12571,6 +12757,125 @@ index 0000000..6c82d3a
 +    assert size is None and cells == []
 +    _, ink, _ = drawn(panel_with(tmp_path, snap))
 +    assert "144 ports, 3 switches" in strings(ink)
++
++
++# ---- the new look: Ports ----
++
++SW2 = "t-iof-sw02"
++
++
++def stand48_snapshot(ports_map="pages"):
++    """One switch of 48 ports as in the mockups: modules done, running, failed, silent; free ports; the provisioner on 48."""
++    snap = demo_snapshot()
++    modules = [
++        dict(module(2, "wlanpi-3a1", "run", "write", "Writing image", 48, speed=int(24.6 * 1048576), eta=130),
++             port=f"{SW2} Gi1/0/2"),
++        dict(module(17, "wlanpi-7b2", "fail", "failed", "Writing image", 12, cause=f"Server unreachable (curl{NBSP}7)",
++                    code="curl 7, exit 1"), port=f"{SW2} Gi1/0/17"),
++    ]
++    by_port = {2: modules[0], 17: modules[1]}
++    ports = []
++    for i in range(48):
++        n = i + 1
++        k = ("ok" if i % 5 in (0, 2) else "run" if i % 5 == 1 else "free") if i < 44 else "free"
++        k = "fail" if i in (16, 31) else "stale" if i == 22 else k
++        m = by_port.get(n)
++        if n == 48:
++            ports.append({"name": f"Gi1/0/{n}", "number": n, "state": "uplink", "filter": "uplink", "serials": [],
++                          "server": True, "speed": 1000})
++        elif k == "free":
++            ports.append({"name": f"Gi1/0/{n}", "number": n, "state": "free", "filter": "free", "serials": [],
++                          "server": False})
++        else:
++            ports.append({"name": f"Gi1/0/{n}", "number": n, "state": "module", "filter": k,
++                          "serials": [m["serial"]] if m else [f"other{n}"], "server": False, "speed": 1000})
++    snap["switches"] = [{"name": SW2, "answering": True, "blocks": [{"rows": 2, "label": "PORTS", "ports": ports}]}]
++    snap["modules"] = modules
++    snap["panel"] = {"theme": "new", "ports_map": ports_map}
++    return snap
++
++
++def on_port(p, n):
++    p.page = 1
++    p.index = n - 1
++    return p
++
++
++def test_a_small_switch_looks_the_same_in_both_maps(tmp_path):
++    a, b = demo_snapshot(), demo_snapshot()
++    b["panel"] = {"theme": "new", "ports_map": "whole"}
++    pa, pb = on_port(panel_with(tmp_path, a), 3), on_port(panel_with(tmp_path, b), 3)
++    assert pa.frame().tobytes() == pb.frame().tobytes()
++    _, ink, centred = drawn(pa)
++    assert {"1", "3", "5", "7", "2", "4", "6", "cm"} <= set(strings(ink))
++    assert fonts.overlaps(ink) == [] and fonts.off_centre(centred) == []
++
++
++def test_pages_show_sixteen_ports_and_their_page(tmp_path):
++    p = on_port(panel_with(tmp_path, stand48_snapshot()), 17)
++    _, ink, centred = drawn(p)
++    s = strings(ink)
++    assert {str(n) for n in range(17, 33)} <= set(s)
++    assert "16" not in s and "33" not in s
++    assert "2/3" in s and "Gi1/0/17" in s
++    assert fonts.overlaps(ink) == [] and fonts.off_centre(centred) == []
++
++
++def test_the_whole_switch_shows_all_ports_without_numbers(tmp_path):
++    p = on_port(panel_with(tmp_path, stand48_snapshot("whole")), 17)
++    img, ink, _ = drawn(p)
++    s = strings(ink)
++    assert "Gi1/0/17" in s and not any(t in s for t in ("17", "18", "2/3"))
++    assert fonts.overlaps(ink) == []
++
++
++def test_a_failed_port_shows_its_cause_in_two_lines_instead_of_the_bar(tmp_path):
++    p = on_port(panel_with(tmp_path, stand48_snapshot()), 17)
++    img, ink, _ = drawn(p)
++    s = strings(ink)
++    assert "FAILED" in s and "wlanpi-7b2" in s and "Writing image  12%" in s
++    assert "Server unreachable" in s and "(curl 7)" in s
++    assert box_of(ink, "(curl 7)")[1] > box_of(ink, "Server unreachable")[3]       # the second line
++    # no progress bar: nothing red below the map, where the bar of a running port is
++    assert not any(img.getpixel((x, y)) == (255, 50, 40) for x in range(2, 126) for y in range(100, 128))
++    assert fonts.overlaps(ink) == []
++
++
++def test_a_running_port_shows_bar_speed_and_eta(tmp_path):
++    p = on_port(panel_with(tmp_path), 2)
++    img, ink, _ = drawn(p)
++    s = strings(ink)
++    assert "RUNNING" in s and "wlanpi-a71" in s and "25.0 MiB/s  ETA 1:00" in s
++    assert any(img.getpixel((x, y)) == (70, 150, 255) for x in range(2, 60) for y in range(95, 115))
++    assert fonts.overlaps(ink) == []
++
++
++def test_the_server_port_is_marked_cm_and_a_free_port_says_nothing_connected(tmp_path):
++    _, ink, _ = drawn(on_port(panel_with(tmp_path), 8))
++    assert "cm" in strings(ink) and "SERVER" in strings(ink)
++    assert " ".join(t for t in strings(ink) if t.startswith(("This", "provisioner"))) == "This server (the provisioner)"
++    assert fonts.overlaps(ink) == []
++    _, ink, _ = drawn(on_port(panel_with(tmp_path), 10))
++    assert "FREE" in strings(ink) and "Nothing connected" in strings(ink)
++    _, ink, _ = drawn(on_port(panel_with(tmp_path), 9))
++    assert "UNKNOWN" in strings(ink) and "iPhone of Anna" in strings(ink)
++
++
++def test_no_switches(tmp_path):
++    snap = demo_snapshot()
++    snap["switches"] = []
++    p = panel_with(tmp_path, snap)
++    p.page = 1
++    _, ink, _ = drawn(p)
++    assert "No switches: add one in" in strings(ink) and "Settings > Network" in strings(ink)
++
++
++def test_a_silent_switch(tmp_path):
++    snap = demo_snapshot()
++    snap["switches"].append({"name": "sw-two", "answering": False, "blocks": []})
++    p = on_port(panel_with(tmp_path, snap), 13)           # the row after the 12 ports of the first switch
++    _, ink, _ = drawn(p)
++    assert "sw-two" in strings(ink) and "No response" in strings(ink)
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
