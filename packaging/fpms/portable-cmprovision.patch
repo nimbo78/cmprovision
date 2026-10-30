@@ -11125,10 +11125,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..df49024
+index 0000000..6d200ed
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,876 @@
+@@ -0,0 +1,879 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11882,10 +11882,13 @@ index 0000000..df49024
 +
 +    body, title, code = header(img, d, panel, "Station"), fonts.font("title"), fonts.font("code")
 +    y = 18
-+    version = text(panel.data.get("app_version"))
-+    vw = body.width(version) + 6 if version else 0
++    # the name of the station comes first: a development build's commit ("2.22.2+26 · c617038") goes, then the version
++    version = text(panel.data.get("app_version")).split(" · ")[0].strip()
 +    host = text(panel.data.get("host")) or "cmprovision"
-+    f = title if title.width(host) <= 124 - vw else body     # a long version takes the room: a smaller name, not a cut one
++    vw = body.width(version) + 6 if version else 0
++    if body.width(host) > 124 - vw:
++        version, vw = "", 0
++    f = title if title.width(host) <= 124 - vw else body     # a smaller name rather than a cut one
 +    f.draw(img, 2, y + title.asc - f.asc, fonts.fit(f, host, 124 - vw), P["fg"])
 +    if version:
 +        body.draw(img, 126 - body.width(version), y + title.asc - body.asc, version, P["muted"])
@@ -12891,10 +12894,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..4105480
+index 0000000..e6ee1e8
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,995 @@
+@@ -0,0 +1,1010 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -13890,6 +13893,21 @@ index 0000000..4105480
 +        assert fonts.off_centre(centred) == []
 +        if data == "all_failures":
 +            assert not any("..." in t for t in strings(ink) if p.page == 3 and not p.detail)
++
++
++def test_station_keeps_the_host_name_whole(tmp_path):
++    """A development build says "2.22.2+26 · c617038": the name of the station matters more than the commit."""
++    snap = demo_snapshot()
++    snap["host"], snap["app_version"] = "wlanpi-d62", "2.22.2+26 · c617038"
++    p = panel_with(tmp_path, snap)
++    p.page = 4
++    _, ink, _ = drawn(p)
++    assert "wlanpi-d62" in strings(ink) and "2.22.2+26" in strings(ink)
++    snap["host"] = "a-station-with-a-name-long-enough-to-need-the-whole-line"
++    p = panel_with(tmp_path, snap)
++    p.page = 4
++    _, ink, _ = drawn(p)
++    assert not any("2.22.2" in t for t in strings(ink)) and fonts.overlaps(ink) == []
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
