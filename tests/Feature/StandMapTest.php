@@ -582,20 +582,26 @@ class StandMapTest extends TestCase
         $this->assertFalse($map['tiles']['s1p9']['server']);
     }
 
-    /* Another cmprovision station on the stand (the stand's provisioner at 172.20.0.1, a second station in .2-.10) says
-       that address over LLDP: its port is a station's, not a stranger's, and no module is looked for on it */
-    public function test_a_neighbour_with_a_station_address_is_a_cmprovision_station()
+    /* Another cmprovision station names itself over LLDP ("cmprovision <version> station; <system>", tools/lldp-station):
+       its port is a station's, not a stranger's, and no module is looked for on it. Its address tells the role: 172.20.0.1,
+       the one the modules talk to, is the stand's provisioner. An address alone makes no station */
+    public function test_a_neighbour_that_names_itself_a_cmprovision_station_is_one()
     {
-        $at = fn ($name, $address) => ['neighbors' => [['address' => $address] + $this->neighbour($name, '2c:cf:67:30:7d:a9')]];
-        $map = $this->build([$this->port(8, 'Gi0/8', true, ['2c:cf:67:30:7d:a9']) + $at('wlanpi-da2', '172.20.0.1'),
-                             $this->port(9, 'Gi0/9', true, ['2c:cf:67:30:7d:aa']) + $at('wlanpi-d62', '172.20.0.2'),
-                             $this->port(10, 'Gi0/10', true, ['2c:cf:67:30:7d:ab']) + $at('wlanpi-fd3', '172.20.108.222')]);
+        $says = fn ($name, $mac, $address, $description) => ['neighbors' => [['address' => $address, 'description' => $description] + $this->neighbour($name, $mac)]];
+        $map = $this->build([
+            $this->port(8, 'Gi0/8', true, ['2c:cf:67:30:7d:a9']) + $says('wlanpi-da2', '2c:cf:67:30:7d:a9', '172.20.0.1', 'cmprovision 2.23.0 station; Debian GNU/Linux 13 (trixie)'),
+            $this->port(9, 'Gi0/9', true, ['2c:cf:67:30:7d:aa']) + $says('wlanpi-d62', '2c:cf:67:30:7d:aa', '192.168.68.231', 'cmprovision 2.23.0~dev3 station'),
+            $this->port(10, 'Gi0/10', true, ['2c:cf:67:30:7d:ab']) + $says('wlanpi-fd3', '2c:cf:67:30:7d:ab', '172.20.0.2', 'Debian GNU/Linux 13 (trixie) Linux 6.18'),
+            $this->port(11, 'Gi0/11', true, ['2c:cf:67:30:7d:ac']) + $says('cm-2ccf67307dac', '2c:cf:67:30:7d:ac', null, 'cmprovision utility OS 2026.10.2 (Linux 6.18.50 aarch64)'),
+        ]);
 
-        $this->assertSame(['uplink', ['name' => 'wlanpi-da2', 'address' => '172.20.0.1', 'provisioner' => true]],
+        $this->assertSame(['uplink', ['name' => 'wlanpi-da2', 'address' => '172.20.0.1', 'version' => '2.23.0', 'provisioner' => true]],
             [$map['tiles']['s1p8']['state'], $map['tiles']['s1p8']['station']]);
-        $this->assertSame(['name' => 'wlanpi-d62', 'address' => '172.20.0.2', 'provisioner' => false], $map['tiles']['s1p9']['station']);
-        $this->assertNull($map['tiles']['s1p10']['station'], 'an address the DHCP pool gives a module');
+        $this->assertSame(['name' => 'wlanpi-d62', 'address' => '192.168.68.231', 'version' => '2.23.0~dev3', 'provisioner' => false],
+            $map['tiles']['s1p9']['station'], 'a station gives the address its lldpd chose: the role, not the recognition, hangs on it');
+        $this->assertNull($map['tiles']['s1p10']['station'], 'an address of a station without the words makes no station');
         $this->assertSame('foreign', $map['tiles']['s1p10']['state']);
+        $this->assertNull($map['tiles']['s1p11']['station'], 'the utility OS of a module is no station');
     }
 
     public function test_a_neighbour_that_is_another_switch_of_the_stand_makes_the_port_a_link()

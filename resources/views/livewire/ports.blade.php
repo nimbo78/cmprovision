@@ -200,7 +200,7 @@
                     @elseif ($tile['state'] === 'uplink' && !empty($tile['server']))
                         <p class="mb-2">The provisioner (this server) is on this port.{{ $tile['mac_count'] > 1 ? ' '.$tile['mac_count'].' MAC addresses behind it.' : '' }}</p>
                     @elseif ($tile['state'] === 'uplink' && !empty($tile['station']))
-                        <p class="mb-2">{{ $tile['station']['provisioner'] ? 'The provisioner of the stand' : 'Another cmprovision station' }} is on this port: {{ $tile['station']['name'] !== '' ? $tile['station']['name'].' ('.$tile['station']['address'].')' : $tile['station']['address'] }}.</p>
+                        <p class="mb-2">{{ $tile['station']['provisioner'] ? 'The provisioner of the stand' : 'Another cmprovision station' }} is on this port: {{ implode(' ', array_filter([$tile['station']['name'], $tile['station']['address'] ? '('.$tile['station']['address'].')' : ''])) }}, cmprovision {{ $tile['station']['version'] }}.</p>
                     @elseif ($tile['state'] === 'uplink')
                         <p class="mb-2">Uplink: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @endif

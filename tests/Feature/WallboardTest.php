@@ -73,19 +73,21 @@ class WallboardTest extends TestCase
         $this->assertStringNotContainsString('sw01 GE0/0/3', json_encode($unknown), 'the module on its port is not in the list');
     }
 
-    /* the stand's provisioner, seen from a second station: it says 172.20.0.1 over LLDP, so it is a station, not a stranger */
+    /* the stand's provisioner, seen from a second station: it names itself a cmprovision station over LLDP and says
+       172.20.0.1, so it is the provisioner, not a stranger */
     public function test_another_cmprovision_station_is_a_station_on_its_port_not_an_unknown_device()
     {
         $this->stand();
         $t =& $this->fake->tables[''];
         $t[MacTable::OID_HUAWEI_FDB_PORT.'.44.207.103.48.125.181.10.0'] = 6;      // 2c:cf:67:30:7d:b5
-        foreach ([4 => 4, 5 => hex2bin('2ccf67307db5'), 8 => 'eth0', 9 => 'wlanpi-da2', 10 => 'Debian GNU/Linux 13', 12 => hex2bin('10')] as $column => $value)
+        foreach ([4 => 4, 5 => hex2bin('2ccf67307db5'), 8 => 'eth0', 9 => 'wlanpi-da2', 10 => 'cmprovision 2.23.0 station; Debian GNU/Linux 13 (trixie)',
+                  12 => hex2bin('10')] as $column => $value)
             $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
         $t[\App\Services\Switch\Neighbors::OID_LLDP_MAN.'.0.6.1.1.4.172.20.0.1'] = 2;
 
         $data = app(WallboardSnapshot::class)->current();
         $ports = array_column(array_merge(...array_column($data['switches'][0]['blocks'], 'ports')), null, 'name');
-        $this->assertSame(['name' => 'wlanpi-da2', 'address' => '172.20.0.1', 'provisioner' => true], $ports['GE0/0/1']['station']);
+        $this->assertSame(['name' => 'wlanpi-da2', 'address' => '172.20.0.1', 'version' => '2.23.0', 'provisioner' => true], $ports['GE0/0/1']['station']);
         $this->assertNull($ports['GE0/0/2']['station']);
         $this->assertStringNotContainsString('wlanpi-da2', json_encode($data['unknown']));
     }

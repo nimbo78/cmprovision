@@ -1,0 +1,45 @@
+#!/bin/sh
+# cmprovision (2.23.0): the station names itself to the stand's switch over LLDP, so another station on the stand knows it
+# for a cmprovision station by what it says (StandMap::station()), not by its address. The description keeps the name of
+# the system after it, for whoever reads the switch's neighbour table.
+#   lldp-station announce <version>   write the lldpd drop-in and give it to a running lldpd
+#   lldp-station withdraw             remove the drop-in and give lldpd its own description back
+# postinst runs announce with the package's version, prerm withdraw when the package leaves or goes below 2.23. Without a
+# running lldpd only the file is written: lldpd reads its directory when it starts. LLDP_STATION_DIR and LLDP_OS_RELEASE
+# move /etc/lldpd.d and /etc/os-release (the test runs it so).
+set -eu
+
+DIR=${LLDP_STATION_DIR:-/etc/lldpd.d}
+OS_RELEASE=${LLDP_OS_RELEASE:-/etc/os-release}
+FILE=$DIR/cmprovision.conf
+
+usage() { echo "usage: lldp-station announce <version> | withdraw" >&2; exit 2; }
+
+# lldpcli talks to a running lldpd; with none, or without lldpd at all, there is nothing to tell
+tell_lldpd() { command -v lldpcli >/dev/null 2>&1 && lldpcli "$@" >/dev/null 2>&1 || true; }
+
+case "${1:-}" in
+    announce)
+        [ $# -eq 2 ] || usage
+        version=$2
+        case "$version" in
+            ''|*[!0-9A-Za-z.+~:-]*) echo "lldp-station: not a package version: $version" >&2; exit 2 ;;
+        esac
+        # the system's name with nothing that could end lldpcli's quoted word
+        os=$(sed -n 's/^PRETTY_NAME=//p' "$OS_RELEASE" 2>/dev/null | head -n 1 | tr -cd '[:alnum:] ._()/,+:-' || true)
+        mkdir -p "$DIR"
+        tmp=$(mktemp "$DIR/.cmprovision.XXXXXX")
+        printf '%s\nconfigure system description "%s"\n' \
+            "# cmprovision4 (lldp-station): the station names itself to the stand's switch; written again on every configure" \
+            "cmprovision $version station${os:+; $os}" > "$tmp"
+        chmod 644 "$tmp"
+        mv -f "$tmp" "$FILE"
+        tell_lldpd -c "$FILE"
+        ;;
+    withdraw)
+        [ $# -eq 1 ] || usage
+        rm -f "$FILE"
+        tell_lldpd unconfigure system description
+        ;;
+    *) usage ;;
+esac

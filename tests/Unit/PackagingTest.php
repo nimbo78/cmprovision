@@ -385,4 +385,23 @@ class PackagingTest extends TestCase
         // the Ports page names the maker of an unknown device from the ieee-data files, and works without them
         $this->assertMatchesRegularExpression('/^Recommends:.*\bieee-data\b/m', $this->file('debian/control'));
     }
+
+    public function test_the_station_names_itself_over_lldp_while_the_package_is_here()
+    {
+        // another station knows it by that (2.23.0); without lldpd the stand works as before, so lldpd is recommended
+        $this->assertMatchesRegularExpression('/^Recommends:.*\blldpd\b/m', $this->file('debian/control'));
+        $this->assertStringContainsString("install -D -m 755 tools/lldp-station debian/cmprovision4/usr/lib/cmprovision/lldp-station\n",
+            $this->file('debian/rules'));
+
+        $postinst = $this->file('debian/postinst');
+        $announce = "/usr/lib/cmprovision/lldp-station announce \"\$(dpkg-query -W -f='\${Version}' cmprovision4 2>/dev/null)\" || true\n";
+        $this->assertStringContainsString($announce, $postinst, 'the version of this package, and never a failed configure');
+        $this->assertLessThan(strpos($postinst, '#DEBHELPER#'), strpos($postinst, $announce));
+
+        // the helper leaves with the package, so prerm withdraws; an older package would leave a description that lies
+        $prerm = $this->file('debian/prerm');
+        $this->assertStringContainsString("if [ \"\$1\" = \"remove\" ] || { [ \"\$1\" = \"upgrade\" ] && [ -n \"\$2\" ] && dpkg --compare-versions \"\$2\" lt \"2.23.0~\"; }; then\n"
+            ."    /usr/lib/cmprovision/lldp-station withdraw || true\nfi\n", $prerm);
+        $this->assertLessThan(strpos($prerm, '#DEBHELPER#'), strpos($prerm, 'lldp-station withdraw'));
+    }
 }

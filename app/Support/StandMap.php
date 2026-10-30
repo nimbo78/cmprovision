@@ -22,6 +22,8 @@ class StandMap
     const BLOCK = 12;
     /* Cages for a switch without PoE tables: 10G and faster names, and MikroTik's sfp ports */
     const CAGE_NAMES = '/^(xge|xgigabitethernet|25ge|40ge|100ge|te|fo|hu|twe|sfp)/i';
+    /* How a cmprovision station describes itself over LLDP: "cmprovision <package version> station; <system>" */
+    const STATION = '/^cmprovision ([0-9][0-9A-Za-z.+~:-]{0,39}) station(?:;|$)/';
     /* The speed a port's name stands for (usualSpeed()), checked in this order */
     const NAME_SPEEDS = [
         '/^(fa|fastethernet)\d/i' => 100,
@@ -112,17 +114,16 @@ class StandMap
         return false;
     }
 
-    /* Another cmprovision station is on this port: its neighbour (LLDP, CDP) says an address only a station has on the
-       stand (NetworkStatus::isStationAddress: the provisioner's 172.20.0.1, a second station's .2-.10). ['name', 'address',
-       'provisioner' => it is the stand's provisioner] or null; never this server's own port */
+    /* Another cmprovision station is on this port: its lldpd says so (tools/lldp-station, STATION). ['name', 'address',
+       'version', 'provisioner' => its address is 172.20.0.1, the one the modules talk to] or null; never this server's port */
     protected function station(array $p): ?array
     {
         if ($this->hasServer($p))
             return null;
         foreach ($p['port']['neighbors'] ?? [] as $neighbour)
-            if (NetworkStatus::isStationAddress($neighbour['address'] ?? null))
-                return ['name' => (string) ($neighbour['name'] ?? ''), 'address' => $neighbour['address'],
-                        'provisioner' => $neighbour['address'] === NetworkStatus::SERVER_ADDRESS];
+            if (preg_match(self::STATION, (string) ($neighbour['description'] ?? ''), $m))
+                return ['name' => (string) ($neighbour['name'] ?? ''), 'address' => $neighbour['address'] ?? null, 'version' => $m[1],
+                        'provisioner' => ($neighbour['address'] ?? null) === NetworkStatus::SERVER_ADDRESS];
         return null;
     }
 

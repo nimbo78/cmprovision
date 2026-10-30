@@ -53,6 +53,11 @@ if [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.7.5
     deb-systemd-invoke stop cmprovision-wallboard-data.service >/dev/null || true
 fi
 
+# The station's name over LLDP (2.23.0) leaves with its helper, and with a version that would not keep it current
+if [ "$1" = "remove" ] || { [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.23.0~"; }; then
+    /usr/lib/cmprovision/lldp-station withdraw || true
+fi
+
 #DEBHELPER#
 
 exit 0

@@ -578,13 +578,30 @@ class PortsPageTest extends TestCase
         $t =& $this->fake->tables[''];
         $t[SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;
         $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;
-        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 8 => 'eth0', 9 => 'wlanpi-d62', 10 => 'Debian GNU/Linux 13', 12 => hex2bin('10')] as $column => $value)
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 8 => 'eth0', 9 => 'wlanpi-d62', 10 => 'cmprovision 2.23.0 station; Debian GNU/Linux 13 (trixie)',
+                  12 => hex2bin('10')] as $column => $value)
             $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
         $t[\App\Services\Switch\Neighbors::OID_LLDP_MAN.'.0.6.1.1.4.172.20.0.2'] = 2;
 
         Livewire::test(Ports::class)->call('select', 's1p6')
-            ->assertSee('Another cmprovision station is on this port: wlanpi-d62 (172.20.0.2).')
+            ->assertSee('Another cmprovision station is on this port: wlanpi-d62 (172.20.0.2), cmprovision 2.23.0.')
             ->assertDontSee('Unrecognized device');
+    }
+
+    public function test_a_station_address_alone_is_a_stranger()
+    {
+        // .2-.10 are kept for fixed hosts, but not every fixed host is a cmprovision station
+        $this->switchWithModule();
+        $t =& $this->fake->tables[''];
+        $t[SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;
+        $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 8 => 'eth0', 9 => 'printer-2f', 10 => 'Debian GNU/Linux 13', 12 => hex2bin('10')] as $column => $value)
+            $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+        $t[\App\Services\Switch\Neighbors::OID_LLDP_MAN.'.0.6.1.1.4.172.20.0.2'] = 2;
+
+        Livewire::test(Ports::class)->call('select', 's1p6')
+            ->assertDontSee('cmprovision station is on this port')
+            ->assertSee('Unrecognized device');
     }
 
     public function test_a_device_that_says_it_is_the_utility_os_of_the_stand_is_told_apart_from_a_stranger()

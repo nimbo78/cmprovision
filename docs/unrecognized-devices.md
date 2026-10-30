@@ -36,6 +36,12 @@ of each switch says how many neighbors it knows (`2 neighbors via LLDP/CDP`), or
   So a module that booted but never reached the server (no DHCP, no route to the server) is not a stranger on the port any more:
   the Ports page says that the utility OS of the stand runs on it and has not asked for its script, and the HDMI display lists it
   by its name. The utility OS only sends (`lldp status tx-only`): it reads no frame of a neighbour.
+- **A cmprovision station says who it is (from 2.23.0).** The package recommends `lldpd` and gives it the description
+  `cmprovision 2.23.0 station; Debian GNU/Linux 13 (trixie)` (`/etc/lldpd.d/cmprovision.conf`, written again on every upgrade,
+  removed with the package). Another station on the stand then shows that port as a station's, with its name, address and
+  version, not as an unknown device: **The provisioner of the stand** when its address is 172.20.0.1 (the one the modules talk
+  to), **Another cmprovision station** otherwise. A station without `lldpd` says nothing and is shown like any other device.
+  The rest of the `lldpd` setup is left as it is: it also sends the description on the station's other links.
 - **A plain Raspberry Pi says nothing.** Raspberry Pi OS and the utility OS of before 2026.10.2 do not send LLDP or CDP. For such a device the port
   shows **Made by, from the MAC address** (the Raspberry Pi blocks are built in; the `ieee-data` package, a recommended
   dependency, adds the IEEE registries). A randomly generated or virtual MAC has no maker.

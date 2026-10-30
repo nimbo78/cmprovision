@@ -202,6 +202,9 @@ EOF
     # the metrics by device (2.5.3): NetworkManager reads its conf.d again, connections take them when they connect
     nmcli general reload conf >/dev/null 2>&1 || true
 
+    # The station names itself to the stand's switch over LLDP (2.23.0): another station knows it by that
+    /usr/lib/cmprovision/lldp-station announce "$(dpkg-query -W -f='${Version}' cmprovision4 2>/dev/null)" || true
+
     # The newest five snapshots stay (2.17.0): the upgrade's own snapshot is made by the old version's script, which does not trim
     if [ -x /usr/sbin/cmprovision-backup ]; then
         /usr/sbin/cmprovision-backup --prune || true

@@ -149,11 +149,6 @@ class NetworkStatusTest extends TestCase
         // its link to the stand is eth0 all the same: Station must not call it down
         $roles = array_column(array_filter($this->readStatus($addresses)['links'], fn ($l) => $l['name'] === 'eth0'), 'role');
         $this->assertSame(['stand'], $roles);
-        $this->assertTrue(NetworkStatus::isStationAddress('172.20.0.1'));
-        $this->assertTrue(NetworkStatus::isStationAddress('172.20.0.10'));
-        $this->assertFalse(NetworkStatus::isStationAddress('172.20.0.11'));
-        $this->assertFalse(NetworkStatus::isStationAddress('192.168.25.29'));
-        $this->assertFalse(NetworkStatus::isStationAddress(null));
     }
 
     public function test_other_default_routes_are_backups()

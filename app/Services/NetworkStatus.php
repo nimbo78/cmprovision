@@ -178,18 +178,6 @@ class NetworkStatus
         return $stand === null ? null : $this->macOf($stand);
     }
 
-    /**
-     * An address only a cmprovision station has on the stand: the server's 172.20.0.1 or one of the fixed .2-.10 kept
-     * out of the DHCP pool for a second station (Host::firstAvailableIP() starts at .11)
-     */
-    public static function isStationAddress(?string $ip): bool
-    {
-        $long = $ip === null ? false : ip2long($ip);
-        $first = ip2long(self::SERVER_ADDRESS);
-
-        return $long !== false && $long >= $first && $long <= $first + 9;
-    }
-
     private static function inStand(string $ip): bool
     {
         [$net, $bits] = explode('/', self::STAND_NETWORK);
