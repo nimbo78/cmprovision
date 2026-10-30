@@ -338,6 +338,8 @@ body { background: var(--page); color: var(--text); }
 .ports-boot { background: #cffafe; color: #0e7490; border-color: #0e7490; }
 .ports-foreign { background: #ede9fe; color: #6d28d9; border-color: #6d28d9; }
 .ports-uplink { background: #e5e7eb; color: #374151; border-color: #9ca3af; }
+/* another cmprovision station carries the mark too, on a warm dark tile: the grey one with the mark is this provisioner */
+.ports-uplink.station { background: #4a3322; color: #ffd37a; border-color: #e2681c; }
 .ports-free { background: #3a3f48; color: #9aa1ac; border-color: #4a505a; }
 .ports-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; border: 1px solid transparent; }
 .ports-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }

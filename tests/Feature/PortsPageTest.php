@@ -583,9 +583,37 @@ class PortsPageTest extends TestCase
             $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
         $t[\App\Services\Switch\Neighbors::OID_LLDP_MAN.'.0.6.1.1.4.172.20.0.2'] = 2;
 
-        Livewire::test(Ports::class)->call('select', 's1p6')
+        $page = Livewire::test(Ports::class)
+            ->assertSeeHtml('title="192.0.2.10 GE0/0/1 · another cmprovision station"')
+            ->assertSeeHtml('aria-label="192.0.2.10 GE0/0/1: another cmprovision station"')
+            ->assertSeeHtml('id="cmp-ports-s1p6"');   // the mark of the top bar, not "UP"
+        // on a background of its own (app.css): the grey one with the mark is this provisioner
+        $this->assertMatchesRegularExpression('/class="ports-tile ports-uplink [^"]*\bstation\b/', $page->html());
+        $this->assertStringNotContainsString('<span class="short">UP</span>', $page->html());
+        $page->call('select', 's1p6')
             ->assertSee('Another cmprovision station is on this port: wlanpi-d62 (172.20.0.2), cmprovision 2.23.0.')
             ->assertDontSee('Unrecognized device');
+    }
+
+    public function test_the_provisioner_of_the_stand_seen_from_a_second_station_carries_the_mark_too()
+    {
+        $this->switchWithModule();
+        $t =& $this->fake->tables[''];
+        $t[SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;
+        $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 8 => 'eth0', 9 => 'wlanpi-da2', 10 => 'cmprovision 2.23.0 station; Debian GNU/Linux 13 (trixie)',
+                  12 => hex2bin('10')] as $column => $value)
+            $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+        $t[\App\Services\Switch\Neighbors::OID_LLDP_MAN.'.0.6.1.1.4.172.20.0.1'] = 2;
+
+        $page = Livewire::test(Ports::class)
+            ->assertSeeHtml('title="192.0.2.10 GE0/0/1 · the provisioner of the stand"')
+            ->assertSeeHtml('aria-label="192.0.2.10 GE0/0/1: the provisioner of the stand"')
+            ->assertSeeHtml('id="cmp-ports-s1p6"')
+            // this server's own port keeps the grey tile with the mark
+            ->assertSeeHtml('title="192.0.2.10 XGE0/0/1 · the provisioner"');
+        $this->assertMatchesRegularExpression('/class="ports-tile ports-uplink [^"]*\bstation\b/', $page->html());
+        $this->assertSame(1, preg_match_all('/class="ports-tile [^"]*\bstation\b/', $page->html()));
     }
 
     public function test_a_module_marked_by_a_station_with_the_same_key_is_named_flashed_by_cmprovision()
