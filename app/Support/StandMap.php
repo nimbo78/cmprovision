@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Cm;
+use App\Services\NetworkStatus;
 
 /**
  * The stand as the Ports page draws it: the snapshots of its switches and the modules behind their MAC addresses as
@@ -73,7 +74,7 @@ class StandMap
         $links = $this->links($ports);
         $uplinks = [];
         foreach ($ports as $key => $p)
-            $uplinks[$key] = isset($links[$key]) || $this->hasServer($p)
+            $uplinks[$key] = isset($links[$key]) || $this->hasServer($p) || $this->station($p) !== null
                 || $this->foreign($p) > self::UPLINK_MACS;
         $owners = $this->owners($ports, $uplinks);
 
@@ -109,6 +110,20 @@ class StandMap
             if (($neighbour['mac'] ?? null) === $this->serverMac || ($neighbour['port_mac'] ?? null) === $this->serverMac)
                 return true;
         return false;
+    }
+
+    /* Another cmprovision station is on this port: its neighbour (LLDP, CDP) says an address only a station has on the
+       stand (NetworkStatus::isStationAddress: the provisioner's 172.20.0.1, a second station's .2-.10). ['name', 'address',
+       'provisioner' => it is the stand's provisioner] or null; never this server's own port */
+    protected function station(array $p): ?array
+    {
+        if ($this->hasServer($p))
+            return null;
+        foreach ($p['port']['neighbors'] ?? [] as $neighbour)
+            if (NetworkStatus::isStationAddress($neighbour['address'] ?? null))
+                return ['name' => (string) ($neighbour['name'] ?? ''), 'address' => $neighbour['address'],
+                        'provisioner' => $neighbour['address'] === NetworkStatus::SERVER_ADDRESS];
+        return null;
     }
 
     /* The port's neighbour (LLDP, CDP) is that switch: it says a MAC the switch answers from, or, when it says no MAC
@@ -405,6 +420,8 @@ class StandMap
             'neighbors' => $port['neighbors'] ?? [],
             // the provisioner itself is on this port (not behind a link to another switch): the HDMI display says "cm" there
             'server' => !isset($links[$key]) && $this->hasServer($p),
+            // another cmprovision station is on this port (the stand's provisioner, a second station): who it says it is
+            'station' => isset($links[$key]) ? null : $this->station($p),
             'ifIndex' => $port['ifIndex'],
             'name' => $port['name'],
             'alias' => $port['alias'],

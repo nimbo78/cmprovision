@@ -199,6 +199,8 @@
                         <p class="mb-2">The link to {{ $tile['link'] }}: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @elseif ($tile['state'] === 'uplink' && !empty($tile['server']))
                         <p class="mb-2">The provisioner (this server) is on this port.{{ $tile['mac_count'] > 1 ? ' '.$tile['mac_count'].' MAC addresses behind it.' : '' }}</p>
+                    @elseif ($tile['state'] === 'uplink' && !empty($tile['station']))
+                        <p class="mb-2">{{ $tile['station']['provisioner'] ? 'The provisioner of the stand' : 'Another cmprovision station' }} is on this port: {{ $tile['station']['name'] !== '' ? $tile['station']['name'].' ('.$tile['station']['address'].')' : $tile['station']['address'] }}.</p>
                     @elseif ($tile['state'] === 'uplink')
                         <p class="mb-2">Uplink: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @endif

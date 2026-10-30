@@ -136,6 +136,23 @@ class NetworkStatusTest extends TestCase
         $this->assertSame(['wlan0', 'wlan1'], $status['wireless']);
     }
 
+    /* a second station on the stand holds 172.20.0.2, not .1: its own port is still "this server" */
+    public function test_the_server_mac_of_a_second_station_is_its_stand_interface()
+    {
+        $addresses = [
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '172.20.0.2', 'netmask' => '255.255.0.0']]],
+            'wlan1' => ['unicast' => [['family' => 2, 'address' => '192.168.25.29', 'netmask' => '255.255.255.0']]],
+        ];
+        $status = new NetworkStatus($this->root.'/net', $this->root.'/route', fn () => null, fn () => $addresses);
+
+        $this->assertSame('2c:cf:67:30:7d:a2', $status->serverMac());
+        $this->assertTrue(NetworkStatus::isStationAddress('172.20.0.1'));
+        $this->assertTrue(NetworkStatus::isStationAddress('172.20.0.10'));
+        $this->assertFalse(NetworkStatus::isStationAddress('172.20.0.11'));
+        $this->assertFalse(NetworkStatus::isStationAddress('192.168.25.29'));
+        $this->assertFalse(NetworkStatus::isStationAddress(null));
+    }
+
     public function test_other_default_routes_are_backups()
     {
         $backups = $this->readStatus()['backups'];

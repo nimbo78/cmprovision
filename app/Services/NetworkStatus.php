@@ -154,20 +154,54 @@ class NetworkStatus
         return $names;
     }
 
-    /** MAC of the interface holding SERVER_ADDRESS (the modules' network), lower case; null when there is none */
+    /**
+     * MAC of this server's interface on the stand network, lower case: the one holding SERVER_ADDRESS, else one with any
+     * address of STAND_NETWORK (a second station on the stand, 172.20.0.2, finds its own port too); null when none
+     */
     public function serverMac(): ?string
     {
+        $stand = null;
         foreach ($this->ipv4(call_user_func($this->addresses)) as $name => $addresses) {
             foreach ($addresses as $address) {
-                if (explode('/', $address)[0] === self::SERVER_ADDRESS) {
-                    $mac = $this->value($this->net.'/'.$name.'/address');
-
-                    return $mac ? strtolower($mac) : null;
+                $ip = explode('/', $address)[0];
+                if ($ip === self::SERVER_ADDRESS) {
+                    return $this->macOf($name);
+                }
+                if ($stand === null && self::inStand($ip)) {
+                    $stand = $name;
                 }
             }
         }
 
-        return null;
+        return $stand === null ? null : $this->macOf($stand);
+    }
+
+    /**
+     * An address only a cmprovision station has on the stand: the server's 172.20.0.1 or one of the fixed .2-.10 kept
+     * out of the DHCP pool for a second station (Host::firstAvailableIP() starts at .11)
+     */
+    public static function isStationAddress(?string $ip): bool
+    {
+        $long = $ip === null ? false : ip2long($ip);
+        $first = ip2long(self::SERVER_ADDRESS);
+
+        return $long !== false && $long >= $first && $long <= $first + 9;
+    }
+
+    private static function inStand(string $ip): bool
+    {
+        [$net, $bits] = explode('/', self::STAND_NETWORK);
+        $long = ip2long($ip);
+        $mask = -1 << (32 - (int) $bits);
+
+        return $long !== false && ($long & $mask) === (ip2long($net) & $mask);
+    }
+
+    private function macOf(string $name): ?string
+    {
+        $mac = $this->value($this->net.'/'.$name.'/address');
+
+        return $mac ? strtolower($mac) : null;
     }
 
     /**

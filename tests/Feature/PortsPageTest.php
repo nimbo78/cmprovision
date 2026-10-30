@@ -572,6 +572,21 @@ class PortsPageTest extends TestCase
         }
     }
 
+    public function test_another_cmprovision_station_is_named_on_its_port()
+    {
+        $this->switchWithModule();
+        $t =& $this->fake->tables[''];
+        $t[SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 1;
+        $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 8 => 'eth0', 9 => 'wlanpi-d62', 10 => 'Debian GNU/Linux 13', 12 => hex2bin('10')] as $column => $value)
+            $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+        $t[\App\Services\Switch\Neighbors::OID_LLDP_MAN.'.0.6.1.1.4.172.20.0.2'] = 2;
+
+        Livewire::test(Ports::class)->call('select', 's1p6')
+            ->assertSee('Another cmprovision station is on this port: wlanpi-d62 (172.20.0.2).')
+            ->assertDontSee('Unrecognized device');
+    }
+
     public function test_a_device_that_says_it_is_the_utility_os_of_the_stand_is_told_apart_from_a_stranger()
     {
         $this->switchWithModule();

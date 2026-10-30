@@ -11141,10 +11141,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..9d72cc7
+index 0000000..20589df
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,949 @@
+@@ -0,0 +1,972 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11353,6 +11353,8 @@ index 0000000..9d72cc7
 +
 +    if port.get("server"):
 +        return "accent", "accent"
++    if isinstance(port.get("station"), dict):           # another cmprovision station: the mark in an outline
++        return None, "accent"
 +    key = {"ok": "good", "run": "run", "fail": "bad", "stale": "warn"}.get(text(port.get("filter")))
 +    if key and text(port.get("state")) == "module":
 +        return key, key
@@ -11441,6 +11443,8 @@ index 0000000..9d72cc7
 +        return STATE.get(text(module.get("state")), STATE["unknown"])
 +    if row.get("server"):
 +        return PORT_STATES["server"]
++    if isinstance(row.get("station"), dict):
++        return "accent", "STATION"
 +    state = text(row.get("state"))
 +    if state == "module":
 +        return STATE.get(FILTER_STATE.get(text(row.get("filter")), "unknown"), STATE["unknown"])
@@ -11529,7 +11533,7 @@ index 0000000..9d72cc7
 +        box = (x, y, x + w - 1, y + h - 1)
 +        d.rectangle(box, fill=P[fill] if fill else None, outline=P[outline])
 +        if numbered:
-+            label = "cm" if row.get("server") else text(row.get("number"))
++            label = "cm" if row.get("server") or isinstance(row.get("station"), dict) else text(row.get("number"))
 +            fonts.draw_centered(tiny, img, box, label, P["ink"] if fill else P["muted" if outline == "line" else outline])
 +        if index == panel.index:
 +            d.rectangle((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2), outline=P["fg"])
@@ -11578,6 +11582,11 @@ index 0000000..9d72cc7
 +            body.draw(img, 2, y, line, P["muted"])
 +            y += body.h
 +        return
++    if isinstance(row.get("station"), dict):
++        for colour, f, line in station_lines(row["station"], body, fonts.font("code"), 124):
++            f.draw(img, 2, y, line, P[colour])
++            y += f.h
++        return
 +    if text(row.get("state")) == "No response":
 +        for line in fonts.wrap(body, "The switch does not answer", 124):
 +            body.draw(img, 2, y, line, P["muted"])
@@ -11598,6 +11607,18 @@ index 0000000..9d72cc7
 +    facts = "  ".join(t for t in (link_speed(row.get("speed")), _watts(row.get("watts"))) if t)
 +    if facts:
 +        body.draw(img, 2, y, facts, P["muted"])
++
++
++def station_lines(station, body, code, width):
++    """Who another cmprovision station on a port is: its name, its role on the stand, its address."""
++    from .cmprovision import text
++
++    role = "Provisioner of the stand" if station.get("provisioner") is True else "cmprovision station"
++    lines = [("fg", body, line) for line in fonts.wrap(body, text(station.get("name")), width)]
++    lines += [("muted", body, line) for line in fonts.wrap(body, role, width)]
++    if text(station.get("address")):
++        lines.append(("muted", code, text(station.get("address"))))
++    return lines
 +
 +
 +def _watts(value):
@@ -11884,6 +11905,8 @@ index 0000000..9d72cc7
 +    device = next((u for u in objects(panel.data.get("unknown")) if text(u.get("port")) == label), None)
 +    if row.get("server"):
 +        lines += [("muted", body, line) for line in fonts.wrap(body, "This server (the provisioner)", 120)]
++    elif isinstance(row.get("station"), dict):
++        lines += station_lines(row["station"], body, fonts.font("code"), 120)
 +    elif text(row.get("state")) == "No response":
 +        lines += [("muted", body, line) for line in fonts.wrap(body, "The switch does not answer", 120)]
 +    elif device is not None:
@@ -12980,10 +13003,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..6f83b3d
+index 0000000..d66fed6
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1179 @@
+@@ -0,0 +1,1210 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -13559,7 +13582,7 @@ index 0000000..6f83b3d
 +
 +# ---- the new look: cards and Station ----
 +
-+GOOD, WARN = (40, 225, 110), (255, 196, 0)
++GOOD, WARN, ACCENT = (40, 225, 110), (255, 196, 0), (255, 122, 26)
 +
 +
 +def colours(img, box):
@@ -14163,6 +14186,37 @@ index 0000000..6f83b3d
 +        seen += strings(ink)
 +        p.key("DOWN")
 +    assert "wlan0" in seen and "78 -60 dBm" in seen
++
++
++# ---- another cmprovision station on the stand ----
++
++def station_snapshot(provisioner=False):
++    snap = demo_snapshot()
++    gi9 = snap["switches"][0]["blocks"][1]["ports"][0]
++    gi9.update(state="uplink", filter="uplink", station={"name": "wlanpi-d62", "address": "172.20.0.2" if not provisioner
++                                                         else "172.20.0.1", "provisioner": provisioner})
++    snap["unknown"] = []
++    return snap
++
++
++def test_another_station_is_marked_cm_on_ports(tmp_path):
++    p = on_port(panel_with(tmp_path, station_snapshot()), 9)
++    img, ink, centred = drawn(p)
++    s = strings(ink)
++    assert s.count("cm") >= 3                         # the mark, this server's port and the other station's
++    assert "STATION" in s and "wlanpi-d62" in s and any("172.20.0.2" in t for t in s)
++    assert any("cmprovision station" in t for t in s)
++    assert ACCENT in colours(img, box_of(ink, "cm", 2))
++    assert fonts.overlaps(ink) == [] and fonts.off_centre(centred) == []
++    p.key("CENTER")
++    _, ink, _ = drawn(p)
++    assert "STATION" in strings(ink) and "wlanpi-d62" in strings(ink)
++
++
++def test_the_provisioner_of_the_stand_is_said_so(tmp_path):
++    p = on_port(panel_with(tmp_path, station_snapshot(provisioner=True)), 9)
++    _, ink, _ = drawn(p)
++    assert any("Provisioner of the stand" in t for t in strings(ink))
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08

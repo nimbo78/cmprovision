@@ -582,6 +582,22 @@ class StandMapTest extends TestCase
         $this->assertFalse($map['tiles']['s1p9']['server']);
     }
 
+    /* Another cmprovision station on the stand (the stand's provisioner at 172.20.0.1, a second station in .2-.10) says
+       that address over LLDP: its port is a station's, not a stranger's, and no module is looked for on it */
+    public function test_a_neighbour_with_a_station_address_is_a_cmprovision_station()
+    {
+        $at = fn ($name, $address) => ['neighbors' => [['address' => $address] + $this->neighbour($name, '2c:cf:67:30:7d:a9')]];
+        $map = $this->build([$this->port(8, 'Gi0/8', true, ['2c:cf:67:30:7d:a9']) + $at('wlanpi-da2', '172.20.0.1'),
+                             $this->port(9, 'Gi0/9', true, ['2c:cf:67:30:7d:aa']) + $at('wlanpi-d62', '172.20.0.2'),
+                             $this->port(10, 'Gi0/10', true, ['2c:cf:67:30:7d:ab']) + $at('wlanpi-fd3', '172.20.108.222')]);
+
+        $this->assertSame(['uplink', ['name' => 'wlanpi-da2', 'address' => '172.20.0.1', 'provisioner' => true]],
+            [$map['tiles']['s1p8']['state'], $map['tiles']['s1p8']['station']]);
+        $this->assertSame(['name' => 'wlanpi-d62', 'address' => '172.20.0.2', 'provisioner' => false], $map['tiles']['s1p9']['station']);
+        $this->assertNull($map['tiles']['s1p10']['station'], 'an address the DHCP pool gives a module');
+        $this->assertSame('foreign', $map['tiles']['s1p10']['state']);
+    }
+
     public function test_a_neighbour_that_is_another_switch_of_the_stand_makes_the_port_a_link()
     {
         $says = fn ($name, $mac = null) => ['neighbors' => [$this->neighbour($name, $mac)]];
