@@ -10421,10 +10421,10 @@ index 0000000..117e33d
 +            return cmprovision_classic.render(self)
 diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
 new file mode 100644
-index 0000000..7851eb8
+index 0000000..0ef163e
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_classic.py
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,331 @@
 +"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
 +the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
@@ -10542,8 +10542,15 @@ index 0000000..7851eb8
 +            while value and draw.textlength(value, font=font) > width:
 +                value = value[:-1]
 +            draw.text((x, y), value, font=font, fill=COLORS[color])
-+            if value.strip():
-+                fonts.record(draw.textbbox((x, y), value, font=font), value)    # for the checks of every screen
++            if value.strip() and fonts.recording():
++                # the ink itself (textbbox adds the font's margins and ends past the last pixel), for the checks of every screen
++                # smoothed as on the screen: drawn in mode "1" FreeType makes other, wider glyphs
++                probe = Image.new("L", (192, 192))
++                ImageDraw.Draw(probe).text((x + 32, y + 32), value, font=font, fill=255)
++                bb = probe.getbbox()
++                if bb:
++                    # with the ink's own pixels: a descender beside the next line is not a touch
++                    fonts.record((bb[0] - 32, bb[1] - 32, bb[2] - 33, bb[3] - 33), value, probe.crop(bb))
 +
 +        def wrap(value, width=TEXT_W):
 +            """Words to lines that fit the same width the lines are drawn in: no letter is lost at the end of a line."""
@@ -10686,8 +10693,8 @@ index 0000000..7851eb8
 +                y = 40 + i * 18
 +                selected = panel.index % 4 == i
 +                if selected:
-+                    draw.rectangle((2, y - 1, 125, y + 16), fill=COLORS["panel"])
-+                    draw.rectangle((2, y - 1, 3, y + 16), fill=COLORS["accent"])
++                    draw.rectangle((2, y - 1, 125, y + 18), fill=COLORS["panel"])
++                    draw.rectangle((2, y - 1, 3, y + 18), fill=COLORS["accent"])
 +                name = text(row.get("name")) or text(row.get("mac")) or "Unknown"
 +                label(7, y, name, "text", panel.small, 116)
 +                color = (
@@ -10699,7 +10706,7 @@ index 0000000..7851eb8
 +                )
 +                label(
 +                    7,
-+                    y + 8,
++                    y + 10,     # at y + 8 the smoothed edges of the name and of this line met
 +                    row.get("phase") or row.get("state"),
 +                    color,
 +                    panel.small,
@@ -10751,10 +10758,10 @@ index 0000000..7851eb8
 +    return f"Link {value / 1000:g}G" if value >= 1000 else f"Link {int(value)}M"
 diff --git a/fpms/integrations/cmprovision_fonts.py b/fpms/integrations/cmprovision_fonts.py
 new file mode 100644
-index 0000000..cf9fab1
+index 0000000..cf76e49
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_fonts.py
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,236 @@
 +"""Bitmap fonts of the cmprovision panel and the checks every screen goes through.
 +
 +A 128x128 panel of 0.2 mm pixels reads best in fonts drawn for its pixels: BDF files in fpms/fonts/cmprovision (made by
@@ -10768,7 +10775,7 @@ index 0000000..cf9fab1
 +import string
 +from pathlib import Path
 +
-+from PIL import Image
++from PIL import Image, ImageChops, ImageFilter
 +
 +FONT_DIR = Path(__file__).resolve().parent.parent / "fonts" / "cmprovision"
 +# Silkscreen's brackets and bars reach above its capitals: its lines are measured by what the panel writes with it
@@ -10939,10 +10946,28 @@ index 0000000..cf9fab1
 +    return found
 +
 +
-+def record(box, s):
-+    """A text drawn by other means (the classic theme's default font): its ink box, inclusive."""
++def recording():
++    """Whether the texts drawn are being kept (tests): measuring them costs time the panel does not spend otherwise."""
++    return _ink is not None
++
++
++def record(box, s, mask=None):
++    """A text drawn by other means (the classic theme's default font): its ink box, inclusive, and the ink itself (an
++    image of the box, non-zero where drawn) when the check should go by pixels, not by boxes."""
 +    if _ink is not None and box:
-+        _ink.append(tuple(box) + (s,))
++        _ink.append(tuple(box) + (s, mask))
++
++
++def _touch(a, b):
++    """Whether two recorded texts touch: their boxes, or, when both carry their ink, their pixels (a 3x3 neighbourhood)."""
++    if len(a) < 6 or len(b) < 6 or a[5] is None or b[5] is None:
++        return True
++    x0, y0 = min(a[0], b[0]) - 1, min(a[1], b[1]) - 1
++    size = (max(a[2], b[2]) + 2 - x0, max(a[3], b[3]) + 2 - y0)
++    first, second = Image.new("L", size), Image.new("L", size)
++    first.paste(a[5].point(lambda v: 255 if v else 0), (a[0] - x0, a[1] - y0))
++    second.paste(b[5].point(lambda v: 255 if v else 0), (b[0] - x0, b[1] - y0))
++    return ImageChops.multiply(first.filter(ImageFilter.MaxFilter(3)), second).getbbox() is not None
 +
 +
 +def hide_below(y):
@@ -10959,7 +10984,7 @@ index 0000000..cf9fab1
 +        if a[0] < 0 or a[1] < 0 or a[2] > 127 or a[3] > 127:
 +            bad.append(f"off screen: {a[4]!r} {a[:4]}")
 +        for b in ink[i + 1:]:
-+            if a[0] <= b[2] + 1 and b[0] <= a[2] + 1 and a[1] <= b[3] + 1 and b[1] <= a[3] + 1:
++            if a[0] <= b[2] + 1 and b[0] <= a[2] + 1 and a[1] <= b[3] + 1 and b[1] <= a[3] + 1 and _touch(a, b):
 +                bad.append(f"{a[4]!r} {a[:4]} touches {b[4]!r} {b[:4]}")
 +    return bad
 +
@@ -12866,10 +12891,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..9544b4c
+index 0000000..4105480
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,912 @@
+@@ -0,0 +1,995 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -13782,6 +13807,89 @@ index 0000000..9544b4c
 +    text = " ".join(seen)
 +    assert "None" not in text and "null" not in text and "{" not in text
 +    assert seen
++
++
++# ---- every screen of both looks: no text touches another, leaves the screen or sits off centre ----
++
++# the short causes of cmprovision's catalogue (app/Support/ShortCause.php), the longest with a curl code
++CAUSES = ["Storage overwritten", "Image file truncated", "Pieces copy damaged", f"No data from server 10 min (curl{NBSP}7)",
++          f"Image gone from server (curl{NBSP}22)", f"Server refused resume (curl{NBSP}33)", f"Download cut (curl{NBSP}56)",
++          f"Server unreachable (curl{NBSP}28)", f"Decompressor stopped (curl{NBSP}23)", f"Server name unknown (curl{NBSP}6)",
++          "Not a valid image", "Image data corrupted", "Storage not writable", "eMMC I/O error", "No active project",
++          "Image checksum not ready", "Not a disk image", "No eMMC or SD card", "Image larger than eMMC",
++          "EEPROM: no SPI chip", "EEPROM image mismatch", "EEPROM download failed", "EEPROM flash failed",
++          "New OS did not boot", "New OS did not report", "OS check failed", "Server error",
++          "Pre-install script failed (code 255)", "Post-install script failed (code 255)", "SHA256 mismatch after write",
++          "OS check install failed", "Storage check failed", "No report for 999 min", "Writing image failed",
++          "Checking the OS failed", "Failed"]
++
++
++def fixture(name):
++    if name == "empty":
++        snap = demo_snapshot()
++        snap.update(modules=[], unknown=[], switches=[], counts={"done": 0, "running": 0, "failed": 0, "stale": 0})
++        return snap
++    if name == "demo":
++        return demo_snapshot()
++    if name == "stand48":
++        snap = demo_snapshot()
++        big = stand48_snapshot()
++        snap["switches"] += big["switches"]
++        snap["modules"] += big["modules"]
++        return snap
++    if name == "long_texts":
++        snap = demo_snapshot()
++        snap["project"] = "a-project-name-of-forty-characters-long-x"
++        snap["host"] = "provisioner-with-a-very-long-host-name-of-sixty-four-chars-xxxx"
++        for m in snap["modules"]:
++            if m["hostname"]:
++                m["name"] = m["hostname"] = "h" * 63
++        snap["unknown"][0].update(name="LLDP " + "x" * 60, detail="a description " * 15)
++        snap["station"]["uplink"]["ssid"] = "Office \U0001F600 network with a long name"
++        snap["switches"][0]["name"] = "switch-with-a-long-name-" + "y" * 40
++        return snap
++    if name == "all_failures":
++        snap = demo_snapshot()
++        snap["modules"] = [module(n + 1, f"wlanpi-f{n:02d}", "fail", "failed", "Writing image", 50, cause=cause,
++                                  reason="A reason. " * 6, advice="What to do. " * 6, code="curl 56, exit 1")
++                           for n, cause in enumerate(CAUSES)]
++        return snap
++    raise KeyError(name)
++
++
++SCREENS = ["page0", "page1", "page2", "page3", "page4", "card1", "card2", "card3", "card3-scrolled", "prompt", "old"]
++
++
++def screen(p, name):
++    if name.startswith("page"):
++        p.page = int(name[4])
++    elif name.startswith("card"):
++        p.page = int(name[4])
++        p.key("CENTER")
++        if name.endswith("scrolled"):
++            for _ in range(40):
++                p.key("DOWN")
++    elif name == "prompt":
++        p.key("KEY2")
++    elif name == "old":
++        p.page = 3
++        p.key("CENTER")
++    return p
++
++
++@pytest.mark.parametrize("look", [("new", "pages"), ("new", "whole"), ("classic", "pages")])
++@pytest.mark.parametrize("data", ["empty", "demo", "stand48", "long_texts", "all_failures"])
++@pytest.mark.parametrize("name", SCREENS)
++def test_no_text_touches_another_or_leaves_the_screen(tmp_path, look, data, name):
++    snap = fixture(data)
++    snap["panel"] = {"theme": look[0], "ports_map": look[1]}
++    p = screen(panel_with(tmp_path, snap, now=112 if name == "old" else 101, clock=Clock()), name)
++    img, ink, centred = drawn(p)
++    assert fonts.overlaps(ink) == []
++    if look[0] == "new":
++        assert fonts.off_centre(centred) == []
++        if data == "all_failures":
++            assert not any("..." in t for t in strings(ink) if p.page == 3 and not p.detail)
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
