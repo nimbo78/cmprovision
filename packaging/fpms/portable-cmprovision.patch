@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..721a9d2
+index 0000000..117e33d
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,645 @@
+@@ -0,0 +1,375 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10410,285 +10410,345 @@ index 0000000..721a9d2
 +            views.append(view)
 +        return views
 +
-+    def map_cells(self):
-+        """What the map page draws: (switch name, bank, banks, switch answers, cells) for the switch of the selected row;
-+        a cell is (x, y, index into rows())."""
-+        self.selected()
-+        for view in self.map_view():
-+            columns = view["columns"]
-+            mine = [
-+                i
-+                for i, (top, bottom, _) in enumerate(columns)
-+                if self.index in (top, bottom)
-+            ]
-+            if not mine and not (not view["answering"] and view["first"] == self.index):
-+                continue
-+            banks = max(1, -(-len(columns) // MAP_COLUMNS))
-+            bank = (mine[0] // MAP_COLUMNS) if mine else 0
-+            cells, x, last = [], 4, None
-+            for top, bottom, block in columns[bank * MAP_COLUMNS : (bank + 1) * MAP_COLUMNS]:
-+                if last is not None and block != last:
-+                    x += BLOCK_GAP
-+                last = block
-+                for y, index in ((MAP_TOP, top), (MAP_TOP + CUBE + GAP, bottom)):
-+                    if index is not None and index < 512:
-+                        cells.append((x, y, index))
-+                x += CUBE + GAP
-+            return view["name"], bank, banks, view["answering"], cells
-+        return "", 0, 1, True, []
-+
-+    @staticmethod
-+    def map_style(row):
-+        """(fill, outline, ink) as names of COLORS: hollow is free, filled is a module, outlined is something else."""
-+        filt, state = text(row.get("filter")), text(row.get("state"))
-+        if row.get("server"):
-+            return "accent", "accent", "bg"
-+        if state == "module" or filt in ("ok", "run", "fail", "stale"):
-+            key = {"ok": "good", "run": "info", "fail": "bad", "stale": "warn"}.get(filt, "muted")
-+            return key, key, "bg"
-+        key = {"free": "muted", "uplink": "accent", "boot": "info"}.get(state, "warn")
-+        return None, key, key
-+
-+    def draw_map(self, draw, label):
-+        rows = self.rows()
-+        name, bank, banks, answering, cells = self.map_cells()
-+        label(4, 36, name + (f"  {bank + 1}/{banks}" if banks > 1 else ""), "text", self.small, 120)
-+        if not answering:
-+            label(5, 60, "No response", "warn")
-+        for x, y, index in cells:
-+            row = rows[index] if index < len(rows) else {}
-+            fill, outline, ink = self.map_style(row)
-+            draw.rectangle(
-+                (x, y, x + CUBE - 1, y + CUBE - 1),
-+                fill=COLORS[fill] if fill else None,
-+                outline=COLORS[outline],
-+            )
-+            caption = "cm" if row.get("server") else text(row.get("number"))
-+            width = draw.textlength(caption, font=self.tiny)
-+            # digits stand one pixel from the top; the lowercase "cm" has no height above its x-height: one pixel higher
-+            top = y if row.get("server") else y + 1
-+            draw.text(
-+                (x + (CUBE - width) / 2, top), caption, font=self.tiny, fill=COLORS[ink]
-+            )
-+            if index == self.index:
-+                draw.rectangle((x - 1, y - 1, x + CUBE, y + CUBE), outline=COLORS["text"])
-+        row = rows[self.index] if rows and self.index < len(rows) else None
-+        if row:
-+            module = next(
-+                (
-+                    m
-+                    for m in objects(self.data.get("modules"))
-+                    if text(m.get("serial")) in [text(s) for s in (row.get("serials") or [])]
-+                ),
-+                None,
-+            )
-+            port = text(row.get("portname")) or text(row.get("name"))
-+            if module:
-+                label(4, 82, text(module.get("name")), "text", self.small, 120)
-+                percent = module.get("percent")
-+                progress = f" {int(percent)}%" if type(percent) in (int, float) and math.isfinite(percent) else ""
-+                label(4, 92, port + "  " + text(module.get("phase") or module.get("state")) + progress, "muted", self.small, 120)
-+            else:
-+                label(4, 82, port, "text", self.small, 120)
-+                label(4, 92, text(row.get("state")), "muted", self.small, 120)
-+        for x, fill, title in ((3, "good", "done"), (38, "info", "run"), (66, "bad", "fail"), (94, "muted", "free")):
-+            hollow = title == "free"
-+            draw.rectangle(
-+                (x, 104, x + 6, 110), fill=None if hollow else COLORS[fill], outline=COLORS[fill]
-+            )
-+            label(x + 10, 102, title, "muted", self.small, 24)
-+
 +    def frame(self):
 +        with self.lock:
 +            if self.theme() == "new":
 +                from . import cmprovision_new
 +
 +                return cmprovision_new.render(self)
-+            scrollable = False
-+            image = Image.new("RGB", (128, 128), COLORS["bg"])
-+            draw = ImageDraw.Draw(image)
++            from . import cmprovision_classic
 +
-+            def label(x, y, value, color="text", font=None, width=120):
-+                font = font or self.font
-+                value = text(value)
-+                while value and draw.textlength(value, font=font) > width:
-+                    value = value[:-1]
-+                draw.text((x, y), value, font=font, fill=COLORS[color])
++            return cmprovision_classic.render(self)
+diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
+new file mode 100644
+index 0000000..7851eb8
+--- /dev/null
++++ b/fpms/integrations/cmprovision_classic.py
+@@ -0,0 +1,324 @@
++"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
++the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
-+            draw.rounded_rectangle((3, 3, 21, 19), radius=3, fill=COLORS["accent"])
-+            # the tile is 3..21 by 3..19 and the lettering is 13 px wide (x 6..18) and 5 px high (y 9..13): the same margin on both sides
-+            draw.text((6, 5), "cm", font=self.small, fill=COLORS["bg"])
++import math
++
++from PIL import Image, ImageDraw
++
++from . import cmprovision_fonts as fonts
++from .cmprovision import (BLOCK_GAP, COLORS, CUBE, GAP, MAP_COLUMNS, MAP_TOP, PAGES, number, objects, rate, remaining,
++                          slow, text)
++
++TEXT_W = 114   # card lines are wrapped and drawn to this one width (they were wrapped at 118, cut at 114: letters lost)
++
++
++def map_cells(panel):
++    """What the map page draws: (switch name, bank, banks, switch answers, cells) for the switch of the selected row;
++    a cell is (x, y, index into rows())."""
++    panel.selected()
++    for view in panel.map_view():
++        columns = view["columns"]
++        mine = [
++            i
++            for i, (top, bottom, _) in enumerate(columns)
++            if panel.index in (top, bottom)
++        ]
++        if not mine and not (not view["answering"] and view["first"] == panel.index):
++            continue
++        banks = max(1, -(-len(columns) // MAP_COLUMNS))
++        bank = (mine[0] // MAP_COLUMNS) if mine else 0
++        cells, x, last = [], 4, None
++        for top, bottom, block in columns[bank * MAP_COLUMNS : (bank + 1) * MAP_COLUMNS]:
++            if last is not None and block != last:
++                x += BLOCK_GAP
++            last = block
++            for y, index in ((MAP_TOP, top), (MAP_TOP + CUBE + GAP, bottom)):
++                if index is not None and index < 512:
++                    cells.append((x, y, index))
++            x += CUBE + GAP
++        return view["name"], bank, banks, view["answering"], cells
++    return "", 0, 1, True, []
++
++def map_style(row):
++    """(fill, outline, ink) as names of COLORS: hollow is free, filled is a module, outlined is something else."""
++    filt, state = text(row.get("filter")), text(row.get("state"))
++    if row.get("server"):
++        return "accent", "accent", "bg"
++    if state == "module" or filt in ("ok", "run", "fail", "stale"):
++        key = {"ok": "good", "run": "info", "fail": "bad", "stale": "warn"}.get(filt, "muted")
++        return key, key, "bg"
++    key = {"free": "muted", "uplink": "accent", "boot": "info"}.get(state, "warn")
++    return None, key, key
++
++def draw_map(panel, draw, label):
++    rows = panel.rows()
++    if not rows:
++        label(5, 50, "No switches: add one in", "muted", panel.small)
++        label(5, 62, "Settings > Network", "muted", panel.small)
++        return
++    name, bank, banks, answering, cells = map_cells(panel)
++    label(4, 36, name + (f"  {bank + 1}/{banks}" if banks > 1 else ""), "text", panel.small, 120)
++    if not answering:
++        label(5, 60, "No response", "warn")
++    for x, y, index in cells:
++        row = rows[index] if index < len(rows) else {}
++        fill, outline, ink = map_style(row)
++        draw.rectangle(
++            (x, y, x + CUBE - 1, y + CUBE - 1),
++            fill=COLORS[fill] if fill else None,
++            outline=COLORS[outline],
++        )
++        caption = "cm" if row.get("server") else text(row.get("number"))
++        width = draw.textlength(caption, font=panel.tiny)
++        # digits stand one pixel from the top; the lowercase "cm" has no height above its x-height: one pixel higher
++        top = y if row.get("server") else y + 1
++        draw.text(
++            (x + (CUBE - width) / 2, top), caption, font=panel.tiny, fill=COLORS[ink]
++        )
++        if index == panel.index:
++            draw.rectangle((x - 1, y - 1, x + CUBE, y + CUBE), outline=COLORS["text"])
++    row = rows[panel.index] if rows and panel.index < len(rows) else None
++    if row:
++        module = next(
++            (
++                m
++                for m in objects(panel.data.get("modules"))
++                if text(m.get("serial")) in [text(s) for s in (row.get("serials") or [])]
++            ),
++            None,
++        )
++        port = text(row.get("portname")) or text(row.get("name"))
++        if module:
++            label(4, 82, text(module.get("name")), "text", panel.small, 120)
++            percent = module.get("percent")
++            progress = f" {int(percent)}%" if type(percent) in (int, float) and math.isfinite(percent) else ""
++            label(4, 92, port + "  " + text(module.get("phase") or module.get("state")) + progress, "muted", panel.small, 120)
++        else:
++            label(4, 82, port, "text", panel.small, 120)
++            label(4, 92, text(row.get("state")), "muted", panel.small, 120)
++    for x, fill, title in ((3, "good", "done"), (38, "info", "run"), (66, "bad", "fail"), (94, "muted", "free")):
++        hollow = title == "free"
++        draw.rectangle(
++            (x, 104, x + 6, 110), fill=None if hollow else COLORS[fill], outline=COLORS[fill]
++        )
++        label(x + 10, 102, title, "muted", panel.small, 24)
++
++def render(panel):
++    with panel.lock:
++        scrollable = False
++        image = Image.new("RGB", (128, 128), COLORS["bg"])
++        draw = ImageDraw.Draw(image)
++
++        def label(x, y, value, color="text", font=None, width=120):
++            font = font or panel.font
++            value = text(value)
++            while value and draw.textlength(value, font=font) > width:
++                value = value[:-1]
++            draw.text((x, y), value, font=font, fill=COLORS[color])
++            if value.strip():
++                fonts.record(draw.textbbox((x, y), value, font=font), value)    # for the checks of every screen
++
++        def wrap(value, width=TEXT_W):
++            """Words to lines that fit the same width the lines are drawn in: no letter is lost at the end of a line."""
++            lines, cur = [], ""
++            for word in value.split():
++                while draw.textlength(word, font=panel.font) > width:
++                    n = len(word)
++                    while n > 1 and draw.textlength(word[:n], font=panel.font) > width:
++                        n -= 1
++                    if cur:
++                        lines.append(cur)
++                        cur = ""
++                    lines.append(word[:n])
++                    word = word[n:]
++                trial = cur + " " + word if cur else word
++                if draw.textlength(trial, font=panel.font) <= width:
++                    cur = trial
++                else:
++                    lines.append(cur)
++                    cur = word
++            if cur:
++                lines.append(cur)
++            return lines
++
++        draw.rounded_rectangle((3, 3, 21, 19), radius=3, fill=COLORS["accent"])
++        # the tile is 3..21 by 3..19 and the lettering is 13 px wide (x 6..18) and 5 px high (y 9..13): the same margin on both sides
++        draw.text((6, 5), "cm", font=panel.small, fill=COLORS["bg"])
++        label(
++            27,
++            4,
++            "Device" if panel.detail else PAGES[panel.page],
++            font=panel.small,
++            width=97,
++        )
++        draw.line((3, 23, 124, 23), fill=COLORS["line"])
++        if panel.problem:
 +            label(
-+                27,
 +                4,
-+                "Device" if self.detail else PAGES[self.page],
-+                font=self.small,
-+                width=97,
++                26,
++                panel.problem + (f" {panel.age}s" if panel.age is not None else ""),
++                "warn",
++                panel.small,
 +            )
-+            draw.line((3, 23, 124, 23), fill=COLORS["line"])
-+            if self.problem:
-+                label(
-+                    4,
-+                    26,
-+                    self.problem + (f" {self.age}s" if self.age is not None else ""),
-+                    "warn",
-+                    self.small,
-+                )
++        elif panel.age_label():                               # fresh data needs no word
++            label(4, 26, f"Updated {panel.age_label()} ago", "warn", panel.small)
++        if not panel.data:
++            label(
++                5,
++                51,
++                "Enable in Settings" if not panel.enabled else "Check web UI",
++                "accent",
++            )
++            label(5, 69, "FPMS display", "muted")
++        elif panel.detail:
++            row = panel.detail_row()
++            if row is None:
++                label(5, 55, "Device left stand", "warn")
 +            else:
-+                label(4, 26, f"Updated {self.age or 0}s ago", "muted", self.small)
-+            if not self.data:
++                diag = (
++                    row.get("diagnostics")
++                    if isinstance(row.get("diagnostics"), dict)
++                    else {}
++                )
++                issues = objects(diag.get("issues"), 4)
++                port_card = panel.detail[0] == "port"
++                lines = [
++                    row.get("name"),
++                    row.get("port"),
++                    row.get("mac"),
++                    row.get("phase") or row.get("state"),
++                    slow(row.get("slow")),
++                    row.get("cause") or row.get("detail"),
++                    # a port's speed is its link in Mbit/s, not a write rate
++                    link_speed(row.get("speed")) if port_card else rate(row.get("speed")),
++                    remaining(row.get("eta")),
++                    diag.get("title") if issues else None,     # a healthy report has no title worth a line
++                    row.get("reason"),
++                    row.get("advice"),
++                ]
++                for issue in issues:
++                    lines += [issue.get("title"), issue.get("advice")]
++                wrapped = [line for value in filter(None, map(text, lines)) for line in wrap(value)]
++                panel.scroll = min(panel.scroll, max(0, len(wrapped) - 5))
++                for i, line in enumerate(wrapped[panel.scroll : panel.scroll + 5]):
++                    label(5, 40 + i * 13, line, width=TEXT_W)
++                if len(wrapped) > 5:
++                    # a bar on the right: where the window is among the lines, so the end of a card is seen as the end
++                    scrollable = True
++                    draw.rectangle((124, 40, 125, 104), fill=COLORS["line"])
++                    top = 40 + int(65 * panel.scroll / len(wrapped))
++                    bottom = 40 + int(65 * (panel.scroll + 5) / len(wrapped))
++                    draw.rectangle((124, top, 125, max(top + 2, bottom)), fill=COLORS["text"])
++                pct = row.get("percent")
++                if type(pct) in (int, float) and math.isfinite(pct):
++                    shade = {"ok": "good", "done": "good", "fail": "bad", "failed": "bad", "stale": "warn", "run": "info"}.get(
++                        text(row.get("state")), "accent"
++                    )
++                    draw.rectangle((5, 108, 122, 111), fill=COLORS["line"])
++                    draw.rectangle(
++                        (5, 108, 5 + int(117 * max(0, min(100, pct)) / 100), 111),
++                        fill=COLORS[shade],
++                    )
++        elif panel.page == 0:
++            label(
++                4,
++                40,
++                panel.data.get("project") or "No active project",
++                "accent",
++                panel.small,
++            )
++            counts = (
++                panel.data.get("counts")
++                if isinstance(panel.data.get("counts"), dict)
++                else {}
++            )
++            for x, y, key, title, color in [
++                (4, 55, "running", "RUN", "accent"),
++                (66, 55, "done", "DONE", "good"),
++                (4, 84, "failed", "FAIL", "bad"),
++                (66, 84, "unknown", "OTHER", "warn"),
++            ]:
++                draw.rectangle((x, y, x + 57, y + 26), fill=COLORS["panel"])
++                value = max(0, int(number(counts.get(key))))
++                if key == "unknown":
++                    value += max(0, int(number(counts.get("stale"))))
++                label(x + 3, y + 1, str(min(999, value)), color, panel.large, 32)
++                label(x + 27, y + 16, title, "muted", panel.small, 30)
++        elif panel.page == 1:
++            draw_map(panel, draw, label)
++        elif panel.page in (2, 3):
++            rows = panel.rows()
++            panel.selected()
++            if not rows:
++                label(
++                    5, 56, "No errors" if panel.page == 3 else "No devices", "muted"
++                )
++            for i, row in enumerate(
++                rows[panel.index // 4 * 4 : panel.index // 4 * 4 + 4]
++            ):
++                y = 40 + i * 18
++                selected = panel.index % 4 == i
++                if selected:
++                    draw.rectangle((2, y - 1, 125, y + 16), fill=COLORS["panel"])
++                    draw.rectangle((2, y - 1, 3, y + 16), fill=COLORS["accent"])
++                name = text(row.get("name")) or text(row.get("mac")) or "Unknown"
++                label(7, y, name, "text", panel.small, 116)
++                color = (
++                    "bad"
++                    if row.get("state") in ("fail", "failed")
++                    else (
++                        "good" if row.get("state") in ("ok", "done") else "accent"
++                    )
++                )
++                label(
++                    7,
++                    y + 8,
++                    row.get("phase") or row.get("state"),
++                    color,
++                    panel.small,
++                    116,
++                )
++        else:
++            station = (
++                panel.data.get("station")
++                if isinstance(panel.data.get("station"), dict)
++                else {}
++            )
++            lines = [
++                panel.data.get("host"),
++                panel.data.get("app_version"),
++                station.get("management"),
++                station.get("provisioning") or "No provisioning link",
++                station.get("storage"),
++            ]
++            for i, value in enumerate(lines):
 +                label(
 +                    5,
-+                    51,
-+                    "Enable in Settings" if not self.enabled else "Check web UI",
-+                    "accent",
++                    42 + i * 14,
++                    value or "--",
++                    "text" if i == 0 else "muted",
++                    panel.small,
 +                )
-+                label(5, 69, "FPMS display", "muted")
-+            elif self.detail:
-+                row = self.detail_row()
-+                if row is None:
-+                    label(5, 55, "Device left stand", "warn")
-+                else:
-+                    diag = (
-+                        row.get("diagnostics")
-+                        if isinstance(row.get("diagnostics"), dict)
-+                        else {}
-+                    )
-+                    lines = [
-+                        row.get("name"),
-+                        row.get("port"),
-+                        row.get("mac"),
-+                        row.get("phase") or row.get("state"),
-+                        slow(row.get("slow")),
-+                        row.get("detail"),
-+                        rate(row.get("speed")),
-+                        remaining(row.get("eta")),
-+                        diag.get("title"),
-+                        row.get("advice"),
-+                    ]
-+                    for issue in objects(diag.get("issues"), 4):
-+                        lines += [issue.get("title"), issue.get("advice")]
-+                    wrapped = []
-+                    for value in filter(None, map(text, lines)):
-+                        part = ""
-+                        for char in value:
-+                            if draw.textlength(part + char, font=self.font) > 118:
-+                                wrapped.append(part)
-+                                part = ""
-+                            part += char
-+                        if part:
-+                            wrapped.append(part)
-+                    self.scroll = min(self.scroll, max(0, len(wrapped) - 5))
-+                    for i, line in enumerate(wrapped[self.scroll : self.scroll + 5]):
-+                        label(5, 40 + i * 13, line, width=114)
-+                    if len(wrapped) > 5:
-+                        # a bar on the right: where the window is among the lines, so the end of a card is seen as the end
-+                        scrollable = True
-+                        draw.rectangle((124, 40, 125, 104), fill=COLORS["line"])
-+                        top = 40 + int(65 * self.scroll / len(wrapped))
-+                        bottom = 40 + int(65 * (self.scroll + 5) / len(wrapped))
-+                        draw.rectangle((124, top, 125, max(top + 2, bottom)), fill=COLORS["text"])
-+                    pct = row.get("percent")
-+                    if type(pct) in (int, float) and math.isfinite(pct):
-+                        shade = {"ok": "good", "done": "good", "fail": "bad", "failed": "bad", "stale": "warn", "run": "info"}.get(
-+                            text(row.get("state")), "accent"
-+                        )
-+                        draw.rectangle((5, 108, 122, 111), fill=COLORS["line"])
-+                        draw.rectangle(
-+                            (5, 108, 5 + int(117 * max(0, min(100, pct)) / 100), 111),
-+                            fill=COLORS[shade],
-+                        )
-+            elif self.page == 0:
-+                label(
-+                    4,
-+                    40,
-+                    self.data.get("project") or "No active project",
-+                    "accent",
-+                    self.small,
-+                )
-+                counts = (
-+                    self.data.get("counts")
-+                    if isinstance(self.data.get("counts"), dict)
-+                    else {}
-+                )
-+                for x, y, key, title, color in [
-+                    (4, 55, "running", "RUN", "accent"),
-+                    (66, 55, "done", "DONE", "good"),
-+                    (4, 84, "failed", "FAIL", "bad"),
-+                    (66, 84, "unknown", "OTHER", "warn"),
-+                ]:
-+                    draw.rectangle((x, y, x + 57, y + 26), fill=COLORS["panel"])
-+                    value = max(0, int(number(counts.get(key))))
-+                    if key == "unknown":
-+                        value += max(0, int(number(counts.get("stale"))))
-+                    label(x + 3, y + 1, str(min(999, value)), color, self.large, 32)
-+                    label(x + 27, y + 16, title, "muted", self.small, 30)
-+            elif self.page == 1:
-+                self.draw_map(draw, label)
-+            elif self.page in (2, 3):
-+                rows = self.rows()
-+                self.selected()
-+                if not rows:
-+                    label(
-+                        5, 56, "No errors" if self.page == 3 else "No devices", "muted"
-+                    )
-+                for i, row in enumerate(
-+                    rows[self.index // 4 * 4 : self.index // 4 * 4 + 4]
-+                ):
-+                    y = 40 + i * 18
-+                    selected = self.index % 4 == i
-+                    if selected:
-+                        draw.rectangle((2, y - 1, 125, y + 16), fill=COLORS["panel"])
-+                        draw.rectangle((2, y - 1, 3, y + 16), fill=COLORS["accent"])
-+                    name = text(row.get("name")) or text(row.get("mac")) or "Unknown"
-+                    label(7, y, name, "text", self.small, 116)
-+                    color = (
-+                        "bad"
-+                        if row.get("state") in ("fail", "failed")
-+                        else (
-+                            "good" if row.get("state") in ("ok", "done") else "accent"
-+                        )
-+                    )
-+                    label(
-+                        7,
-+                        y + 8,
-+                        row.get("phase") or row.get("state"),
-+                        color,
-+                        self.small,
-+                        116,
-+                    )
-+            else:
-+                station = (
-+                    self.data.get("station")
-+                    if isinstance(self.data.get("station"), dict)
-+                    else {}
-+                )
-+                lines = [
-+                    self.data.get("host"),
-+                    self.data.get("app_version"),
-+                    station.get("management"),
-+                    station.get("provisioning") or "No provisioning link",
-+                    station.get("storage"),
-+                ]
-+                for i, value in enumerate(lines):
-+                    label(
-+                        5,
-+                        42 + i * 14,
-+                        value or "--",
-+                        "text" if i == 0 else "muted",
-+                        self.small,
-+                    )
-+            draw.line((3, 115, 124, 115), fill=COLORS["line"])
++        draw.line((3, 115, 124, 115), fill=COLORS["line"])
++        leave = "Menu" if panel.can_leave else "Home"
++        if panel.prompt_until is not None and panel.clock() < panel.prompt_until:
++            label(4, 117, "Press 2 again to leave", "warn", panel.small)
++        else:
 +            label(
 +                4,
 +                117,
-+                ("Up/down scroll   3 Back" if scrollable else "3 Back")
-+                if self.detail
-+                else ("< > Page   OK  3 Menu" if self.page in (1, 2, 3) else "< > Page   3 Menu"),
++                ("Up/down scroll   2 Back" if scrollable else "2 Back")
++                if panel.detail
++                else (f"< > Page   OK  2 {leave}" if panel.page in (1, 2, 3) else f"< > Page   2 {leave}"),
 +                "muted",
-+                self.small,
++                panel.small,
 +            )
-+            return image
++        return image
++
++
++def link_speed(mbps):
++    """1G, 100M: the speed of a link (Mbit/s)."""
++    value = number(mbps, None)
++    if value is None or value <= 0:
++        return ""
++    return f"Link {value / 1000:g}G" if value >= 1000 else f"Link {int(value)}M"
 diff --git a/fpms/integrations/cmprovision_fonts.py b/fpms/integrations/cmprovision_fonts.py
 new file mode 100644
 index 0000000..cf9fab1
@@ -12212,10 +12272,10 @@ index 0000000..0e0ea7f
 +WantedBy=multi-user.target
 diff --git a/tests/test_cmprovision.py b/tests/test_cmprovision.py
 new file mode 100644
-index 0000000..9fd7ede
+index 0000000..20e476e
 --- /dev/null
 +++ b/tests/test_cmprovision.py
-@@ -0,0 +1,488 @@
+@@ -0,0 +1,489 @@
 +import json
 +import os
 +import signal
@@ -12226,6 +12286,7 @@ index 0000000..9fd7ede
 +import pytest
 +
 +from fpms.integrations import cmprovision
++from fpms.integrations import cmprovision_classic as classic
 +from fpms.integrations.cmprovision import Panel, rate, read_json, remaining, settings, slow
 +from fpms.integrations.cmprovision_menu import CmprovisionMenu
 +
@@ -12611,7 +12672,7 @@ index 0000000..9fd7ede
 +def test_the_ports_page_is_a_map_of_cubes_filled_by_state(panel):
 +    panel.data.update(map_snapshot())
 +    panel.page, panel.index = 1, 0
-+    name, bank, banks, answering, cells = panel.map_cells()
++    name, bank, banks, answering, cells = classic.map_cells(panel)
 +    assert (name, bank, answering) == ("sw-one", 0, True) and banks == 2
 +    image = panel.frame()
 +    colors = {index: image.getpixel((x + 1, y + 1)) for x, y, index in cells}
@@ -12623,7 +12684,7 @@ index 0000000..9fd7ede
 +def test_a_free_port_is_an_outline_and_the_cursor_marks_the_selected_one(panel):
 +    panel.data.update(map_snapshot())
 +    panel.page, panel.index = 1, 3
-+    x, y, _ = next(c for c in panel.map_cells()[4] if c[2] == 3)
++    x, y, _ = next(c for c in classic.map_cells(panel)[4] if c[2] == 3)
 +    image = panel.frame()
 +    assert image.getpixel((x + 2, y + 2)) == (0, 0, 0)
 +    assert image.getpixel((x - 1, y - 1)) != (0, 0, 0)   # the cursor goes round the cube
@@ -12632,10 +12693,10 @@ index 0000000..9fd7ede
 +def test_the_map_turns_to_the_bank_of_the_selected_port_and_goes_on_through_the_ports(panel):
 +    panel.data.update(map_snapshot(count=20))   # ten columns: two banks of eight
 +    panel.page, panel.index = 1, 0
-+    assert panel.map_cells()[1:3] == (0, 2)
++    assert classic.map_cells(panel)[1:3] == (0, 2)
 +    for _ in range(17):
 +        panel.key("DOWN")
-+    name, bank, banks, answering, cells = panel.map_cells()
++    name, bank, banks, answering, cells = classic.map_cells(panel)
 +    assert (bank, banks) == (1, 2) and panel.index == 17
 +    assert all(index >= 16 for _, _, index in cells)   # the ports 17 to 20 are on the second screen
 +    assert panel.frame().size == (128, 128)
@@ -12644,7 +12705,7 @@ index 0000000..9fd7ede
 +def test_a_switch_that_does_not_answer_is_said_so_on_the_map(panel):
 +    panel.data.update(map_snapshot(count=4))
 +    panel.page, panel.index = 1, 4   # the row of the second switch
-+    assert panel.map_cells()[0] == "sw-two" and panel.map_cells()[3] is False
++    assert classic.map_cells(panel)[0] == "sw-two" and classic.map_cells(panel)[3] is False
 +    assert panel.frame().size == (128, 128)
 +
 +
@@ -12656,7 +12717,7 @@ index 0000000..9fd7ede
 +    ]
 +    panel.data.update(data)
 +    panel.page, panel.index = 1, 0
-+    cells = {index: (x, y) for x, y, index in panel.map_cells()[4]}
++    cells = {index: (x, y) for x, y, index in classic.map_cells(panel)[4]}
 +    assert cells[0][1] < cells[1][1] and cells[0][0] == cells[1][0]   # 1 above 2
 +    assert cells[2][1] == cells[1][1]                                 # the uplink on the lower row
 +    assert cells[2][0] - cells[1][0] == cmprovision.CUBE + cmprovision.GAP + cmprovision.BLOCK_GAP
@@ -12701,7 +12762,7 @@ index 0000000..9fd7ede
 +    data["switches"][0]["blocks"][0]["ports"][0]["server"] = True
 +    panel.data.update(data)
 +    panel.page, panel.index = 1, 1
-+    x, y, _ = next(c for c in panel.map_cells()[4] if c[2] == 0)
++    x, y, _ = next(c for c in classic.map_cells(panel)[4] if c[2] == 0)
 +    cx, cy = centre_of_ink(panel.frame(), (x, y, x + cmprovision.CUBE - 1, y + cmprovision.CUBE - 1), rgb("accent"))
 +    assert abs(cx - (x + (cmprovision.CUBE - 1) / 2)) <= 0.5 and abs(cy - (y + (cmprovision.CUBE - 1) / 2)) <= 0.5
 diff --git a/tests/test_cmprovision_fonts.py b/tests/test_cmprovision_fonts.py
@@ -12805,10 +12866,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..60c5ba3
+index 0000000..9544b4c
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,799 @@
+@@ -0,0 +1,912 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -13608,6 +13669,119 @@ index 0000000..60c5ba3
 +    _, ink, _ = drawn(p)
 +    assert "wlanpi-da2" in strings(ink) and "--" in strings(ink)
 +    assert fonts.overlaps(ink) == []
++
++
++# ---- the classic look, its fixes, and the choice of theme ----
++
++from fpms.integrations import cmprovision_classic as classic  # noqa: E402
++
++
++def classic_snapshot():
++    snap = demo_snapshot()
++    snap["panel"] = {"theme": "classic", "ports_map": "pages"}
++    return snap
++
++
++def test_classic_card_lines_lose_no_letters(tmp_path):
++    p = card_of(panel_with(tmp_path, classic_snapshot()), 3, 0)
++    seen = set()
++    for _ in range(40):
++        _, ink, _ = drawn(p)
++        seen |= set(strings(ink))
++        p.key("DOWN")
++    reason = demo_snapshot()["modules"][2]["reason"]
++    for word in reason.split():
++        assert any(word in s for s in seen), word
++
++
++def test_classic_port_card_shows_link_speed(tmp_path):
++    p = card_of(panel_with(tmp_path, classic_snapshot()), 1, 8)
++    seen = set()
++    for _ in range(6):
++        _, ink, _ = drawn(p)
++        seen |= set(strings(ink))
++        p.key("DOWN")
++    assert any("100M" in s for s in seen)
++    assert not any("MiB/s" in s for s in seen)
++
++
++def test_classic_ports_without_switches_say_so(tmp_path):
++    snap = classic_snapshot()
++    snap["switches"] = []
++    p = panel_with(tmp_path, snap)
++    p.page = 1
++    _, ink, _ = drawn(p)
++    assert "No switches: add one in" in strings(ink)
++
++
++def test_classic_has_no_title_for_a_healthy_report(tmp_path):
++    snap = classic_snapshot()
++    snap["modules"][0]["diagnostics"] = {"received_at": 90, "source": "Ethernet", "title": "No recognized warnings",
++                                         "severity": "ok", "facts": {}, "issues": []}
++    p = card_of(panel_with(tmp_path, snap), 2, 0)
++    seen = set()
++    for _ in range(8):
++        _, ink, _ = drawn(p)
++        seen |= set(strings(ink))
++        p.key("DOWN")
++    assert "No recognized warnings" not in seen
++
++
++def test_classic_hides_updated_under_ten_seconds(tmp_path):
++    _, ink, _ = drawn(panel_with(tmp_path, classic_snapshot(), now=105))
++    assert not any("Updated" in s for s in strings(ink))
++    _, ink, _ = drawn(panel_with(tmp_path, classic_snapshot(), now=112))
++    assert "Updated 12 s ago" in strings(ink)
++
++
++def test_classic_footer_names_button_2_and_shows_the_prompt(tmp_path):
++    p = panel_with(tmp_path, classic_snapshot(), clock=Clock())
++    _, ink, _ = drawn(p)
++    assert any("2 Menu" in s for s in strings(ink)) and not any("3 Menu" in s or "3 Back" in s for s in strings(ink))
++    p.key("KEY2")
++    _, ink, _ = drawn(p)
++    assert "Press 2 again to leave" in strings(ink)
++
++
++def test_the_theme_follows_the_snapshot(tmp_path):
++    p = panel_with(tmp_path, classic_snapshot())
++    assert p.frame().tobytes() == classic.render(p).tobytes()
++    q = panel_with(tmp_path)
++    assert q.frame().tobytes() == new.render(q).tobytes()
++    assert p.frame().tobytes() != q.frame().tobytes()
++
++
++def old_snapshot(theme=None):
++    """What a cmprovision before the second look sends: no panel, short cause, step, reason or code, no batch ETA,
++    no links, uplink, services or low storage, no silent_since."""
++    snap = demo_snapshot()
++    del snap["panel"]
++    if theme:
++        snap["panel"] = {"theme": theme}
++    del snap["batch"]["left_seconds"]
++    for m in snap["modules"]:
++        for key in ("cause", "reason", "code", "step"):
++            m.pop(key, None)
++    for key in ("links", "uplink", "services", "storage_low"):
++        snap["station"].pop(key)
++    return snap
++
++
++@pytest.mark.parametrize("theme", [None, "classic"])
++def test_an_old_snapshot_renders_every_screen(tmp_path, theme):
++    p = panel_with(tmp_path, old_snapshot(theme))
++    seen = []
++    for page in range(5):
++        p.page, p.index, p.detail = page, 0, None
++        _, ink, _ = drawn(p)
++        seen += strings(ink)
++        if page in (1, 2, 3):
++            p.key("CENTER")
++            _, ink, _ = drawn(p)
++            seen += strings(ink)
++    text = " ".join(seen)
++    assert "None" not in text and "null" not in text and "{" not in text
++    assert seen
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08
