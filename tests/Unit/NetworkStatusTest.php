@@ -116,6 +116,26 @@ class NetworkStatusTest extends TestCase
         $this->assertNotEmpty($status['checked_at']);
     }
 
+    /** the front panel's Station lists every connected link: a USB Ethernet put into the stand too, never lo or a bridge */
+    public function test_links_list_every_connected_interface_with_its_role()
+    {
+        $this->iface('eth1', 'usb', 'r8152', '00:e0:4c:68:00:01', false, ['speed' => "1000\n"]);
+        mkdir($this->root.'/net/docker0');                  // virtual: no device behind it
+        file_put_contents($this->root.'/net/docker0/carrier', "1\n");
+        file_put_contents($this->root.'/net/docker0/type', "1\n");
+        mkdir($this->root.'/net/lo');
+        file_put_contents($this->root.'/net/lo/carrier', "1\n");
+        file_put_contents($this->root.'/net/lo/type', "772\n");
+
+        $status = $this->readStatus();
+        $roles = array_column($status['links'], 'role', 'name');
+
+        $this->assertSame(['eth0' => 'stand', 'eth1' => 'other', 'wlan0' => 'backup', 'wlan1' => 'uplink'], $roles);
+        $eth1 = array_values(array_filter($status['links'], fn ($l) => $l['name'] === 'eth1'))[0];
+        $this->assertSame(['ethernet', 'usb', 1000], [$eth1['kind'], $eth1['bus'], $eth1['speed']]);
+        $this->assertSame(['wlan0', 'wlan1'], $status['wireless']);
+    }
+
     public function test_other_default_routes_are_backups()
     {
         $backups = $this->readStatus()['backups'];

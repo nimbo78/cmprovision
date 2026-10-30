@@ -74,7 +74,8 @@ class NetworkStatus
      *                    modules (the interface holding the server address), preferred_down (the name of a
      *                    NetworkManager profile that should carry the traffic but is not connected), spare (the
      *                    built-in Wi-Fi's cold spare: state, since, device, lost_since; null without its state
-     *                    file), checked_at; null off Linux
+     *                    file), links (every connected link with its role, for the front panel), wireless (the
+     *                    names of the wireless interfaces), checked_at; null off Linux
      */
     public function read(): ?array
     {
@@ -105,7 +106,52 @@ class NetworkStatus
             'modules' => $modules,
             'preferred_down' => $uplink === null ? null : $this->preferredDown($uplink['metric']),
             'spare' => $this->spare(),
+            'links' => $this->links($uplink, $uplinks, $modules, $addresses),
+            'wireless' => $this->wireless(),
         ];
+    }
+
+    /**
+     * Every connected link for the front panel's Station, by name: the default routes and the stand's interface as described
+     * above, and any other interface with a device behind it and a carrier (a USB Ethernet put into the stand), each with
+     * its role: stand (holds SERVER_ADDRESS), uplink, backup or other. lo, bridges and other virtual interfaces are left out.
+     */
+    private function links(?array $uplink, array $backups, ?array $modules, array $addresses): array
+    {
+        $known = [];
+        foreach (array_filter([$uplink, ...$backups, $modules]) as $iface) {
+            $known[$iface['name']] = $iface;
+        }
+        $links = [];
+        foreach (@scandir($this->net) ?: [] as $name) {
+            $dir = $this->net.'/'.$name;
+            $physical = $name !== '.' && $name !== '..' && file_exists($dir.'/device') && $this->value($dir.'/carrier') === '1';
+            if (!$physical && !isset($known[$name])) {
+                continue;
+            }
+            $iface = $known[$name] ?? $this->describe($name, $addresses, null);
+            $role = $modules !== null && $modules['name'] === $name ? 'stand'
+                : ($uplink !== null && $uplink['name'] === $name ? 'uplink'
+                    : (in_array($name, array_column($backups, 'name'), true) ? 'backup' : 'other'));
+            $links[$name] = $iface + ['role' => $role, 'speed' => null];
+        }
+        ksort($links);
+
+        return array_values($links);
+    }
+
+    /** the names of the wireless interfaces, connected or not: Station says "Wi-Fi not connected" by them */
+    private function wireless(): array
+    {
+        $names = [];
+        foreach (@scandir($this->net) ?: [] as $name) {
+            if ($name !== '.' && $name !== '..' && (is_dir($this->net.'/'.$name.'/wireless') || file_exists($this->net.'/'.$name.'/phy80211'))) {
+                $names[] = $name;
+            }
+        }
+        sort($names);
+
+        return $names;
     }
 
     /** MAC of the interface holding SERVER_ADDRESS (the modules' network), lower case; null when there is none */

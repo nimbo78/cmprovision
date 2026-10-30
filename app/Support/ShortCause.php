@@ -103,6 +103,15 @@ class ShortCause
         return ['cause' => $cause, 'reason' => $reason, 'code' => $code !== '' ? $code : null];
     }
 
+    /* The step to show by the percent: where a failed module stopped ("Writing image"), the current step of the others */
+    public static function step(Cm $cm): string
+    {
+        if ($cm->phase !== 'failed')
+            return $cm->phaseLabel();
+        $step = self::lastStep($cm);
+        return $step ? (Cm::PHASE_LABELS[$step['phase']] ?? $step['phase']) : 'Failed';
+    }
+
     /* Every short text the panel may show, for the test that they fit its lines */
     public static function catalogue(): array
     {

@@ -83,8 +83,11 @@ class WallboardSnapshot
         $project = Project::getActive();
         return ['version' => 1, 'generated_at' => now()->getTimestamp(), 'clock' => now()->format('Y-m-d H:i:s T'),
             'host' => gethostname(), 'app_version' => AppVersion::text(), 'project' => $project?->name,
-            'batch' => $batch ? ['title' => $batch->title(), 'open' => $batch->open, 'counts' => $batch->counts] : null,
+            'batch' => $batch ? ['title' => $batch->title(), 'open' => $batch->open, 'counts' => $batch->counts,
+                'left_seconds' => $batch->leftSeconds] : null,
             'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown,
+            // how the FPMS panel looks (Settings → Provisioning → FPMS display); an older panel does not read it
+            'panel' => FpmsPanelSettings::get(),
             // for the FPMS panel only: the address and the interface come from NetworkManager and iw, which HDMI never needed
             'station' => app(Fpms::class)->settings()['enabled'] ? DisplayStation::current() : null];
     }
@@ -115,8 +118,13 @@ class WallboardSnapshot
     protected function module(Cm $cm, string $port, ?int $slow = null): array
     {
         $end = $cm->provisioning_complete_at ?? ($cm->phase === 'failed' ? $cm->phase_started_at : null) ?? now();
+        $advice = FailureAdvice::for($cm);
+        $short = ShortCause::for($cm);
         // A module is named by its host name or its MAC; the serial only identifies the row (it matches the ports)
         return ['serial' => $cm->serial, 'mac' => $cm->mac, 'hostname' => trim((string) $cm->hostname) ?: null,
+            // the front panel: the step by the percent, what went wrong in short and in full, its exit codes
+            'step' => ShortCause::step($cm), 'cause' => $short['cause'] ?? null, 'reason' => $short['reason'] ?? null,
+            'code' => $short['code'] ?? null,
             'name' => $cm->displayName(), 'port' => $port,
             'phase' => $cm->usb_prep_at !== null && $cm->phase === 'done' ? 'ready' : $cm->phase, 'state' => StandMap::moduleState($cm), 'detail' => $cm->phase_detail,
             'percent' => $cm->progressPercent(), 'speed' => $cm->bytesPerSecond(), 'eta' => $cm->secondsLeft(),
@@ -125,7 +133,8 @@ class WallboardSnapshot
             'silent' => $cm->silentFor(), 'slow' => $slow, 'os_state' => $cm->os_state,
             'diagnostics' => $this->diagnostics($cm->storage_diagnostics, $cm->storage_diagnostics_at),
             'steps' => array_values(array_unique(array_column($cm->timeline ?: [], 'phase'))),
-            'advice' => FailureAdvice::for($cm)['advice'] ?? null, 'registered' => true];
+            // with the reason given apart, the advice is only what to do (FailureAdvice todo)
+            'advice' => $advice['todo'] ?? $advice['advice'] ?? null, 'registered' => true];
     }
 
     protected function diagnostics(?array $report, $received): ?array
