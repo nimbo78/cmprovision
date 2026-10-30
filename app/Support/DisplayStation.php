@@ -42,8 +42,9 @@ class DisplayStation
     {
         $up = $network['uplink'] ?? null;
         $wifi = $up['wifi'] ?? null;
+        // a Wi-Fi that carries the default route is up even when iw could not tell its quality (timeout, no binary)
         $state = $up === null ? (empty($network['wireless']) ? 'none' : 'wifi_down')
-            : (($up['kind'] ?? null) === 'wifi' ? ($wifi ? 'wifi' : 'wifi_down') : 'wired');
+            : (($up['kind'] ?? null) === 'wifi' ? 'wifi' : 'wired');
         $signal = $wifi['signal'] ?? null;
         return [
             'state' => $state,

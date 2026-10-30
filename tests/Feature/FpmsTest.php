@@ -110,6 +110,16 @@ class FpmsTest extends TestCase
         $this->assertSame('none', DisplayStation::current()['uplink']['state']);
     }
 
+    /* iw did not answer (its 3 s timeout, a missing binary): the Wi-Fi still carries the default route, it is not "down" */
+    public function test_a_wifi_uplink_iw_could_not_read_is_not_an_alarm()
+    {
+        $this->network(['uplink' => ['name' => 'wlan1', 'kind' => 'wifi', 'addresses' => ['192.0.2.4/24'], 'wifi' => null],
+            'wireless' => ['wlan1']]);
+        $uplink = DisplayStation::current()['uplink'];
+        $this->assertSame(['wifi', 'wlan1', '192.0.2.4', null, null], [$uplink['state'], $uplink['device'], $uplink['address'],
+            $uplink['signal'], $uplink['quality']]);
+    }
+
     public function test_station_counts_services_and_names_the_stopped_ones()
     {
         $units = array_values(array_filter(array_column(Settings::SERVICES, 1), fn ($u) => $u && $u !== 'cmprovision-dnsmasq'));
