@@ -47,7 +47,13 @@ The recipes do not yet build complete OS images. Those and VLAN installation pro
 are subsequent work; this change is the shared display/menu foundation.
 
 For a source-only check, run `prepare.sh` with a new directory, then run
-`python3 -m pytest tests/test_cmprovision.py tests/test_portable_display.py` there.
-Pillow >=10.1 and pytest are required. `tools/preview-cmprovision.py OUTPUT` renders
-all pages with labelled DEMO data. The root-only hardware runner in the patched source
+`python3 -m pytest tests/test_cmprovision.py tests/test_cmprovision_fonts.py tests/test_cmprovision_v2.py tests/test_portable_display.py`
+there. Pillow >=10.1 and pytest are required. `tools/preview-cmprovision.py OUTPUT` renders
+every page and a device card in each look (new with either Ports map, classic) with labelled DEMO data, or with
+`--snapshot FILE` the snapshot of a station. The root-only hardware runner in the patched source
 is for a disposable lab rootfs, never an active station.
+
+The panel draws with bitmap fonts in `fpms/fonts/cmprovision` (Helvetica Bold 8/10/18 of the Adobe 100 dpi
+X11 fonts, Spleen 6x12, misc-fixed 5x7, Silkscreen 8), made from their upstream files by
+`tools/cmprovision-fonts.py`; their licences are beside them in `LICENSES/` and in the Lite package under
+`/usr/share/doc/fpms-lite/fonts/`. The WLAN Pi package takes them with the rest of `fpms/fonts` (`MANIFEST.in`).

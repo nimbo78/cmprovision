@@ -59,39 +59,59 @@ value it cannot read as missing: a bad snapshot shows `Waiting for data` or `Inv
 (a failure inside the cmprovision page returns to the stock menu). The root watcher of cmprovision does not open the
 snapshot at all: it judges the data by the age of the file.
 
+## Look
+
+**Settings → Provisioning → FPMS display** has two choices that reach the panel with its data (no restart, no
+root helper):
+
+- **Theme.** *New* (the default) is drawn for this 1.44" screen, whose backlight washes out the dark: bitmap fonts one
+  to one with its pixels, saturated colours, whole tiles of colour for what needs a look. *Classic* is the first look
+  of the panel, kept for whom it suits.
+- **Ports map** (New only). A switch of up to 8 columns is drawn whole with its port numbers either way. A wider one
+  is drawn either as *Pages with numbers* (8 columns, 16 ports, to a screen; `2/3` and dots tell the page) or as
+  *Whole switch* (every port at once in narrow cells; the number of the selected port is in the line below).
+
+The fonts are bitmap fonts made for small screens: Helvetica Bold 8, 10 and 18 of the Adobe 100 dpi X11 fonts for
+titles, lists and counts, Silkscreen 8 (Google, OFL) for what went wrong, Spleen 6x12 for MAC and addresses,
+misc-fixed 5x7 for port numbers. Their licences are installed with them.
+
 ## Pages and buttons
 
 | Page | What it shows |
 | --- | --- |
-| Overview | Active project and counts of running, completed, failed and other devices |
-| Ports | A map: the front panel of one switch as small cubes, eight columns to a screen (`1/3` when the switch has more), laid out as on the switch; the captions under the map name the selected port and its module, phase and progress |
-| Devices | Modules currently on the stand |
-| Errors | Failed, silent and unrecognized devices |
-| Station | Host/version, management address, provisioning interface and free storage |
+| Overview | The project and its batch (`stage1-test 37 done 6:20`: done and ETA of the batch), the modules on the stand in four tiles (FAILED and SILENT filled in their colour when above zero, RUNNING, DONE) and the whole stand as small cells |
+| Ports | The switch of the selected port as on its front, the selected port below: its module, step and percent, the bar with speed and ETA while it runs, or what went wrong in up to two lines; what else is on a port (the provisioner, a device by what it says of itself, its link speed and PoE) |
+| Devices | The modules on the stand in port order: state, or percent and bar while running, `SLOW +m:ss` when past its batch |
+| Errors | Failed and silent modules first, with a short cause from the server (`Download cut (curl 18)`, `EEPROM: no SPI chip`, `No report for 6 min`); then USB observations and devices on ports that are not modules, greyed. The red count in the header counts modules only |
+| Station | The provisioner and its version; how it reaches the management network: the Wi-Fi network, signal in dBm and quality in colour (as the web UI rates it), rate, band, generation, address, or `Wi-Fi not connected`, the built-in spare in use, a wired uplink, `No uplink`; then its health, problems first: the stand link and any other link (a USB Ethernet), services, switches (`silent N min`), free space |
 
-On the Ports map a filled cube is a module (green finished, blue running, red failed, amber silent), a hollow cube is a free port, an outlined one is another device or a booting board, and the cube marked `cm` is the port of the provisioner itself. The frame around a cube is the selected port; up/down move it through all the ports of all switches (the map changes to the switch of the selected port), the joystick centre opens the card of its module. A switch that does not answer is shown with `No response`.
+A device card (the joystick centre on Ports, Devices or Errors) has a band in the colour of its state with the port
+and the state, the name, the step with its bar, and below, scrolling, what went wrong and what to do, the exit codes,
+the diagnostics (a healthy report has no title), MAC, serial and switch.
 
-| Control | Action |
-| --- | --- |
-| Left / right | Previous / next page |
-| Up / down | Select a row; scroll text in details |
-| Joystick centre | Open details; close details when already inside |
-| Button 1 | Overview |
-| Button 2 | Ports |
-| Button 3 | Back: closes the details; with none open, returns to the WLAN Pi menu (Overview on Lite) |
+| Control | On a page | In a card |
+| --- | --- | --- |
+| Left / right | Previous / next page | Left: back to the list |
+| Up / down | Select a row or a port; scroll Station | Scroll the text |
+| Joystick centre | Open the card (on Overview with failures: Errors) | Back to the list |
+| Button 1 | Overview | Overview |
+| Button 2 | Leave: the first press asks (`Press 2 again to leave cmprovision`, 3 seconds), the second goes to the WLAN Pi menu; on Lite it is Overview | Back to the list |
+| Button 3 | Nothing | Nothing |
 
-Outside the cmprovision page the buttons are the stock WLAN Pi ones: button 1 cycles the shortcuts (Reachability, LLDP, IP),
-button 2 rotates the display, button 3 jumps to the Reboot/Shutdown shortcut. So the press of button 3 that comes within two seconds
-after leaving the cmprovision page is swallowed: a double press must not reach the Reboot shortcut.
+Outside the cmprovision page the buttons are the stock WLAN Pi ones: button 1 cycles the shortcuts (Reachability,
+LLDP, IP), button 2 rotates the display, button 3 jumps to Reboot/Shutdown, where the joystick centre confirms. That is
+why button 3 does nothing inside the panel: a press of it that left the panel would leave the next press of the centre
+— "open the card" — to confirm a reboot. A press of button 2 within two seconds after leaving is swallowed, so a hurried
+third press does not turn the display over.
 
 The controls cannot erase storage, start provisioning, change a project or switch off PoE.
 Inside a device card, the identity stays pinned: if it disconnects, the display says
 it left the stand instead of silently showing another device.
 
-The panel uses the web UI's Warm / Dark colors. Long detail text scrolls with up/down.
 Lite blanks after 60 seconds of inactivity; a button wakes it without performing an
 action. Its service can use `--sleep 0` to stay on or `--rotate 180` for a reversed
-installation. WLAN Pi retains its own sleep and orientation settings.
+installation (buttons 1 and 3 swap with the screen; button 2 stays in the middle). WLAN Pi retains its own sleep and
+orientation settings.
 
 ## Data freshness and resource use
 
@@ -99,11 +119,13 @@ FPMS reads a local JSON snapshot; it has no access to cmprovision's database or 
 It shares the existing HDMI producer, including the switch polling cache. Closing HDMI
 does not stop data needed by FPMS, and collection stops when the last consumer stops.
 
-`Updated …s ago` shows the age. After 20 seconds it becomes `Stale data`: the values
+Fresh data has no word. From 10 seconds the age is shown in yellow — on Overview as `Updated 12 s ago` in place of
+the project line, elsewhere as `12 s` in the header (on a card, in its band) — and from a minute in minutes: the values
 are the last saved observation, not proof that a flash is still running. Use the web UI
 for the full diagnostic report. An absent or invalid snapshot gives a waiting/error
 message, without freezing the menu.
 
-On a 128×128 panel some list labels are shortened; the selected device's details
-provide wrapped text. The station page is a summary; network configuration remains
-in the web interface or installer.
+On a 128×128 panel some list labels are shortened (a cut is shown with `...`); a cause from the server never is, and
+the selected device's card wraps everything. The station page is a summary; network configuration remains
+in the web interface or installer. The Wi-Fi network's name is shown; NetworkManager profile names and keys never
+reach the panel.

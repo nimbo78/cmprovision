@@ -14003,10 +14003,10 @@ index 0000000..c62edce
 +of Raspberry Pi OS Lite. Those require booting a clean target image later.
 diff --git a/tools/build-lite-deb.sh b/tools/build-lite-deb.sh
 new file mode 100644
-index 0000000..7a1ed03
+index 0000000..46a27a6
 --- /dev/null
 +++ b/tools/build-lite-deb.sh
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,62 @@
 +#!/bin/sh
 +# Build the portable subset only; none of the full WLAN Pi applications/dependencies.
 +set -eu
@@ -14017,11 +14017,14 @@ index 0000000..7a1ed03
 +WORK=$(mktemp -d)
 +trap 'rm -rf "$WORK"' EXIT
 +DEST=$WORK/pkg
-+mkdir -p "$DEST/DEBIAN" "$DEST/usr/lib/fpms-lite/fpms/integrations" "$DEST/usr/lib/fpms-lite/fpms/modules/screen" "$DEST/usr/share/doc/fpms-lite" "$DEST/usr/share/fpms" "$DEST/usr/lib/systemd/system" "$OUT"
-+for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py integrations/__init__.py integrations/cmprovision.py; do
++mkdir -p "$DEST/DEBIAN" "$DEST/usr/lib/fpms-lite/fpms/integrations" "$DEST/usr/lib/fpms-lite/fpms/modules/screen" "$DEST/usr/lib/fpms-lite/fpms/fonts/cmprovision" "$DEST/usr/share/doc/fpms-lite/fonts" "$DEST/usr/share/fpms" "$DEST/usr/lib/systemd/system" "$OUT"
++for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py; do
 +    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
 +done
 +install -m 644 "$ROOT/LICENSE" "$DEST/usr/share/doc/fpms-lite/copyright"
++# the bitmap fonts of the panel, their licences in the documentation of the package
++install -m 644 "$ROOT"/fpms/fonts/cmprovision/*.bdf "$DEST/usr/lib/fpms-lite/fpms/fonts/cmprovision/"
++install -m 644 "$ROOT"/fpms/fonts/cmprovision/LICENSES/* "$DEST/usr/share/doc/fpms-lite/fonts/"
 +install -m 644 "$ROOT/packaging/cmprovision.json" "$DEST/usr/share/fpms/cmprovision.json"
 +install -m 644 "$ROOT/packaging/lite/fpms-lite.service" "$DEST/usr/lib/systemd/system/"
 +cat > "$DEST/DEBIAN/control" <<EOF
@@ -14276,12 +14279,19 @@ index 0000000..bc4ae2b
 +    main()
 diff --git a/tools/preview-cmprovision.py b/tools/preview-cmprovision.py
 new file mode 100644
-index 0000000..05317aa
+index 0000000..bf9a52e
 --- /dev/null
 +++ b/tools/preview-cmprovision.py
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,100 @@
 +#!/usr/bin/env python3
-+"""Render the actual 128px panel with clearly labelled illustrative data."""
++"""Render the actual 128px panel, every page and a device card, in each look (new with either Ports map, classic).
++
++    tools/preview-cmprovision.py OUTPUT [--snapshot FILE]
++
++Without --snapshot the data is clearly labelled illustrative DEMO data; with it, the snapshot a station writes
++(/run/cmprovision-wallboard-data/snapshot.json) is drawn as it is, only its look is set for each sheet.
++Writes OUTPUT/<look>/<n>.png and OUTPUT/<look>/preview.png for new-pages, new-whole and classic.
++"""
 +
 +import argparse
 +import json
@@ -14294,103 +14304,81 @@ index 0000000..05317aa
 +
 +from fpms.integrations.cmprovision import PAGES, Panel
 +
++LOOKS = {"new-pages": ("new", "pages"), "new-whole": ("new", "whole"), "classic": ("classic", "pages")}
++
++
++def demo():
++    return {
++        "version": 1,
++        "generated_at": int(time.time()),
++        "host": "demo-station",
++        "app_version": "cmprovision / DEMO",
++        "project": "DEMO - batch 78",
++        "batch": {"title": "1 failed", "open": True, "counts": {"active": 1, "done": 4, "failed": 1}, "left_seconds": 120},
++        "counts": {"running": 1, "done": 4, "failed": 1, "stale": 0, "unknown": 0},
++        "station": {
++            "management": "192.0.2.4",
++            "provisioning": "eth0.42 up",
++            "storage": "21 GiB free",
++            "storage_low": False,
++            "uplink": {"state": "wifi", "device": "wlan0", "address": "192.0.2.4", "ssid": "DEMO", "signal": -58,
++                       "quality": "Good", "bars": 3, "band": "5 GHz", "generation": "6", "rate": 600, "speed": None,
++                       "spare_active": False},
++            "links": [{"name": "eth0.42", "kind": "other", "role": "stand", "up": True, "speed": None, "address": "172.20.0.1"}],
++            "services": {"up": 6, "total": 6, "stopped": []},
++        },
++        "unknown": [],
++        "modules": [
++            {"serial": "demo-1", "mac": "02:00:00:00:00:01", "name": "demo-sensor-1", "port": "sw Gi0/2", "state": "run",
++             "phase": "write", "step": "Writing image", "percent": 42, "speed": 30 * 1048576, "eta": 120},
++            {"serial": "demo-2", "mac": "02:00:00:00:00:02", "name": "demo-sensor-2", "port": "sw Gi0/3", "state": "fail",
++             "phase": "failed", "step": "Writing image", "percent": 63, "cause": "eMMC I/O error",
++             "reason": "The storage device reported an I/O error (failing eMMC/SD card or power problem).",
++             "advice": "Check power and retry diagnostics.", "code": "exit 1"},
++        ],
++        "switches": [{"name": "sw", "answering": True, "blocks": [{"rows": 2, "ports": [
++            {"name": "Gi0/1", "number": 1, "state": "uplink", "filter": "uplink", "serials": [], "server": True},
++            {"name": "Gi0/2", "number": 2, "state": "module", "filter": "run", "serials": ["demo-1"], "server": False},
++            {"name": "Gi0/3", "number": 3, "state": "module", "filter": "fail", "serials": ["demo-2"], "server": False},
++            {"name": "Gi0/4", "number": 4, "state": "free", "filter": "free", "serials": [], "server": False},
++        ]}]}],
++    }
++
 +
 +def main():
-+    parser = argparse.ArgumentParser(description=__doc__)
++    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 +    parser.add_argument("output", type=Path)
++    parser.add_argument("--snapshot", type=Path, help="a snapshot of a station instead of the DEMO data")
 +    args = parser.parse_args()
-+    args.output.mkdir(parents=True, exist_ok=True)
-+    config, snapshot = args.output / "config.json", args.output / "snapshot.json"
-+    config.write_text(json.dumps({"enabled": True, "open_on_start": True}))
-+    snapshot.write_text(
-+        json.dumps(
-+            {
-+                "version": 1,
-+                "generated_at": int(time.time()),
-+                "host": "demo-station",
-+                "app_version": "cmprovision / DEMO",
-+                "project": "DEMO - batch 78",
-+                "counts": {"running": 2, "done": 4, "failed": 1, "unknown": 0},
-+                "station": {
-+                    "management": "192.0.2.4",
-+                    "provisioning": "eth0.42 up",
-+                    "storage": "21 GiB free",
-+                },
-+                "unknown": [],
-+                "modules": [
-+                    {
-+                        "serial": "demo-1",
-+                        "mac": "02:00:00:00:00:01",
-+                        "name": "demo-sensor-1",
-+                        "port": "sw Gi0/2",
-+                        "state": "run",
-+                        "phase": "write",
-+                        "percent": 42,
-+                        "speed": "30 MiB/s",
-+                        "eta": "2m remaining",
-+                    },
-+                    {
-+                        "serial": "demo-2",
-+                        "mac": "02:00:00:00:00:02",
-+                        "name": "demo-sensor-2",
-+                        "port": "sw Gi0/3",
-+                        "state": "fail",
-+                        "phase": "failed",
-+                        "detail": "eMMC write timed out",
-+                        "advice": "Check power and retry diagnostics",
-+                    },
-+                ],
-+                "switches": [
-+                    {
-+                        "name": "sw",
-+                        "answering": True,
-+                        "blocks": [
-+                            {
-+                                "ports": [
-+                                    {"name": "Gi0/1", "state": "server", "serials": []},
-+                                    {
-+                                        "name": "Gi0/2",
-+                                        "state": "write",
-+                                        "serials": ["demo-1"],
-+                                    },
-+                                    {
-+                                        "name": "Gi0/3",
-+                                        "state": "failed",
-+                                        "serials": ["demo-2"],
-+                                    },
-+                                    {"name": "Gi0/4", "state": "done", "serials": []},
-+                                ]
-+                            }
-+                        ],
-+                    }
-+                ],
-+            }
-+        )
-+    )
-+    panel = Panel(config, snapshot)
-+    panel.refresh(force=True)
-+    sheet = Image.new("RGB", (6 * 400 + 16, 470), "#202024")
-+    draw = ImageDraw.Draw(sheet)
++    data = json.loads(args.snapshot.read_text()) if args.snapshot else demo()
++    label = "a station's snapshot" if args.snapshot else "illustrative DEMO data"
 +    font = ImageFont.load_default(size=17)
-+    for i, title in enumerate((*PAGES, "Device details")):
-+        if i < 5:
-+            panel.page = i
-+        else:
-+            panel.page, panel.index = 2, 1
-+            panel.key("CENTER")
-+        frame = panel.frame()
-+        frame.save(args.output / f"{i + 1}.png")
-+        sheet.paste(
-+            frame.resize((384, 384), Image.Resampling.NEAREST), (16 + i * 400, 40)
-+        )
-+        draw.text((16 + i * 400, 10), title, font=font, fill="white")
-+    draw.text(
-+        (16, 441),
-+        "FPMS 128 x 128 - actual renderer, illustrative DEMO data; Warm / Dark web palette",
-+        font=font,
-+        fill="#ff8a3d",
-+    )
-+    sheet.save(args.output / "preview.png")
++    for look, (theme, ports_map) in LOOKS.items():
++        out = args.output / look
++        out.mkdir(parents=True, exist_ok=True)
++        config, snapshot = out / "config.json", out / "snapshot.json"
++        config.write_text(json.dumps({"enabled": True, "open_on_start": True}))
++        snapshot.write_text(json.dumps(dict(data, panel={"theme": theme, "ports_map": ports_map})))
++        panel = Panel(config, snapshot)
++        panel.refresh(now=data.get("generated_at"), force=True)
++        sheet = Image.new("RGB", (6 * 400 + 16, 470), "#202024")
++        draw = ImageDraw.Draw(sheet)
++        for i, title in enumerate((*PAGES, "Device details")):
++            panel.detail, panel.scroll = None, 0
++            if i < 5:
++                panel.page, panel.index = i, 0
++            else:
++                panel.page, panel.index = 3, 0
++                panel.key("CENTER")
++                if panel.detail is None:
++                    panel.page = 2
++                    panel.key("CENTER")
++            frame = panel.frame()
++            frame.save(out / f"{i + 1}.png")
++            sheet.paste(frame.resize((384, 384), Image.Resampling.NEAREST), (16 + i * 400, 40))
++            draw.text((16 + i * 400, 10), title, font=font, fill="white")
++        draw.text((16, 441), f"FPMS 128 x 128 - actual renderer, {look} look, {label}", font=font, fill="#ff8a3d")
++        sheet.save(out / "preview.png")
 +
 +
 +if __name__ == "__main__":
