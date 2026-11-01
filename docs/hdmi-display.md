@@ -51,7 +51,7 @@ column one step at a time (about three columns a second), rests at its end and s
 column says there is more. The same goes for the device name and port on the device card and for the failure line at
 the bottom. The screen is redrawn faster only while something runs; with every text fitting nothing moves.
 
-A sensor whose temporary mark is verified with the shared station key appears as `OURS` on the port and `OUR SENSOR` in the table and rotating cards. The card identifies the station and the current marked boot. These sensors have their own `OURS` count; `LOCAL` and `DONE` still count this station?s runs only.
+A sensor whose temporary mark is verified with the shared station key appears as `OURS` on the port and `OUR SENSOR` in the table and rotating cards. The card identifies the station and the current marked boot. These sensors have their own `OURS` count; `LOCAL` and `DONE` still count this station's runs only.
 
 After the modules the table lists what a switch shows on a port where there is a device that is not a module and is not booting,
 so the table tells what was plugged in: the phase says `UNR` (an unrecognized device) or `LNK` (a link up with nothing sent from
@@ -62,12 +62,14 @@ the others) with the MAC itself. Texts that come from a device are cleaned befor
 finished ones of its batch took (2.19.0, [how it is decided](operations.md#a-module-that-takes-longer-than-the-rest)) gets
 `/ SLOW +3:20` after its time left, and its row is drawn in the warning colour.
 
-The four display themes match the web UI: **Warm / Dark**, **Warm / Light**, **Neutral / Dark**, and **Neutral / Light**.
+HDMI has independent **Style** (Warm or Neutral) and **Color mode** (Dark, Light or Auto) settings, matching the web UI.
 The renderer reads the same `resources/css/app.css` tokens for the page, text, muted text, accent and status colors.
 Warm dark uses the web's `#ff8a3d` orange; neutral dark uses `#818cf8` indigo. Alpha text colors are composited over the
 page background. On the Linux console, the eight palette entries are redefined to these RGB values without changing
 other virtual terminals; stopping the display resets tty8's palette. A terminal without programmable colors falls back
-to basic ANSI colors. The HDMI theme is a shared setting; browser appearance is selected independently per browser.
+to basic ANSI colors. Auto follows the same sunrise/sunset calculation as the web using the station time zone; without coordinates or during
+polar day/night it falls back to Dark. HDMI settings are shared; browser appearance is selected independently per browser.
+Existing configurations retain their previous style and mode.
 The earlier Phosphor/Monochrome choices migrate to Warm dark/Neutral dark when read, preserving Auto and other settings.
 
 - **Stand console:** switch front panels, selected module and a table of modules on the stand.
@@ -112,7 +114,7 @@ as the web user, without a terminal; it starts and stops with the display.
 
 The data unit updates the file every two seconds and shares the web UI's SNMP cache: it takes a stored switch snapshot
 up to 15 seconds old and polls a switch itself only when that has run out, so with a monitor attached each switch is asked
-about every 15 seconds at most. No monitor in Auto means no renderer, no data unit and no extra switch polling; the
+about every 15 seconds at most. No monitor in Auto means no HDMI renderer; the shared data unit also stops if FPMS is not using it. The
 watcher itself remains to detect the next connection.
 
 The watcher counts a connector change only after two equal readings in a row, so a TV in standby or a loose cable does

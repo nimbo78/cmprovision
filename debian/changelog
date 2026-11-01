@@ -1,3 +1,12 @@
+cmprovision4 (2.24.0~dev1) unstable; urgency=medium
+
+  * FPMS: add separate Light, Dark and Auto color modes for New and Classic.
+  * HDMI: separate style from color mode and add automatic sunrise/sunset.
+  * Keep existing display choices on upgrade; document future image and VLAN
+    options and focus FPMS support on Raspberry Pi OS Lite.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 01 Nov 2026 16:14:20 +0300
+
 cmprovision4 (2.23.0) unstable; urgency=medium
 
   * Add the optional FPMS panel preview and fpms-lite build: read-only

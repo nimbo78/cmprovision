@@ -7,7 +7,7 @@
         <p class="text-sm text-fg-muted">HDMI: {{ !empty($status['connected']) ? 'connected' : 'not detected' }} · Display: {{ $status['state'] }}@if(!empty($status['resolution'])) · {{ $status['resolution'] }}@endif</p>
         <div class="grid gap-4 md:grid-cols-2">
         <div>
-            <label for="wallboard-mode" class="block text-sm text-fg mb-2">Display mode</label>
+            <label for="wallboard-mode" class="block text-sm text-fg mb-2">HDMI activation</label>
             <select id="wallboard-mode" wire:model="mode" class="cmp-field w-full">
                 <option value="off">Off</option><option value="auto">Auto — when HDMI is connected</option><option value="on">On — always render</option>
             </select>
@@ -22,13 +22,20 @@
             @error('view') <p class="text-sm text-neg" role="alert">{{ $message }}</p> @enderror
         </div>
         <div>
-            <label for="wallboard-palette" class="block text-sm text-fg mb-2">Display theme</label>
-            <select id="wallboard-palette" wire:model="palette" class="cmp-field w-full">
-                <option value="warm">Warm · Dark</option><option value="warm-light">Warm · Light</option>
-                <option value="neutral">Neutral · Dark</option><option value="neutral-light">Neutral · Light</option>
+            <label for="wallboard-style" class="block text-sm text-fg mb-2">Style</label>
+            <select id="wallboard-style" wire:model="style" class="cmp-field w-full">
+                <option value="warm">Warm</option><option value="neutral">Neutral</option>
             </select>
-            @error('palette') <p class="text-sm text-neg" role="alert">{{ $message }}</p> @enderror
-            <p class="text-sm text-fg-muted mt-2">Same colors as the web UI. This choice applies to the shared HDMI display; browser appearance stays personal.</p>
+            @error('style') <p class="text-sm text-neg" role="alert">{{ $message }}</p> @enderror
+            <p class="text-sm text-fg-muted mt-2">Same colors as the web UI; this display's settings are shared.</p>
+        </div>
+        <div>
+            <label for="wallboard-color-mode" class="block text-sm text-fg mb-2">Color mode</label>
+            <select id="wallboard-color-mode" wire:model="color_mode" class="cmp-field w-full">
+                <option value="dark">Dark</option><option value="light">Light</option><option value="auto">Auto — sunrise and sunset</option>
+            </select>
+            @error('color_mode') <p class="text-sm text-neg" role="alert">{{ $message }}</p> @enderror
+            <p class="text-sm text-fg-muted mt-2">Auto uses the station time zone; without a sunrise or sunset, it uses Dark.</p>
         </div>
         <div>
             <label for="wallboard-rotation" class="block text-sm text-fg mb-2">Seconds per device card (5–60)</label>

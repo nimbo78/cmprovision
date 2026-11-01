@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..b47c0d0
+index 0000000..55a6d72
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,383 @@
+@@ -0,0 +1,400 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10083,6 +10083,7 @@ index 0000000..b47c0d0
 +MAP_TOP = 49
 +CUBE, GAP, BLOCK_GAP = 12, 2, 3
 +PAGES = ("Overview", "Ports", "Devices", "Errors", "Station")
++PALETTE_LOCK = threading.RLock()  # one physical screen; also safe when tests render multiple panels
 +PROMPT_SECONDS = 3.0   # the leave prompt waits this long for the second press of button 2
 +AGE_SHOWN = 10         # data younger than this is not called old
 +
@@ -10268,6 +10269,12 @@ index 0000000..b47c0d0
 +        """new or classic (Settings → Provisioning → FPMS display); new when the server does not say."""
 +        return self._panel_setting("theme", ("new", "classic"))
 +
++    def color_mode(self):
++        mode = self._panel_setting("color_mode", ("dark", "light", "auto"))
++        if mode == "auto":
++            return "light" if self.data.get("display_auto_mode") == "light" else "dark"
++        return mode
++
 +    def ports_map(self):
 +        """pages (12 px cells with numbers, 8 columns to a screen) or whole (every port of a switch at once)."""
 +        return self._panel_setting("ports_map", ("pages", "whole"))
@@ -10419,20 +10426,30 @@ index 0000000..b47c0d0
 +        return views
 +
 +    def frame(self):
-+        with self.lock:
++        with self.lock, PALETTE_LOCK:
 +            if self.theme() == "new":
 +                from . import cmprovision_new
 +
-+                return cmprovision_new.render(self)
++                old = dict(cmprovision_new.P)
++                try:
++                    cmprovision_new.P.update(cmprovision_new.LIGHT if self.color_mode() == "light" else cmprovision_new.DARK)
++                    return cmprovision_new.render(self)
++                finally:
++                    cmprovision_new.P.update(old)
 +            from . import cmprovision_classic
 +
-+            return cmprovision_classic.render(self)
++            old = dict(COLORS)
++            try:
++                COLORS.update(cmprovision_classic.LIGHT if self.color_mode() == "light" else cmprovision_classic.DARK)
++                return cmprovision_classic.render(self)
++            finally:
++                COLORS.update(old)
 diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
 new file mode 100644
-index 0000000..a5ed22a
+index 0000000..df4da9b
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_classic.py
-@@ -0,0 +1,335 @@
+@@ -0,0 +1,350 @@
 +"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
 +the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
@@ -10443,6 +10460,21 @@ index 0000000..a5ed22a
 +from . import cmprovision_fonts as fonts
 +from .cmprovision import (BLOCK_GAP, COLORS, CUBE, GAP, MAP_COLUMNS, MAP_TOP, PAGES, number, objects, rate, remaining,
 +                          slow, text)
++
++DARK = dict(COLORS)
++LIGHT = {
++    "bg": "#fff8f0", "panel": "#f1e6da", "line": "#a6978b", "text": "#282523", "muted": "#554d47",
++    "accent": "#b83e06", "good": "#007737", "bad": "#b31a19", "warn": "#854b00", "info": "#0054a8",
++}
++
++
++def contrast_ink(color):
++    """Black or white, whichever contrasts more with a filled port or the mark."""
++    rgb = tuple(int(color[i:i+2], 16) / 255 for i in (1, 3, 5))
++    lin = tuple(v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in rgb)
++    lum = .2126 * lin[0] + .7152 * lin[1] + .0722 * lin[2]
++    return "#000000" if (lum + .05) / .05 >= 1.05 / (lum + .05) else "#ffffff"
++
 +
 +TEXT_W = 114   # card lines are wrapped and drawn to this one width (they were wrapped at 118, cut at 114: letters lost)
 +
@@ -10510,7 +10542,7 @@ index 0000000..a5ed22a
 +        # digits stand one pixel from the top; the lowercase "cm" has no height above its x-height: one pixel higher
 +        top = y if row.get("server") else y + 1
 +        draw.text(
-+            (x + (CUBE - width) / 2, top), caption, font=panel.tiny, fill=COLORS[ink]
++            (x + (CUBE - width) / 2, top), caption, font=panel.tiny, fill=contrast_ink(COLORS[fill]) if fill else COLORS[ink]
 +        )
 +        if index == panel.index:
 +            draw.rectangle((x - 1, y - 1, x + CUBE, y + CUBE), outline=COLORS["text"])
@@ -10587,7 +10619,7 @@ index 0000000..a5ed22a
 +
 +        draw.rounded_rectangle((3, 3, 21, 19), radius=3, fill=COLORS["accent"])
 +        # the tile is 3..21 by 3..19 and the lettering is 13 px wide (x 6..18) and 5 px high (y 9..13): the same margin on both sides
-+        draw.text((6, 5), "cm", font=panel.small, fill=COLORS["bg"])
++        draw.text((6, 5), "cm", font=panel.small, fill=contrast_ink(COLORS["accent"]))
 +        label(
 +            27,
 +            4,
@@ -11147,10 +11179,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..0b84f8f
+index 0000000..cc2e6f8
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,976 @@
+@@ -0,0 +1,993 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11168,6 +11200,23 @@ index 0000000..0b84f8f
 +    "panel": (30, 30, 34), "accent": (255, 122, 26), "good": (40, 225, 110), "run": (70, 150, 255), "bad": (255, 50, 40),
 +    "warn": (255, 196, 0), "ink": (0, 0, 0),
 +}
++DARK = dict(P)
++LIGHT = {
++    "bg": (255, 248, 240), "fg": (40, 37, 35), "muted": (85, 77, 71), "dim": (105, 96, 88), "line": (148, 135, 124),
++    "panel": (241, 230, 218), "accent": (184, 62, 6), "good": (0, 119, 55), "run": (0, 84, 168),
++    "bad": (179, 26, 25), "warn": (133, 75, 0), "ink": (0, 0, 0),
++}
++
++
++def on_color(key):
++    """Choose a readable black or white label for a filled status, in either palette."""
++    def linear(v):
++        v /= 255
++        return v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4
++    r, g, b = P[key]
++    lum = .2126 * linear(r) + .7152 * linear(g) + .0722 * linear(b)
++    return (0, 0, 0) if (lum + .05) / .05 >= 1.05 / (lum + .05) else (255, 255, 255)
++
 +# a module's state: its colour and its word
 +STATE = {"fail": ("bad", "FAILED"), "stale": ("warn", "SILENT"), "run": ("run", "RUNNING"), "ok": ("good", "DONE"),
 +         "unknown": ("dim", "UNKNOWN"), "recognized": ("accent", "OURS")}
@@ -11225,7 +11274,7 @@ index 0000000..0b84f8f
 +    top = round(center - (h - 1) / 2)
 +    box = (right - w + 1, top, right, top + h - 1)
 +    d.rounded_rectangle(box, radius=2, fill=P[key])
-+    fonts.draw_centered(f, img, box, word, P["fg"] if key in ("line", "dim") else P["ink"])
++    fonts.draw_centered(f, img, box, word, on_color(key))
 +    return w
 +
 +
@@ -11236,7 +11285,7 @@ index 0000000..0b84f8f
 +
 +    body, title_font = fonts.font("body"), fonts.font("title")
 +    d.rounded_rectangle((0, 0, 17, 13), radius=3, fill=P["accent"])
-+    fonts.draw_centered(fonts.font("mark"), img, (0, 0, 17, 13), "cm", P["ink"])     # the mark, the same everywhere
++    fonts.draw_centered(fonts.font("mark"), img, (0, 0, 17, 13), "cm", on_color("accent"))     # the mark, the same everywhere
 +    right = 127
 +    # Overview tells the age in its yellow band instead of the project line
 +    age = panel.age_label() if panel.page != 0 or panel.detail else ""
@@ -11275,12 +11324,12 @@ index 0000000..0b84f8f
 +    d.rectangle((0, top, 127, 127), fill=P["fg"])
 +    d.rectangle((0, top, max(0, int(127 * left)), top + 1), fill=P["accent"])
 +    y = mid_y(body, top + 4, 13)
-+    x = body.draw(img, 4, y, "Press", P["ink"]) + 3
++    x = body.draw(img, 4, y, "Press", on_color("fg")) + 3
 +    ix0, _, ix1, _ = fonts.ink_bbox(body, "2")
 +    right = x + (ix1 - ix0 + 1) + 2 * 4 - 1
 +    chip(img, d, right, cap_mid(body, y), "2", "accent", body, padx=4, pady=2)
-+    body.draw(img, right + 4, y, "again", P["ink"])
-+    body.draw(img, 4, top + 18, "to leave cmprovision", P["ink"])
++    body.draw(img, right + 4, y, "again", on_color("fg"))
++    body.draw(img, 4, top + 18, "to leave cmprovision", on_color("fg"))
 +
 +
 +# ---- Overview ----
@@ -11314,7 +11363,7 @@ index 0000000..0b84f8f
 +    age = panel.age_label()
 +    if age:                                                 # only when the data is 10 s old or older
 +        d.rectangle((0, 17, 127, 17 + band - 1), fill=P["warn"])
-+        body.draw(img, 2, mid_y(body, 17, band), f"Updated {age} ago", P["ink"])
++        body.draw(img, 2, mid_y(body, 17, band), f"Updated {age} ago", on_color("warn"))
 +    else:
 +        # the project in orange, the batch in grey after it: the colour parts them, a dot would cost the ETA its room
 +        project, parts = batch_line(panel)
@@ -11329,8 +11378,8 @@ index 0000000..0b84f8f
 +        x0, y0 = (i % 2) * 65, 31 + (i // 2) * (TILE_H + 2)
 +        loud = key in ("failed", "stale") and n[key] > 0
 +        d.rounded_rectangle((x0, y0, x0 + 62, y0 + TILE_H - 1), radius=3, fill=P[color] if loud else P["panel"])
-+        num_c = P["ink"] if loud else (P[color] if n[key] else P["dim"])
-+        lab_c = P["ink"] if loud else (P["fg"] if n[key] else P["dim"])
++        num_c = on_color(color) if loud else (P[color] if n[key] else P["dim"])
++        lab_c = on_color(color) if loud else (P["fg"] if n[key] else P["dim"])
 +        value = str(min(999, n[key]))
 +        # the count hangs from the top, the word stands on the bottom: at least MIN_GAP empty rows between
 +        big.draw(img, x0 + 5, y0 + 4 - big.ink_top(value), value, num_c)
@@ -11338,7 +11387,7 @@ index 0000000..0b84f8f
 +        hint = x0 + 58 - body.width("OK >")
 +        # the centre opens Errors; the hint gives way to a count of three digits
 +        if loud and key == "failed" and panel.error_count() and x0 + 5 + big.width(value) + 2 < hint:
-+            body.draw(img, hint, y0 + 4 - body.ink_top("OK"), "OK >", P["ink"])
++            body.draw(img, hint, y0 + 4 - body.ink_top("OK"), "OK >", on_color(color))
 +    size, cells = mini_map(panel.data.get("switches"))
 +    if size:
 +        for x, y, port in cells:
@@ -11542,7 +11591,7 @@ index 0000000..0b84f8f
 +        d.rectangle(box, fill=P[fill] if fill else None, outline=P[outline])
 +        if numbered:
 +            label = "cm" if row.get("server") or isinstance(row.get("station"), dict) else text(row.get("number"))
-+            fonts.draw_centered(tiny, img, box, label, P["ink"] if fill else P["muted" if outline == "line" else outline])
++            fonts.draw_centered(tiny, img, box, label, on_color(fill) if fill else P["muted" if outline == "line" else outline])
 +        if index == panel.index:
 +            d.rectangle((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2), outline=P["fg"])
 +            d.rectangle((box[0] - 1, box[1] - 1, box[2] + 1, box[3] + 1), outline=P["bg"])
@@ -11825,7 +11874,7 @@ index 0000000..0b84f8f
 +        key, word = port_state(row, None)
 +        port = text(row.get("portname")) or text(row.get("name"))
 +    d.rectangle((0, 0, 127, 15), fill=P[key])
-+    ink = P["fg"] if key in ("dim", "line") else P["ink"]
++    ink = on_color(key)
 +    age = panel.age_label()
 +    right = 125
 +    if age:
@@ -13013,10 +13062,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..cb444ed
+index 0000000..919919c
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1259 @@
+@@ -0,0 +1,1339 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -14276,6 +14325,86 @@ index 0000000..cb444ed
 +    p.key("CENTER")
 +    p.key("RIGHT")
 +    assert any(row.get("state") == "recognized" for row in p.rows())
++
++
++# ---- light / dark / auto for both layouts ----
++
++def test_light_dark_and_auto_modes_apply_to_both_layouts(tmp_path):
++    for theme in ("new", "classic"):
++        for setting, auto, expected in (("dark", "light", "dark"), ("light", "dark", "light"),
++                                        ("auto", "light", "light"), ("auto", "dark", "dark"),
++                                        ("auto", None, "dark")):
++            snap = recognized_snapshot(theme)
++            snap["panel"]["color_mode"] = setting
++            if auto is not None:
++                snap["display_auto_mode"] = auto
++            p = on_port(panel_with(tmp_path, snap), 9)
++            assert p.color_mode() == expected
++            img, ink, centred = drawn(p)
++            assert img.getpixel((127, 127)) == ((255, 248, 240) if expected == "light" else (0, 0, 0))
++            assert "OURS" in strings(ink)
++            assert fonts.overlaps(ink) == [] and fonts.off_centre(centred) == []
++            p.key("CENTER")
++            _, ink, centred = drawn(p)
++            assert "OURS" in strings(ink) and "wlanpi-fd3" in strings(ink)
++            assert fonts.overlaps(ink) == [] and fonts.off_centre(centred) == []
++
++
++def test_auto_updates_without_restarting_panel_and_old_snapshots_stay_dark(tmp_path):
++    snap = recognized_snapshot()
++    p = panel_with(tmp_path, snap)
++    assert p.color_mode() == "dark"
++    p.data["panel"]["color_mode"] = "auto"
++    p.data["display_auto_mode"] = "light"
++    assert p.color_mode() == "light"
++    assert p.frame().getpixel((127, 127)) == (255, 248, 240)
++    p.data["display_auto_mode"] = "dark"
++    assert p.color_mode() == "dark"
++    assert p.frame().getpixel((127, 127)) == (0, 0, 0)
++
++
++def test_light_palette_statuses_have_readable_contrast():
++    def luminance(rgb):
++        def linear(v):
++            v /= 255
++            return v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4
++        r, g, b = map(linear, rgb)
++        return .2126*r + .7152*g + .0722*b
++    def ratio(a, b):
++        a, b = sorted((luminance(a), luminance(b)))
++        return (b + .05) / (a + .05)
++    old = dict(new.P)
++    try:
++        new.P.update(new.LIGHT)
++        for key in ("accent", "good", "run", "bad", "warn"):
++            assert ratio(new.P[key], new.P["bg"]) >= 4.5, key
++            assert ratio(new.on_color(key), new.P[key]) >= 4.5, key
++    finally:
++        new.P.update(old)
++
++
++def test_light_mode_all_pages_keep_text_within_the_screen(tmp_path):
++    for theme in ("new", "classic"):
++        snap = recognized_snapshot(theme)
++        snap["panel"]["color_mode"] = "light"
++        p = panel_with(tmp_path, snap)
++        for page in range(5):
++            p.page, p.index, p.detail = page, 0, None
++            _, ink, centred = drawn(p)
++            assert fonts.overlaps(ink) == [], (theme, page, fonts.overlaps(ink))
++            assert fonts.off_centre(centred) == [], (theme, page)
++            assert all(0 <= box[0] <= box[2] < 128 and 0 <= box[1] <= box[3] < 128 for box in ink), (theme, page)
++
++
++def test_palette_is_restored_between_panels(tmp_path):
++    light, dark = recognized_snapshot(), recognized_snapshot()
++    light["panel"]["color_mode"] = "light"
++    # Both panels may be rendered in the same process; light must not bleed into the next frame.
++    (tmp_path / "light").mkdir(); (tmp_path / "dark").mkdir()
++    a, b = panel_with(tmp_path / "light", light), panel_with(tmp_path / "dark", dark)
++    assert a.frame().getpixel((127, 127)) == (255, 248, 240)
++    assert b.frame().getpixel((127, 127)) == (0, 0, 0)
++    assert a.frame().getpixel((127, 127)) == (255, 248, 240)
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08

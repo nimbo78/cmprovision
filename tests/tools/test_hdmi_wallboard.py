@@ -330,6 +330,15 @@ class RenderingTest(unittest.TestCase):
             self.assertIn('DEVICE CARD', rendered)
 
 
+class AutoAppearanceTest(unittest.TestCase):
+    def test_auto_follows_shared_station_snapshot_and_missing_data_is_dark(self):
+        self.assertEqual('warm-light', w.resolved_palette('warm', {'hdmi_auto_mode': True, 'display_auto_mode': 'light'}))
+        self.assertEqual('neutral', w.resolved_palette('neutral', {'hdmi_auto_mode': True, 'display_auto_mode': 'dark'}))
+        self.assertEqual('warm', w.resolved_palette('warm', {'hdmi_auto_mode': True}))
+        self.assertEqual('neutral-light', w.resolved_palette('neutral-light', {'display_auto_mode': 'dark'}))
+        self.assertEqual('neutral-light', w.resolved_palette('neutral', {'hdmi_auto_mode': True, 'display_auto_mode': 'light'}))
+
+
 class UnknownDevicesTest(unittest.TestCase):
     """The table says what is on a port and is not a module: what it says about itself, or who made its adapter."""
 

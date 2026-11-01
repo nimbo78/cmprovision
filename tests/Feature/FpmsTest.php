@@ -154,19 +154,22 @@ class FpmsTest extends TestCase
         $service->shouldReceive('settings')->andReturn(Fpms::DEFAULTS);
         $service->shouldReceive('status')->andReturn(['state' => 'off']);
         $service->shouldReceive('save')->andThrow(new \RuntimeException('Could not save FPMS settings.'));
-        $this->assertSame(['theme' => 'new', 'ports_map' => 'pages'], FpmsPanelSettings::get());
+        $this->assertSame(['theme' => 'new', 'ports_map' => 'pages', 'color_mode' => 'dark'], FpmsPanelSettings::get());
 
         Livewire::actingAs(User::factory()->create())->test(FpmsSettings::class)
             ->assertSet('theme', 'new')->assertSet('ports_map', 'pages')
             ->set('theme', 'x')->call('save')->assertHasErrors('theme')
-            ->set('theme', 'classic')->set('ports_map', 'whole')->call('save')->assertHasErrors('enabled');
+            ->set('theme', 'new')->set('color_mode', 'invalid')->call('save')->assertHasErrors('color_mode')
+            ->set('theme', 'classic')->set('ports_map', 'whole')->set('color_mode', 'auto')->call('save')->assertHasErrors('enabled');
 
         // the root helper failed, the panel's look is the server's own setting and is kept
-        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole'], FpmsPanelSettings::get());
-        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole'], app(WallboardSnapshot::class)->current()['panel']);
+        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'auto'], FpmsPanelSettings::get());
+        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'auto'], app(WallboardSnapshot::class)->current()['panel']);
 
         Setting::updateOrCreate(['key' => 'fpms_theme'], ['value' => 'rainbow']);
         $this->assertSame('new', FpmsPanelSettings::get()['theme']);
+        Setting::updateOrCreate(['key' => 'fpms_color_mode'], ['value' => 'invalid']);
+        $this->assertSame('dark', FpmsPanelSettings::get()['color_mode']);
     }
 
     public function test_modules_carry_step_and_short_cause()

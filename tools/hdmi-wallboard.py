@@ -698,6 +698,14 @@ class Reader:
         pass
 
 
+def resolved_palette(palette, data):
+    """Auto is a station-wide snapshot value, not the appearance of an individual browser."""
+    if data.get('hdmi_auto_mode') is True:
+        style = 'neutral' if palette.startswith('neutral') else 'warm'
+        return style + '-light' if data.get('display_auto_mode') == 'light' else style
+    return palette
+
+
 def web_palette(palette, path=WEB_CSS):
     """The web CSS is the source of truth, read only when a palette is selected.
 
@@ -787,9 +795,10 @@ def display(screen):
             canvas = frame(data, width, height, selected, view_override or config['view'], tick=tick, paused=paused,
                            step=int(time.monotonic() / SCROLL_SECONDS))
             screen.timeout(int(SCROLL_SECONDS * 1000) if canvas.scrolls else 1000)   # faster only while a text runs
-            if config['palette'] != palette_name:
-                inks = colors(config['palette'])
-                palette_name = config['palette']
+            palette = resolved_palette(config['palette'], data)
+            if palette != palette_name:
+                inks = colors(palette)
+                palette_name = palette
                 screen.bkgd(' ', inks['fg'])
                 screen.clearok(True)
             screen.erase()
