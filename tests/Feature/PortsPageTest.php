@@ -142,6 +142,7 @@ class PortsPageTest extends TestCase
             ->call('select', 's1p30')
             ->assertSee('The provisioner (this server) is on this port.')
             ->assertDontSee('Uplink:');
+        $this->assertMatchesRegularExpression('/<button\b(?=[^>]*class="ports-tile ports-uplink [^"]*\bserver\b)(?=[^>]*aria-label="192\.0\.2\.10 XGE0\/0\/1: the provisioner")/', $page->html());
         $this->assertSame(1, substr_count($page->html(), 'id="cmp-ports-s1p30"'));
     }
 
@@ -587,8 +588,8 @@ class PortsPageTest extends TestCase
             ->assertSeeHtml('title="192.0.2.10 GE0/0/1 · another cmprovision station"')
             ->assertSeeHtml('aria-label="192.0.2.10 GE0/0/1: another cmprovision station"')
             ->assertSeeHtml('id="cmp-ports-s1p6"');   // the mark of the top bar, not "UP"
-        // on a background of its own (app.css): the grey one with the mark is this provisioner
-        $this->assertMatchesRegularExpression('/class="ports-tile ports-uplink [^"]*\bstation\b/', $page->html());
+        // The other station stays on the grey uplink tile, without this station's warm class.
+        $this->assertMatchesRegularExpression('/<button\b(?=[^>]*class="ports-tile ports-uplink (?![^"]*\bserver\b)[^"]*\bstation\b)(?=[^>]*aria-label="192\.0\.2\.10 GE0\/0\/1: another cmprovision station")/', $page->html());
         $this->assertStringNotContainsString('<span class="short">UP</span>', $page->html());
         $page->call('select', 's1p6')
             ->assertSee('Another cmprovision station is on this port: wlanpi-d62 (172.20.0.2), cmprovision 2.23.0.')
@@ -610,7 +611,7 @@ class PortsPageTest extends TestCase
             ->assertSeeHtml('title="192.0.2.10 GE0/0/1 · the provisioner of the stand"')
             ->assertSeeHtml('aria-label="192.0.2.10 GE0/0/1: the provisioner of the stand"')
             ->assertSeeHtml('id="cmp-ports-s1p6"')
-            // this server's own port keeps the grey tile with the mark
+            // this server's own port gets the warm tile with the mark
             ->assertSeeHtml('title="192.0.2.10 XGE0/0/1 · the provisioner"');
         $this->assertMatchesRegularExpression('/class="ports-tile ports-uplink [^"]*\bstation\b/', $page->html());
         $this->assertSame(1, preg_match_all('/class="ports-tile [^"]*\bstation\b/', $page->html()));

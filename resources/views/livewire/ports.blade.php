@@ -115,7 +115,7 @@
             </section>
             @endforeach
             @if ($map)
-                <p class="text-xs text-fg-muted">The last 4 characters of the MAC address and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; the cmprovision mark: the provisioner itself; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
+                <p class="text-xs text-fg-muted">The last 4 characters of the MAC address and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; the cmprovision mark: orange is this station, grey is another station; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
             @endif
             </div>
 
