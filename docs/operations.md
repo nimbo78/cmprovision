@@ -170,8 +170,10 @@ boots which provisioner flashed it, and any provisioner with the same mark key c
    `lldpd` the port description `cmprovision mark <provisioner> <boot>/<boots> <code>`: the code is an HMAC of the text with
    the device's own key, so it changes on every boot. The boot after the last removes the mark, the device's key and the
    service, and restarts `lldpd` without it. The system needs `lldpd` (WLAN Pi OS has it) and `openssl`.
-4. The **Ports** page shows a marked device as *Flashed by cmprovision on <provisioner>* with its boot, and whether the
-   mark is genuine for this provisioner's key.
+4. On **Ports**, a device with a verified mark and a single matching MAC on its port is **OURS / Our sensor**. Its
+   details say *Flashed by cmprovision on <provisioner>* and show the boot. It is not added to this station's modules or
+   counted as a completed local run. An unchecked or mismatched mark stays unrecognized; a shared port is not labelled
+   as one sensor, even if one of its neighbours carries a verified mark.
 
 The device's key is an HMAC of its MAC with the mark key: the device holds only its own key, never the mark key, and a
 mark copied to another device does not match. The device asks the server for its key while the agent is installed (the

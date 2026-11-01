@@ -1,7 +1,7 @@
 <div wire:poll.5s
      x-data="{ filter: [], toggle(s) { this.filter = this.filter.includes(s) ? this.filter.filter(x => x !== s) : this.filter.concat([s]) }, dim(states, never) { return this.filter.length > 0 && (never || !states.some(s => this.filter.includes(s))) } }">
 @php($fmt = \App\Http\Livewire\ProvisioningStatus::class)
-@php($words = ['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'silent', 'unknown' => 'unknown', 'boot' => 'booting', 'foreign' => 'unrecognized', 'free' => 'free'])
+@php($words = ['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'silent', 'unknown' => 'unknown', 'boot' => 'booting', 'foreign' => 'unrecognized', 'recognized' => 'our sensor', 'free' => 'free'])
 <div class="cmp-page">
     <livewire:poe-outages />
     @if ($restartMessage)
@@ -26,7 +26,7 @@
         @php($verdictColor = ['running' => 'bg-info-bg text-info', 'failed' => 'bg-neg-bg text-neg', 'done' => 'bg-pos-bg text-pos', 'empty' => 'bg-head text-fg'][$s['verdict']])
         <section class="cmp-card px-4 py-3 grid gap-3 md:grid-cols-[1fr_auto] items-center" aria-label="The stand now">
             <div class="font-bold md:col-span-2">
-                {{ $s['modules'] }} {{ $s['modules'] === 1 ? 'module' : 'modules' }} on the stand
+                {{ $s['modules'] }} {{ $s['counts']['recognized'] ? 'local ' : '' }}{{ $s['modules'] === 1 ? 'module' : 'modules' }} on the stand
                 <span class="text-fg-muted font-semibold">· {{ $s['counts']['free'] }} of {{ $s['ports'] }} ports free</span>
             </div>
             <div class="flex flex-wrap gap-2 items-center" role="group" aria-label="Show only">
@@ -36,14 +36,14 @@
                             @if (!$s['counts'][$key]) x-show="filter.includes('{{ $key }}')" style="display: none" @endif
                             x-bind:aria-pressed="filter.includes('{{ $key }}') ? 'true' : 'false'"
                             x-bind:class="{ 'pressed': filter.includes('{{ $key }}'), 'faded': filter.length > 0 && !filter.includes('{{ $key }}') }">
-                        <span class="dot"></span><span class="label">{{ $s['counts'][$key] }} {{ $word }}</span>
+                        <span class="dot"></span><span class="label">{{ $s['counts'][$key] }} {{ $key === 'recognized' && $s['counts'][$key] !== 1 ? 'our sensors' : $word }}</span>
                     </button>
                 @endforeach
                 <button type="button" x-show="filter.length > 0" x-cloak x-on:click="filter = []" class="text-sm font-semibold text-link px-2">Show all</button>
             </div>
             {{-- one-line php directives only: Blade would read a php block here, or even its closing word in a comment, as running from the first one-line directive above --}}
             @php($unknown = $s['counts']['unknown'] ? ', '.$s['counts']['unknown'].' without data' : '')
-            @php($verdict = ['running' => $s['busy'].' still in progress, '.$s['counts']['fail'].' failed: keep the batch on the stand', 'failed' => 'All finished, '.$s['counts']['fail'].' failed'.$unknown.': restart or replace them', 'done' => 'All done: the batch can be replaced', 'empty' => 'No modules on the stand'][$s['verdict']])
+            @php($verdict = ['running' => $s['busy'].' still in progress, '.$s['counts']['fail'].' failed: keep the batch on the stand', 'failed' => 'All finished, '.$s['counts']['fail'].' failed'.$unknown.': restart or replace them', 'done' => 'All done: the batch can be replaced', 'empty' => $s['counts']['recognized'] ? 'No local modules on the stand' : 'No modules on the stand'][$s['verdict']])
             {{-- a map from before a switch went silent may no longer be the stand --}}
             <div class="text-sm font-bold rounded px-3 py-2 {{ $asOf ? 'bg-head text-fg' : $verdictColor }}">
                 {{ $asOf.$verdict }}
@@ -115,7 +115,7 @@
             </section>
             @endforeach
             @if ($map)
-                <p class="text-xs text-fg-muted">The last 4 characters of the MAC address and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; the cmprovision mark: orange is this station, grey is another station; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
+                <p class="text-xs text-fg-muted">The last 4 characters of the MAC address and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; OURS: a verified sensor flashed by a station with the same key; the cmprovision mark: orange is this station, grey is another station; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
             @endif
             </div>
 
@@ -167,7 +167,7 @@
                     @endforeach
                     @if ($tile['state'] === 'foreign')
                         <div class="mb-3">
-                            <p class="font-semibold mb-1">Unrecognized device</p>
+                            <p class="font-semibold mb-1">{{ $tile['filter'] === 'recognized' ? 'Our sensor' : 'Unrecognized device' }}</p>
                             @if (!empty($tile['flashed_by']))
                                 <p class="mb-2">Flashed by cmprovision on {{ $tile['flashed_by']['station'] }}: boot {{ $tile['flashed_by']['boot'] }} of the {{ $tile['flashed_by']['boots'] }} it marks itself for.
                                     {{ $tile['flashed_by']['verified'] === true ? 'The mark is genuine: it matches the mark key of this provisioner.'

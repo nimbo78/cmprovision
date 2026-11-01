@@ -177,7 +177,7 @@ class StandMapTest extends TestCase
         $this->assertSame(['uplink', 'UP', true], [$t['s1p30']['state'], $t['s1p30']['short'], $t['s1p30']['sfp']]);
         $this->assertSame(1, $map['summary']['modules']);
         $this->assertSame(4, $map['summary']['ports']);
-        $this->assertSame(['ok' => 1, 'run' => 0, 'fail' => 0, 'stale' => 0, 'unknown' => 0, 'boot' => 1, 'foreign' => 1, 'free' => 1], $map['summary']['counts']);
+        $this->assertSame(['ok' => 1, 'run' => 0, 'fail' => 0, 'stale' => 0, 'unknown' => 0, 'boot' => 1, 'foreign' => 1, 'recognized' => 0, 'free' => 1], $map['summary']['counts']);
         $this->assertSame('4 × 1G PoE · 1 × SFP', $map['switches'][1]['composition']);
     }
 
@@ -622,7 +622,54 @@ class StandMapTest extends TestCase
         $this->assertSame(['station' => 'wlanpi-da2', 'boot' => 3, 'boots' => 20, 'verified' => true], $map['tiles']['s1p12']['flashed_by']);
         $this->assertFalse($map['tiles']['s1p13']['flashed_by']['verified'], 'made with another key');
         $this->assertNull($map['tiles']['s1p14']['flashed_by']);
-        $this->assertSame('foreign', $map['tiles']['s1p12']['state'], 'still no module of this station');
+        $this->assertSame(['foreign', 'recognized', 'OURS', []], [$map['tiles']['s1p12']['state'], $map['tiles']['s1p12']['filter'], $map['tiles']['s1p12']['short'], $map['tiles']['s1p12']['modules']], 'a recognised sensor is not a local run');
+        $this->assertSame(['foreign', 'UNR'], [$map['tiles']['s1p13']['filter'], $map['tiles']['s1p13']['short']], 'another key must not identify it as ours');
+        $this->assertSame(0, $map['summary']['modules']);
+        $this->assertSame(1, $map['summary']['counts']['recognized']);
+        $this->assertSame(2, $map['summary']['counts']['foreign']);
+        $this->assertSame('empty', $map['summary']['verdict']);
+    }
+
+    public function test_a_verified_mark_only_identifies_a_live_port_with_one_matching_signed_mac()
+    {
+        $key = str_repeat('5a', 32);
+        $this->app->instance(\App\Services\Sensor\ModuleMark::class, new \App\Services\Sensor\ModuleMark($key));
+        $signedMac = 'e4:5f:01:62:9f:d3';
+        $otherMac = 'e4:5f:01:62:9f:d4';
+        $code = \App\Services\Sensor\ModuleMark::code(hash_hmac('sha256', $signedMac, hex2bin($key)), 'wlanpi-da2', 1, 20);
+        $neighbor = ['port' => "cmprovision mark wlanpi-da2 1/20 $code"] + $this->neighbour('wlanpi-fd3', $signedMac);
+        $forgedChassis = $neighbor;
+        $forgedChassis['port_mac'] = $otherMac;
+        $booting = $this->port(18, 'Gi0/18', true, [$signedMac]) + ['neighbors' => [$neighbor], 'changed' => 15];
+        $map = $this->build([
+            $this->port(15, 'Gi0/15', true, [$otherMac]) + ['neighbors' => [$neighbor]],
+            $this->port(16, 'Gi0/16', false, [$signedMac]) + ['neighbors' => [$neighbor]],
+            $this->port(17, 'Gi0/17', true, [$signedMac, $otherMac]) + ['neighbors' => [$neighbor]],
+            $booting,
+            $this->port(19, 'Gi0/19', true, [$otherMac]) + ['neighbors' => [$forgedChassis]],
+        ]);
+
+        $this->assertSame('foreign', $map['tiles']['s1p15']['filter'], 'a stale LLDP neighbour with another MAC is not this port');
+        $this->assertSame('free', $map['tiles']['s1p16']['filter'], 'a port without link cannot identify the connected device');
+        $this->assertSame('foreign', $map['tiles']['s1p17']['filter'], 'a valid neighbour does not identify every device behind a shared port');
+        $this->assertSame(['foreign', 'recognized', 'OURS'], [$map['tiles']['s1p18']['state'], $map['tiles']['s1p18']['filter'], $map['tiles']['s1p18']['short']], 'a valid mark identifies the device even during the boot window');
+        $this->assertSame('foreign', $map['tiles']['s1p19']['filter'], 'a code signed for the chassis MAC cannot authenticate a different MAC on this port');
+        $this->assertSame(0, $map['summary']['modules']);
+        $this->assertSame(0, $map['summary']['busy']);
+        $tile = $map['tiles']['s1p18'];
+        $tile['poe'] = ['state' => 'delivering'];
+        $this->assertSame('other devices on sw01 Gi0/18', StandMap::restartBlocker($tile), 'a recognised sensor cannot be power-cycled as a local module');
+    }
+
+    public function test_a_mark_without_a_station_key_does_not_identify_a_sensor()
+    {
+        $marks = $this->mock(\App\Services\Sensor\ModuleMark::class);
+        $marks->shouldReceive('check')->andReturn(['station' => 'wlanpi-da2', 'boot' => 1, 'boots' => 20, 'verified' => null]);
+        $mac = 'e4:5f:01:62:9f:d3';
+        $neighbor = ['port' => 'cmprovision mark wlanpi-da2 1/20 1234567890abcdef'] + $this->neighbour('wlanpi-fd3', $mac);
+        $map = $this->build([$this->port(1, 'Gi0/1', true, [$mac]) + ['neighbors' => [$neighbor]]]);
+        $this->assertSame(['foreign', 'UNR'], [$map['tiles']['s1p1']['filter'], $map['tiles']['s1p1']['short']]);
+        $this->assertNull($map['tiles']['s1p1']['flashed_by']['verified']);
     }
 
     public function test_a_neighbour_that_is_another_switch_of_the_stand_makes_the_port_a_link()

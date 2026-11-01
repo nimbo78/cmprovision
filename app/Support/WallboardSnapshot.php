@@ -42,7 +42,7 @@ class WallboardSnapshot
                     }
                     $ports[] = ['name' => $tile['name'], 'number' => $tile['panel_number'] ?? $tile['number'],
                         'state' => $tile['state'] === 'foreign' ? 'unrecognized' : $tile['state'],
-                        'mark' => $tile['mark'], 'filter' => $tile['filter'], 'serials' => $serials, 'server' => $tile['server'],
+                        'mark' => $tile['mark'], 'filter' => $tile['filter'] === 'recognized' ? 'foreign' : $tile['filter'], 'serials' => $serials, 'server' => $tile['server'],
                         // another cmprovision station on the port: its name, address, whether it is the stand's provisioner
                         'station' => $tile['station'] ?? null,
                         'speed' => $tile['speed'], 'watts' => $tile['poe']['watts'] ?? null];

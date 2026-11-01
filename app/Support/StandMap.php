@@ -140,6 +140,24 @@ class StandMap
         return null;
     }
 
+    /* A valid mark is assigned to the port only when its signed MAC is the one MAC the switch currently sees there.
+       A stale LLDP entry or a mark on a port with other devices cannot make the whole port a recognised sensor. */
+    protected function markedSensorOnPort(array $p, string $mac): ?array
+    {
+        foreach ($p['port']['neighbors'] ?? [] as $neighbor)
+        {
+            if (!in_array($mac, [$neighbor['mac'] ?? null, $neighbor['port_mac'] ?? null], true))
+                continue;
+            // Check the exact MAC seen on this port, not another MAC from the neighbour's chassis.
+            $neighbor['mac'] = $mac;
+            $neighbor['port_mac'] = null;
+            $mark = ($this->marks ??= app(ModuleMark::class))->check($neighbor);
+            if (($mark['verified'] ?? null) === true)
+                return $mark;
+        }
+        return null;
+    }
+
     /* The port's neighbour (LLDP, CDP) is that switch: it says a MAC the switch answers from, or, when it says no MAC
        (CDP does not), the switch's name. A neighbour that says another MAC is another device, whatever it calls itself
        (a module running lldpd names itself by its host name, and the stand's switches have names too) */
@@ -419,7 +437,13 @@ class StandMap
         else
             $state = 'boot';
 
-        $filter = $state === 'module' ? self::moduleState($modules[0]) : ($state === 'quiet' ? 'foreign' : $state);
+        // Keep this out of the local modules and the batch: a verified mark identifies the other station's sensor,
+        // not a run on this server. It also beats the initial 'booting' guess for a known marked device.
+        $recognized = in_array($state, ['foreign', 'boot'], true) && $count === 1 && count($macs) === 1
+            ? $this->markedSensorOnPort($p, $macs[0]) : null;
+        if ($recognized !== null)
+            $state = 'foreign';
+        $filter = $recognized !== null ? 'recognized' : ($state === 'module' ? self::moduleState($modules[0]) : ($state === 'quiet' ? 'foreign' : $state));
         $part = $this->parts[$p['switch']];
         $boardPort = ($port['alias'] ?? '') !== '' ? $port['alias'] : $port['name'];
         return [
@@ -437,7 +461,7 @@ class StandMap
             // another cmprovision station is on this port (the stand's provisioner, a second station): who it says it is
             'station' => isset($links[$key]) ? null : $this->station($p),
             // a device flashed with the provisioner's mark says so for its first boots (ModuleMark): what it says, checked
-            'flashed_by' => isset($links[$key]) ? null : $this->moduleMark($p),
+            'flashed_by' => $recognized ?? (isset($links[$key]) ? null : $this->moduleMark($p)),
             'ifIndex' => $port['ifIndex'],
             'name' => $port['name'],
             'alias' => $port['alias'],
@@ -455,8 +479,8 @@ class StandMap
             'filters' => $state === 'module' ? array_values(array_unique(array_map([self::class, 'moduleState'], $modules))) : [$filter],
             'modules' => $state === 'module' ? $modules : [],
             // the last four hex digits of the MAC: what a person reads off a switch or a label
-            'short' => $state === 'module' ? strtoupper(substr(str_replace(':', '', $modules[0]->mac ?: $modules[0]->serial), -4))
-                : (isset($links[$key]) ? '→' : (['uplink' => 'UP', 'foreign' => 'UNR', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? '')),
+            'short' => $recognized !== null ? 'OURS' : ($state === 'module' ? strtoupper(substr(str_replace(':', '', $modules[0]->mac ?: $modules[0]->serial), -4))
+                : (isset($links[$key]) ? '→' : (['uplink' => 'UP', 'foreign' => 'UNR', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? ''))),
         ];
     }
 
@@ -539,7 +563,7 @@ class StandMap
 
     protected function summary(array $main, array $tiles): array
     {
-        $counts = array_fill_keys(['ok', 'run', 'fail', 'stale', 'unknown', 'boot', 'foreign', 'free'], 0);
+        $counts = array_fill_keys(['ok', 'run', 'fail', 'stale', 'unknown', 'boot', 'foreign', 'recognized', 'free'], 0);
         $modules = 0;
         foreach ($tiles as $tile)
             foreach ($tile['modules'] as $cm)

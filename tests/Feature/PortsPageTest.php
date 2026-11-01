@@ -631,12 +631,18 @@ class PortsPageTest extends TestCase
             $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
 
         Livewire::test(Ports::class)->call('select', 's1p6')
+            ->assertSee('1 our sensor')
+            ->assertSeeHtml('class="short">OURS</span>')
+            ->assertSee('Our sensor')
+            ->assertDontSee('Unrecognized device')
             ->assertSee('Flashed by cmprovision on wlanpi-da2')
             ->assertSee('boot 3 of the 20 it marks itself for')
             ->assertSee('The mark is genuine: it matches the mark key of this provisioner.');
 
         app(\App\Services\Sensor\ModuleMark::class)->set(str_repeat('00', 32));
         Livewire::test(Ports::class)->call('select', 's1p6')
+            ->assertSee('Unrecognized device')
+            ->assertSeeHtml('class="short">UNR</span>')
             ->assertSee('Flashed by cmprovision on wlanpi-da2')
             ->assertSee('The mark does not match the mark key of this provisioner');
     }

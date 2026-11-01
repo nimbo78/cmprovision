@@ -1,3 +1,10 @@
+cmprovision4 (2.23.0~dev7) unstable; urgency=medium
+
+  * Ports: identify a sensor with a verified mark from a trusted station
+    without counting it as a local provisioning run.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 01 Nov 2026 14:54:19 +0300
+
 cmprovision4 (2.23.0~dev6) unstable; urgency=medium
 
   * Ports: show this station on the warm orange tile and other cmprovision

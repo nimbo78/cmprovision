@@ -337,6 +337,7 @@ body { background: var(--page); color: var(--text); }
 .ports-unknown { background: #f3f4f6; color: #4b5563; border-color: #9ca3af; }
 .ports-boot { background: #cffafe; color: #0e7490; border-color: #0e7490; }
 .ports-foreign { background: #ede9fe; color: #6d28d9; border-color: #6d28d9; }
+.ports-recognized { background: #fff4df; color: #8a3c0c; border-color: #c65b16; }
 .ports-uplink { background: #e5e7eb; color: #374151; border-color: #9ca3af; }
 /* The warm tile is this station; another cmprovision station keeps the grey uplink tile. */
 .ports-uplink.server { background: #4a3322; color: #ffd37a; border-color: #e2681c; }
