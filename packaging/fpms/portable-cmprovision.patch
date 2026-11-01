@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..ed1ba87
+index 0000000..b47c0d0
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,381 @@
+@@ -0,0 +1,383 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10304,6 +10304,8 @@ index 0000000..ed1ba87
 +                        )
 +            return rows[:512]
 +        modules = objects(self.data.get("modules"))
++        if self.page == 2:
++            modules += objects(self.data.get("recognized"))
 +        if self.page == 3:
 +            # the modules that need a look first, then USB observations, then devices on ports that are not modules
 +            # (kind keeps what they are: unrecognized or quiet)
@@ -10386,7 +10388,7 @@ index 0000000..ed1ba87
 +                (p for p in self.rows() if text(p.get("pin") or p.get("name")) == pinned),
 +                None,
 +            )
-+        rows = objects(self.data.get("modules")) + objects(self.data.get("unknown"))
++        rows = objects(self.data.get("modules")) + objects(self.data.get("recognized")) + objects(self.data.get("unknown"))
 +        return next((m for m in rows if identity(m) == pinned), None)
 +
 +    def map_view(self):
@@ -10427,10 +10429,10 @@ index 0000000..ed1ba87
 +            return cmprovision_classic.render(self)
 diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
 new file mode 100644
-index 0000000..0ef163e
+index 0000000..a5ed22a
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_classic.py
-@@ -0,0 +1,331 @@
+@@ -0,0 +1,335 @@
 +"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
 +the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
@@ -10476,6 +10478,8 @@ index 0000000..0ef163e
 +    """(fill, outline, ink) as names of COLORS: hollow is free, filled is a module, outlined is something else."""
 +    filt, state = text(row.get("filter")), text(row.get("state"))
 +    if row.get("server"):
++        return "accent", "accent", "bg"
++    if state == "recognized":
 +        return "accent", "accent", "bg"
 +    if state == "module" or filt in ("ok", "run", "fail", "stale"):
 +        key = {"ok": "good", "run": "info", "fail": "bad", "stale": "warn"}.get(filt, "muted")
@@ -10528,7 +10532,7 @@ index 0000000..0ef163e
 +            label(4, 92, port + "  " + text(module.get("phase") or module.get("state")) + progress, "muted", panel.small, 120)
 +        else:
 +            label(4, 82, port, "text", panel.small, 120)
-+            label(4, 92, text(row.get("state")), "muted", panel.small, 120)
++            label(4, 92, "OURS" if row.get("state") == "recognized" else text(row.get("state")), "accent" if row.get("state") == "recognized" else "muted", panel.small, 120)
 +    for x, fill, title in ((3, "good", "done"), (38, "info", "run"), (66, "bad", "fail"), (94, "muted", "free")):
 +        hollow = title == "free"
 +        draw.rectangle(
@@ -10622,11 +10626,13 @@ index 0000000..0ef163e
 +                )
 +                issues = objects(diag.get("issues"), 4)
 +                port_card = panel.detail[0] == "port"
++                if port_card and row.get("state") == "recognized":
++                    row = next((u for u in objects(panel.data.get("recognized")) if text(u.get("port")) == text(row.get("name"))), row)
 +                lines = [
 +                    row.get("name"),
 +                    row.get("port"),
 +                    row.get("mac"),
-+                    row.get("phase") or row.get("state"),
++                    "OURS" if row.get("state") == "recognized" else (row.get("phase") or row.get("state")),
 +                    slow(row.get("slow")),
 +                    row.get("cause") or row.get("detail"),
 +                    # a port's speed is its link in Mbit/s, not a write rate
@@ -10713,7 +10719,7 @@ index 0000000..0ef163e
 +                label(
 +                    7,
 +                    y + 10,     # at y + 8 the smoothed edges of the name and of this line met
-+                    row.get("phase") or row.get("state"),
++                    "OURS" if row.get("state") == "recognized" else (row.get("phase") or row.get("state")),
 +                    color,
 +                    panel.small,
 +                    116,
@@ -11141,10 +11147,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..20589df
+index 0000000..0b84f8f
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,972 @@
+@@ -0,0 +1,976 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11164,7 +11170,7 @@ index 0000000..20589df
 +}
 +# a module's state: its colour and its word
 +STATE = {"fail": ("bad", "FAILED"), "stale": ("warn", "SILENT"), "run": ("run", "RUNNING"), "ok": ("good", "DONE"),
-+         "unknown": ("dim", "UNKNOWN")}
++         "unknown": ("dim", "UNKNOWN"), "recognized": ("accent", "OURS")}
 +TILES = (("failed", "FAILED", "bad"), ("stale", "SILENT", "warn"), ("running", "RUNNING", "run"), ("done", "DONE", "good"))
 +TILE_H = 38
 +MIN_GAP = 4          # empty rows at least between a count and its word
@@ -11355,6 +11361,8 @@ index 0000000..20589df
 +        return "accent", "accent"
 +    if isinstance(port.get("station"), dict):           # another cmprovision station: the mark in an outline
 +        return None, "accent"
++    if text(port.get("state")) == "recognized":
++        return "accent", "accent"
 +    key = {"ok": "good", "run": "run", "fail": "bad", "stale": "warn"}.get(text(port.get("filter")))
 +    if key and text(port.get("state")) == "module":
 +        return key, key
@@ -11423,7 +11431,7 @@ index 0000000..20589df
 +# ---- Ports ----
 +
 +PORT_STATES = {"server": ("accent", "SERVER"), "free": ("line", "FREE"), "uplink": ("dim", "UPLINK"),
-+               "unrecognized": ("warn", "UNKNOWN"), "quiet": ("warn", "QUIET"), "boot": ("run", "BOOT")}
++               "recognized": ("accent", "OURS"), "unrecognized": ("warn", "UNKNOWN"), "quiet": ("warn", "QUIET"), "boot": ("run", "BOOT")}
 +FILTER_STATE = {"ok": "ok", "run": "run", "fail": "fail", "stale": "stale"}
 +
 +
@@ -11593,7 +11601,7 @@ index 0000000..20589df
 +            y += body.h
 +        return
 +    label = text(row.get("name"))
-+    device = next((u for u in objects(panel.data.get("unknown")) if text(u.get("port")) == label), None)
++    device = next((u for u in (objects(panel.data.get("recognized")) + objects(panel.data.get("unknown"))) if text(u.get("port")) == label), None)
 +    if device is not None:
 +        body.draw(img, 2, y, fonts.fit(body, text(device.get("name")) or "Unknown device", LINE_W), P["fg"])
 +        y += body.h + 1
@@ -11870,7 +11878,9 @@ index 0000000..20589df
 +        if value:
 +            lines.extend((colour, f, line) for line in fonts.wrap(f, value, width))
 +
-+    if device_kind(row):                                    # a device on a port: what it says of itself, its MAC
++    if text(row.get("state")) == "recognized":
++        para("muted", body, text(row.get("detail")))
++    elif device_kind(row):                                  # a device on a port: what it says of itself, its MAC
 +        para("muted", body, text(row.get("detail")))
 +    elif row.get("registered") is False:
 +        para("fg", error, "USB, no provisioning run")
@@ -11902,7 +11912,7 @@ index 0000000..20589df
 +
 +    lines = []
 +    label = text(row.get("name"))
-+    device = next((u for u in objects(panel.data.get("unknown")) if text(u.get("port")) == label), None)
++    device = next((u for u in (objects(panel.data.get("recognized")) + objects(panel.data.get("unknown"))) if text(u.get("port")) == label), None)
 +    if row.get("server"):
 +        lines += [("muted", body, line) for line in fonts.wrap(body, "This server (the provisioner)", 120)]
 +    elif isinstance(row.get("station"), dict):
@@ -13003,10 +13013,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..d66fed6
+index 0000000..cb444ed
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1210 @@
+@@ -0,0 +1,1259 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -14217,6 +14227,55 @@ index 0000000..d66fed6
 +    p = on_port(panel_with(tmp_path, station_snapshot(provisioner=True)), 9)
 +    _, ink, _ = drawn(p)
 +    assert any("Provisioner of the stand" in t for t in strings(ink))
++
++
++# ---- sensors verified by a station sharing the mark key ----
++
++def recognized_snapshot(theme="new"):
++    snap = demo_snapshot()
++    port = snap["switches"][0]["blocks"][1]["ports"][0]
++    port.update(state="recognized", filter="recognized", serials=[])
++    snap["unknown"] = []
++    snap["recognized"] = [{"port": f"{SWITCH} Gi0/9", "state": "recognized", "name": "wlanpi-fd3",
++                           "mac": "e4:5f:01:62:9f:d3", "detail": "Flashed by wlanpi-da2 / boot 1 of 20"}]
++    snap["panel"]["theme"] = theme
++    return snap
++
++
++def test_verified_sensor_is_in_ports_and_devices_but_not_errors(tmp_path):
++    p = on_port(panel_with(tmp_path, recognized_snapshot()), 9)
++    _, ink, centred = drawn(p)
++    assert "OURS" in strings(ink) and "wlanpi-fd3" in strings(ink)
++    assert new.port_style(p.selected()) == ("accent", "accent")
++    assert fonts.overlaps(ink) == [] and fonts.off_centre(centred) == []
++    p.key("CENTER")
++    _, ink, _ = drawn(p)
++    assert "OURS" in strings(ink) and "wlanpi-fd3" in strings(ink)
++    assert "wlanpi-da2" in " ".join(strings(ink))
++    p.key("CENTER")
++    p.key("RIGHT")
++    assert p.page == 2
++    p.index = next(i for i, row in enumerate(p.rows()) if row.get("state") == "recognized")
++    _, ink, _ = drawn(p)
++    assert "OURS" in strings(ink) and "wlanpi-fd3" in strings(ink)
++    p.key("CENTER")
++    _, ink, _ = drawn(p)
++    assert "OURS" in strings(ink) and "wlanpi-da2" in " ".join(strings(ink))
++    p.key("CENTER")
++    p.key("RIGHT")
++    assert p.page == 3 and not any(row.get("name") == "wlanpi-fd3" for row in p.rows())
++
++
++def test_classic_theme_identifies_a_verified_sensor(tmp_path):
++    p = on_port(panel_with(tmp_path, recognized_snapshot("classic")), 9)
++    _, ink, _ = drawn(p)
++    assert "OURS" in strings(ink)
++    p.key("CENTER")
++    _, ink, _ = drawn(p)
++    assert "OURS" in strings(ink)
++    p.key("CENTER")
++    p.key("RIGHT")
++    assert any(row.get("state") == "recognized" for row in p.rows())
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08

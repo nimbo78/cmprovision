@@ -51,6 +51,8 @@ column one step at a time (about three columns a second), rests at its end and s
 column says there is more. The same goes for the device name and port on the device card and for the failure line at
 the bottom. The screen is redrawn faster only while something runs; with every text fitting nothing moves.
 
+A sensor whose temporary mark is verified with the shared station key appears as `OURS` on the port and `OUR SENSOR` in the table and rotating cards. The card identifies the station and the current marked boot. These sensors have their own `OURS` count; `LOCAL` and `DONE` still count this station?s runs only.
+
 After the modules the table lists what a switch shows on a port where there is a device that is not a module and is not booting,
 so the table tells what was plugged in: the phase says `UNR` (an unrecognized device) or `LNK` (a link up with nothing sent from
 it), the name is what the device calls itself over LLDP or CDP with its system, address and abilities in the result column, and for

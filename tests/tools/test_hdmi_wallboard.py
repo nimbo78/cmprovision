@@ -382,6 +382,26 @@ class UnknownDevicesTest(unittest.TestCase):
         self.assertIn('evil', text)
 
 
+class RecognizedSensorTest(unittest.TestCase):
+    def test_sensor_is_ours_in_port_table_card_and_other_views(self):
+        data = snapshot()
+        sensor = dict(port='sw01 Gi0/9', state='recognized', name='wlanpi-fd3', mac='e4:5f:01:62:9f:d3',
+                      detail='Flashed by wlanpi-da2 / boot 1 of 20')
+        data['modules'] = []
+        data['recognized'] = [sensor]
+        data['unknown'] = []
+        data['switches'] = [dict(name='sw01', model='switch', answering=True, blocks=[dict(label='PORTS', rows=1, ports=[dict(name='Gi0/9', number=9, state='recognized', filter='recognized', serials=[], server=False)])])]
+        for view in ('desk', 'flow', 'engineer'):
+            text = w.frame(data, 137, 38, view=view, now=1001).plain()
+            self.assertIn('OUR SENSOR', text, view)
+            self.assertIn('wlanpi-fd3', text, view)
+            self.assertIn('Flashed by wlanpi-da2', text, view)
+        text = w.frame(data, 137, 38, view='desk', now=1001).plain()
+        self.assertIn('OURS', text)
+        self.assertNotIn('unrecognized/quiet ports', text)
+        self.assertIn('CARD 1/1', text)
+
+
 class ProgressInOtherViewsTest(unittest.TestCase):
     """The speed of a write is on the flow cards and under the name in the engineer view, as it is in the table and on the card."""
 

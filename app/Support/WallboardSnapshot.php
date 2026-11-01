@@ -22,7 +22,7 @@ class WallboardSnapshot
         $stand = Stand::current(null, 0, [], self::WALLBOARD_SECONDS);
         $batch = BatchSummary::forDashboard();
         $map = $stand['map'] ?? null;
-        $modules = $switches = $unknown = [];
+        $modules = $switches = $unknown = $recognized = [];
         foreach ($map['switches'] ?? [] as $id => $switch)
         {
             $state = $stand['switches'][$id];
@@ -33,7 +33,9 @@ class WallboardSnapshot
                 foreach ($block['tiles'] as $tile)
                 {
                     $serials = [];
-                    if (in_array($tile['state'], ['foreign', 'quiet'], true))
+                    if ($tile['filter'] === 'recognized')
+                        $recognized[] = $this->recognized($tile);
+                    elseif (in_array($tile['state'], ['foreign', 'quiet'], true))
                         $unknown[] = $this->unknown($tile);
                     foreach ($tile['modules'] as $cm)
                     {
@@ -41,8 +43,8 @@ class WallboardSnapshot
                         $modules[$cm->serial] = $this->module($cm, $tile['label'], $batch?->slow[$cm->id] ?? null);
                     }
                     $ports[] = ['name' => $tile['name'], 'number' => $tile['panel_number'] ?? $tile['number'],
-                        'state' => $tile['state'] === 'foreign' ? 'unrecognized' : $tile['state'],
-                        'mark' => $tile['mark'], 'filter' => $tile['filter'] === 'recognized' ? 'foreign' : $tile['filter'], 'serials' => $serials, 'server' => $tile['server'],
+                        'state' => $tile['filter'] === 'recognized' ? 'recognized' : ($tile['state'] === 'foreign' ? 'unrecognized' : $tile['state']),
+                        'mark' => $tile['mark'], 'filter' => $tile['filter'], 'serials' => $serials, 'server' => $tile['server'],
                         // another cmprovision station on the port: its name, address, whether it is the stand's provisioner
                         'station' => $tile['station'] ?? null,
                         'speed' => $tile['speed'], 'watts' => $tile['poe']['watts'] ?? null];
@@ -88,7 +90,7 @@ class WallboardSnapshot
             'host' => gethostname(), 'app_version' => AppVersion::text(), 'project' => $project?->name,
             'batch' => $batch ? ['title' => $batch->title(), 'open' => $batch->open, 'counts' => $batch->counts,
                 'left_seconds' => $batch->leftSeconds] : null,
-            'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown,
+            'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown, 'recognized' => $recognized,
             // how the FPMS panel looks (Settings → Provisioning → FPMS display); an older panel does not read it
             'panel' => FpmsPanelSettings::get(),
             // for the FPMS panel only: the address and the interface come from NetworkManager and iw, which HDMI never needed
@@ -115,6 +117,17 @@ class WallboardSnapshot
         }
         return ['port' => $tile['label'], 'state' => $tile['state'] === 'quiet' ? 'quiet' : 'unrecognized', 'name' => $name !== '' ? $name : 'unknown device',
             'mac' => $mac, 'detail' => $detail, 'says' => (bool) $says];
+    }
+
+    /* A signed sensor is visible on the stand, but is not a local provisioning run and is not an error. */
+    protected function recognized(array $tile): array
+    {
+        $sensor = $this->unknown($tile);
+        $mark = $tile['flashed_by'];
+        $sensor['state'] = 'recognized';
+        $sensor['detail'] = 'Flashed by '.$mark['station'].' / boot '.$mark['boot'].' of '.$mark['boots'];
+        $sensor['flashed_by'] = $mark;
+        return $sensor;
     }
 
     /* $slow: the seconds the run is past what the finished modules of its batch took (SlowRuns), null when it is not slow */

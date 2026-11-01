@@ -92,6 +92,37 @@ class WallboardTest extends TestCase
         $this->assertStringNotContainsString('wlanpi-da2', json_encode($data['unknown']));
     }
 
+    public function test_verified_sensors_are_separate_from_local_runs_and_unknown_devices()
+    {
+        $cm = $this->stand();
+        $key = str_repeat('5a', 32);
+        app(\App\Services\Sensor\ModuleMark::class)->set($key);
+        $mac = '00:0a:95:dd:ee:ff';
+        $code = \App\Services\Sensor\ModuleMark::code(hash_hmac('sha256', $mac, hex2bin($key)), 'wlanpi-da2', 1, 20);
+        $t =& $this->fake->tables[''];
+        $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 6 => 3, 7 => hex2bin('000a95ddeeff'), 8 => "cmprovision mark wlanpi-da2 1/20 $code", 9 => 'wlanpi-fd3', 10 => 'Linux', 12 => hex2bin('10')] as $column => $value)
+            $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+        $data = app(WallboardSnapshot::class)->current();
+        $ports = array_column(array_merge(...array_column($data['switches'][0]['blocks'], 'ports')), null, 'name');
+        $this->assertSame(['recognized', 'recognized', []], [$ports['GE0/0/1']['state'], $ports['GE0/0/1']['filter'], $ports['GE0/0/1']['serials']]);
+        $this->assertSame([$cm->serial], array_column($data['modules'], 'serial'));
+        $this->assertSame(['wlanpi-fd3'], array_column($data['recognized'], 'name'));
+        $this->assertSame('Flashed by wlanpi-da2 / boot 1 of 20', $data['recognized'][0]['detail']);
+        $this->assertTrue($data['recognized'][0]['flashed_by']['verified']);
+        $this->assertStringNotContainsString('wlanpi-fd3', json_encode($data['unknown']));
+        $this->assertStringNotContainsString($code, json_encode($data));
+        $this->assertSame(1, $data['counts']['failed']);
+
+        app(\App\Services\Sensor\ModuleMark::class)->set(str_repeat('00', 32));
+        \Illuminate\Support\Facades\Cache::flush();
+        $untrusted = app(WallboardSnapshot::class)->current();
+        $this->assertSame([], $untrusted['recognized']);
+        $this->assertContains('wlanpi-fd3', array_column($untrusted['unknown'], 'name'));
+        $ports = array_column(array_merge(...array_column($untrusted['switches'][0]['blocks'], 'ports')), null, 'name');
+        $this->assertSame('unrecognized', $ports['GE0/0/1']['state']);
+    }
+
     public function test_a_display_takes_a_snapshot_up_to_fifteen_seconds_old_and_polls_after_that()
     {
         $this->stand();

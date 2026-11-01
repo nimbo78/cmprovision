@@ -85,6 +85,8 @@ misc-fixed 5x7 for port numbers. Their licences are installed with them.
 | Errors | Failed and silent modules first, with a short cause from the server (`Download cut (curl 18)`, `EEPROM: no SPI chip`, `No report for 6 min`); then USB observations and devices on ports that are not modules, greyed. The red count in the header counts modules only |
 | Station | The provisioner and its version; how it reaches the management network: the Wi-Fi network, signal in dBm and quality in colour (as the web UI rates it), rate, band, generation, address, or `Wi-Fi not connected`, the built-in spare in use, a wired uplink, `No uplink`; then its health, problems first: the stand link and any other link (a USB Ethernet), services, switches (`silent N min`), free space |
 
+A sensor verified by the shared station key appears as `OURS` on Ports and in Devices, with the flashing station and marked boot in its card. It is not counted as a local run or listed as an error. Like the web page, recognition lasts only while the sensor emits its configured temporary mark.
+
 A device card (the joystick centre on Ports, Devices or Errors) has a band in the colour of its state with the port
 and the state, the name, the step with its bar, and below, scrolling, what went wrong and what to do, the exit codes,
 the diagnostics (a healthy report has no title), MAC, serial and switch.

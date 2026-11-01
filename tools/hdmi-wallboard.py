@@ -348,17 +348,21 @@ CHIP = ['    .--------------------.', ' +--|    WLAN Pi M4+     |--+',
         ' |     | .--------. |      |', ' |     | |  eMMC  | |      |',
         " |     | '--------' |      |", " |     '------------'      |", ' +--+--+--+--+--+--+--+--+--+',
         '    |  |  |  |  |  |  |  |']
-INK = {'ok': 'good', 'run': 'run', 'fail': 'fail', 'stale': 'warn', 'unknown': 'dim'}
+INK = {'ok': 'good', 'run': 'run', 'fail': 'fail', 'stale': 'warn', 'unknown': 'dim', 'recognized': 'accent'}
 
 
 def identity(module):
     """The line under a module's name: its MAC under a host name; its serial under a name that already is the MAC."""
+    if module.get('state') == 'recognized':
+        return safe(module.get('mac'))
     if module.get('hostname'):
         return safe(module.get('mac') or module.get('serial'))
     return 'S/N ' + safe(module.get('serial')) if module.get('mac') else safe(module.get('serial'))
 
 
 def phase(module):
+    if module.get('state') == 'recognized':
+        return 'OUR SENSOR'
     if module.get('state') == 'stale':
         return 'NO REPORT'
     return safe(module.get('phase', 'unknown')).upper()
@@ -389,7 +393,8 @@ def header(c, data, now):
         c.text(21, 1, 'PROVISIONING STAND', 'dim')
         x = max(48, c.cols - 36)
         c.text(x, 0, safe(data.get('host')) + ' / HDMI', 'dim')
-        c.text(x, 1, 'ON STAND %02d   DONE %02d' % (len(data.get('modules', [])), counts.get('done', 0)), 'good')
+        count_line = ('LOCAL %02d  OURS %02d  DONE %02d' % (len(data.get('modules', [])), len(data.get('recognized', [])), counts.get('done', 0))) if data.get('recognized') else ('ON STAND %02d   DONE %02d' % (len(data.get('modules', [])), counts.get('done', 0)))
+        c.text(x, 1, count_line, 'good')
         c.text(x, 2, 'RUN %02d  FAIL %02d  STALE %02d' % (counts.get('running', 0), counts.get('failed', 0), counts.get('stale', 0)), 'warn')
         c.text(0, 4, 'PROJECT: ' + safe(data.get('project') or 'none active'), 'fg', c.cols - 32)
         c.text(c.cols - 30, 4, 'UPDATED ' + age(data.get('generated_at'), now), 'dim')
@@ -397,8 +402,9 @@ def header(c, data, now):
         return 7
     c.text(0, 0, '[cm] cmprovision // ' + safe(data.get('host', 'HDMI')), 'accent')
     c.text(0, 1, 'PROJECT: ' + safe(data.get('project') or 'none active'), 'dim')
-    c.text(0, 2, 'ON STAND %d / DONE %d / RUN %d / FAIL %d / STALE %d' %
-           (len(data.get('modules', [])), counts.get('done', 0), counts.get('running', 0), counts.get('failed', 0), counts.get('stale', 0)), 'warn')
+    local = ('LOCAL %d / OURS %d' % (len(data.get('modules', [])), len(data.get('recognized', [])))) if data.get('recognized') else ('ON STAND %d' % len(data.get('modules', [])))
+    c.text(0, 2, local + ' / DONE %d / RUN %d / FAIL %d / STALE %d' %
+           (counts.get('done', 0), counts.get('running', 0), counts.get('failed', 0), counts.get('stale', 0)), 'warn')
     c.line(3)
     return 5
 
@@ -414,7 +420,7 @@ def port_mark(port, modules):
     if port.get('state') == 'uplink' and port.get('server'):
         return ' cm', 'accent'   # the provisioner itself; one space more than the other marks, so it does not crowd the number
     return {'free': ('', 'dim'), 'uplink': ('UP', 'dim'), 'unrecognized': ('UNR', 'warn'),
-            'quiet': ('LNK', 'warn'), 'boot': ('BOOT', 'run')}.get(port.get('state'), ('?', 'dim'))
+            'quiet': ('LNK', 'warn'), 'boot': ('BOOT', 'run'), 'recognized': ('OURS', 'accent')}.get(port.get('state'), ('?', 'dim'))
 
 
 def banks(switch, width):
@@ -482,6 +488,13 @@ def detail(c, x, y, width, module, now):
         c.wrap(x, y, 'Waiting for a connected module. Plug Ethernet into the provisioning switch.', width, 4, 'dim')
         return
     ink = INK.get(module.get('state'), 'dim')
+    if module.get('state') == 'recognized':
+        c.marquee(x, y, module['name'], width, 'accent')
+        c.text(x, y + 1, identity(module), 'dim', width)
+        c.marquee(x, y + 2, module['port'], width, 'dim')
+        c.text(x, y + 4, 'OUR SENSOR', 'accent', width)
+        c.wrap(x, y + 6, module.get('detail') or 'Verified sensor', width, 3, 'fg')
+        return
     c.marquee(x, y, module['name'], width, 'accent')
     c.text(x, y + 1, identity(module), 'dim', width)
     c.marquee(x, y + 2, module['port'], width, 'dim')
@@ -517,7 +530,7 @@ def desk(c, data, module, now, tick):
         c.box(width + 2, y, c.cols - width - 2, height, 'DEVICE CARD')
         detail(c, width + 4, y + 1, c.cols - width - 6, module, now)
         table_y = y + height + 1
-    table(c, table_y, data.get('modules', []), tick, data.get('unknown', []))
+    table(c, table_y, data.get('modules', []) + data.get('recognized', []), tick, data.get('unknown', []))
 
 
 def table_rows(modules, unknown):
@@ -525,7 +538,7 @@ def table_rows(modules, unknown):
     that says what it is over LLDP or CDP, or only who made its adapter): so the table tells what was plugged into the switch."""
     rows = []
     for m in modules:
-        result = progress_text(m) or ((m.get('detail') or 'Cycle ' + duration(m.get('cycle'))) + slow_suffix(m))
+        result = (m.get('detail') or 'Verified sensor') if m.get('state') == 'recognized' else (progress_text(m) or ((m.get('detail') or 'Cycle ' + duration(m.get('cycle'))) + slow_suffix(m)))
         ink = 'warn' if m.get('slow') and m['state'] == 'run' else INK.get(m['state'], 'dim')
         rows.append((safe(m['port']) + ' / ' + safe(m['name']), phase(m), result, ink))
     for u in unknown:
@@ -560,7 +573,7 @@ def table(c, y, modules, tick, unknown=()):
 def flow(c, data, module, now, tick):
     y = header(c, data, now)
     c.text(0, y, '[ WLAN Pi M4+ ] ---> [ SWITCH / PoE ] ---> [ CM4 SENSOR FLEET ]', 'accent')
-    modules = data.get('modules', [])
+    modules = data.get('modules', []) + data.get('recognized', [])
     columns = 3 if c.cols >= 150 else (2 if c.cols >= 90 else 1)
     width = (c.cols - (columns - 1) * 2) // columns
     card_height = 8
@@ -574,8 +587,9 @@ def flow(c, data, module, now, tick):
         for j, line in enumerate(['.-----.', '| CM4 |', "'-----'"]):
             c.text(x + 2, cy + 2 + j, line, ink)
         c.text(x + 12, cy + 2, phase(m), ink, width - 14)
-        c.text(x + 12, cy + 3, progress_text(m) or ((str(m['percent']) + '%') if m.get('percent') is not None else m.get('detail')), ink, width - 14)
-        c.text(x + 12, cy + 4, 'CYCLE ' + duration(m.get('cycle')), 'dim', width - 14)
+        c.text(x + 12, cy + 3, (m.get('detail') or 'Verified sensor') if m.get('state') == 'recognized' else (progress_text(m) or ((str(m['percent']) + '%') if m.get('percent') is not None else m.get('detail'))), ink, width - 14)
+        if m.get('state') != 'recognized':
+            c.text(x + 12, cy + 4, 'CYCLE ' + duration(m.get('cycle')), 'dim', width - 14)
         c.text(x + 2, cy + 6, identity(m), 'dim', width - 4)
     if not modules:
         c.text(0, y + 3, 'Waiting for connected modules.', 'dim')
@@ -585,6 +599,9 @@ def engineer(c, data, module, now, tick):
     y = header(c, data, now)
     if not module:
         detail(c, 0, y, c.cols, None, now)
+        return
+    if module.get('state') == 'recognized':
+        detail(c, 0, y, c.cols, module, now)
         return
     ink = INK.get(module['state'], 'dim')
     c.text(0, y, module['port'] + ' / ' + module['name'], 'accent')
@@ -627,7 +644,8 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
         c.wrap(0, 0, 'cmprovision HDMI: terminal too small. Need at least 60 columns and 24 rows. Use Settings > HDMI display or a smaller console font.', cols, rows, 'warn')
         return c
     modules = data.get('modules', [])
-    module = modules[selected % len(modules)] if modules else None
+    cards = modules + data.get('recognized', [])
+    module = cards[selected % len(cards)] if cards else None
     if view == 'auto':
         view = 'engineer' if module and module['state'] in ('fail', 'stale') else 'desk'
     {'desk': desk, 'flow': flow, 'engineer': engineer}.get(view, desk)(c, data, module, now, tick)
@@ -645,7 +663,7 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
         unknown = sum(p.get('state') in ('unrecognized', 'quiet') for s in data.get('switches', []) for b in s['blocks'] for p in b['ports'])
         c.text(0, rows - 4, ('! %d unrecognized/quiet ports. Open Ports in the web UI.' % unknown) if unknown else 'READ ONLY / ' + safe(data.get('clock')), 'warn' if unknown else 'dim')
     c.text(0, rows - 2, ('PAUSED' if paused else 'AUTO ROTATION') + ' / CARD %d/%d / %s' %
-           ((selected % len(modules)) + 1 if modules else 0, len(modules), view.upper()), 'dim')
+           ((selected % len(cards)) + 1 if cards else 0, len(cards), view.upper()), 'dim')
     keys = 'Alt+F1 console / Alt+F8 board / <- -> / Space pause / V view'
     c.text(max(0, cols - len(keys)), rows - 1, keys, 'dim')
     return c
@@ -754,9 +772,12 @@ def display(screen):
             config = read_config()
             update = reader.poll()
             if update is not None:
-                serial = data['modules'][selected % len(data['modules'])]['serial'] if data['modules'] else None
+                cards = data['modules'] + data.get('recognized', [])
+                previous = cards[selected % len(cards)] if cards else None
+                identity_key = (previous.get('serial'), previous.get('mac'), previous.get('port')) if previous else None
                 data = update
-                selected = next((i for i, m in enumerate(data['modules']) if m['serial'] == serial), 0)
+                cards = data['modules'] + data.get('recognized', [])
+                selected = next((i for i, m in enumerate(cards) if (m.get('serial'), m.get('mac'), m.get('port')) == identity_key), 0)
             if not paused and time.monotonic() - last_rotation >= config['rotation']:
                 selected += 1
                 tick += 1
@@ -790,7 +811,7 @@ def display(screen):
                 selected += 1
                 last_rotation = time.monotonic()
             elif key in (curses.KEY_LEFT, ord('b')):
-                selected = (selected - 1) % max(1, len(data['modules']))
+                selected = (selected - 1) % max(1, len(data['modules']) + len(data.get('recognized', [])))
                 last_rotation = time.monotonic()
             elif key == ord(' '):
                 paused = not paused

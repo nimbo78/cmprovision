@@ -1,3 +1,10 @@
+cmprovision4 (2.23.0~dev8) unstable; urgency=medium
+
+  * HDMI and FPMS: show sensors with verified marks as OURS, including
+    the flashing station and boot, separately from local provisioning runs.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 01 Nov 2026 15:21:21 +0300
+
 cmprovision4 (2.23.0~dev7) unstable; urgency=medium
 
   * Ports: identify a sensor with a verified mark from a trusted station
