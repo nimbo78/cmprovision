@@ -1,3 +1,14 @@
+cmprovision4 (2.23.0) unstable; urgency=medium
+
+  * Add the optional FPMS panel preview and fpms-lite build: read-only
+    overview, ports, device cards, errors and station details.
+  * Recognise stations and verified, temporarily marked sensors across
+    the web Ports page, HDMI and FPMS, separately from local batch results.
+  * Keep the full WLAN Pi OS FPMS package and ready-to-flash images as
+    future work; document the remaining hardware acceptance checks.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 01 Nov 2026 15:33:40 +0300
+
 cmprovision4 (2.23.0~dev8) unstable; urgency=medium
 
   * HDMI and FPMS: show sensors with verified marks as OURS, including

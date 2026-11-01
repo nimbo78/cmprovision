@@ -1,6 +1,6 @@
 # FPMS builds for cmprovision
 
-This development branch uses WLAN-Pi/wlanpi-fpms at
+The FPMS preview uses WLAN-Pi/wlanpi-fpms at
 `8beeba40a0f9d4f8045ac556a5b0780a1ce9028e` plus `portable-cmprovision.patch`.
 The patch contains the portable GPIO discovery, unchanged ST7735 driving logic,
 shared cmprovision panel, full-menu adapter, Lite entry point, tests and packaging.
