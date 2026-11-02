@@ -13,6 +13,14 @@ contents are not yet pinned to a dated snapshot, so the build is not fully repro
 sudo bash image/build.sh /path/to/empty-build-directory /path/to/cmprovision4.deb EXPECTED_SHA256
 ```
 
+To include the optional Raspberry Pi OS `fpms-lite` package, append its package path and
+independently verified SHA-256:
+
+```sh
+sudo bash image/build.sh /path/to/empty-build-directory /path/to/cmprovision4.deb CMP_SHA256 \
+    /path/to/fpms-lite.deb FPMS_SHA256
+```
+
 pi-gen's documented build dependencies are required, including arm64 QEMU/binfmt on an x86
 builder. Build paths must not contain spaces. The source tree and package must already be present
 on the builder. The build directory is retained for investigation; the script does not write
@@ -36,7 +44,9 @@ The image setup currently:
   Laravel key before nginx and the cmprovision queue workers start. Subsequent boots keep it.
 - Relies on pi-gen to reset the machine ID and generates unique SSH host keys before SSH can start.
 - Masks cmprovision DHCP/TFTP and USB boot services until an operator configures the station.
-- Installs the application package; the separate optional `fpms-lite` package is not yet bundled.
+- Optionally installs `fpms-lite`. Its display service stays off until FPMS is enabled in Settings;
+  the image setting watcher stops it again when FPMS is disabled. Enable SPI separately for a
+  compatible display and restart the station before using it; SPI is not enabled by this image.
 - Audits the root filesystem before export for unlocked build-time accounts, shared keys,
   missing first-boot dependencies and provisioning services that are not masked.
 

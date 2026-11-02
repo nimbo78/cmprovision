@@ -1,9 +1,16 @@
 #!/bin/bash -e
 
-export DEBIAN_FRONTEND=noninteractive
+export DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8
 apt-get -o Acquire::Retries=3 update
-apt-get -o Acquire::Retries=3 install --no-install-recommends -y /opt/cmprovision-image.deb
+if [ -f /opt/cmprovision-image-fpms.deb ]; then
+    apt-get -o Acquire::Retries=3 install --no-install-recommends -y /opt/cmprovision-image.deb /opt/cmprovision-image-fpms.deb
+    systemctl disable fpms-lite.service
+    systemctl enable cmprovision-image-fpms.path cmprovision-image-fpms.timer
+else
+    apt-get -o Acquire::Retries=3 install --no-install-recommends -y /opt/cmprovision-image.deb
+fi
 rm -f /opt/cmprovision-image.deb
+rm -f /opt/cmprovision-image-fpms.deb
 
 # pi-gen's base stage assigns a build-time root password. The image must never ship it.
 passwd -l root

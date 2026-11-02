@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch the optional FPMS setting
+
+[Path]
+PathChanged=/etc/default/cmprovision-fpms.json
+Unit=cmprovision-image-fpms.service
+
+[Install]
+WantedBy=multi-user.target

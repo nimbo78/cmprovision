@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply the optional cmprovision image FPMS setting
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RuntimeDirectory=cmprovision-image-fpms
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+ExecStart=/usr/lib/cmprovision/image-fpms

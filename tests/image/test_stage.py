@@ -75,6 +75,29 @@ class ImageStagingTest(unittest.TestCase):
         self.assertNotEqual(0, self.run_stage().returncode)
         self.assertEqual([], list(self.rootfs.iterdir()))
 
+    def test_optional_fpms_is_staged_with_a_guarded_service(self):
+        control = self.root / 'package/DEBIAN/control'
+        control.write_text(control.read_text().replace('Package: cmprovision4', 'Package: fpms-lite'))
+        deb = self.root / 'fpms.deb'
+        subprocess.run(['dpkg-deb', '--build', str(control.parent.parent), str(deb)],
+                       check=True, stdout=subprocess.DEVNULL)
+        self.environment['CMP_IMAGE_FPMS'] = str(deb)
+        self.environment['CMP_IMAGE_FPMS_SHA256'] = hashlib.sha256(deb.read_bytes()).hexdigest()
+        result = self.run_stage()
+        self.assertEqual(0, result.returncode, result.stderr)
+        units = self.rootfs / 'etc/systemd/system'
+        self.assertTrue((self.rootfs / 'opt/cmprovision-image-fpms.deb').is_file())
+        self.assertIn('ConditionPathExists=/run/cmprovision-image-fpms/enabled',
+                      (units / 'fpms-lite.service.d/cmprovision-image.conf').read_text())
+        self.assertTrue((units / 'cmprovision-image-fpms.path').is_file())
+        self.assertTrue((units / 'cmprovision-image-fpms.timer').is_file())
+
+    def test_invalid_optional_package_stops_before_staging_anything(self):
+        self.environment['CMP_IMAGE_FPMS'] = str(self.deb)
+        self.environment['CMP_IMAGE_FPMS_SHA256'] = '0' * 64
+        self.assertNotEqual(0, self.run_stage().returncode)
+        self.assertEqual([], list(self.rootfs.iterdir()))
+
 
 if __name__ == '__main__':
     unittest.main()

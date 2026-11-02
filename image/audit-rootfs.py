@@ -27,7 +27,17 @@ def audit(root):
             if fields[0] in entries:
                 raise ValueError('The image contains duplicate account records.')
             entries[fields[0]] = fields[1]
-    for user in ('root', 'pi'):
+    passwd = read_regular(root / 'etc/passwd')
+    accounts = {}
+    for line in passwd.splitlines():
+        fields = line.split(':')
+        if len(fields) < 7 or not fields[2].isdigit() or fields[0] in accounts:
+            raise ValueError('The image account database is invalid.')
+        accounts[fields[0]] = int(fields[2])
+    if accounts.get('root') != 0 or 'pi' not in accounts:
+        raise ValueError('The expected build-time accounts are missing.')
+    users = {name for name, uid in accounts.items() if uid == 0 or uid >= 1000}
+    for user in users:
         if user not in entries or not entries[user].startswith(('!', '*')):
             raise ValueError('The image contains an unlocked build-time account: ' + user)
     env = read_regular(root / 'var/lib/cmprovision/.env')
@@ -56,10 +66,33 @@ def audit(root):
                      '../cmprovision-image-firstboot.service'}
     if not enabled.is_symlink() or os.readlink(enabled) not in valid_targets:
         raise ValueError('The image first-boot unit is not enabled.')
+    firstboot = read_regular(units / 'cmprovision-image-firstboot.service')
+    if 'ExecStart=/usr/lib/cmprovision/image-firstboot' not in firstboot.splitlines():
+        raise ValueError('The image first-boot unit has an unexpected command.')
     helper = root / 'usr/lib/cmprovision/image-firstboot'
     info = helper.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or not (info.st_mode & 0o100):
         raise ValueError('The image first-boot helper is missing or not executable by root.')
+    if os.path.lexists(root / 'usr/lib/systemd/system/fpms-lite.service'):
+        dropin = read_regular(units / 'fpms-lite.service.d/cmprovision-image.conf')
+        if 'ConditionPathExists=/run/cmprovision-image-fpms/enabled' not in dropin.splitlines():
+            raise ValueError('The optional FPMS service is not guarded by its setting.')
+        controller = read_regular(units / 'cmprovision-image-fpms.service')
+        if 'ExecStart=/usr/lib/cmprovision/image-fpms' not in controller.splitlines():
+            raise ValueError('The optional FPMS controller has an unexpected command.')
+        helper = (root / 'usr/lib/cmprovision/image-fpms').lstat()
+        if not stat.S_ISREG(helper.st_mode) or helper.st_uid != 0 or not (helper.st_mode & 0o100):
+            raise ValueError('The optional FPMS controller is missing or not executable by root.')
+        if os.path.lexists(units / 'multi-user.target.wants/fpms-lite.service'):
+            raise ValueError('The optional FPMS service must not be enabled by default.')
+        for target, suffix in (('multi-user.target.wants', 'path'), ('timers.target.wants', 'timer')):
+            read_regular(units / ('cmprovision-image-fpms.' + suffix))
+            link = units / target / ('cmprovision-image-fpms.' + suffix)
+            if not link.is_symlink() or os.readlink(link) not in {
+                '/etc/systemd/system/cmprovision-image-fpms.' + suffix,
+                '../cmprovision-image-fpms.' + suffix,
+            }:
+                raise ValueError('The optional FPMS setting watcher is not enabled.')
 
 
 if __name__ == '__main__':

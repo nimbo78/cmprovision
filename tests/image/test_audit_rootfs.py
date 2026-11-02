@@ -20,6 +20,7 @@ class RootfsAuditTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='cmp-image-audit-')
         self.root = Path(self.temp.name)
         self.write('etc/shadow', 'root:!:1:0:99999:7:::\npi:*:1:0:99999:7:::\n')
+        self.write('etc/passwd', 'root:x:0:0:root:/root:/bin/bash\npi:x:1000:1000:pi:/home/pi:/bin/bash\n')
         self.write('var/lib/cmprovision/.env', 'APP_ENV=production\nAPP_KEY=\n')
         (self.root / 'etc/ssh').mkdir(parents=True)
         self.units = self.root / 'etc/systemd/system'
@@ -33,6 +34,8 @@ class RootfsAuditTest(unittest.TestCase):
         wants = self.units / 'multi-user.target.wants'
         wants.mkdir()
         (wants / 'cmprovision-image-firstboot.service').symlink_to('../cmprovision-image-firstboot.service')
+        self.write('etc/systemd/system/cmprovision-image-firstboot.service',
+                   '[Service]\nExecStart=/usr/lib/cmprovision/image-firstboot\n')
         self.write('usr/lib/cmprovision/image-firstboot', '#!/bin/sh\nexit 0\n')
         (self.root / 'usr/lib/cmprovision/image-firstboot').chmod(0o755)
 
@@ -57,6 +60,12 @@ class RootfsAuditTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             audit.audit(self.root)
 
+    def test_any_unlocked_regular_account_is_rejected(self):
+        self.write('etc/passwd', 'root:x:0:0:root:/root:/bin/bash\npi:x:1000:1000:pi:/home/pi:/bin/bash\nother:x:1001:1001:o:/home/o:/bin/bash\n')
+        self.write('etc/shadow', 'root:!:1:0:99999:7:::\npi:*:1:0:99999:7:::\nother:$y$hash:1:0:99999:7:::\n')
+        with self.assertRaises(ValueError):
+            audit.audit(self.root)
+
     def test_build_time_ssh_host_key_is_rejected(self):
         self.write('etc/ssh/ssh_host_ed25519_key', 'not a real key')
         with self.assertRaises(ValueError):
@@ -71,6 +80,26 @@ class RootfsAuditTest(unittest.TestCase):
         enabled = self.units / 'multi-user.target.wants/cmprovision-image-firstboot.service'
         enabled.unlink()
         enabled.symlink_to('/dev/null')
+        with self.assertRaises(ValueError):
+            audit.audit(self.root)
+
+    def test_installed_fpms_must_be_guarded_and_follow_the_setting(self):
+        self.write('usr/lib/systemd/system/fpms-lite.service', '[Service]\nExecStart=/bin/true\n')
+        with self.assertRaises(OSError):
+            audit.audit(self.root)
+        self.write('etc/systemd/system/fpms-lite.service.d/cmprovision-image.conf',
+                   '[Unit]\nConditionPathExists=/run/cmprovision-image-fpms/enabled\n')
+        self.write('etc/systemd/system/cmprovision-image-fpms.service',
+                   '[Service]\nExecStart=/usr/lib/cmprovision/image-fpms\n')
+        self.write('usr/lib/cmprovision/image-fpms', '#!/bin/sh\nexit 0\n')
+        (self.root / 'usr/lib/cmprovision/image-fpms').chmod(0o755)
+        for target, suffix in (('multi-user.target.wants', 'path'), ('timers.target.wants', 'timer')):
+            directory = self.units / target
+            directory.mkdir(exist_ok=True)
+            self.write('etc/systemd/system/cmprovision-image-fpms.' + suffix, '[Unit]\nDescription=Test\n')
+            (directory / ('cmprovision-image-fpms.' + suffix)).symlink_to('../cmprovision-image-fpms.' + suffix)
+        audit.audit(self.root)
+        (self.units / 'multi-user.target.wants/fpms-lite.service').symlink_to('/usr/lib/systemd/system/fpms-lite.service')
         with self.assertRaises(ValueError):
             audit.audit(self.root)
 
