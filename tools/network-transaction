@@ -1,0 +1,118 @@
+#!/usr/bin/python3
+"""Privileged entrypoint for guarded NetworkManager profile changes and recovery."""
+import importlib.machinery
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def module(name, filename):
+    return importlib.machinery.SourceFileLoader(name, os.path.join(HERE, filename)).load_module()
+
+
+profile = module('network_profile', 'network-profile.py')
+coordinator = module('network_transaction', 'network-transaction.py')
+store_module = module('network_store', 'network-transaction-store.py')
+backend_module = module('network_backend', 'network-transaction-backend.py')
+watchdog = module('network_watchdog', 'network-transaction-watchdog.py')
+router_module = module('network_router', 'network-transaction-router.py')
+stand_module = module('stand_backend', 'stand-network-backend.py')
+binding_module = module('stand_binding', 'stand-network-binding.py')
+dnsmasq_start = module('dnsmasq_start', 'dnsmasq-start')
+BASE = '/var/lib/cmprovision-network'
+STATE = BASE + '/transactions'
+RUNTIME = '/run/cmprovision-network'
+DATABASE = '/var/lib/cmprovision/database/database.sqlite'
+os.environ.update(PATH='/usr/sbin:/usr/bin:/sbin:/bin', LC_ALL='C')
+os.environ.pop('DBUS_SYSTEM_BUS_ADDRESS', None)
+
+
+def state_parent():
+    try:
+        os.mkdir(BASE, 0o700)
+    except FileExistsError:
+        pass
+    info = os.lstat(BASE)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
+        raise RuntimeError('The network state directory is not secure.')
+
+
+def active_runs():
+    sql = ("SELECT COUNT(*) FROM cms WHERE phase IN ('preinstall','write','verify','postinstall','firstboot') "
+           "AND (provisioning_started_at IS NULL OR datetime(provisioning_started_at) IS NULL "
+           "OR datetime(provisioning_started_at)>=datetime('now','-12 hours'));")
+    # The database and its WAL directory belong to www-data: root must never open them directly.
+    result = subprocess.run(['runuser', '-u', 'www-data', '--', 'sqlite3', '-readonly', DATABASE, sql],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10, check=False)
+    output = result.stdout.strip()
+    if result.returncode or not output.isdigit():
+        raise RuntimeError('Active provisioning runs could not be checked.')
+    return int(output) > 0
+
+
+def input_json():
+    raw = sys.stdin.buffer.read(16385)
+    if len(raw) > 16384:
+        raise RuntimeError('The network request is too large.')
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise RuntimeError('Invalid network request.')
+    return value
+
+
+def main():
+    if os.geteuid() != 0 or len(sys.argv) not in (2, 3) or sys.argv[1] not in ('init', 'recover', 'status', 'begin', 'confirm', 'cancel'):
+        raise RuntimeError('Invalid network controller invocation.')
+    action = sys.argv[1]
+    if len(sys.argv) == 3 and (action != 'recover' or not re.fullmatch(r'[0-9a-f]{32}', sys.argv[2])):
+        raise RuntimeError('Invalid network recovery identifier.')
+    state_parent()
+    files = store_module.Store(STATE, RUNTIME)
+    if action == 'init':
+        files.initialize()
+        return {'initialized': True}
+    common = backend_module.Backend(files, profile, watchdog.Watchdog(), active_runs)
+    stand = stand_module.Backend(common, binding_module.Binding(dnsmasq_start), binding_module.DnsmasqService())
+    backend = router_module.Router(common, stand)
+    tx = coordinator.NetworkTransaction(backend)
+    if action == 'recover':
+        # In a chroot, after /run was cleared, or during package removal the init unit may not
+        # have run. Recreate the guard and publish any durable pending state before recovery.
+        if not os.path.exists(files.lock_path):
+            files.initialize()
+        tx.recover(sys.argv[2] if len(sys.argv) == 3 else None)
+        return {'recovered': True}
+    request = input_json()
+    if action == 'status':
+        if request:
+            raise RuntimeError('Invalid network status request.')
+        with files.guard():
+            state = files.load()
+            if state is None:
+                return {'pending': files.pending()}
+            change = state['change']
+            selected = change['target'] if change.get('kind') == 'stand' else change
+            return {'pending': True, 'token': state['token'], 'expires_at': state['expires_at'],
+                    'device': selected['device'], 'uuid': selected['uuid'], 'kind': change.get('kind', 'profile')}
+    if action == 'begin':
+        return {'token': tx.begin(request)}
+    if set(request) != {'token'} or not isinstance(request['token'], str):
+        raise RuntimeError('Invalid network confirmation.')
+    if action == 'confirm':
+        tx.confirm(request['token'])
+        return {'confirmed': True}
+    tx.cancel(request['token'])
+    return {'cancelled': True}
+
+
+if __name__ == '__main__':
+    try:
+        print(json.dumps({'ok': True, 'result': main()}))
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError, KeyError) as exc:
+        print(json.dumps({'ok': False, 'error': str(exc)}))
+        sys.exit(1)

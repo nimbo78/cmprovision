@@ -25,6 +25,7 @@ use App\Services\LabelPrinter;
 use App\Support\ImagePieces;
 use App\Support\ModuleDiagnostics;
 use App\Services\ModuleOperationLock;
+use App\Services\NetworkChangeGate;
 use App\Services\Sensor\ModuleMark;
 use App\Services\Sensor\ReprovisionAgent;
 use App\Services\Sensor\ProvisionerKey;
@@ -181,10 +182,14 @@ exit 1
 
     public function startProvisoning(Request $req)
     {
-        // a module may say a serial that another row has: the start holds the lock of the row it is, and of the serial it said
-        $serials = array_unique(array_filter([$this->serial, $this->findForStart($req)?->serial]));
+        // The root network transaction takes this lock when checking active runs and setting its pending flag.
+        // Keep it until the new run's active phase is saved, so a change cannot race a module just starting.
+        return app(NetworkChangeGate::class)->start(function () use ($req) {
+            // a module may say a serial that another row has: hold the lock of both serials
+            $serials = array_unique(array_filter([$this->serial, $this->findForStart($req)?->serial]));
 
-        return ModuleOperationLock::run($serials, fn () => $this->startLockedProvisioning($req));
+            return ModuleOperationLock::run($serials, fn () => $this->startLockedProvisioning($req));
+        });
     }
 
     /* The module of a start. The MAC is its key: a module is found by it first. One that comes with another MAC but a

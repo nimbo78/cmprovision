@@ -2,6 +2,17 @@
 
 set -e
 
+# Do not remove or replace the recovery helper while an unconfirmed network change depends on it.
+# Recovery is idempotent when no transaction is pending; a conflict stops package removal/upgrade.
+if [ "$1" = "upgrade" ] || [ "$1" = "remove" ]; then
+    if [ -x /usr/lib/cmprovision/network-transaction ]; then
+        /usr/lib/cmprovision/network-transaction recover || {
+            echo "Cannot replace cmprovision while network recovery needs attention." >&2
+            exit 1
+        }
+    fi
+fi
+
 # Release the optional FPMS data consumer before application code changes or leaves.
 # The normal FPMS process belongs to its own package and continues to run.
 # The shared data producer goes too: it is a long-running PHP process and would keep the old code (it no longer follows

@@ -1,0 +1,260 @@
+#!/usr/bin/python3
+"""Manage cmprovision-owned, additional tagged static networks (not the provisioning network).
+
+Only fixed commands are accepted. Arguments come from JSON on stdin and are revalidated as root.
+This helper does not move an address or change the default route of an existing connection.
+"""
+import hashlib
+import fcntl
+import ipaddress
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import uuid
+
+os.environ.update(PATH='/usr/sbin:/usr/bin:/sbin:/bin', LC_ALL='C')
+STATE_DIR = '/var/lib/cmprovision-network/vlans'
+STAND = ipaddress.ip_network('172.20.0.0/16')
+IFNAME = re.compile(r'^[A-Za-z0-9_.-]{1,15}$')
+
+
+class Refused(Exception):
+    pass
+
+
+def run(*args):
+    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30, check=False)
+    if result.returncode:
+        raise Refused('NetworkManager could not complete the request: ' + result.stderr.strip()[:240])
+    return result.stdout.strip()
+
+
+def state_directory():
+    # The directory and all of its ancestors must be root-owned and not writable by untrusted users.
+    for directory in ('/var/lib/cmprovision-network', STATE_DIR):
+        try:
+            os.mkdir(directory, 0o700)
+        except FileExistsError:
+            pass
+        info = os.lstat(directory)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise Refused('The VLAN state directory is not secure.')
+
+
+def store(record):
+    state_directory()
+    path = os.path.join(STATE_DIR, record['uuid'] + '.json')
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as output:
+        json.dump(record, output, separators=(',', ':'))
+        output.flush()
+        os.fsync(output.fileno())
+
+
+def load(connection):
+    state_directory()
+    try:
+        parsed = uuid.UUID(connection)
+        if str(parsed) != connection:
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError):
+        raise Refused('Invalid connection identifier.')
+    path = os.path.join(STATE_DIR, connection + '.json')
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, encoding='utf-8') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077 or info.st_size > 4096:
+                raise Refused('The VLAN state file is not secure.')
+            data = json.load(source)
+    except (FileNotFoundError, ValueError, OSError):
+        raise Refused('This connection is not managed by cmprovision.')
+    if not isinstance(data, dict) or data.get('uuid') != connection:
+        raise Refused('The VLAN state file is invalid.')
+    return data, path
+
+
+def command_json(*args):
+    try:
+        data = json.loads(run(*args))
+    except ValueError:
+        raise Refused('Could not read the current network configuration.')
+    if not isinstance(data, list):
+        raise Refused('Could not read the current network configuration.')
+    return data
+
+
+def validate(parent, vlan_id, address, devices, parent_is_physical):
+    if not isinstance(parent, str) or not IFNAME.fullmatch(parent) or not parent_is_physical(parent):
+        raise Refused('Choose a physical Ethernet interface managed by NetworkManager.')
+    if type(vlan_id) is not int or not 1 <= vlan_id <= 4094:
+        raise Refused('VLAN ID must be between 1 and 4094.')
+    if address == '':
+        return ''  # a dedicated layer-2 VLAN can later carry the provisioning network
+    try:
+        iface = ipaddress.ip_interface(address)
+    except (TypeError, ValueError):
+        raise Refused('Enter a valid IPv4 address with a prefix, for example 192.168.50.10/24.')
+    if iface.version != 4 or not 1 <= iface.network.prefixlen <= 30 or iface.ip.is_multicast or iface.ip.is_loopback \
+            or iface.ip.is_unspecified or iface.ip.is_link_local or iface.ip.is_reserved \
+            or iface.ip in ipaddress.ip_network('0.0.0.0/8') or iface.ip in (iface.network.network_address, iface.network.broadcast_address):
+        raise Refused('Enter a usable IPv4 host address and prefix.')
+    if iface.network.overlaps(STAND):
+        raise Refused('The address overlaps the provisioning network 172.20.0.0/16.')
+    for dev in devices:
+        for existing in dev.get('addr_info', []):
+            if existing.get('family') != 'inet' or existing.get('scope') != 'global':
+                continue
+            try:
+                network = ipaddress.ip_interface(str(existing['local']) + '/' + str(existing['prefixlen'])).network
+            except (ValueError, KeyError):
+                raise Refused('An existing interface address could not be checked.')
+            if iface.network.overlaps(network):
+                raise Refused('The address overlaps an existing connected network.')
+    return str(iface)
+
+
+def physical(name):
+    path = '/sys/class/net/' + name
+    if not os.path.isdir(path + '/device'):
+        return False
+    try:
+        with open(path + '/type', encoding='ascii') as source:
+            if source.read().strip() != '1':
+                return False
+        return run('nmcli', '-g', 'GENERAL.TYPE', 'device', 'show', name) == 'ethernet'
+    except (OSError, Refused):
+        return False
+
+
+def add(payload):
+    if set(payload) != {'parent', 'vlan_id', 'address'}:
+        raise Refused('Invalid VLAN request.')
+    parent, vlan_id = payload['parent'], payload['vlan_id']
+    devices = command_json('ip', '-j', '-4', 'address', 'show')
+    address = validate(parent, vlan_id, payload['address'], devices, physical)
+    links = command_json('ip', '-j', '-d', 'link', 'show')
+    parent_link = next((item for item in links if item.get('ifname') == parent), None)
+    if parent_link is None:
+        raise Refused('The Ethernet interface disappeared.')
+    parent_uuid = run('nmcli', '-g', 'GENERAL.CON-UUID', 'device', 'show', parent)
+    interface = 'cv' + hashlib.sha256(parent.encode('ascii')).hexdigest()[:6] + str(vlan_id)
+    # A saved but inactive profile is not present in the kernel link list.
+    profiles = []
+    for line in run('nmcli', '-t', '-f', 'UUID,TYPE', 'connection', 'show').splitlines():
+        profile, separator, kind = line.partition(':')
+        if separator:
+            saved_iface = run('nmcli', '-g', 'connection.interface-name', 'connection', 'show', 'uuid', profile)
+            if saved_iface == interface:
+                raise Refused('A saved profile already uses the generated interface name.')
+            profiles.append((profile, kind, saved_iface))
+    parent_profiles = {parent, parent_uuid} | {profile for profile, kind, name in profiles
+                                               if kind == '802-3-ethernet' and name == parent}
+    for profile, kind, _ in profiles:
+        if kind == 'vlan':
+            details = run('nmcli', '-g', 'vlan.parent,vlan.id', 'connection', 'show', 'uuid', profile).splitlines()
+            if len(details) == 2 and details[0] in parent_profiles and details[1] == str(vlan_id):
+                raise Refused('A saved profile already uses this VLAN on the Ethernet interface.')
+    # Reject a live VLAN with the same parent/tag regardless of who created it.
+    for link in links:
+        info = link.get('linkinfo', {})
+        if info.get('info_kind') == 'vlan' and info.get('info_data', {}).get('id') == vlan_id \
+                and (link.get('link') == parent or link.get('link_index') == parent_link.get('ifindex')):
+            raise Refused('This VLAN already exists on the Ethernet interface.')
+    connection = str(uuid.uuid4())
+    if any(link.get('ifname') == interface for link in links):
+        raise Refused('The generated interface name is already in use.')
+    record = {'uuid': connection, 'parent': parent, 'id': vlan_id, 'interface': interface, 'address': address}
+    store(record)
+    try:
+        ipv4 = ['ipv4.method', 'manual', 'ipv4.addresses', address] if address else ['ipv4.method', 'disabled']
+        run('nmcli', 'connection', 'add', 'type', 'vlan', 'ifname', interface, 'dev', parent, 'id', str(vlan_id),
+            'connection.id', 'cmprovision-vlan-' + connection, 'connection.uuid', connection,
+            'connection.autoconnect', 'no', *ipv4, 'ipv4.never-default', 'yes', 'ipv6.method', 'disabled')
+        run('nmcli', '--wait', '20', 'connection', 'up', 'uuid', connection)
+        run('nmcli', 'connection', 'modify', 'uuid', connection, 'connection.autoconnect', 'yes')
+    except (Refused, OSError, subprocess.SubprocessError):
+        try:
+            run('nmcli', 'connection', 'delete', 'uuid', connection)
+        except (Refused, OSError, subprocess.SubprocessError):
+            # Keep the root-owned record if cleanup is uncertain, so it can be removed later.
+            raise
+        os.unlink(os.path.join(STATE_DIR, connection + '.json'))
+        raise
+    return record
+
+
+def remove(payload):
+    if set(payload) != {'uuid'}:
+        raise Refused('Invalid VLAN request.')
+    record, path = load(payload['uuid'])
+    connection = record['uuid']
+    details = run('nmcli', '-g', 'connection.id,connection.type,connection.interface-name,vlan.parent,vlan.id,'
+                  'ipv4.method,ipv4.addresses,ipv4.never-default,ipv6.method',
+                  'connection', 'show', 'uuid', connection).splitlines()
+    method = 'manual' if record['address'] else 'disabled'
+    if details != ['cmprovision-vlan-' + connection, 'vlan', record['interface'], record['parent'], str(record['id']),
+                   method, record['address'], 'yes', 'disabled']:
+        raise Refused('This profile has changed outside cmprovision; use system network tools to manage it.')
+    devices = command_json('ip', '-j', '-4', 'address', 'show')
+    for device in devices:
+        if device.get('ifname') == record['interface']:
+            for address in device.get('addr_info', []):
+                try:
+                    if ipaddress.ip_address(address.get('local', '')) in STAND:
+                        raise Refused('The provisioning network is using this VLAN.')
+                except ValueError:
+                    raise Refused('The VLAN addresses could not be checked.')
+    active = set(run('nmcli', '-g', 'UUID', 'connection', 'show', '--active').splitlines())
+    if connection in active:
+        raise Refused('This VLAN is active. Disconnect it using the system network tools before removing it.')
+    run('nmcli', 'connection', 'delete', 'uuid', connection)
+    os.unlink(path)
+    return {'uuid': connection}
+
+
+def list_managed(payload):
+    if payload:
+        raise Refused('Invalid VLAN request.')
+    profiles = set(run('nmcli', '-g', 'UUID', 'connection', 'show').splitlines())
+    active = set(run('nmcli', '-g', 'UUID', 'connection', 'show', '--active').splitlines())
+    result = []
+    for name in sorted(os.listdir(STATE_DIR)):
+        if not re.fullmatch(r'[0-9a-f-]{36}\.json', name):
+            continue
+        record, _ = load(name[:-5])
+        result.append({**record, 'present': record['uuid'] in profiles, 'active': record['uuid'] in active})
+    return result
+
+
+def main():
+    if os.geteuid() != 0 or len(sys.argv) != 2 or sys.argv[1] not in ('add', 'remove', 'list'):
+        raise Refused('Invalid helper invocation.')
+    raw = sys.stdin.buffer.read(4097)
+    if len(raw) > 4096:
+        raise Refused('The request is too large.')
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise Refused('Invalid VLAN request.')
+    state_directory()
+    lock = os.open(os.path.join(STATE_DIR, '.lock'), os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    info = os.fstat(lock)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
+        raise Refused('The VLAN lock file is not secure.')
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    try:
+        result = {'add': add, 'remove': remove, 'list': list_managed}[sys.argv[1]](payload)
+    finally:
+        os.close(lock)
+    print(json.dumps({'ok': True, 'result': result}))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (Refused, ValueError, OSError, subprocess.SubprocessError) as exc:
+        print(json.dumps({'ok': False, 'error': str(exc)}))
+        sys.exit(1)

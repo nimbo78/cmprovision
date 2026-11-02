@@ -75,10 +75,15 @@ fi
 VER=$(dpkg-query -W -f='${Version}' cmprovision4 2>/dev/null || echo unknown)
 OUT="$DEST/$(date +%Y%m%d-%H%M%S)-$VER"
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
+# A snapshot of an unconfirmed network move could combine the old and new interfaces.
+if [ -e /run/cmprovision-network/pending ] || [ -e /var/lib/cmprovision-network/transactions/pending.json ]; then
+    echo "Confirm or recover the pending network change before making a backup." >&2; exit 1
+fi
 # The snapshot holds .env (APP_KEY), password hashes, printer and SNMP credentials: root-only.
 umask 077
 mkdir -p -m 700 "$DEST"
 mkdir -m 700 "$OUT"
+: > "$OUT/.incomplete"
 
 # The web user makes the copy, in a directory of its own: the database is in WAL, and a root sqlite3 would open the
 # -wal and -shm files in the web user's directory, where a planted symlink would have root write to or chown any file.
@@ -95,11 +100,27 @@ EXCLUDE="--exclude=$APP/public/uploads"
 # shellcheck disable=SC2086
 tar czf "$OUT/app.tar.gz" --warning=no-file-changed --exclude="$APP/database/database.sqlite*" $EXCLUDE "$APP" || [ $? = 1 ]
 
+# Serialize the network part with a new network change. This lock is held only for the small
+# system configuration archive, not while copying large uploaded images or the database.
+NETWORK_LOCK=/run/cmprovision-network/provisioning.lock
+NETWORK_LOCKED=0
+if [ -x /usr/lib/cmprovision/network-transaction ] || [ -e "$NETWORK_LOCK" ]; then
+    [ -f "$NETWORK_LOCK" ] && [ ! -L "$NETWORK_LOCK" ] || { echo "The network guard is unavailable." >&2; exit 1; }
+    exec 9< "$NETWORK_LOCK"
+    flock -w 10 9 || { echo "The network is changing; try the backup again." >&2; exit 1; }
+    NETWORK_LOCKED=1
+fi
+if [ -e /run/cmprovision-network/pending ] || [ -e /var/lib/cmprovision-network/transactions/pending.json ]; then
+    echo "Confirm or recover the pending network change before making a backup." >&2; exit 1
+fi
 tar czf "$OUT/system-config.tar.gz" --ignore-failed-read \
     /etc/nginx/sites-available/cmprovision /etc/php/*/fpm/php.ini \
     /etc/sudoers.d/010_cmprovision /etc/dhcpcd.conf /etc/NetworkManager/system-connections \
+    /var/lib/cmprovision-network/vlans \
     /lib/systemd/system/cmprovision-*.service /lib/systemd/system/cmprovision-*.timer \
-    /etc/default/cmprovision-uplink /etc/default/cmprovision-wallboard.json /etc/default/cmprovision-fpms.json 2>/dev/null || true
+    /etc/default/cmprovision-uplink /etc/default/cmprovision-wallboard.json /etc/default/cmprovision-fpms.json \
+    /etc/default/cmprovision-stand-interface 2>/dev/null || true
+if [ "$NETWORK_LOCKED" = 1 ]; then flock -u 9; exec 9<&-; fi
 
 if command -v dpkg-repack >/dev/null 2>&1; then
     (cd "$OUT" && dpkg-repack cmprovision4 >/dev/null 2>&1) || echo "dpkg-repack failed; restore will keep the installed package" >&2
@@ -112,4 +133,5 @@ if [ "$DEST" = "$DEFAULT_DEST" ]; then
     prune
 fi
 
+rm -f "$OUT/.incomplete"
 du -sh "$OUT" | awk '{print "backup written to '"$OUT"' (" $1 ")"}'

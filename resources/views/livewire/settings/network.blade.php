@@ -1,5 +1,9 @@
 <livewire:wifi-settings />
 
+<livewire:network-settings />
+
+<livewire:vlan-status />
+
 <livewire:switch-settings />
 
 <x-settings-card title="DHCP static addresses" description="Modules and devices that always get the same address from the DHCP server." id="dhcp">

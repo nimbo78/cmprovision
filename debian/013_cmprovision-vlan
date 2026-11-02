@@ -1,0 +1,3 @@
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/vlan-networks list
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/vlan-networks add
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/vlan-networks remove

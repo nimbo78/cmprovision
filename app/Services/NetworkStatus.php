@@ -286,7 +286,7 @@ class NetworkStatus
         }
         foreach (explode("\n", trim($list)) as $line) {
             $f = explode(':', $line);
-            if (count($f) < 4 || $f[3] === 'yes' || !in_array($f[1], ['802-11-wireless', '802-3-ethernet'], true)) {
+            if (count($f) < 4 || $f[3] === 'yes' || !in_array($f[1], ['802-11-wireless', '802-3-ethernet', 'vlan'], true)) {
                 continue;
             }
             $values = $this->run('timeout 3 nmcli -g connection.id,connection.autoconnect,ipv4.route-metric,ipv4.never-default'
@@ -296,7 +296,7 @@ class NetworkStatus
                 continue;
             }
             // -1: NetworkManager's default, 100 for Ethernet and 600 for Wi-Fi
-            $metric = (int) $v[2] >= 0 ? (int) $v[2] : ($f[1] === '802-3-ethernet' ? 100 : 600);
+            $metric = (int) $v[2] >= 0 ? (int) $v[2] : (in_array($f[1], ['802-3-ethernet', 'vlan'], true) ? 100 : 600);
             if ($metric < $uplinkMetric) {
                 return $v[0];
             }

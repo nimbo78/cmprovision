@@ -25,6 +25,7 @@ SRC=${1:?usage: restore.sh [--data-only] [--force] <snapshot directory>}
 APP=/var/lib/cmprovision
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
 [ -f "$SRC/app.tar.gz" ] || { echo "$SRC: not a backup directory" >&2; exit 1; }
+[ ! -e "$SRC/.incomplete" ] || { echo "$SRC: the backup did not finish; refusing to restore it" >&2; exit 1; }
 # the version is the end of the directory name cmprovision-backup gives: <date>-<time>-<version>
 SNAPVER=$(basename "$SRC" | sed -n 's/^[0-9]\{8\}-[0-9]\{6\}-//p')
 INSTALLED=$(dpkg-query -W -f='${Version}' cmprovision4 2>/dev/null || true)
@@ -92,6 +93,15 @@ if [ "$DATA_ONLY" = 1 ]; then
     # the snapshot may come from an older version
     runuser -u www-data -- "$APP/artisan" migrate --force
 else
+    # An older/full snapshot without the stand-interface file represents the legacy unbound
+    # service. Do not retain a later override after restoring that snapshot.
+    STAND_LIST=$(mktemp)
+    if tar tzf "$SRC/system-config.tar.gz" > "$STAND_LIST" 2>/dev/null; then
+        if ! grep -Fxq 'etc/default/cmprovision-stand-interface' "$STAND_LIST"; then
+            rm -f /etc/default/cmprovision-stand-interface
+        fi
+    fi
+    rm -f "$STAND_LIST"
     tar xzf "$SRC/system-config.tar.gz" -C / 2>/dev/null || true
 fi
 

@@ -1,0 +1,4 @@
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/network-transaction status
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/network-transaction begin
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/network-transaction confirm
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/network-transaction cancel
