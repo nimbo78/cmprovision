@@ -1,0 +1,12 @@
+[Unit]
+Description=Create a unique cmprovision key on the first image boot
+After=local-fs.target
+Before=ssh.service nginx.service cmprovision-queue.service cmprovision-queue-images.service cmprovision-wallboard-data.service cmprovision-fpms-data.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/cmprovision/image-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
