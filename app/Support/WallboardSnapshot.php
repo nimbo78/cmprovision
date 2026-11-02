@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Cm;
 use App\Models\Project;
+use App\Models\Setting;
 use App\Models\UsbDiagnosticReport;
 use App\Services\Fpms;
 use App\Services\OuiVendors;
@@ -93,6 +94,9 @@ class WallboardSnapshot
             'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown, 'recognized' => $recognized,
             // how the FPMS panel looks (Settings → Provisioning → FPMS display); an older panel does not read it
             'panel' => FpmsPanelSettings::get(),
+            // Both local displays use the same station-wide sunrise calculation as the web UI.
+            'display_auto_mode' => DisplaySunMode::auto(now()->toDateTimeImmutable(), SunPlace::forZone(config('app.display_timezone'))),
+            'hdmi_auto_mode' => Setting::find('hdmi_color_mode')?->value === 'auto',
             // for the FPMS panel only: the address and the interface come from NetworkManager and iw, which HDMI never needed
             'station' => app(Fpms::class)->settings()['enabled'] ? DisplayStation::current() : null];
     }
