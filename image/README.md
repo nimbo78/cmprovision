@@ -99,6 +99,22 @@ connected to a production provisioning VLAN while performing the test.
    Confirm DHCP/TFTP traffic remains on the intended segment. Upload a sensor OS image, create
    a test project and only then connect a disposable sensor. Record its complete provisioning cycle.
 
+The image can also be written to a station by another cmprovision server over network boot.
+The writing server uses its **active project** for newly booting devices, so isolate the test or,
+for a fresh image with no resumable writes, use a pre-install check which refuses every serial
+except the intended station. A resumed write skips pre-install scripts, so such a check is not a
+general substitute for isolation. Verify the image before post-install scripts resize its partitions
+or make other intentional changes. Leave EEPROM flashing out of the project unless it is explicitly
+part of the test.
+
+For a headless test, prepare a **station-specific copy** with Raspberry Pi OS's first-user
+configuration and an SSH public key, and enable SSH on first boot. Keep the generic image free
+of user credentials. cmprovision serves project images to modules over HTTP: do not put reusable
+Wi-Fi passwords in a project image. Instead, connect over the isolated stand network and transfer
+the Wi-Fi profile over authenticated SSH after first boot. Set the correct Wi-Fi country for the
+site and make the provisioning Ethernet connection `never-default` before relying on Wi-Fi for
+management. The first-boot OS check reports the OS state; it does not test the web login or FPMS.
+
 Before calling an image ready, verify its actual first-boot user setup, SSH host-key regeneration,
 two independent application keys, networking, explicit stand activation, web login, HDMI, optional
 FPMS, updates, a power cycle and a real sensor flash. Check that no build-host secrets are present.
