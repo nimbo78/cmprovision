@@ -41,6 +41,20 @@ class FpmsPathIntegrationTest(unittest.TestCase):
                     while not fired.exists() and time.monotonic() < end:
                         time.sleep(0.1)
                     self.assertTrue(fired.exists(), 'systemd did not observe an atomic settings update')
+                    # The file appears just before the oneshot process exits. A second
+                    # update while that service is still active may be coalesced by
+                    # systemd; wait until it is ready for another independent event.
+                    state = None
+                    end = time.monotonic() + 10
+                    while time.monotonic() < end:
+                        state = subprocess.run(
+                            ['systemctl', 'show', name + '.service', '--property=ActiveState', '--value'],
+                            check=True, capture_output=True, text=True,
+                        ).stdout.strip()
+                        if state == 'inactive':
+                            break
+                        time.sleep(0.1)
+                    self.assertEqual(state, 'inactive', 'systemd oneshot did not finish')
                     fired.unlink()
             finally:
                 subprocess.run(['systemctl', 'stop', name + '.path'], check=False,
