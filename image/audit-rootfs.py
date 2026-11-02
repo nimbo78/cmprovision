@@ -69,6 +69,9 @@ def audit(root):
     firstboot = read_regular(units / 'cmprovision-image-firstboot.service')
     if 'ExecStart=/usr/lib/cmprovision/image-firstboot' not in firstboot.splitlines():
         raise ValueError('The image first-boot unit has an unexpected command.')
+    after = [line.partition('=')[2].split() for line in firstboot.splitlines() if line.startswith('After=')]
+    if not any('sshd-keygen.service' in names for names in after):
+        raise ValueError('SSH host key generation is not ordered before image first boot.')
     helper = root / 'usr/lib/cmprovision/image-firstboot'
     info = helper.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or not (info.st_mode & 0o100):

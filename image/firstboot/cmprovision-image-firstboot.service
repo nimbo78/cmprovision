@@ -1,6 +1,6 @@
 [Unit]
 Description=Create a unique cmprovision key on the first image boot
-After=local-fs.target systemd-random-seed.service
+After=local-fs.target systemd-random-seed.service sshd-keygen.service
 Before=ssh.service nginx.service cmprovision-queue.service cmprovision-queue-images.service cmprovision-wallboard-data.service cmprovision-fpms-data.service
 
 [Service]

@@ -35,7 +35,7 @@ class RootfsAuditTest(unittest.TestCase):
         wants.mkdir()
         (wants / 'cmprovision-image-firstboot.service').symlink_to('../cmprovision-image-firstboot.service')
         self.write('etc/systemd/system/cmprovision-image-firstboot.service',
-                   '[Service]\nExecStart=/usr/lib/cmprovision/image-firstboot\n')
+                   '[Unit]\nAfter=sshd-keygen.service\n[Service]\nExecStart=/usr/lib/cmprovision/image-firstboot\n')
         self.write('usr/lib/cmprovision/image-firstboot', '#!/bin/sh\nexit 0\n')
         (self.root / 'usr/lib/cmprovision/image-firstboot').chmod(0o755)
 
