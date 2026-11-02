@@ -3,11 +3,11 @@
 export DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8
 apt-get -o Acquire::Retries=3 update
 if [ -f /opt/cmprovision-image-fpms.deb ]; then
-    apt-get -o Acquire::Retries=3 install --no-install-recommends -y /opt/cmprovision-image.deb /opt/cmprovision-image-fpms.deb
+    apt-get -o Acquire::Retries=3 install --no-install-recommends -y firmware-iwlwifi /opt/cmprovision-image.deb /opt/cmprovision-image-fpms.deb
     systemctl disable fpms-lite.service
     systemctl enable cmprovision-image-fpms.path cmprovision-image-fpms.timer
 else
-    apt-get -o Acquire::Retries=3 install --no-install-recommends -y /opt/cmprovision-image.deb
+    apt-get -o Acquire::Retries=3 install --no-install-recommends -y firmware-iwlwifi /opt/cmprovision-image.deb
 fi
 rm -f /opt/cmprovision-image.deb
 rm -f /opt/cmprovision-image-fpms.deb
