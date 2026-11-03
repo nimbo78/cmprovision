@@ -105,7 +105,9 @@ for a fresh image with no resumable writes, use a pre-install check which refuse
 except the intended station. A resumed write skips pre-install scripts, so such a check is not a
 general substitute for isolation. Verify the image before post-install scripts resize its partitions
 or make other intentional changes. Leave EEPROM flashing out of the project unless it is explicitly
-part of the test.
+part of the test. Raspberry Pi OS can also schedule EEPROM updates itself: this image retains the OS
+default for `rpi-eeprom-update.service`. If the test must preserve the current bootloader, mask that
+service on the written system before its first boot and record that the hardware test used this change.
 
 For a headless test, prepare a **station-specific copy** with Raspberry Pi OS's first-user
 configuration and an SSH public key, and enable SSH on first boot. Keep the generic image free
