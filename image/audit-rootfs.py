@@ -19,6 +19,15 @@ def read_regular(path, limit=131072):
 
 
 def audit(root):
+    package_status = read_regular(root / 'var/lib/dpkg/status', limit=8388608)
+    intel_entries = [entry for entry in package_status.split('\n\n')
+                     if 'Package: firmware-iwlwifi' in entry.splitlines()]
+    if len(intel_entries) != 1 or 'Status: install ok installed' not in intel_entries[0].splitlines():
+        raise ValueError('The Intel Wi-Fi firmware package is not installed.')
+    firmware_dirs = (root / 'usr/lib/firmware', root / 'lib/firmware')
+    if not any(any(path.is_file() for path in directory.glob('iwlwifi-cc-a0-*.ucode*'))
+               for directory in firmware_dirs):
+        raise ValueError('The Intel AX200 Wi-Fi firmware is missing.')
     shadow = read_regular(root / 'etc/shadow')
     entries = {}
     for line in shadow.splitlines():

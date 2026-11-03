@@ -19,6 +19,8 @@ class RootfsAuditTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='cmp-image-audit-')
         self.root = Path(self.temp.name)
+        self.write('var/lib/dpkg/status', 'Package: firmware-iwlwifi\nStatus: install ok installed\n\n')
+        self.write('usr/lib/firmware/iwlwifi-cc-a0-77.ucode', 'test firmware')
         self.write('etc/shadow', 'root:!:1:0:99999:7:::\npi:*:1:0:99999:7:::\n')
         self.write('etc/passwd', 'root:x:0:0:root:/root:/bin/bash\npi:x:1000:1000:pi:/home/pi:/bin/bash\n')
         self.write('var/lib/cmprovision/.env', 'APP_ENV=production\nAPP_KEY=\n')
@@ -49,6 +51,16 @@ class RootfsAuditTest(unittest.TestCase):
 
     def test_safe_image_passes(self):
         audit.audit(self.root)
+
+    def test_missing_or_unconfigured_intel_firmware_is_rejected(self):
+        firmware = self.root / 'usr/lib/firmware/iwlwifi-cc-a0-77.ucode'
+        firmware.unlink()
+        with self.assertRaises(ValueError):
+            audit.audit(self.root)
+        self.write('usr/lib/firmware/iwlwifi-cc-a0-77.ucode', 'test firmware')
+        self.write('var/lib/dpkg/status', 'Package: firmware-iwlwifi\nStatus: install ok unpacked\n\n')
+        with self.assertRaises(ValueError):
+            audit.audit(self.root)
 
     def test_shared_key_is_rejected(self):
         self.write('var/lib/cmprovision/.env', 'APP_KEY=base64:shared\n')
