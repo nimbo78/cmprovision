@@ -96,8 +96,10 @@ connected to a production provisioning VLAN while performing the test.
    systemctl status cmprovision-dnsmasq.service cmprovision-rpiboot.service
    ```
 
-   Confirm DHCP/TFTP traffic remains on the intended segment. Upload a sensor OS image, create
-   a test project and only then connect a disposable sensor. Record its complete provisioning cycle.
+   Confirm DHCP/TFTP traffic remains on the intended segment. Select the intended Utility OS
+   in Settings; the hardware test described below explicitly selected 64-bit version 2026.10.2.
+   Upload a sensor OS image, create a test project and only then connect a disposable sensor.
+   Record its complete provisioning cycle.
 
 The image can also be written to a station by another cmprovision server over network boot.
 The writing server uses its **active project** for newly booting devices, so isolate the test or,
@@ -123,8 +125,15 @@ management. The first-boot OS check reports the OS state; it does not test the w
 A station-specific derivative of the Intel-enabled image has been network-flashed to a CM4,
 verified, booted and rebooted. The image's own resize expanded eMMC, and Intel AX200 firmware
 loaded on first boot. That test added one-time user/SSH configuration and masked automatic EEPROM
-updates before boot. A clean installation with Raspberry Pi Imager and a sensor flash from the new
-station remain to be checked.
+updates before boot. The resulting station also provisioned a CM4 through a tagged VLAN and an
+untagged sensor port: network boot, split-image writing, SHA-256 verification, partition resizing
+and the first-boot OS check completed in 7 minutes 19 seconds. The sensor booted WLAN Pi OS 26.10,
+but reported `systemd: degraded` because `wlanpi-firefox-setup.service` failed. The test project had
+omitted the Firefox workaround used by the existing stand; it was added afterwards, and a clean
+first boot with that workaround has not yet been repeated. The sensor password was not changed.
+The test used temporary administrator-configured addresses and interface binding; it does not
+validate automatic promotion of a secondary station to a primary one through the web UI.
+A clean installation with Raspberry Pi Imager and the remaining checks below are still outstanding.
 
 Before calling an image ready, verify its actual first-boot user setup, SSH host-key regeneration,
 two independent application keys, networking, explicit stand activation, web login, HDMI, optional
