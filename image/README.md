@@ -120,6 +120,12 @@ the Wi-Fi profile over authenticated SSH after first boot. Set the correct Wi-Fi
 site and make the provisioning Ethernet connection `never-default` before relying on Wi-Fi for
 management. The first-boot OS check reports the OS state; it does not test the web login or FPMS.
 
+A station-specific derivative of the Intel-enabled image has been network-flashed to a CM4,
+verified, booted and rebooted. The image's own resize expanded eMMC, and Intel AX200 firmware
+loaded on first boot. That test added one-time user/SSH configuration and masked automatic EEPROM
+updates before boot. A clean installation with Raspberry Pi Imager and a sensor flash from the new
+station remain to be checked.
+
 Before calling an image ready, verify its actual first-boot user setup, SSH host-key regeneration,
 two independent application keys, networking, explicit stand activation, web login, HDMI, optional
 FPMS, updates, a power cycle and a real sensor flash. Check that no build-host secrets are present.
