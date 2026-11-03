@@ -108,6 +108,9 @@ or make other intentional changes. Leave EEPROM flashing out of the project unle
 part of the test. Raspberry Pi OS can also schedule EEPROM updates itself: this image retains the OS
 default for `rpi-eeprom-update.service`. If the test must preserve the current bootloader, mask that
 service on the written system before its first boot and record that the hardware test used this change.
+After the test, a station whose bootloader falls back to network boot can still receive whatever
+project is active on that shared stand if its own system stops booting. Isolate it from the stand
+or arrange an explicit safeguard before relying on unattended recovery.
 
 For a headless test, prepare a **station-specific copy** with Raspberry Pi OS's first-user
 configuration and an SSH public key, and enable SSH on first boot. Keep the generic image free
