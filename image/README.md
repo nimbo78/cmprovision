@@ -128,10 +128,10 @@ verified, booted and rebooted. The image's own resize expanded eMMC, and Intel A
 loaded on first boot. That test added one-time user/SSH configuration and masked automatic EEPROM
 updates before boot. The resulting station also provisioned a CM4 through a tagged VLAN and an
 untagged sensor port: network boot, split-image writing, SHA-256 verification, partition resizing
-and the first-boot OS check completed in 7 minutes 19 seconds. The sensor booted WLAN Pi OS 26.10,
-but reported `systemd: degraded` because `wlanpi-firefox-setup.service` failed. The test project had
-omitted the Firefox workaround used by the existing stand; it was added afterwards, and a clean
-first boot with that workaround has not yet been repeated. The sensor password was not changed.
+and the first-boot OS check completed in 7 minutes 19 seconds. The first run omitted the existing
+stand's Firefox workaround and WLAN Pi OS 26.10 reported `systemd: degraded`. A repeat with that
+post-install script completed in 7 minutes 2 seconds: verification and the OS check passed, and
+systemd reported `running` with no failed units.
 The test used temporary administrator-configured addresses and interface binding; it does not
 validate automatic promotion of a secondary station to a primary one through the web UI.
 A clean installation with Raspberry Pi Imager and the remaining checks below are still outstanding.
