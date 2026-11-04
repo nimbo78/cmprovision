@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+import re
 import stat
 import sys
 
@@ -28,6 +29,19 @@ def audit(root):
     if not any(any(path.is_file() for path in directory.glob('iwlwifi-cc-a0-*.ucode*'))
                for directory in firmware_dirs):
         raise ValueError('The Intel AX200 Wi-Fi firmware is missing.')
+    lldp_entries = [entry for entry in package_status.split('\n\n')
+                    if 'Package: lldpd' in entry.splitlines()]
+    if len(lldp_entries) != 1 or 'Status: install ok installed' not in lldp_entries[0].splitlines():
+        raise ValueError('The station LLDP package is not installed.')
+    lldp_config = read_regular(root / 'etc/lldpd.d/cmprovision.conf')
+    if not any(re.fullmatch(r'configure system description "cmprovision [0-9][0-9A-Za-z.+~:-]{0,39} station(?:; [^"\n]*)?"', line)
+               for line in lldp_config.splitlines()):
+        raise ValueError('The station LLDP announcement is missing or invalid.')
+    lldp_enabled = root / 'etc/systemd/system/multi-user.target.wants/lldpd.service'
+    if not lldp_enabled.is_symlink() or os.readlink(lldp_enabled) not in {
+        '/lib/systemd/system/lldpd.service', '/usr/lib/systemd/system/lldpd.service',
+    }:
+        raise ValueError('The station LLDP service is not enabled.')
     shadow = read_regular(root / 'etc/shadow')
     entries = {}
     for line in shadow.splitlines():

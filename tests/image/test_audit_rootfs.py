@@ -19,8 +19,11 @@ class RootfsAuditTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='cmp-image-audit-')
         self.root = Path(self.temp.name)
-        self.write('var/lib/dpkg/status', 'Package: firmware-iwlwifi\nStatus: install ok installed\n\n')
+        self.write('var/lib/dpkg/status', 'Package: firmware-iwlwifi\nStatus: install ok installed\n\n'
+                   'Package: lldpd\nStatus: install ok installed\n\n')
         self.write('usr/lib/firmware/iwlwifi-cc-a0-77.ucode', 'test firmware')
+        self.write('etc/lldpd.d/cmprovision.conf',
+                   'configure system description "cmprovision 2.24.0~dev2 station; Debian GNU/Linux 13"\n')
         self.write('etc/shadow', 'root:!:1:0:99999:7:::\npi:*:1:0:99999:7:::\n')
         self.write('etc/passwd', 'root:x:0:0:root:/root:/bin/bash\npi:x:1000:1000:pi:/home/pi:/bin/bash\n')
         self.write('var/lib/cmprovision/.env', 'APP_ENV=production\nAPP_KEY=\n')
@@ -36,6 +39,7 @@ class RootfsAuditTest(unittest.TestCase):
         wants = self.units / 'multi-user.target.wants'
         wants.mkdir()
         (wants / 'cmprovision-image-firstboot.service').symlink_to('../cmprovision-image-firstboot.service')
+        (wants / 'lldpd.service').symlink_to('/usr/lib/systemd/system/lldpd.service')
         self.write('etc/systemd/system/cmprovision-image-firstboot.service',
                    '[Unit]\nAfter=sshd-keygen.service\n[Service]\nExecStart=/usr/lib/cmprovision/image-firstboot\n')
         self.write('usr/lib/cmprovision/image-firstboot', '#!/bin/sh\nexit 0\n')
@@ -65,6 +69,23 @@ class RootfsAuditTest(unittest.TestCase):
     def test_shared_key_is_rejected(self):
         self.write('var/lib/cmprovision/.env', 'APP_KEY=base64:shared\n')
         with self.assertRaises(ValueError):
+            audit.audit(self.root)
+
+    def test_station_announcement_requires_installed_enabled_lldp_and_valid_description(self):
+        status = self.root / 'var/lib/dpkg/status'
+        original = status.read_text()
+        status.write_text(original.replace('Package: lldpd\nStatus: install ok installed',
+                                           'Package: lldpd\nStatus: install ok unpacked'))
+        with self.assertRaisesRegex(ValueError, 'LLDP package'):
+            audit.audit(self.root)
+        status.write_text(original)
+        enabled = self.units / 'multi-user.target.wants/lldpd.service'
+        enabled.unlink()
+        with self.assertRaisesRegex(ValueError, 'LLDP service'):
+            audit.audit(self.root)
+        enabled.symlink_to('/usr/lib/systemd/system/lldpd.service')
+        self.write('etc/lldpd.d/cmprovision.conf', 'configure system description "generic Pi"\n')
+        with self.assertRaisesRegex(ValueError, 'LLDP announcement'):
             audit.audit(self.root)
 
     def test_unlocked_root_is_rejected(self):
