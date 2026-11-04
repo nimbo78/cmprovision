@@ -135,9 +135,18 @@ systemd reported `running` with no failed units.
 The test used temporary administrator-configured addresses and interface binding; it does not
 validate automatic promotion of a secondary station to a primary one through the web UI.
 A clean installation with Raspberry Pi Imager and the remaining checks below are still outstanding.
-The image rebuilt with LLDP has passed the exported-rootfs audit and checksum verification. Its exact
-artifact has not yet booted on hardware; the equivalent LLDP package was installed and verified on
-the previously imaged station, including recognition by the neighbouring provisioner after a reboot.
+The LLDP-enabled image was subsequently network-flashed and booted on a CM4. The original generic
+image bytes passed SHA-256 verification before serial-restricted post-install scripts configured
+one-time SSH access and masked EEPROM auto-updates. The first-boot check reported `running`, no
+failed units, enabled LLDP and an automatically expanded root filesystem. Application data and
+network/display settings were restored from a verified off-device backup. After a further reboot,
+the neighbouring provisioner recognised it as another station, and FPMS reported a hardware
+heartbeat and `running`; this is not physical screen/button acceptance. The SSH host key and
+machine ID remained stable; restoring application data intentionally restored its matching old
+APP_KEY. A sensor flash was then repeated from this exact rebuilt artifact over isolated VLAN 15:
+network boot, split-image writing, SHA-256 verification, resizing and the OS check passed in
+7 minutes 7 seconds, with systemd `running` and no failed units. The test used the existing
+Firefox workaround and temporary administrator-configured networking as described above.
 
 Before calling an image ready, verify its actual first-boot user setup, SSH host-key regeneration,
 two independent application keys, networking, explicit stand activation, web login, HDMI, optional
