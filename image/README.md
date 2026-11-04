@@ -135,6 +135,9 @@ systemd reported `running` with no failed units.
 The test used temporary administrator-configured addresses and interface binding; it does not
 validate automatic promotion of a secondary station to a primary one through the web UI.
 A clean installation with Raspberry Pi Imager and the remaining checks below are still outstanding.
+The image rebuilt with LLDP has passed the exported-rootfs audit and checksum verification. Its exact
+artifact has not yet booted on hardware; the equivalent LLDP package was installed and verified on
+the previously imaged station, including recognition by the neighbouring provisioner after a reboot.
 
 Before calling an image ready, verify its actual first-boot user setup, SSH host-key regeneration,
 two independent application keys, networking, explicit stand activation, web login, HDMI, optional
