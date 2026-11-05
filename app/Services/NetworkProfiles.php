@@ -48,6 +48,39 @@ class NetworkProfiles
         return $profiles;
     }
 
+    /** Saved profiles without credentials, including disconnected VLAN interfaces. */
+    public function saved(): ?array
+    {
+        $rows = $this->call(['timeout', '3', 'nmcli', '--escape', 'no', '-t', '-f', 'UUID,TYPE', 'connection', 'show']);
+        if ($rows === null) return null;
+        $profiles = [];
+        foreach (array_slice(explode("\n", $rows), 0, 128) as $row) {
+            $parts = explode(':', $row, 2);
+            if (count($parts) !== 2 || !preg_match('/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/D', $parts[0]) ||
+                !in_array($parts[1], ['802-3-ethernet', 'ethernet', 'vlan'], true)) continue;
+            $uuid = $parts[0];
+            $name = $this->call(['timeout', '3', 'nmcli', '--escape', 'no', '-g', 'connection.id', 'connection', 'show', 'uuid', $uuid]);
+            $device = $this->call(['timeout', '3', 'nmcli', '--escape', 'no', '-g', 'connection.interface-name', 'connection', 'show', 'uuid', $uuid]);
+            if ($name === null || $device === null) return null;
+            $profiles[] = ['uuid' => $uuid, 'name' => $name, 'device' => $device,
+                'type' => $parts[1] === 'vlan' ? 'vlan' : 'ethernet'];
+        }
+        return $profiles;
+    }
+
+    public function ethernetDevices(): ?array
+    {
+        $rows = $this->call(['timeout', '3', 'nmcli', '--escape', 'no', '-t', '-f', 'DEVICE,TYPE', 'device', 'status']);
+        if ($rows === null) return null;
+        $devices = [];
+        foreach (explode("\n", $rows) as $row) {
+            $parts = explode(':', $row, 2);
+            if (count($parts) === 2 && $parts[1] === 'ethernet' && preg_match('/^[A-Za-z0-9_.-]{1,15}$/D', $parts[0]))
+                $devices[] = $parts[0];
+        }
+        return $devices;
+    }
+
     /** The local primary (.1) or secondary (.2) stand address, when unique and on an active profile. */
     public function stand(?array $profiles): ?array
     {
@@ -70,9 +103,9 @@ class NetworkProfiles
         return null;
     }
 
-    public function detail(string $device, string $uuid): ?array
+    public function detail(string $device, string $uuid, bool $saved = false): ?array
     {
-        $list = $this->active();
+        $list = $saved ? $this->saved() : $this->active();
         if ($list === null || !array_filter($list, fn ($profile) => $profile['device'] === $device && $profile['uuid'] === $uuid)) {
             return null;
         }

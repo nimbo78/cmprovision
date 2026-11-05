@@ -223,9 +223,9 @@ class PackagingTest extends TestCase
         $this->assertStringContainsString('network-transaction recover', $recover);
         $this->assertStringContainsString('/usr/lib/cmprovision/network-transaction recover || {', $this->file('debian/prerm'));
         $sudoers = $this->file('debian/014_cmprovision-network');
-        foreach (['status', 'begin', 'confirm', 'cancel'] as $command)
+        foreach (['status', 'begin', 'confirm', 'cancel', 'profiles'] as $command)
             $this->assertStringContainsString("www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/network-transaction $command\n", $sudoers);
-        $this->assertSame(4, substr_count($sudoers, 'NOPASSWD'));
+        $this->assertSame(5, substr_count($sudoers, 'NOPASSWD'));
         $this->assertStringNotContainsString('network-transaction recover', $sudoers);
         $this->assertStringNotContainsString('*', $sudoers);
         $this->assertStringContainsString('ExecStart=/usr/lib/cmprovision/dnsmasq-start', $this->file('debian/cmprovision-dnsmasq.service'));

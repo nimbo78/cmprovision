@@ -39,6 +39,20 @@ class NetworkChanges
     }
     public function confirm(string $token): array { return $this->call('confirm', ['token' => $token]); }
     public function cancel(string $token): array { return $this->call('cancel', ['token' => $token]); }
+    public function connection(string $device, string $uuid, bool $activate, ?array $profile = null): array
+    {
+        $request = ['kind' => 'connection', 'action' => $activate ? 'activate' : 'deactivate', 'device' => $device, 'uuid' => $uuid];
+        if ($profile !== null) $request['profile'] = $profile;
+        return $this->call('begin', $request);
+    }
+    public function createProfile(string $device, string $name): array
+    {
+        return $this->call('profiles', ['operation' => 'create', 'device' => $device, 'name' => $name]);
+    }
+    public function deleteProfile(string $uuid): array
+    {
+        return $this->call('profiles', ['operation' => 'delete', 'uuid' => $uuid]);
+    }
 
     private function call(string $action, $payload): array
     {

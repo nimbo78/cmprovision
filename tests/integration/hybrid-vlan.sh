@@ -97,6 +97,7 @@ python3 "$(dirname "$0")/network-backend-nm.py" "${CMP_LAB_PROFILE:-$(dirname "$
     "${CMP_LAB_STORE:-$(dirname "$0")/../../tools/network-transaction-store.py}" \
     "${CMP_LAB_BACKEND:-$(dirname "$0")/../../tools/network-transaction-backend.py}"
 python3 "$(dirname "$0")/network-cli-nm.py" "${CMP_LAB_CLI:-$(dirname "$0")/../../tools/network-transaction}"
+python3 "$(dirname "$0")/network-connection-nm.py" "$(dirname "$0")/../../tools"
 python3 "$(dirname "$0")/network-dhcp-nm.py" "${CMP_LAB_PROFILE:-$(dirname "$0")/../../tools/network-profile.py}" \
     "${CMP_LAB_TRANSACTION:-$(dirname "$0")/../../tools/network-transaction.py}" \
     "${CMP_LAB_STORE:-$(dirname "$0")/../../tools/network-transaction-store.py}" \

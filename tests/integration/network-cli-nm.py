@@ -53,7 +53,14 @@ try:
     request = {'uuid': connection, 'device': 'cmp-cli124', 'profile': {'ipv4': {
         'method': 'manual', 'addresses': ['198.19.41.2/24'], 'never_default': True}, 'ipv6': {'method': 'disabled'}}}
     assert call('init')['initialized'] and not call('status')['pending']
+    draft = call('profiles', {'operation': 'create', 'device': 'cmp-peer0', 'name': 'CLI draft'})['created']
+    assert call('profiles', {'operation': 'delete', 'uuid': draft})['deleted'] == draft
     busy[0] = True
+    try:
+        call('profiles', {'operation': 'create', 'device': 'cmp-peer0', 'name': 'Refused during writing'})
+        raise AssertionError('a profile was created while provisioning')
+    except cli.connection_module.ConnectionError:
+        pass
     try:
         call('begin', request)
         raise AssertionError('a change was permitted during provisioning')

@@ -22,6 +22,7 @@ backend_module = module('network_backend', 'network-transaction-backend.py')
 watchdog = module('network_watchdog', 'network-transaction-watchdog.py')
 router_module = module('network_router', 'network-transaction-router.py')
 stand_module = module('stand_backend', 'stand-network-backend.py')
+connection_module = module('connection_backend', 'network-connection-backend.py')
 binding_module = module('stand_binding', 'stand-network-binding.py')
 dnsmasq_start = module('dnsmasq_start', 'dnsmasq-start')
 BASE = '/var/lib/cmprovision-network'
@@ -66,7 +67,7 @@ def input_json():
 
 
 def main():
-    if os.geteuid() != 0 or len(sys.argv) not in (2, 3) or sys.argv[1] not in ('init', 'recover', 'status', 'begin', 'confirm', 'cancel'):
+    if os.geteuid() != 0 or len(sys.argv) not in (2, 3) or sys.argv[1] not in ('init', 'recover', 'status', 'begin', 'confirm', 'cancel', 'profiles'):
         raise RuntimeError('Invalid network controller invocation.')
     action = sys.argv[1]
     if len(sys.argv) == 3 and (action != 'recover' or not re.fullmatch(r'[0-9a-f]{32}', sys.argv[2])):
@@ -78,7 +79,7 @@ def main():
         return {'initialized': True}
     common = backend_module.Backend(files, profile, watchdog.Watchdog(), active_runs)
     stand = stand_module.Backend(common, binding_module.Binding(dnsmasq_start), binding_module.DnsmasqService())
-    backend = router_module.Router(common, stand)
+    backend = router_module.Router(common, stand, connection_module.Backend(common))
     tx = coordinator.NetworkTransaction(backend)
     if action == 'recover':
         # In a chroot, after /run was cleared, or during package removal the init unit may not
@@ -88,6 +89,8 @@ def main():
         tx.recover(sys.argv[2] if len(sys.argv) == 3 else None)
         return {'recovered': True}
     request = input_json()
+    if action == 'profiles':
+        return backend.connection.manage_saved(request)
     if action == 'status':
         if request:
             raise RuntimeError('Invalid network status request.')

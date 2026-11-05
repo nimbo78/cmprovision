@@ -124,7 +124,7 @@ class Backend:
             return None
         return self._stable_keyfile_hash(parts[0])
 
-    def _stand_on(self, device):
+    def _stand_on(self, device, include_parents=False):
         addresses = self._json('ip', '-j', '-4', 'address', 'show')
         links = self._json('ip', '-j', '-d', 'link', 'show')
         by_name = {link.get('ifname'): link for link in links}
@@ -143,6 +143,8 @@ class Backend:
             visited = set()
             while current is not None:
                 name = current.get('ifname')
+                if include_parents and name == device:
+                    return True
                 # IP-only reapply on a physical parent does not replace its VLAN child.
                 # Keep checking unsupported topologies, but do not lock the parent's
                 # independent untagged management network merely because a child is a stand.
@@ -320,7 +322,7 @@ class Backend:
     def persist(self, change):
         self.run('nmcli', 'connection', 'modify', 'uuid', change['uuid'], *change['arguments'])
 
-    def restore_original(self, original, change, applied, persisted, checkpoint, partial=None):
+    def check_restore(self, original, change, applied, persisted):
         current = self.snapshot(change)
         allowed_values = [original['values']]
         allowed_profiles = [original['profile_hash']]
@@ -339,6 +341,9 @@ class Backend:
             # A power cut between saving the profile and recording its new hash can also land here.
             # Keep the marker and state rather than overwriting a possible external administrator edit.
             raise BackendError('The profile changed outside cmprovision; automatic recovery is paused.')
+
+    def restore_original(self, original, change, applied, persisted, checkpoint, partial=None):
+        self.check_restore(original, change, applied, persisted)
         try:
             self.rollback_checkpoint(checkpoint)
         except BackendError:

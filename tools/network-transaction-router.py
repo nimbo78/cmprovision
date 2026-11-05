@@ -2,8 +2,8 @@
 
 
 class Router:
-    def __init__(self, common, stand):
-        self.common, self.stand = common, stand
+    def __init__(self, common, stand, connection=None):
+        self.common, self.stand, self.connection = common, stand, connection
 
     def guard(self): return self.common.guard()
     def load(self): return self.common.load()
@@ -19,12 +19,15 @@ class Router:
     def commit_checkpoint(self, checkpoint): return self.common.commit_checkpoint(checkpoint)
 
     def validate(self, request):
+        if isinstance(request, dict) and request.get('kind') == 'connection' and self.connection:
+            return self.connection.validate(request)
         if isinstance(request, dict) and request.get('kind') == 'stand':
             return self.stand.validate(request)
         result = self.common.validate(request)
         return {'kind': 'profile', **result}
 
     def _for(self, change):
+        if change.get('kind') == 'connection' and self.connection: return self.connection
         if change.get('kind') == 'stand': return self.stand
         if change.get('kind') == 'profile': return self.common
         raise RuntimeError('Unknown network transaction type.')

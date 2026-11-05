@@ -16,8 +16,12 @@ class NetworkSettings extends Component
 
     #[Locked]
     public $device = null, $uuid = null;
+    #[Locked]
+    public $editingSaved = false;
     public $ipv4 = [], $ipv6 = [];
     public $standTarget = '';
+    public $activationDevice = '';
+    public $newDevice = '', $newProfileName = '';
     public $notice = null, $noticeIsError = false;
 
     public function render()
@@ -34,15 +38,17 @@ class NetworkSettings extends Component
         return view('livewire.network-settings', [
             'available' => $available,
             'profiles' => $profiles,
+            'savedProfiles' => $available ? app(NetworkProfiles::class)->saved() : null,
+            'ethernetDevices' => $available ? app(NetworkProfiles::class)->ethernetDevices() : null,
             'stand' => $available ? app(NetworkProfiles::class)->stand($profiles) : null,
             'pending' => $pending,
             'statusError' => $status !== null && !($status['ok'] ?? false) ? ($status['error'] ?? 'Network status is unavailable.') : null,
         ]);
     }
 
-    public function edit(string $device, string $uuid): void
+    public function edit(string $device, string $uuid, bool $saved = false): void
     {
-        $profile = app(NetworkProfiles::class)->detail($device, $uuid);
+        $profile = app(NetworkProfiles::class)->detail($device, $uuid, $saved);
         if ($profile === null) {
             $this->flash('The active network profile is no longer available.', true);
             return;
@@ -54,6 +60,7 @@ class NetworkSettings extends Component
         }
         $this->device = $device;
         $this->uuid = $uuid;
+        $this->editingSaved = $saved;
         $this->ipv4 = $this->formValues($profile['ipv4']);
         $this->ipv6 = $this->formValues($profile['ipv6']);
         $this->resetErrorBag();
@@ -64,6 +71,7 @@ class NetworkSettings extends Component
     {
         $this->device = null;
         $this->uuid = null;
+        $this->editingSaved = false;
         $this->resetErrorBag();
     }
 
@@ -93,7 +101,11 @@ class NetworkSettings extends Component
         if ($v4 === null || $v6 === null) {
             return;
         }
-        $result = app(NetworkChanges::class)->begin($this->device, $this->uuid, ['ipv4' => $v4, 'ipv6' => $v6]);
+        $profile = ['ipv4' => $v4, 'ipv6' => $v6];
+        $target = $this->device ?: $this->activationDevice;
+        $result = $this->editingSaved
+            ? app(NetworkChanges::class)->connection($target, $this->uuid, true, $profile)
+            : app(NetworkChanges::class)->begin($this->device, $this->uuid, $profile);
         if (!($result['ok'] ?? false)) {
             $this->flash($result['error'] ?? 'The network change could not start.', true);
             return;
@@ -104,6 +116,57 @@ class NetworkSettings extends Component
 
     public function confirm(): void { $this->finish('confirm'); }
     public function cancel(): void { $this->finish('cancel'); }
+
+    public function activate(string $uuid): void
+    {
+        $this->ensurePasswordIsConfirmed();
+        $reader = app(NetworkProfiles::class);
+        foreach ($reader->saved() ?? [] as $profile) {
+            if ($profile['uuid'] !== $uuid) continue;
+            $device = $profile['device'] ?: $this->activationDevice;
+            if (!$profile['device'] && !in_array($device, $reader->ethernetDevices() ?? [], true)) {
+                $this->flash('Choose an Ethernet interface for this profile.', true);
+                return;
+            }
+            $this->connectionResult(app(NetworkChanges::class)->connection($device, $uuid, true));
+            return;
+        }
+        $this->flash('The saved profile is no longer available.', true);
+    }
+
+    public function deactivate(string $device, string $uuid): void
+    {
+        $this->ensurePasswordIsConfirmed();
+        $this->connectionResult(app(NetworkChanges::class)->connection($device, $uuid, false));
+    }
+
+    private function connectionResult(array $result): void
+    {
+        $this->flash(($result['ok'] ?? false)
+            ? 'The connection change is temporary. Check connectivity and confirm before the timer ends.'
+            : ($result['error'] ?? 'The connection could not be changed.'), !($result['ok'] ?? false));
+    }
+
+    public function createProfile(): void
+    {
+        $this->ensurePasswordIsConfirmed();
+        Validator::make(['device' => $this->newDevice, 'name' => $this->newProfileName], [
+            'device' => ['required', 'string', 'regex:/^[A-Za-z0-9_.-]{1,15}$/'],
+            'name' => ['required', 'string', 'max:64'],
+        ])->validate();
+        $result = app(NetworkChanges::class)->createProfile($this->newDevice, $this->newProfileName);
+        $this->flash(($result['ok'] ?? false) ? 'Profile created and left disconnected. Edit it to configure addresses and connect.'
+            : ($result['error'] ?? 'Could not create profile.'), !($result['ok'] ?? false));
+        if ($result['ok'] ?? false) $this->newProfileName = '';
+    }
+
+    public function deleteProfile(string $uuid): void
+    {
+        $this->ensurePasswordIsConfirmed();
+        $result = app(NetworkChanges::class)->deleteProfile($uuid);
+        $this->flash(($result['ok'] ?? false) ? 'Saved profile deleted.'
+            : ($result['error'] ?? 'Could not delete profile.'), !($result['ok'] ?? false));
+    }
 
     public function moveStand(): void
     {

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the management-VLAN helper in hybrid-vlan.sh's private network namespace."""
 import importlib.machinery
+import io
 import json
 import os
 import subprocess
@@ -14,6 +15,24 @@ os.symlink(os.environ.get('CMP_LAB_NMCLI', '/usr/bin/nmcli'), '/run/lab-bin/nmcl
 os.environ['PATH'] = '/run/lab-bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 record = helper.add({'parent': 'cmp-test0', 'vlan_id': 123, 'address': '198.18.12.10/24'})
+# The legacy VLAN controls share the transaction gate; they cannot delete a profile
+# while a Connect/Disconnect operation is waiting for confirmation.
+store_module = importlib.machinery.SourceFileLoader('vlan_gate_store', os.path.join(os.path.dirname(sys.argv[1]), 'network-transaction-store.py')).load_module()
+files = store_module.Store('/var/lib/cmprovision-network/transactions', '/run/cmprovision-network')
+files.initialize()
+files.set_pending()
+argv, stdin = sys.argv, sys.stdin
+try:
+    sys.argv = ['vlan-networks', 'remove']
+    sys.stdin = io.TextIOWrapper(io.BytesIO(json.dumps({'uuid': record['uuid']}).encode()))
+    try:
+        helper.main()
+        raise AssertionError('the VLAN control ignored the pending network transaction')
+    except helper.Refused as exc:
+        assert 'pending' in str(exc)
+finally:
+    sys.argv, sys.stdin = argv, stdin
+    files.clear_pending()
 addresses = json.loads(subprocess.check_output(['ip', '-j', '-4', 'address', 'show'], text=True))
 assert any(d['ifname'] == record['interface'] and any(a.get('local') == '198.18.12.10' for a in d['addr_info']) for d in addresses)
 assert any(d['ifname'] == 'cmp-test0' and any(a.get('local') == '172.20.0.1' for a in d['addr_info']) for d in addresses)

@@ -42,4 +42,21 @@ class NetworkProfilesTest extends TestCase
         $this->assertNull($ambiguous->stand($profiles));
         $this->assertNull($reader->stand([]));
     }
+
+    public function test_saved_inventory_includes_inactive_profiles_without_wifi_or_secrets(): void
+    {
+        $calls = [];
+        $reader = new NetworkProfiles(function ($command) use (&$calls) {
+            $calls[] = $command;
+            if (in_array('UUID,TYPE', $command, true))
+                return self::UUID.":vlan\n97d071a5-5fc9-47ba-90ec-904f105cc7b2:802-11-wireless";
+            if (in_array('connection.id', $command, true)) return 'Lab: management';
+            if (in_array('connection.interface-name', $command, true)) return 'eth0.42';
+            if (in_array('DEVICE,TYPE', $command, true)) return "eth0:ethernet\nwlan0:wifi\neth0.42:vlan";
+            return null;
+        });
+        $this->assertSame([['uuid' => self::UUID, 'name' => 'Lab: management', 'device' => 'eth0.42', 'type' => 'vlan']], $reader->saved());
+        $this->assertSame(['eth0'], $reader->ethernetDevices());
+        foreach ($calls as $call) $this->assertNotContains('--show-secrets', $call);
+    }
 }

@@ -249,10 +249,30 @@ overlap another connected network or the provisioning subnet `172.20.0.0/16`. A 
 default gateway and does not change existing connections or routes. Other subnets need routing
 configured separately.
 
-Only disconnected VLAN profiles created here can be removed here. If an administrator changes one of those
-profiles using another tool, cmprovision leaves it to the system's network tools. It also refuses
-to remove an interface carrying an address from the provisioning subnet. Disconnect an active profile using
-the system's network tools before removing it here.
+Use **Ethernet and VLAN profiles → Disconnect**, then confirm, before removing a VLAN.
+That section also deletes saved inactive profiles after IP settings have been edited. Profiles carrying
+the provisioning subnet cannot be deleted there. The older **Managed by cmprovision → Remove** action
+only accepts unchanged profiles created by the VLAN form. Both controls wait while another network
+change is pending.
+
+### Saved Ethernet and VLAN connections
+
+**New Ethernet profile** creates a disconnected profile bound to a physical interface, without enabling
+autoconnect or changing the current connection. Select **Edit** in **Saved connections** to set its IP
+settings before connecting. Existing profiles created with the system tools are also listed; an unbound
+Ethernet profile needs an interface selection. Wi-Fi has its own settings section.
+
+**Connect** activates a saved profile. **Apply and connect temporarily** applies edited IP settings and
+activates it together. Both temporarily replace the current profile on that interface. After confirmation,
+the new profile autoconnects and the previous profile's autoconnect is disabled. **Disconnect** similarly
+requires timed confirmation and disables autoconnect for the disconnected profile. Cancellation or timeout
+restores the previous profiles, autoconnect settings and active connection. An independently activated
+third profile pauses recovery so it is not overwritten.
+
+**Delete saved profile** removes an inactive profile and its saved settings; disconnect and confirm first.
+Bridge/bond ports, dependent VPN connections and unsupported IP assignment methods stay with the system
+network tools. A connection that carries the provisioning network, including a physical parent of a
+provisioning VLAN, cannot be disconnected or replaced here.
 
 ### Addresses, routes and the provisioning network
 
@@ -298,7 +318,7 @@ preserves the station's existing provisioning address and the original DHCP/TFTP
 the same timed confirmation and rollback. A secondary station using `172.20.0.2/16` must keep its own
 DHCP/TFTP service stopped when it shares the stand with a primary station at `172.20.0.1/16`.
 If the stand uses a tagged VLAN, the physical parent's independent untagged IP settings remain editable.
-Changing station roles (primary/secondary), initial stand setup and activation of inactive profiles still
+Changing station roles (primary/secondary) and initial stand setup still
 need the system network tools; the transfer preserves the existing role.
 
 For example, a hybrid switch port can carry the provisioning network untagged in VLAN 1 and a management

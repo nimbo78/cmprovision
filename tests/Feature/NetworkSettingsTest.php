@@ -28,7 +28,7 @@ class NetworkSettingsTest extends TestCase
     {
         $reader = $this->createMock(NetworkProfiles::class);
         $reader->method('active')->willReturn([['device' => 'eth0.42', 'uuid' => self::UUID, 'type' => 'vlan']]);
-        $reader->method('detail')->with('eth0.42', self::UUID)->willReturn($this->details());
+        $reader->method('detail')->with('eth0.42', self::UUID, false)->willReturn($this->details());
         return $reader;
     }
 
@@ -143,5 +143,57 @@ class NetworkSettingsTest extends TestCase
         $this->app->instance(NetworkProfiles::class, $this->reader());
         $this->actingAs(User::factory()->create());
         Livewire::test(NetworkSettings::class)->set('standTarget', self::UUID)->call('moveStand')->assertForbidden();
+    }
+
+    public function test_connecting_a_saved_profile_uses_its_binding_and_requires_confirmation(): void
+    {
+        $reader = $this->createStub(NetworkProfiles::class);
+        $reader->method('active')->willReturn([]);
+        $reader->method('saved')->willReturn([['device' => 'eth0.42', 'uuid' => self::UUID, 'name' => 'Lab management', 'type' => 'vlan']]);
+        $changes = $this->createMock(NetworkChanges::class);
+        $changes->method('available')->willReturn(true);
+        $changes->method('status')->willReturn(['ok' => true, 'result' => ['pending' => false]]);
+        $changes->expects($this->once())->method('connection')->with('eth0.42', self::UUID, true)->willReturn(['ok' => true]);
+        $this->app->instance(NetworkProfiles::class, $reader);
+        $this->app->instance(NetworkChanges::class, $changes);
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        Livewire::test(NetworkSettings::class)->assertSee('Lab management')->assertSee('Connect')
+            ->set('activationDevice', 'wrong0')->call('activate', self::UUID)
+            ->assertSee('The connection change is temporary.');
+    }
+
+    public function test_connection_actions_require_password_confirmation(): void
+    {
+        $changes = $this->createMock(NetworkChanges::class);
+        $changes->method('available')->willReturn(true);
+        $changes->method('status')->willReturn(['ok' => true, 'result' => ['pending' => false]]);
+        $changes->expects($this->never())->method('connection');
+        $this->app->instance(NetworkChanges::class, $changes);
+        $this->app->instance(NetworkProfiles::class, $this->reader());
+        $this->actingAs(User::factory()->create());
+        Livewire::test(NetworkSettings::class)->call('activate', self::UUID)->assertForbidden();
+        Livewire::test(NetworkSettings::class)->call('deactivate', 'eth0.42', self::UUID)->assertForbidden();
+        Livewire::test(NetworkSettings::class)->call('createProfile')->assertForbidden();
+        Livewire::test(NetworkSettings::class)->call('deleteProfile', self::UUID)->assertForbidden();
+    }
+
+    public function test_inactive_profile_can_be_edited_before_a_temporary_activation(): void
+    {
+        $reader = $this->createStub(NetworkProfiles::class);
+        $reader->method('active')->willReturn([]);
+        $reader->method('saved')->willReturn([['device' => 'eth0.42', 'uuid' => self::UUID, 'name' => 'Lab', 'type' => 'vlan']]);
+        $reader->method('detail')->willReturn($this->details());
+        $changes = $this->createMock(NetworkChanges::class);
+        $changes->method('available')->willReturn(true);
+        $changes->method('status')->willReturn(['ok' => true, 'result' => ['pending' => false]]);
+        $changes->expects($this->once())->method('connection')->with('eth0.42', self::UUID, true,
+            $this->callback(fn ($profile) => $profile['ipv4']['addresses'] === ['192.0.2.20/24']))->willReturn(['ok' => true]);
+        $changes->expects($this->never())->method('begin');
+        $this->app->instance(NetworkProfiles::class, $reader);
+        $this->app->instance(NetworkChanges::class, $changes);
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        Livewire::test(NetworkSettings::class)->call('edit', 'eth0.42', self::UUID, true)
+            ->assertSee('Apply and connect temporarily')->set('ipv4.addresses', '192.0.2.20/24')
+            ->call('apply')->assertHasNoErrors()->assertSet('device', null);
     }
 }

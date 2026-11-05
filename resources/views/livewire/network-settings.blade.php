@@ -1,4 +1,4 @@
-<x-settings-card title="Ethernet and VLAN profiles" id="network-profiles" description="Addressing, DNS and routes for active network profiles.">
+<x-settings-card title="Ethernet and VLAN profiles" id="network-profiles" description="Connections, addressing, DNS and routes.">
     <x-slot name="help">
         Changes are temporary until confirmed. If access is lost, the provisioner restores the previous profile automatically.
         The interface carrying the provisioning network is protected and cannot be edited here.
@@ -27,8 +27,15 @@
         </div>
     @elseif ($device !== null)
         <div class="mb-3">
-            <h3 class="font-bold">Edit {{ $device }}</h3>
+            <h3 class="font-bold">Edit {{ $device ?: 'saved profile' }}</h3>
             <p class="text-sm text-fg-muted">Reconnect using the new address and confirm within about two minutes; otherwise the change rolls back.</p>
+            @if ($editingSaved && $device === '')
+                <label for="edit-activation-device" class="block text-sm font-bold mt-3 mb-1">Ethernet interface</label>
+                <select id="edit-activation-device" wire:model="activationDevice" class="cmp-field">
+                    <option value="">Choose an interface</option>
+                    @foreach ($ethernetDevices ?? [] as $interface)<option value="{{ $interface }}">{{ $interface }}</option>@endforeach
+                </select>
+            @endif
         </div>
         @foreach (['ipv4' => 'IPv4', 'ipv6' => 'IPv6'] as $family => $label)
             <fieldset class="border-t border-pline pt-4 mt-4">
@@ -79,7 +86,7 @@
             </fieldset>
         @endforeach
         <div class="flex gap-2 mt-4">
-            <x-confirms-password wire:then="apply"><button type="button" class="cmp-btn" wire:loading.attr="disabled">Apply temporarily</button></x-confirms-password>
+            <x-confirms-password wire:then="apply"><button type="button" class="cmp-btn" wire:loading.attr="disabled">{{ $editingSaved ? 'Apply and connect temporarily' : 'Apply temporarily' }}</button></x-confirms-password>
             <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="close">Cancel</button>
         </div>
     @elseif ($profiles === null)
@@ -93,13 +100,62 @@
                 @foreach ($profiles as $profile)
                     <tr wire:key="network-profile-{{ $profile['device'] }}">
                         <td>{{ $profile['device'] }}</td><td>{{ $profile['type'] === 'vlan' ? 'Tagged VLAN'.(isset($profile['vlan_id']) ? ' '.$profile['vlan_id'] : '') : 'Ethernet' }}</td>
-                        <td>{{ $profile['uuid'] }}</td>
+                        <td>{{ collect($savedProfiles ?? [])->firstWhere('uuid', $profile['uuid'])['name'] ?? $profile['uuid'] }}</td>
                         <td><button type="button" class="cmp-btn cmp-btn-secondary cmp-btn-small"
-                            wire:click="edit('{{ $profile['device'] }}', '{{ $profile['uuid'] }}')">Edit</button></td>
+                            wire:click="edit('{{ $profile['device'] }}', '{{ $profile['uuid'] }}')">Edit</button>
+                            @if (($stand['device'] ?? null) !== $profile['device'])
+                                <x-confirms-password wire:then="deactivate('{{ $profile['device'] }}', '{{ $profile['uuid'] }}')"><button type="button" class="cmp-btn cmp-btn-secondary cmp-btn-small" wire:loading.attr="disabled">Disconnect</button></x-confirms-password>
+                            @endif
+                        </td>
                     </tr>
                 @endforeach
             </tbody>
         </table></div>
+    @endif
+    @if ($available && !$statusError && !($pending['pending'] ?? false) && $device === null && $savedProfiles !== null)
+        @php($inactiveProfiles = collect($savedProfiles)->reject(fn ($p) => in_array($p['uuid'], array_column($profiles ?? [], 'uuid'), true)))
+        @if ($inactiveProfiles->isNotEmpty())
+            <div class="border-t border-pline mt-4 pt-4">
+                <h3 class="font-bold mb-2">Saved connections</h3>
+                <p class="text-sm text-fg-muted mb-3">Connect a saved profile or edit its IP settings before connecting. Connecting replaces the current profile on the same interface. Confirm within two minutes or the previous connection is restored.</p>
+                @if ($inactiveProfiles->contains(fn ($p) => $p['device'] === ''))
+                    <label for="activation-device" class="block text-sm font-bold mb-1">Ethernet interface for profiles without a binding</label>
+                    <select id="activation-device" wire:model="activationDevice" class="cmp-field mb-3">
+                        <option value="">Choose an interface</option>
+                        @foreach ($ethernetDevices ?? [] as $interface)<option value="{{ $interface }}">{{ $interface }}</option>@endforeach
+                    </select>
+                @endif
+                <div class="cmp-card-scroll"><table class="cmp-table">
+                    <thead><tr><th>Profile</th><th>Interface</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach ($inactiveProfiles as $profile)
+                            <tr wire:key="saved-network-{{ $profile['uuid'] }}">
+                                <td>{{ $profile['name'] }}</td><td>{{ $profile['device'] ?: 'Not bound' }}</td>
+                                <td><button type="button" class="cmp-btn cmp-btn-secondary cmp-btn-small" wire:click="edit('{{ $profile['device'] }}', '{{ $profile['uuid'] }}', true)">Edit</button>
+                                    <x-confirms-password wire:then="activate('{{ $profile['uuid'] }}')"><button type="button" class="cmp-btn cmp-btn-secondary cmp-btn-small" wire:loading.attr="disabled">Connect</button></x-confirms-password>
+                                    <x-confirms-password wire:then="deleteProfile('{{ $profile['uuid'] }}')"><button type="button" class="cmp-btn cmp-btn-danger cmp-btn-small" wire:loading.attr="disabled" x-on:click="if (!confirm('Delete this saved connection and its settings?')) $event.stopPropagation()">Delete saved profile</button></x-confirms-password></td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table></div>
+            </div>
+        @endif
+        <div class="border-t border-pline mt-4 pt-4">
+            <h3 class="font-bold mb-2">New Ethernet profile</h3>
+            <p class="text-sm text-fg-muted mb-3">Create a disconnected profile, then edit its addresses and connect. Add tagged networks in the VLAN section.</p>
+            <div class="flex flex-wrap items-end gap-2">
+                <div><label for="new-network-device" class="block text-sm font-bold mb-1">Interface</label>
+                    <select id="new-network-device" wire:model="newDevice" class="cmp-field">
+                        <option value="">Choose an interface</option>
+                        @foreach ($ethernetDevices ?? [] as $interface)<option value="{{ $interface }}">{{ $interface }}</option>@endforeach
+                    </select></div>
+                <div><label for="new-network-name" class="block text-sm font-bold mb-1">Profile name</label>
+                    <input id="new-network-name" wire:model="newProfileName" class="cmp-field" maxlength="64" placeholder="Management uplink"></div>
+                <x-confirms-password wire:then="createProfile"><button type="button" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Create profile</button></x-confirms-password>
+            </div>
+            @error('device') <p class="text-neg text-sm">{{ $message }}</p> @enderror
+            @error('name') <p class="text-neg text-sm">{{ $message }}</p> @enderror
+        </div>
     @endif
     @if ($available && !$statusError && !($pending['pending'] ?? false) && $device === null && $stand !== null)
         <div class="border-t border-pline mt-4 pt-4">
