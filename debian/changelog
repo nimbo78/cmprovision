@@ -1,3 +1,14 @@
+cmprovision4 (2.24.0~dev3) unstable; urgency=medium
+
+  * Complete Ethernet/VLAN profile lifecycle, policy routing and DNS controls.
+  * Configure primary, secondary and disabled station roles from the web UI,
+    with address conflict checks and rollback of addresses and boot services.
+  * Recover interrupted changes without blocking DHCP startup at boot.
+  * Verify role changes in isolated NetworkManager and systemd laboratories;
+    hardware acceptance of these new controls remains outstanding.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 05 Nov 2026 14:10:00 +0300
+
 cmprovision4 (2.24.0~dev2) unstable; urgency=medium
 
   * Add tagged VLAN profiles and transactional Ethernet address, DNS and

@@ -318,8 +318,25 @@ preserves the station's existing provisioning address and the original DHCP/TFTP
 the same timed confirmation and rollback. A secondary station using `172.20.0.2/16` must keep its own
 DHCP/TFTP service stopped when it shares the stand with a primary station at `172.20.0.1/16`.
 If the stand uses a tagged VLAN, the physical parent's independent untagged IP settings remain editable.
-Changing station roles (primary/secondary) and initial stand setup still
-need the system network tools; the transfer preserves the existing role.
+**Configure station role** sets up a new stand or changes the role on its current interface:
+
+- **Primary** assigns `172.20.0.1/16`, binds and starts DHCP/TFTP on that interface, and optionally
+  enables USB boot. Confirm that the segment is isolated and has no other DHCP server.
+- **Secondary** assigns `172.20.0.2/16` and masks this station's DHCP/TFTP and USB boot services.
+  Use this role alongside a primary station; it does not provide a second DHCP server.
+- **Disabled** removes the stand address and binding and masks both services.
+
+Choose an active Ethernet or VLAN connection. For a new connection, create and connect its profile
+first. To change the interface of an existing stand, use the move control before changing its role.
+An ARP probe refuses an address already in use on the selected segment; this is an address-conflict
+check, not a guarantee that no DHCP server is present. Both station addresses and the `172.20.0.0/16`
+provisioning subnet are fixed in this version.
+
+The role change retains explicitly configured management addresses but replaces DHCPv4 with static
+configuration on that connection. Its previous DHCP address can disappear immediately. Keep an
+independent management path, such as Wi-Fi, to confirm the change. Address, binding and service changes
+share the two-minute rollback; confirmation also saves service startup settings for the next boot.
+Recovery restores the original masks and startup settings, including a disabled secondary station.
 
 For example, a hybrid switch port can carry the provisioning network untagged in VLAN 1 and a management
 network tagged in VLAN 15. Leave the provisioning address on the Ethernet connection and create VLAN 15

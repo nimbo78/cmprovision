@@ -53,6 +53,12 @@ class NetworkChanges
     {
         return $this->call('profiles', ['operation' => 'delete', 'uuid' => $uuid]);
     }
+    public function roleState(): array { return $this->call('profiles', ['operation' => 'role-state']); }
+    public function configureStand(array $profile, string $role, bool $usb, bool $isolated): array
+    {
+        return $this->call('begin', ['kind' => 'stand-role', 'device' => $profile['device'], 'uuid' => $profile['uuid'],
+            'role' => $role, 'usb' => $usb, 'isolated' => $isolated]);
+    }
 
     private function call(string $action, $payload): array
     {

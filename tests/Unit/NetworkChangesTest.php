@@ -24,6 +24,9 @@ class NetworkChangesTest extends TestCase
             'target_device' => 'eth0.42', 'target_uuid' => 'target'], $calls[2][1]);
         $service->connection('eth0.42', 'target', true);
         $this->assertSame(['kind' => 'connection', 'action' => 'activate', 'device' => 'eth0.42', 'uuid' => 'target'], $calls[3][1]);
+        $service->configureStand(['device' => 'eth0.42', 'uuid' => 'target'], 'primary', false, true);
+        $this->assertSame(['kind' => 'stand-role', 'device' => 'eth0.42', 'uuid' => 'target', 'role' => 'primary',
+            'usb' => false, 'isolated' => true], $calls[4][1]);
     }
 
     public function test_helper_failure_and_timeout_are_reported(): void

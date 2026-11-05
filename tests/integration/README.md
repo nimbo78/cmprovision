@@ -20,6 +20,11 @@ is stopped, runtime state is removed, and recovery must restore the saved profil
 `CMP_LAB_REBOOT_ONLY=1` similarly tests recovery of a general network profile. The namespace uses
 a scheduler test double and no udev daemon; it removes its own virtual device if needed after a crash.
 
+`CMP_LAB_ROLE_ONLY=1` tests primary/secondary/disabled roles and initial setup on a fresh VLAN,
+including a real ARP address conflict, DHCP/TFTP isolation, cancellation without a prior DHCPv4 lease,
+partial profile/service persistence and recovery after restarting NetworkManager with empty runtime
+state. Service operations are simulated in this namespace; a separate test below uses real systemd.
+
 On a disposable systemd test host, `network-watchdog-systemd.py` separately checks a uniquely
 named transient timer, its cancellation and retry after failure. The branch packages the profile
 controller and watchdog, but no package has been deployed or physically power-cycle tested.
@@ -29,6 +34,11 @@ checks boot recovery with real systemd ordering. It creates two uniquely named h
 and verifies that the recovery unit completes before its dependent service starts. It never restarts
 the real cmprovision services. Boot recovery queues DHCP/TFTP activation to avoid waiting on its own
 `Before=` dependency; ordinary watchdog recovery still waits for the service result.
+
+`sudo python3 tests/integration/stand-role-services-systemd.py tools/stand-role.py`
+checks role transitions, masking, boot enablement and restoration using uniquely named harmless
+temporary systemd units. It includes masked units with existing boot links and removes its test units
+and links on exit. It never changes the real cmprovision services.
 
 This laboratory cannot replace hardware acceptance: it does not test a real switch, actual hardware
 power loss, first boot on a fresh image, or the installed services on a provisioner.

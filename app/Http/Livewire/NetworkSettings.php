@@ -22,6 +22,7 @@ class NetworkSettings extends Component
     public $standTarget = '';
     public $activationDevice = '';
     public $newDevice = '', $newProfileName = '';
+    public $roleForm = false, $roleProfile = '', $stationRole = 'primary', $standUsb = false, $standIsolated = false;
     public $notice = null, $noticeIsError = false;
 
     public function render()
@@ -166,6 +167,47 @@ class NetworkSettings extends Component
         $result = app(NetworkChanges::class)->deleteProfile($uuid);
         $this->flash(($result['ok'] ?? false) ? 'Saved profile deleted.'
             : ($result['error'] ?? 'Could not delete profile.'), !($result['ok'] ?? false));
+    }
+
+    public function prepareStand(): void
+    {
+        $state = app(NetworkChanges::class)->roleState();
+        if (!($state['ok'] ?? false)) {
+            $this->flash($state['error'] ?? 'The provisioning service state is unavailable.', true);
+            return;
+        }
+        $reader = app(NetworkProfiles::class);
+        $profiles = $reader->active();
+        $stand = $reader->stand($profiles);
+        $this->roleProfile = $stand['uuid'] ?? ($profiles[0]['uuid'] ?? '');
+        $this->stationRole = ($stand['address'] ?? '') === '172.20.0.2' ? 'secondary' : 'primary';
+        $this->standUsb = $this->stationRole === 'primary' && ($state['result']['usb']['active'] ?? false);
+        $this->standIsolated = false;
+        $this->roleForm = true;
+        $this->notice = null;
+    }
+
+    public function updatedStationRole(): void
+    {
+        $this->standIsolated = false;
+        if ($this->stationRole !== 'primary') $this->standUsb = false;
+    }
+
+    public function configureStand(): void
+    {
+        $this->ensurePasswordIsConfirmed();
+        Validator::make(['role' => $this->stationRole, 'usb' => $this->standUsb, 'isolated' => $this->standIsolated], [
+            'role' => 'required|in:primary,secondary,disabled', 'usb' => 'required|boolean', 'isolated' => 'required|boolean',
+        ])->validate();
+        $profile = collect(app(NetworkProfiles::class)->active() ?? [])->firstWhere('uuid', $this->roleProfile);
+        if ($profile === null) {
+            $this->flash('Choose a connected Ethernet or VLAN profile for the provisioning network.', true);
+            return;
+        }
+        $result = app(NetworkChanges::class)->configureStand($profile, $this->stationRole, $this->standUsb, $this->standIsolated);
+        $this->flash(($result['ok'] ?? false) ? 'The station role changed temporarily. Check the address and services, then confirm.'
+            : ($result['error'] ?? 'The station role could not be changed.'), !($result['ok'] ?? false));
+        if ($result['ok'] ?? false) $this->roleForm = false;
     }
 
     public function moveStand(): void

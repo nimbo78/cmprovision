@@ -23,6 +23,7 @@ watchdog = module('network_watchdog', 'network-transaction-watchdog.py')
 router_module = module('network_router', 'network-transaction-router.py')
 stand_module = module('stand_backend', 'stand-network-backend.py')
 connection_module = module('connection_backend', 'network-connection-backend.py')
+role_module = module('stand_role', 'stand-role.py')
 binding_module = module('stand_binding', 'stand-network-binding.py')
 dnsmasq_start = module('dnsmasq_start', 'dnsmasq-start')
 BASE = '/var/lib/cmprovision-network'
@@ -82,7 +83,8 @@ def main():
         return {'initialized': True}
     common = backend_module.Backend(files, profile, watchdog.Watchdog(), active_runs)
     stand = stand_module.Backend(common, binding_module.Binding(dnsmasq_start), binding_module.DnsmasqService(defer_start=boot_recovery))
-    backend = router_module.Router(common, stand, connection_module.Backend(common))
+    services = role_module.Services(common.run, defer_start=boot_recovery)
+    backend = router_module.Router(common, stand, connection_module.Backend(common), role_module.Backend(common, stand, services))
     tx = coordinator.NetworkTransaction(backend)
     if action == 'recover':
         # In a chroot, after /run was cleared, or during package removal the init unit may not
@@ -93,6 +95,8 @@ def main():
         return {'recovered': True}
     request = input_json()
     if action == 'profiles':
+        if request == {'operation': 'role-state'}:
+            return services.snapshot()
         return backend.connection.manage_saved(request)
     if action == 'status':
         if request:

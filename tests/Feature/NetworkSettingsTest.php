@@ -196,4 +196,35 @@ class NetworkSettingsTest extends TestCase
             ->assertSee('Apply and connect temporarily')->set('ipv4.addresses', '192.0.2.20/24')
             ->call('apply')->assertHasNoErrors()->assertSet('device', null);
     }
+
+    public function test_primary_station_setup_uses_the_selected_profile_and_explicit_service_choices(): void
+    {
+        $profile = ['device' => 'eth0.42', 'uuid' => self::UUID, 'type' => 'vlan', 'vlan_id' => 42];
+        $reader = $this->createStub(NetworkProfiles::class);
+        $reader->method('active')->willReturn([$profile]);
+        $changes = $this->createMock(NetworkChanges::class);
+        $changes->method('available')->willReturn(true);
+        $changes->method('status')->willReturn(['ok' => true, 'result' => ['pending' => false]]);
+        $changes->method('roleState')->willReturn(['ok' => true, 'result' => ['usb' => ['active' => false]]]);
+        $changes->expects($this->once())->method('configureStand')->with($profile, 'primary', true, true)->willReturn(['ok' => true]);
+        $this->app->instance(NetworkProfiles::class, $reader);
+        $this->app->instance(NetworkChanges::class, $changes);
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        Livewire::test(NetworkSettings::class)->call('prepareStand')->assertSee('Apply role temporarily')
+            ->assertSet('roleProfile', self::UUID)->assertSet('standUsb', false)
+            ->set('standUsb', true)->set('standIsolated', true)->call('configureStand')
+            ->assertSee('The station role changed temporarily.')->assertSet('roleForm', false);
+    }
+
+    public function test_station_role_change_requires_password_confirmation(): void
+    {
+        $changes = $this->createMock(NetworkChanges::class);
+        $changes->method('available')->willReturn(true);
+        $changes->method('status')->willReturn(['ok' => true, 'result' => ['pending' => false]]);
+        $changes->expects($this->never())->method('configureStand');
+        $this->app->instance(NetworkChanges::class, $changes);
+        $this->app->instance(NetworkProfiles::class, $this->reader());
+        $this->actingAs(User::factory()->create());
+        Livewire::test(NetworkSettings::class)->call('configureStand')->assertForbidden();
+    }
 }

@@ -179,12 +179,7 @@ class Backend:
             self.common.store(state)
 
     def _up(self, connection, device):
-        links = self.common._json('ip', '-j', 'link', 'show')
-        # NM creates a disconnected virtual VLAN from its saved interface binding. Passing
-        # ifname for a device which does not exist makes nmcli reject that activation.
-        suffix = ['ifname', device] if any(link.get('ifname') == device for link in links) or \
-            self._read(connection, 'connection.type') != 'vlan' else []
-        self.common.run('nmcli', '--wait', '20', 'connection', 'up', 'uuid', connection, *suffix)
+        self.common.activate_profile(connection, device)
 
     def apply_temporary(self, change):
         if change['action'] == 'activate':

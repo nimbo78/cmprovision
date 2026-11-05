@@ -73,7 +73,16 @@ connected to a production provisioning VLAN while performing the test.
 
    Open the web UI using the management address and verify the login. DHCP/TFTP and USB boot
    remain masked at this point.
-3. For a **new, isolated primary stand** using untagged `eth0`, with no other DHCP server on
+3. With the current branch's network controller installed, open **Settings → Network**. For a
+   **new, isolated primary stand**, connect the intended Ethernet or VLAN profile, then choose
+   **Configure station role → Primary**. Enable USB boot if needed and confirm that the segment
+   has no other DHCP server. Apply the change and confirm it through the independent management
+   connection within two minutes. For a station sharing another primary's stand, choose
+   **Secondary** instead: it uses `172.20.0.2/16` and keeps DHCP/TFTP and USB boot masked.
+   See [network operations](../docs/operations.md#addresses-routes-and-the-provisioning-network).
+
+   The accepted `2.24.0~dev2` image predates this form. Until a rebuilt image includes it, upgrade
+   the package first or use the following console alternative. For untagged `eth0`, with no other DHCP server on
    that segment, create the stand profile from the local console:
 
    ```sh
@@ -88,7 +97,7 @@ connected to a production provisioning VLAN while performing the test.
    connection, another station's stand network, or a network with its own DHCP server. For a
    different interface, tagged VLAN or secondary station, configure and verify the intended
    network separately before enabling services; `172.20.0.1` is the primary station's address.
-4. Bind DHCP/TFTP to the verified stand interface, then enable the services explicitly:
+   When using the console alternative, bind DHCP/TFTP to the verified interface and enable services:
 
    ```sh
    printf 'eth0\n' | sudo tee /etc/default/cmprovision-stand-interface >/dev/null
@@ -97,7 +106,7 @@ connected to a production provisioning VLAN while performing the test.
    systemctl status cmprovision-dnsmasq.service cmprovision-rpiboot.service
    ```
 
-   Confirm DHCP/TFTP traffic remains on the intended segment. Select the intended Utility OS
+4. Confirm DHCP/TFTP traffic remains on the intended segment. Select the intended Utility OS
    in Settings; the hardware test described below explicitly selected 64-bit version 2026.10.2.
    Upload a sensor OS image, create a test project and only then connect a disposable sensor.
    Record its complete provisioning cycle.

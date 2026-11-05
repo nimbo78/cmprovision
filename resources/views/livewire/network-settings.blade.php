@@ -176,4 +176,40 @@
             <p class="text-sm text-fg-muted mt-2">DHCP/TFTP stays enabled or disabled as it was. Confirm the move after checking connectivity; otherwise it rolls back.</p>
         </div>
     @endif
+    @if ($available && !$statusError && !($pending['pending'] ?? false) && $device === null)
+        <div class="border-t border-pline mt-4 pt-4">
+            @if (!$roleForm)
+                <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="prepareStand" wire:loading.attr="disabled">Configure station role</button>
+            @else
+                <h3 class="font-bold mb-2">Station role and provisioning network</h3>
+                <p class="text-sm text-fg-muted mb-3">Choose the connected Ethernet or VLAN profile for the stand. This uses static IPv4 settings: dynamic leases on that interface are removed; existing static management addresses are retained. Keep an independent management connection while checking the change.</p>
+                <div class="grid gap-3 md:grid-cols-2">
+                    <div><label for="role-profile" class="block text-sm font-bold mb-1">Interface</label>
+                        <select id="role-profile" wire:model="roleProfile" class="cmp-field w-full">
+                            <option value="">Choose a connected profile</option>
+                            @foreach ($profiles ?? [] as $profile)
+                                <option value="{{ $profile['uuid'] }}">{{ $profile['device'] }} · {{ $profile['type'] === 'vlan' ? 'VLAN '.($profile['vlan_id'] ?? '?') : 'untagged Ethernet' }}</option>
+                            @endforeach
+                        </select></div>
+                    <div><label for="station-role" class="block text-sm font-bold mb-1">Role</label>
+                        <select id="station-role" wire:model.live="stationRole" class="cmp-field w-full">
+                            <option value="primary">Primary · 172.20.0.1 · DHCP/TFTP enabled</option>
+                            <option value="secondary">Secondary · 172.20.0.2 · DHCP/TFTP disabled</option>
+                            <option value="disabled">Disable provisioning network and boot services</option>
+                        </select></div>
+                </div>
+                @if ($stationRole === 'primary')
+                    <label class="block text-sm mt-3"><input type="checkbox" wire:model="standUsb"> Enable USB boot service</label>
+                    <label class="block text-sm mt-3"><input type="checkbox" wire:model="standIsolated"> This is an isolated provisioning network with no other DHCP server.</label>
+                @else
+                    <p class="text-sm text-fg-muted mt-3">DHCP/TFTP and USB boot will be stopped and disabled. Use an independent management connection during this change.</p>
+                @endif
+                <p class="text-sm text-fg-muted mt-3">The address and services are temporary until confirmed. If access is lost, the previous address and service settings are restored automatically.</p>
+                <div class="flex gap-2 mt-3">
+                    <x-confirms-password wire:then="configureStand"><button type="button" class="cmp-btn" wire:loading.attr="disabled">Apply role temporarily</button></x-confirms-password>
+                    <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="$set('roleForm', false)">Cancel</button>
+                </div>
+            @endif
+        </div>
+    @endif
 </x-settings-card>

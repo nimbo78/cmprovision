@@ -283,13 +283,24 @@ class Backend:
     def stage_temporary(self, change):
         self.run('nmcli', 'connection', 'modify', '--temporary', 'uuid', change['uuid'], *change['arguments'])
 
+    def activate_profile(self, connection, device):
+        links = self._json('ip', '-j', 'link', 'show')
+        kind = self.run('nmcli', '-g', 'connection.type', 'connection', 'show', 'uuid', connection)
+        # NM creates a missing VLAN from the saved interface binding. ifname requires
+        # an already existing device, but is necessary to pin unbound Ethernet profiles.
+        suffix = ['ifname', device] if any(link.get('ifname') == device for link in links) or kind != 'vlan' else []
+        self.run('nmcli', '--wait', '20', 'connection', 'up', 'uuid', connection, *suffix)
+
     def apply_temporary(self, change):
         self.run('nmcli', 'device', 'reapply', change['device'])
+        self.wait_addresses(change)
+
+    def wait_addresses(self, change, allow_stand=False, check_routes=True, wait_dhcp=True):
         requested = dict(zip(change['arguments'][::2], change['arguments'][1::2]))
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             # DHCP might assign a conflicting stand address despite no static address in the request.
-            if self._stand_on(change['device']):
+            if not allow_stand and self._stand_on(change['device']):
                 raise BackendError('The interface acquired an address on the provisioning network.')
             ready = True
             for family in (4, 6):
@@ -300,16 +311,17 @@ class Backend:
                 devices = self._json('ip', '-j', '-' + str(family), 'address', 'show', 'dev', change['device'])
                 actual = {a['local'] for device in devices for a in device.get('addr_info', [])
                           if a.get('scope') == 'global' and 'tentative' not in a.get('flags', [])}
-                expected = {str(ipaddress.ip_interface(a).ip) for a in requested.get(prefix + 'addresses', '').split(',') if a}
-                if method == 'manual' and not expected.issubset(actual):
+                expected = {str(ipaddress.ip_interface(a.strip()).ip) for a in requested.get(prefix + 'addresses', '').split(',') if a.strip()}
+                if method in ('manual', 'auto', 'dhcp') and not expected.issubset(actual):
                     ready = False
-                elif method == 'auto' and family == 4 and not actual:
+                elif wait_dhcp and method == 'auto' and family == 4 and not actual:
                     ready = False
                 elif method == 'disabled' and actual:
                     ready = False
             if ready:
                 # A DHCP lease can introduce routes not present in the submitted profile.
-                self._check_stand_routes()
+                if check_routes:
+                    self._check_stand_routes()
                 return
             time.sleep(.2)
         raise BackendError('The interface did not acquire the requested addresses in time.')

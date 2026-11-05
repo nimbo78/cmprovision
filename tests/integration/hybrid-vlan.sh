@@ -72,6 +72,12 @@ start_dnsmasq cmp-test0
 "$NMCLI" connection add type vlan ifname cmp-test0.99 dev cmp-test0 id 99 con-name cmp-service \
     ipv4.method manual ipv4.addresses 198.51.100.10/24 ipv4.never-default yes ipv6.method disabled >/dev/null
 "$NMCLI" --wait 10 connection up cmp-service >/dev/null
+if [ "${CMP_LAB_ROLE_ONLY:-0}" = 1 ]; then
+    export CMP_LAB_DNS_PID="$dnsmasq_pid"
+    export CMP_LAB_NM_PID="$nmpid"
+    python3 "$(dirname "$0")/stand-role-nm.py" "$(dirname "$0")/../../tools"
+    exit 0
+fi
 if [ "${CMP_LAB_STAND_ONLY:-0}" = 1 ] || [ "${CMP_LAB_STAND_REBOOT_ONLY:-0}" = 1 ]; then
     export CMP_LAB_DNS_PID="$dnsmasq_pid"
     export CMP_LAB_NM_PID="$nmpid"
