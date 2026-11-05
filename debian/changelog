@@ -1,3 +1,16 @@
+cmprovision4 (2.24.0~dev4) unstable; urgency=medium
+
+  * Configure Linux users, passwords, SSH keys and management Wi-Fi from
+    station image projects after verifying the written image.
+  * Deliver encrypted per-run settings through a temporary pinned SSH
+    connection, with identity checks, expiry and interrupted-setup recovery.
+  * Add station setup schema 1 to the generic image and keep boot services
+    disabled until its network role is configured.
+  * Verify real OpenSSH, NetworkManager profiles and arm64 image account tools;
+    complete station setup and network-role hardware acceptance remain pending.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 05 Nov 2026 18:30:00 +0300
+
 cmprovision4 (2.24.0~dev3) unstable; urgency=medium
 
   * Complete Ethernet/VLAN profile lifecycle, policy routing and DNS controls.

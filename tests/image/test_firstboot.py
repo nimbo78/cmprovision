@@ -97,6 +97,22 @@ class FirstBootTest(unittest.TestCase):
             firstboot.initialize(app, state, lambda path, operation: None)
         self.assertFalse((state / 'firstboot-ready').exists())
 
+    def test_interrupted_project_setup_blocks_services_until_its_receipt_is_committed(self):
+        app, state = self.station('setup-interrupted')
+        state.mkdir(mode=0o700)
+        pending = state / 'project-setup-pending.json'
+        pending.write_text('{"digest":"test"}')
+        pending.chmod(0o600)
+        with self.assertRaisesRegex(RuntimeError, 'interrupted'):
+            prepare(app, state)
+        self.assertFalse((app / '.env').exists())
+        receipt = state / 'project-setup.json'
+        receipt.write_text(pending.read_text())
+        receipt.chmod(0o600)
+        prepare(app, state)
+        self.assertFalse(pending.exists())
+        self.assertTrue((state / 'firstboot-ready').exists())
+
     def test_ssh_key_failure_does_not_unblock_services(self):
         app, state = self.station('ssh-key-failure')
         def run(path, operation):

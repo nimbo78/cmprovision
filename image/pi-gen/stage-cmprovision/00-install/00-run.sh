@@ -41,6 +41,8 @@ if [ -n "${CMP_IMAGE_FPMS:-}" ]; then
     install -D -m 0644 "${CMP_IMAGE_SOURCE}/image/fpms/fpms-lite-image.conf" "${ROOTFS_DIR}/etc/systemd/system/fpms-lite.service.d/cmprovision-image.conf"
 fi
 install -D -m 0755 "${CMP_IMAGE_SOURCE}/image/firstboot/cmprovision-image-firstboot.py" "${ROOTFS_DIR}/usr/lib/cmprovision/image-firstboot"
+install -D -m 0755 "${CMP_IMAGE_SOURCE}/image/setup/cmprovision-image-setup.py" "${ROOTFS_DIR}/usr/lib/cmprovision/image-setup"
+printf '1\n' >"${ROOTFS_DIR}/usr/lib/cmprovision/image-setup-schema"
 install -D -m 0644 "${CMP_IMAGE_SOURCE}/image/firstboot/cmprovision-image-firstboot.service" "${ROOTFS_DIR}/etc/systemd/system/cmprovision-image-firstboot.service"
 for unit in ssh nginx cmprovision-queue cmprovision-queue-images cmprovision-wallboard-data cmprovision-fpms-data; do
     install -D -m 0644 "${CMP_IMAGE_SOURCE}/image/firstboot/image-firstboot.conf" "${ROOTFS_DIR}/etc/systemd/system/${unit}.service.d/image-firstboot.conf"

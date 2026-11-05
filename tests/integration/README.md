@@ -42,3 +42,32 @@ and links on exit. It never changes the real cmprovision services.
 
 This laboratory cannot replace hardware acceptance: it does not test a real switch, actual hardware
 power loss, first boot on a fresh image, or the installed services on a provisioner.
+
+## Station image setup
+
+Run these checks in a disposable Linux environment with the PHP test dependencies installed:
+
+```sh
+sudo python3 tests/integration/station-setup-ssh.py
+python3 tests/integration/station-image-setup.py image/setup/cmprovision-image-setup.py
+```
+
+The first starts a temporary loopback OpenSSH server, checking host-key pinning, board identity,
+private stdin delivery and error redaction. It uses temporary keys and leaves real accounts unchanged.
+The second checks configuration files, interrupted setup, retries and parsing Wi-Fi/Ethernet profiles
+with real `nmcli --offline`. `CMP_LAB_NMCLI` can select a private NetworkManager binary.
+
+`station-image-rootfs.py` additionally checks OS account tools inside a **disposable copy** of the
+actual arm64 image rootfs. It requires QEMU binfmt support and a private mount/PID namespace:
+
+```sh
+lab=$(mktemp -d /root/cmp-station-rootfs-XXXXXX)
+cp -a --reflink=auto /path/to/pristine/image/rootfs "$lab/rootfs"
+sudo unshare --mount --pid --fork python3 tests/integration/station-image-rootfs.py \
+  "$lab/rootfs" image/setup/cmprovision-image-setup.py
+```
+
+Use a fresh copy with `CMP_STATION_KEYS_ONLY=1` to test key-only access and its sudo policy.
+The test refuses an ordinary rootfs path and never changes the source image. QEMU user-mode
+does not validate setuid elevation, real Wi-Fi association or physical boot. SSH login, sudo,
+network recovery and cold startup must still be accepted on hardware.

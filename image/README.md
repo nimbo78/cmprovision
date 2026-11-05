@@ -112,6 +112,8 @@ connected to a production provisioning VLAN while performing the test.
    Record its complete provisioning cycle.
 
 The image can also be written to a station by another cmprovision server over network boot.
+Rebuilt images with setup schema 1 support [project-driven Linux, SSH and Wi-Fi configuration](../docs/station-project-setup.md)
+after SHA-256 verification. This path has software/QEMU coverage; its full hardware acceptance remains open.
 The writing server uses its **active project** for newly booting devices, so isolate the test or,
 for a fresh image with no resumable writes, use a pre-install check which refuses every serial
 except the intended station. A resumed write skips pre-install scripts, so such a check is not a
@@ -124,7 +126,7 @@ After the test, a station whose bootloader falls back to network boot can still 
 project is active on that shared stand if its own system stops booting. Isolate it from the stand
 or arrange an explicit safeguard before relying on unattended recovery.
 
-For a headless test, prepare a **station-specific copy** with Raspberry Pi OS's first-user
+For an older image without setup schema 1, prepare a **station-specific copy** with Raspberry Pi OS's first-user
 configuration and an SSH public key, and enable SSH on first boot. Keep the generic image free
 of user credentials. cmprovision serves project images to modules over HTTP: do not put reusable
 Wi-Fi passwords in a project image. Instead, connect over the isolated stand network and transfer

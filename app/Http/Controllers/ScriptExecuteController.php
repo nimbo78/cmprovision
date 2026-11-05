@@ -357,6 +357,10 @@ exit 1
             return $this->refuse("Could not provision, because there is no active project", 'No active project set in CMprovisioning');
         }
 
+        if ($project->station_setup !== null && $this->cm->utility_os === null) {
+            return $this->refuse('Station setup requires the 64-bit utility OS. Select it in Settings before writing this image.');
+        }
+
         // an image from the internet is written only after it is fetched, repacked and checked
         if ($image && ($reason = $image->notReadyReason()))
         {
@@ -606,6 +610,15 @@ exit 1
                              . 'echo Computed SHA256: "$READ_SHA256"'."\n"
                              . 'if [ "$READ_SHA256" = "'.$image->uncompressed_sha256.'" ]; then echo Verification successful!; else echo Verification failed; exit 2; fi'."\n";
             $postinstall_scripts->prepend($fscript);
+        }
+        if ($project->station_setup !== null) {
+            $setup = new Script;
+            $setup->id = -2;
+            $setup->name = 'Configuring the station';
+            $setup->bg = false;
+            $setup->script = app(\App\Services\StationSetup::class)->prepare($this->cm, $project, $server);
+            // Verification must precede all modifications to the shared image.
+            $postinstall_scripts->splice(1, 0, [$setup]);
         }
         if ($project->reprovision && $image)
         {

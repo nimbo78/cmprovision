@@ -17,6 +17,7 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 - [Images from the internet](#images-from-the-internet)
 - [Image download and write recovery](#image-download-and-write-recovery)
 - [Re-provision an installed sensor](#re-provision-an-installed-sensor)
+- [Set up a new provisioner from a project](station-project-setup.md)
 - [Built-in Wi-Fi as a cold spare](#built-in-wi-fi-as-a-cold-spare)
 - [Wi-Fi networks](#wi-fi-networks)
 - [Additional tagged VLANs](#additional-tagged-vlans)

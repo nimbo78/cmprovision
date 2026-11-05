@@ -26,6 +26,10 @@ use App\Services\Sensor\ModuleMark;
 class Projects extends Component
 {
     use SortsColumns;
+    use \Laravel\Jetstream\ConfirmsPasswords;
+    public $stationEnabled = false, $station = [];
+    #[Locked]
+    public $savedStationSetup = false;
     public $isOpen = false;
     public $active = true;
     public $projects, $activeProject;
@@ -165,6 +169,7 @@ class Projects extends Component
     public function closeModal()
     {
         $this->isOpen = false;
+        $this->station = [];
     }
     
     public function delete($id)
@@ -175,6 +180,8 @@ class Projects extends Component
 
     public function create()
     {
+        $this->stationEnabled = $this->savedStationSetup = false;
+        $this->station = \App\Support\StationSetupInput::form();
         $this->name = $this->projectid = $this->label_id = '';
         $this->device = 'cm4';
         $this->storage = "/dev/mmcblk0";
@@ -198,6 +205,8 @@ class Projects extends Component
     public function edit($id)
     {
         $p = Project::findOrFail($id);
+        $this->stationEnabled = $this->savedStationSetup = $p->station_setup !== null;
+        $this->station = \App\Support\StationSetupInput::form($p->station_setup);
         $this->projectid = $id;
         $this->name = $p->name;
         $this->device = $p->device;
@@ -238,6 +247,22 @@ class Projects extends Component
     public function store()
     {
         $this->validate();
+        $savedSetup = $this->projectid ? Project::find($this->projectid)?->station_setup : null;
+        $setup = null;
+        if ($this->stationEnabled || $savedSetup !== null) $this->ensurePasswordIsConfirmed();
+        if ($this->stationEnabled) {
+            if (!$this->image_id || !$this->verify || !preg_match('#^/dev/mmcblk[0-9]+$#D', $this->storage)) {
+                $this->addError('stationEnabled', 'Station setup requires an image, SHA-256 verification and eMMC/SD storage.');
+                return;
+            }
+            try {
+                $setup = \App\Support\StationSetupInput::normalize($this->station, $savedSetup);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                foreach ($e->errors() as $key => $messages) $this->addError('station.'.$key, $messages[0]);
+                $this->station['password'] = $this->station['wifi_password'] = '';
+                return;
+            }
+        }
 
         // what runs in the new system belongs to the OS check
         if (!$this->os_check)
@@ -270,6 +295,8 @@ class Projects extends Component
             'reprovision' => (bool) $this->reprovision,
             'mark_boots' => (int) $this->mark_boots,
         ]);
+        $project->station_setup = $setup;
+        $project->save();
         $project->scripts()->sync($this->selectedScripts);
         $project->packages()->sync($this->selectedPackages ?: []);
 

@@ -44,6 +44,9 @@ class RootfsAuditTest(unittest.TestCase):
                    '[Unit]\nAfter=sshd-keygen.service\n[Service]\nExecStart=/usr/lib/cmprovision/image-firstboot\n')
         self.write('usr/lib/cmprovision/image-firstboot', '#!/bin/sh\nexit 0\n')
         (self.root / 'usr/lib/cmprovision/image-firstboot').chmod(0o755)
+        self.write('usr/lib/cmprovision/image-setup-schema', '1\n')
+        self.write('usr/lib/cmprovision/image-setup', '#!/usr/bin/python3\n')
+        (self.root / 'usr/lib/cmprovision/image-setup').chmod(0o755)
 
     def tearDown(self):
         self.temp.cleanup()
@@ -69,6 +72,11 @@ class RootfsAuditTest(unittest.TestCase):
     def test_shared_key_is_rejected(self):
         self.write('var/lib/cmprovision/.env', 'APP_KEY=base64:shared\n')
         with self.assertRaises(ValueError):
+            audit.audit(self.root)
+
+    def test_station_specific_setup_is_rejected_from_shared_image(self):
+        self.write('var/lib/cmprovision-image/project-setup-pending.json', '{}')
+        with self.assertRaisesRegex(ValueError, 'station-specific'):
             audit.audit(self.root)
 
     def test_station_announcement_requires_installed_enabled_lldp_and_valid_description(self):

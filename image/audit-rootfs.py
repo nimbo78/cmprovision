@@ -74,6 +74,17 @@ def audit(root):
             raise ValueError('The image must not include a build-host SSH authorized key.')
     if os.path.lexists(root / 'var/lib/cmprovision-image/firstboot-ready'):
         raise ValueError('The image must not contain a first-boot completion marker.')
+    if read_regular(root / 'usr/lib/cmprovision/image-setup-schema').strip() != '1':
+        raise ValueError('The station project setup schema is missing or unsupported.')
+    setup_helper = (root / 'usr/lib/cmprovision/image-setup').lstat()
+    if not stat.S_ISREG(setup_helper.st_mode) or setup_helper.st_uid != 0 or not (setup_helper.st_mode & 0o100):
+        raise ValueError('The station project setup helper is missing or unsafe.')
+    if any(os.path.lexists(root / path) for path in (
+        'var/lib/cmprovision-image/project-setup.json', 'var/lib/cmprovision-image/project-setup-pending.json',
+        'run/cmprovision-station-setup', 'etc/NetworkManager/system-connections/cmprovision-management.nmconnection',
+        'etc/NetworkManager/system-connections/cmprovision-stand-uplink.nmconnection',
+    )):
+        raise ValueError('The generic image must not contain station-specific project settings.')
     units = root / 'etc/systemd/system'
     for name in ('cmprovision-dnsmasq', 'cmprovision-rpiboot'):
         if not (units / (name + '.service')).is_symlink() or os.readlink(units / (name + '.service')) != '/dev/null':

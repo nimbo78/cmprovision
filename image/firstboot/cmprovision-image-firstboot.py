@@ -59,6 +59,24 @@ def initialize(app, state, run):
     try:
         _regular_owned(lock)
         fcntl.flock(lock, fcntl.LOCK_EX)
+        pending = state / 'project-setup-pending.json'
+        if os.path.lexists(pending):
+            # A power cut after committing the receipt but before unlinking the
+            # pending marker is harmless; every other incomplete setup stays closed.
+            records = []
+            for path in (pending, state / 'project-setup.json'):
+                try:
+                    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                except FileNotFoundError:
+                    raise RuntimeError('Station project setup was interrupted; repeat the image write.')
+                try:
+                    _regular_owned(fd)
+                    records.append(os.read(fd, 4097))
+                finally:
+                    os.close(fd)
+            if not records[0] or len(records[0]) > 4096 or records[0] != records[1]:
+                raise RuntimeError('Station project setup was interrupted; repeat the image write.')
+            pending.unlink()
         marker = state / 'firstboot-ready'
         try:
             existing = os.open(marker, os.O_RDONLY | os.O_NOFOLLOW)
