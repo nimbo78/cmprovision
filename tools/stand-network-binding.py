@@ -58,8 +58,9 @@ class Binding:
 
 
 class DnsmasqService:
-    def __init__(self, run=None):
+    def __init__(self, run=None, defer_start=False):
         self.run = run or self._run
+        self.defer_start = defer_start
 
     @staticmethod
     def _run(*args):
@@ -77,6 +78,11 @@ class DnsmasqService:
 
     def reconcile(self, should_be_active):
         if should_be_active:
+            if self.defer_start:
+                # Boot recovery is ordered Before=dnsmasq. Waiting for its restart here
+                # would deadlock on our own unit; queue it and let recovery finish first.
+                self.run('systemctl', '--no-block', 'restart', 'cmprovision-dnsmasq.service')
+                return
             self.run('systemctl', 'restart', 'cmprovision-dnsmasq.service')
             if not self.active():
                 raise BindingError('The DHCP/TFTP service did not start on the selected interface.')

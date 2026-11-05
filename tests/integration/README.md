@@ -24,5 +24,11 @@ On a disposable systemd test host, `network-watchdog-systemd.py` separately chec
 named transient timer, its cancellation and retry after failure. The branch packages the profile
 controller and watchdog, but no package has been deployed or physically power-cycle tested.
 
+`sudo python3 tests/integration/network-boot-order-systemd.py tools/stand-network-binding.py`
+checks boot recovery with real systemd ordering. It creates two uniquely named harmless temporary units
+and verifies that the recovery unit completes before its dependent service starts. It never restarts
+the real cmprovision services. Boot recovery queues DHCP/TFTP activation to avoid waiting on its own
+`Before=` dependency; ordinary watchdog recovery still waits for the service result.
+
 This laboratory cannot replace hardware acceptance: it does not test a real switch, actual hardware
 power loss, first boot on a fresh image, or the installed services on a provisioner.

@@ -67,18 +67,21 @@ def input_json():
 
 
 def main():
-    if os.geteuid() != 0 or len(sys.argv) not in (2, 3) or sys.argv[1] not in ('init', 'recover', 'status', 'begin', 'confirm', 'cancel', 'profiles'):
+    if os.geteuid() != 0 or len(sys.argv) not in (2, 3) or sys.argv[1] not in ('init', 'recover', 'recover-boot', 'status', 'begin', 'confirm', 'cancel', 'profiles'):
         raise RuntimeError('Invalid network controller invocation.')
     action = sys.argv[1]
     if len(sys.argv) == 3 and (action != 'recover' or not re.fullmatch(r'[0-9a-f]{32}', sys.argv[2])):
         raise RuntimeError('Invalid network recovery identifier.')
+    boot_recovery = action == 'recover-boot'
+    if boot_recovery:
+        action = 'recover'
     state_parent()
     files = store_module.Store(STATE, RUNTIME)
     if action == 'init':
         files.initialize()
         return {'initialized': True}
     common = backend_module.Backend(files, profile, watchdog.Watchdog(), active_runs)
-    stand = stand_module.Backend(common, binding_module.Binding(dnsmasq_start), binding_module.DnsmasqService())
+    stand = stand_module.Backend(common, binding_module.Binding(dnsmasq_start), binding_module.DnsmasqService(defer_start=boot_recovery))
     backend = router_module.Router(common, stand, connection_module.Backend(common))
     tx = coordinator.NetworkTransaction(backend)
     if action == 'recover':

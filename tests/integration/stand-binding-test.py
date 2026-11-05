@@ -43,5 +43,11 @@ class StandBindingTest(unittest.TestCase):
         with self.assertRaises(binding_module.BindingError): service.reconcile(False)
         self.assertFalse(any('restart' in call.args for call in run.call_args_list))
 
+    def test_boot_recovery_queues_start_without_waiting_on_its_own_ordering(self):
+        run = Mock(return_value='')
+        service = binding_module.DnsmasqService(run=run, defer_start=True)
+        service.reconcile(True)
+        run.assert_called_once_with('systemctl', '--no-block', 'restart', 'cmprovision-dnsmasq.service')
+
 
 unittest.main()
