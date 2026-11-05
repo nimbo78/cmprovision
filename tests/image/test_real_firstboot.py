@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Run the first-boot coordinator with real Laravel and isolated SSH key directories.
 
-CMP_IMAGE_LARAVEL_SOURCE must name a disposable project copy with vendor/ installed.
+CMP_IMAGE_LARAVEL_SOURCE must name a disposable project copy with vendor/ installed,
+or the application directory extracted from the built package.
 The host's SSH directory and application environment are never used as output.
 """
 
@@ -39,8 +40,10 @@ class RealFirstBootTest(unittest.TestCase):
                 station.mkdir(mode=0o755)
                 app = station / 'app'
                 shutil.copytree(source, app, ignore=shutil.ignore_patterns('.git', '.env', 'node_modules'))
+                # A private build workspace can be 0700; the installed application is 0755.
+                app.chmod(0o755)
                 env = app / '.env'
-                lines = (app / 'debian/env.example').read_text().splitlines()
+                lines = (ROOT / 'debian/env.example').read_text().splitlines()
                 self.assertEqual(1, sum(line.startswith('APP_KEY=') for line in lines))
                 env.write_text('\n'.join('APP_KEY=' if x.startswith('APP_KEY=') else x for x in lines) + '\n')
                 os.chown(env, uid, gid)

@@ -35,7 +35,8 @@ sudo env CMP_IMAGE_LARAVEL_SOURCE=/path/to/test-copy-with-vendor \
 ```
 
 The second test makes two temporary application copies and uses the real Laravel key generator
-and `ssh-keygen`, with SSH keys confined to temporary directories.
+and `ssh-keygen`, with SSH keys confined to temporary directories. The source may also be
+the `var/lib/cmprovision` directory extracted from the built `.deb` to validate its actual contents.
 
 The image setup currently:
 
