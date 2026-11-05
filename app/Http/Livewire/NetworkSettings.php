@@ -4,6 +4,7 @@ namespace App\Http\Livewire;
 
 use App\Services\NetworkChanges;
 use App\Services\NetworkProfiles;
+use App\Support\NetworkRoutingInput;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Jetstream\ConfirmsPasswords;
 use Livewire\Attributes\Locked;
@@ -77,12 +78,14 @@ class NetworkSettings extends Component
         foreach (['ipv4', 'ipv6'] as $family) {
             $methods = $family === 'ipv4' ? 'auto,manual,disabled,link-local' : 'auto,dhcp,manual,disabled,link-local,ignore';
             $rules[$family.'.method'] = 'required|in:'.$methods;
-            foreach (['addresses', 'gateway', 'dns', 'routes'] as $field) {
+            foreach (['addresses', 'gateway', 'dns', 'routes', 'routing_rules', 'dns_search'] as $field) {
                 $rules[$family.'.'.$field] = 'nullable|string|max:4096';
             }
             $rules[$family.'.route_metric'] = 'required|integer|between:-1,4294967295';
             $rules[$family.'.never_default'] = 'required|boolean';
             $rules[$family.'.ignore_auto_dns'] = 'required|boolean';
+            $rules[$family.'.ignore_auto_routes'] = 'required|boolean';
+            $rules[$family.'.route_table'] = 'required|integer|between:0,4294967295';
         }
         Validator::make(['ipv4' => $this->ipv4, 'ipv6' => $this->ipv6], $rules)->validate();
         $v4 = $this->requestValues($this->ipv4, 'ipv4');
@@ -151,34 +154,34 @@ class NetworkSettings extends Component
             'routes' => str_replace(',', "\n", $profile['routes']),
             'route_metric' => $profile['route-metric'] === '' ? '-1' : $profile['route-metric'],
             'never_default' => $profile['never-default'] === 'yes', 'ignore_auto_dns' => $profile['ignore-auto-dns'] === 'yes',
+            'ignore_auto_routes' => ($profile['ignore-auto-routes'] ?? 'no') === 'yes',
+            'route_table' => ($profile['route-table'] ?? '') === '' ? '0' : $profile['route-table'],
+            'routing_rules' => str_replace(',', "\n", $profile['routing-rules'] ?? ''),
+            'dns_search' => str_replace(',', "\n", $profile['dns-search'] ?? ''),
         ];
     }
 
     private function requestValues(array $values, string $family): ?array
     {
-        $routes = [];
-        foreach ($this->lines($values['routes']) as $line) {
-            $parts = preg_split('/\s+/', $line);
-            // Accept both "prefix gateway metric" and the familiar "prefix via gateway metric N".
-            $parts = array_values(array_filter($parts, fn ($part) => $part !== 'via' && $part !== 'metric'));
-            if (count($parts) < 1 || count($parts) > 3 || (isset($parts[2]) && !ctype_digit($parts[2]))) {
-                $this->addError($family.'.routes', 'Use one route per line: prefix, optional gateway and metric.');
-                return null;
-            }
-            $route = ['destination' => $parts[0]];
-            if (isset($parts[1]) && count($parts) === 2 && ctype_digit($parts[1])) {
-                $route['metric'] = (int) $parts[1];
-            } else {
-                if (isset($parts[1])) $route['via'] = $parts[1];
-                if (isset($parts[2])) $route['metric'] = (int) $parts[2];
-            }
-            $routes[] = $route;
+        try {
+            $routes = NetworkRoutingInput::routes($values['routes']);
+        } catch (\InvalidArgumentException $e) {
+            $this->addError($family.'.routes', $e->getMessage());
+            return null;
+        }
+        try {
+            $routingRules = NetworkRoutingInput::rules($values['routing_rules']);
+        } catch (\InvalidArgumentException $e) {
+            $this->addError($family.'.routing_rules', $e->getMessage());
+            return null;
         }
         return [
             'method' => $values['method'], 'addresses' => $this->lines($values['addresses']),
             'gateway' => trim((string) $values['gateway']), 'dns' => $this->lines($values['dns']), 'routes' => $routes,
             'route_metric' => (int) $values['route_metric'], 'never_default' => (bool) $values['never_default'],
             'ignore_auto_dns' => (bool) $values['ignore_auto_dns'],
+            'ignore_auto_routes' => (bool) $values['ignore_auto_routes'], 'route_table' => (int) $values['route_table'],
+            'routing_rules' => $routingRules, 'dns_search' => $this->lines($values['dns_search']),
         ];
     }
 

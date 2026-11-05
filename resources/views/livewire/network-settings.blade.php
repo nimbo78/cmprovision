@@ -51,16 +51,30 @@
                         <textarea id="{{ $family }}-dns" class="cmp-field w-full" rows="2" wire:model="{{ $family }}.dns" placeholder="One server per line"></textarea>
                         @error($family.'.dns') <p class="text-neg text-sm">{{ $message }}</p> @enderror</div>
                     <div><label for="{{ $family }}-routes" class="block text-sm font-bold mb-1">Routes</label>
-                        <textarea id="{{ $family }}-routes" class="cmp-field w-full" rows="2" wire:model="{{ $family }}.routes" placeholder="Prefix via gateway metric N"></textarea>
+                        <textarea id="{{ $family }}-routes" class="cmp-field w-full font-mono text-sm" rows="3" wire:model="{{ $family }}.routes" placeholder="Prefix via gateway metric N"></textarea>
+                        <p class="text-xs text-fg-muted mt-1">One route per line. Optional attributes: table=100, mtu=1500, src=address, onlink=true, type=blackhole.</p>
                         @error($family.'.routes') <p class="text-neg text-sm">{{ $message }}</p> @enderror</div>
                     <div><label for="{{ $family }}-metric" class="block text-sm font-bold mb-1">Default route metric</label>
                         <input id="{{ $family }}-metric" type="number" min="-1" class="cmp-field w-full" wire:model="{{ $family }}.route_metric">
                         <p class="text-xs text-fg-muted mt-1">−1 uses NetworkManager's default metric.</p>
                         @error($family.'.route_metric') <p class="text-neg text-sm">{{ $message }}</p> @enderror</div>
+                    <div><label for="{{ $family }}-table" class="block text-sm font-bold mb-1">Routing table</label>
+                        <input id="{{ $family }}-table" type="number" min="0" max="4294967295" class="cmp-field w-full" wire:model="{{ $family }}.route_table">
+                        <p class="text-xs text-fg-muted mt-1">0 uses the system default. A separate table needs a matching routing rule.</p>
+                        @error($family.'.route_table') <p class="text-neg text-sm">{{ $message }}</p> @enderror</div>
+                    <div><label for="{{ $family }}-dns-search" class="block text-sm font-bold mb-1">DNS search and routing domains</label>
+                        <textarea id="{{ $family }}-dns-search" class="cmp-field w-full" rows="2" wire:model="{{ $family }}.dns_search" placeholder="example.internal"></textarea>
+                        <p class="text-xs text-fg-muted mt-1">One domain per line. Prefix with ~ for DNS routing only; the system DNS resolver must support split DNS.</p>
+                        @error($family.'.dns_search') <p class="text-neg text-sm">{{ $message }}</p> @enderror</div>
+                    <div class="md:col-span-2"><label for="{{ $family }}-rules" class="block text-sm font-bold mb-1">Routing rules</label>
+                        <textarea id="{{ $family }}-rules" class="cmp-field w-full font-mono text-sm" rows="3" wire:model="{{ $family }}.routing_rules" placeholder="priority 100 from {{ $family === 'ipv4' ? '192.0.2.0/24' : 'fd42::/64' }} table 100"></textarea>
+                        <p class="text-xs text-fg-muted mt-1">One rule per line, with a distinct priority and numeric table. Optional selectors: from, to, fwmark, iif, oif. Lower priority numbers run first.</p>
+                        @error($family.'.routing_rules') <p class="text-neg text-sm">{{ $message }}</p> @enderror</div>
                 </div>
                 <div class="flex flex-wrap gap-4 mt-3 text-sm">
                     <label><input type="checkbox" wire:model="{{ $family }}.never_default"> Never use as the default route</label>
                     <label><input type="checkbox" wire:model="{{ $family }}.ignore_auto_dns"> Ignore automatic DNS</label>
+                    <label><input type="checkbox" wire:model="{{ $family }}.ignore_auto_routes"> Ignore automatic routes</label>
                 </div>
             </fieldset>
         @endforeach

@@ -137,12 +137,15 @@ class Backend:
                 raise BackendError('A network interface address could not be checked.') from exc
             if not on_stand:
                 continue
+            if interface.get('ifname') == device:
+                return True
             current = by_name.get(interface.get('ifname'))
             visited = set()
             while current is not None:
                 name = current.get('ifname')
-                if name == device:
-                    return True
+                # IP-only reapply on a physical parent does not replace its VLAN child.
+                # Keep checking unsupported topologies, but do not lock the parent's
+                # independent untagged management network merely because a child is a stand.
                 if name in visited:
                     raise BackendError('A network interface has an invalid parent chain.')
                 visited.add(name)
@@ -167,17 +170,41 @@ class Backend:
                         stand_devices.add(interface['ifname'])
                 except (KeyError, ValueError) as exc:
                     raise BackendError('A network interface address could not be checked.') from exc
-        for route in self._json('ip', '-j', '-4', 'route', 'show', 'table', 'all'):
+        rules = self._json('ip', '-j', '-4', '-N', 'rule', 'show')
+        for route in self._json('ip', '-j', '-4', '-N', 'route', 'show', 'table', 'all'):
             destination = route.get('dst', 'default')
             try:
                 network = ipaddress.ip_network('0.0.0.0/0' if destination == 'default' else destination, strict=False)
             except ValueError as exc:
                 raise BackendError('An IPv4 route could not be checked.') from exc
             table = str(route.get('table', 'main'))
-            affects_stand = network.overlaps(self.STAND) and (network.prefixlen >= self.STAND.prefixlen or
-                                                               table not in ('main', 'local', '254', '255'))
+            custom_table = table not in ('main', 'local', '254', '255')
+            # A source-specific management table is legitimate. A catch-all policy table
+            # with a default route can steal sensor traffic even though main has /16.
+            selected = not custom_table or any(str(rule.get('table')) == table and
+                self._rule_may_select_stand(rule) for rule in rules)
+            affects_stand = network.overlaps(self.STAND) and selected and (
+                network.prefixlen >= self.STAND.prefixlen or custom_table)
             if affects_stand and route.get('dev') not in stand_devices:
                 raise BackendError('A route on another interface could divert provisioning traffic.')
+
+    def _rule_may_select_stand(self, rule):
+        # iproute2 JSON uses src/dst; missing selectors mean all. Unknown/inverted
+        # selectors fail closed. Marks/interfaces cannot prove the stand is excluded.
+        if rule.get('not') or rule.get('flags'):
+            return True
+        for key in ('src', 'dst'):
+            selector = rule.get(key, 'all')
+            if selector == 'all':
+                continue
+            try:
+                if '/' not in selector and key + 'len' in rule:
+                    selector += '/' + str(rule[key + 'len'])
+                if not ipaddress.ip_network(selector, strict=False).overlaps(self.STAND):
+                    return False
+            except ValueError as exc:
+                raise BackendError('A routing rule could not be checked.') from exc
+        return True
 
     def validate(self, request):
         if not isinstance(request, dict) or set(request) != {'uuid', 'device', 'profile'}:

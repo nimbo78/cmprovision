@@ -71,6 +71,26 @@ try:
         raise
     assert run('nmcli', '-g', 'ipv4.addresses', 'connection', 'show', 'uuid', connection) == '198.19.10.2/24'
     assert not store.pending() and not scheduler.pending
+    # Separate management routing is allowed; catch-all policy must roll back before
+    # it can be confirmed, including rules that select a pre-existing route table.
+    policy_request = json.loads(json.dumps(request))
+    policy_request['profile']['ipv4'].update({'never_default': False, 'gateway': '198.19.11.1',
+        'route_table': 100, 'routing_rules': [{'priority': 100, 'from': '198.19.11.0/24', 'table': 100}],
+        'dns_search': ['lab.example'], 'ignore_auto_routes': True})
+    token = tx.begin(policy_request)
+    assert any(r.get('priority') == 100 for r in json.loads(run('ip', '-j', '-4', 'rule', 'show')))
+    tx.cancel(token)
+    assert not any(r.get('priority') == 100 for r in json.loads(run('ip', '-j', '-4', 'rule', 'show')))
+    assert run('nmcli', '-g', 'ipv4.dns-search', 'connection', 'show', 'uuid', connection) == ''
+    for selector in ({}, {'from': '128.0.0.0/1'}, {'to': '128.0.0.0/1'}):
+        policy_request['profile']['ipv4']['routing_rules'] = [{'priority': 100, 'table': 100, **selector}]
+        try:
+            tx.begin(policy_request)
+            raise AssertionError('a policy route covering the stand was accepted')
+        except backend_module.BackendError:
+            pass
+        assert not store.pending()
+        assert run('nmcli', '-g', 'ipv4.addresses', 'connection', 'show', 'uuid', connection) == '198.19.10.2/24'
     # Failure after the confirmed profile was persisted restores the prior saved profile.
     real_commit = backend.commit_checkpoint
     backend.commit_checkpoint = lambda _: (_ for _ in ()).throw(backend_module.BackendError('simulated failure'))

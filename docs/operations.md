@@ -257,10 +257,32 @@ the system's network tools before removing it here.
 ### Addresses, routes and the provisioning network
 
 Settings → Network also lists active Ethernet and VLAN connections. Their IP settings support DHCP or
-static addresses, DNS, default gateways and basic static routes for IPv4 and IPv6. A newly created VLAN
-can be left without an address and then configured through its network profile. Advanced NetworkManager
-features such as policy routing rules and route attributes are outside this editor; use the system's
-network tools for those. Unsupported IP assignment methods cannot be edited here.
+static addresses, DNS, default gateways, static routes and policy routing for IPv4 and IPv6. A newly
+created VLAN can be left without an address and then configured through its network profile.
+Unsupported IP assignment methods cannot be edited here.
+
+Each route occupies one line: a destination prefix, an optional gateway and metric, then optional
+attributes. Both `203.0.113.0/24 via 192.0.2.1 metric 25` and the saved NetworkManager form
+`203.0.113.0/24 192.0.2.1 25` are accepted. Supported attributes are `table`, `mtu`, `src`, `onlink`
+and `type` (`unicast`, `blackhole`, `unreachable`, `prohibit`, `throw`). For example:
+
+```text
+203.0.113.0/24 via 192.0.2.1 metric 25 table=100 mtu=1400
+198.51.100.0/24 type=blackhole table=100
+```
+
+**Routing table** selects the profile's default table; `0` uses the system default. For an independent
+management uplink, give it a separate table such as `100` and add a rule such as
+`priority 100 from 192.0.2.0/24 table 100`. Rules occupy one line each and need distinct numeric priorities
+and numeric table IDs. Supported selectors are `from`, `to`, `fwmark` (optionally with `/mask`), `iif`
+and `oif`. Lower priorities run first. A rule must select the separate table before its routes can be used.
+The system's local table (`255`) is reserved. Routes and rules that divert provisioning traffic through
+another interface are rejected and the change is rolled back.
+
+**Ignore automatic routes** keeps DHCP addresses while ignoring DHCP-provided routes. DNS search domains
+are also editable; `~corp.example` is a routing-only domain and `~.` selects all DNS names. Routing-only
+domains need a system resolver with split-DNS support; adding one does not install or enable that resolver.
+Unknown route attributes are reported as an error, rather than silently removed when saving.
 
 Changes to IP settings require the account password and are temporary until confirmed. The server
 automatically rolls them back after two minutes if you cannot reconnect and confirm them. Check both
@@ -275,6 +297,9 @@ port. Configure the switch first and keep an independent management connection a
 preserves the station's existing provisioning address and the original DHCP/TFTP service state, with
 the same timed confirmation and rollback. A secondary station using `172.20.0.2/16` must keep its own
 DHCP/TFTP service stopped when it shares the stand with a primary station at `172.20.0.1/16`.
+If the stand uses a tagged VLAN, the physical parent's independent untagged IP settings remain editable.
+Changing station roles (primary/secondary), initial stand setup and activation of inactive profiles still
+need the system network tools; the transfer preserves the existing role.
 
 For example, a hybrid switch port can carry the provisioning network untagged in VLAN 1 and a management
 network tagged in VLAN 15. Leave the provisioning address on the Ethernet connection and create VLAN 15

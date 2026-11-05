@@ -37,10 +37,40 @@ try:
     assert '203.0.114.0/24 35' in route_values
     dns6 = subprocess.check_output(['nmcli', '--escape', 'no', '-g', 'ipv6.dns', 'connection', 'show', 'cmp-routes'], text=True).strip()
     assert ipaddress.ip_address(dns6) == ipaddress.ip_address('fd42:12::53')
+    advanced = profile.properties({
+        'ipv4': {'method': 'manual', 'addresses': ['198.19.1.10/24'], 'gateway': '198.19.1.1',
+            'route_table': 100, 'dns': ['198.19.1.53'], 'dns_search': ['lab.example', '~corp.example'],
+            'ignore_auto_routes': True, 'routing_rules': [{'priority': 100, 'from': '198.19.1.0/24', 'table': 100}],
+            'routes': [{'destination': '203.0.113.0/24', 'via': '198.19.1.1', 'metric': 25,
+                        'table': 100, 'mtu': 1400, 'src': '198.19.1.10', 'onlink': True},
+                       {'destination': '203.0.114.0/24', 'type': 'blackhole', 'table': 100}]},
+        'ipv6': {'method': 'manual', 'addresses': ['fd42:12::10/64'], 'route_table': 101,
+            'routing_rules': [{'priority': 101, 'from': 'fd42:12::/64', 'table': 101}],
+            'routes': [{'destination': 'fd42:13::/64', 'via': 'fd42:12::1', 'table': 101, 'mtu': 1400}]}})
+    subprocess.check_call(['nmcli', 'connection', 'modify', '--temporary', 'cmp-routes'] + advanced)
+    subprocess.check_call(['nmcli', 'device', 'reapply', 'cmp-route124'], stdout=subprocess.DEVNULL)
+    table = json.loads(subprocess.check_output(['ip', '-j', '-4', 'route', 'show', 'table', '100'], text=True))
+    assert any(r.get('dst') == 'default' and r.get('gateway') == '198.19.1.1' for r in table), table
+    assert any(r.get('dst') == '203.0.114.0/24' and r.get('type') == 'blackhole' for r in table), table
+    route = next(r for r in table if r.get('dst') == '203.0.113.0/24')
+    metrics = route.get('metrics', {})
+    if isinstance(metrics, list):
+        metrics = {key: value for item in metrics for key, value in item.items()}
+    assert route.get('prefsrc') == '198.19.1.10' and metrics.get('mtu') == 1400, route
+    rules = json.loads(subprocess.check_output(['ip', '-j', '-4', 'rule', 'show'], text=True))
+    assert any(r.get('priority') == 100 and r.get('src') in ('198.19.1.0/24', '198.19.1.0') and str(r.get('table')) == '100' for r in rules), rules
+    table6 = json.loads(subprocess.check_output(['ip', '-j', '-6', 'route', 'show', 'table', '101'], text=True))
+    assert any(r.get('dst') == 'fd42:13::/64' for r in table6), table6
+    rules6 = json.loads(subprocess.check_output(['ip', '-j', '-6', 'rule', 'show'], text=True))
+    assert any(r.get('priority') == 101 and str(r.get('table')) == '101' for r in rules6), rules6
+    search = subprocess.check_output(['nmcli', '-g', 'ipv4.dns-search', 'connection', 'show', 'cmp-routes'], text=True)
+    assert 'lab.example' in search and '~corp.example' in search
     # A recovery helper must be able to feed NM's saved property representation back unchanged.
     for prop in ['ipv4.method', 'ipv4.addresses', 'ipv4.gateway', 'ipv4.dns', 'ipv4.routes', 'ipv4.route-metric',
                  'ipv4.never-default', 'ipv4.ignore-auto-dns', 'ipv6.method', 'ipv6.addresses', 'ipv6.gateway',
-                 'ipv6.dns', 'ipv6.routes', 'ipv6.route-metric', 'ipv6.never-default', 'ipv6.ignore-auto-dns']:
+                 'ipv6.dns', 'ipv6.routes', 'ipv6.route-metric', 'ipv6.never-default', 'ipv6.ignore-auto-dns',
+                 'ipv4.routing-rules', 'ipv6.routing-rules', 'ipv4.route-table', 'ipv6.route-table',
+                 'ipv4.ignore-auto-routes', 'ipv4.dns-search']:
         saved = subprocess.check_output(['nmcli', '--escape', 'no', '-g', prop, 'connection', 'show', 'cmp-routes'], text=True).strip()
         subprocess.check_call(['nmcli', 'connection', 'modify', '--temporary', 'cmp-routes', prop, saved])
     addresses = json.loads(subprocess.check_output(['ip', '-j', '-4', 'address', 'show', 'dev', 'cmp-test0'], text=True))

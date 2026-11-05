@@ -79,11 +79,47 @@ class NetworkSettingsTest extends TestCase
         $component->call('confirm')->assertSee('Network settings confirmed.');
     }
 
+    public function test_policy_routing_and_dns_fields_are_submitted_without_losing_route_attributes(): void
+    {
+        $changes = $this->createMock(NetworkChanges::class);
+        $changes->method('available')->willReturn(true);
+        $changes->method('status')->willReturn(['ok' => true, 'result' => ['pending' => false]]);
+        $changes->expects($this->once())->method('begin')->with('eth0.42', self::UUID,
+            $this->callback(fn ($profile) => $profile['ipv4']['route_table'] === 100 &&
+                $profile['ipv4']['ignore_auto_routes'] === true &&
+                $profile['ipv4']['dns_search'] === ['lab.example', '~corp.example'] &&
+                $profile['ipv4']['routes'] === [['destination' => '203.0.113.0/24', 'table' => 100, 'mtu' => 1400]] &&
+                $profile['ipv4']['routing_rules'] === [['priority' => 100, 'from' => '192.0.2.0/24', 'table' => 100]]))
+            ->willReturn(['ok' => true]);
+        $this->app->instance(NetworkChanges::class, $changes);
+        $this->app->instance(NetworkProfiles::class, $this->reader());
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        Livewire::test(NetworkSettings::class)->call('edit', 'eth0.42', self::UUID)
+            ->set('ipv4.route_table', '100')->set('ipv4.ignore_auto_routes', true)
+            ->set('ipv4.routes', '203.0.113.0/24 table=100 mtu=1400')
+            ->set('ipv4.routing_rules', 'priority 100 from 192.0.2.0/24 table 100')
+            ->set('ipv4.dns_search', "lab.example\n~corp.example")->call('apply')->assertHasNoErrors();
+    }
+
+    public function test_invalid_routing_rules_stay_in_editor_without_starting_a_change(): void
+    {
+        $changes = $this->createMock(NetworkChanges::class);
+        $changes->method('available')->willReturn(true);
+        $changes->method('status')->willReturn(['ok' => true, 'result' => ['pending' => false]]);
+        $changes->expects($this->never())->method('begin');
+        $this->app->instance(NetworkChanges::class, $changes);
+        $this->app->instance(NetworkProfiles::class, $this->reader());
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        Livewire::test(NetworkSettings::class)->call('edit', 'eth0.42', self::UUID)
+            ->set('ipv4.routing_rules', 'from all table 100')->call('apply')
+            ->assertHasErrors('ipv4.routing_rules')->assertSet('device', 'eth0.42');
+    }
+
     public function test_stand_move_uses_current_source_and_a_selected_active_target(): void
     {
         $source = ['device' => 'eth0', 'uuid' => '793d7b9d-04aa-4de0-9f2c-cc793f8a45af', 'type' => 'ethernet', 'address' => '172.20.0.1'];
         $target = ['device' => 'eth0.42', 'uuid' => self::UUID, 'type' => 'vlan', 'vlan_id' => 42];
-        $reader = $this->createMock(NetworkProfiles::class);
+        $reader = $this->createStub(NetworkProfiles::class);
         $reader->method('active')->willReturn([$source, $target]);
         $reader->method('stand')->willReturn($source);
         $changes = $this->createMock(NetworkChanges::class);

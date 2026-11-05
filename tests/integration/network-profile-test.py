@@ -41,10 +41,34 @@ class ProfileTest(unittest.TestCase):
             {'ipv6': {'method': 'manual', 'addresses': ['192.0.2.1/24']}},
             {'ipv4': {'method': 'auto', 'unknown': 'x'}},
             {'connection.id': 'something'},
+            {'ipv4': {'method': 'auto', 'route_table': 255}},
+            {'ipv4': {'method': 'auto', 'routing_rules': [{'priority': 10, 'table': 100, 'from': '::/0'}]}},
+            {'ipv4': {'method': 'auto', 'routing_rules': [{'priority': 10, 'table': 100, 'iif': 'eth0;reboot'}]}},
+            {'ipv4': {'method': 'auto', 'routing_rules': [{'priority': 10, 'table': 100}] * 2}},
+            {'ipv4': {'method': 'auto', 'routes': [{'destination': '192.0.2.0/24', 'mtu': 10}]}},
+            {'ipv6': {'method': 'auto', 'routes': [{'destination': 'fd42::/64', 'src': '192.0.2.1'}]}},
+            {'ipv4': {'method': 'auto', 'routes': [{'destination': '192.0.2.0/24', 'type': 'blackhole', 'via': '192.0.2.1'}]}},
+            {'ipv4': {'method': 'auto', 'dns_search': ['a,~.']}},
         ]
         for config in configs:
             with self.subTest(config=config), self.assertRaises(profile.InvalidProfile):
                 profile.properties(config)
+
+    def test_omitted_advanced_fields_preserve_existing_configuration(self):
+        args = profile.properties({'ipv4': {'method': 'auto'}})
+        for key in ('routing-rules', 'route-table', 'ignore-auto-routes', 'dns-search'):
+            self.assertNotIn('ipv4.' + key, args)
+
+    def test_policy_routing_and_split_dns(self):
+        args = profile.properties({'ipv4': {'method': 'manual', 'addresses': ['192.0.2.10/24'],
+            'route_table': 100, 'ignore_auto_routes': True, 'dns_search': ['site.example', '~corp.example', '~.'],
+            'routing_rules': [{'priority': 100, 'from': '192.0.2.0/24', 'table': 100}],
+            'routes': [{'destination': '203.0.113.0/24', 'table': 100, 'mtu': 1400, 'src': '192.0.2.10'}]}})
+        values = dict(zip(args[::2], args[1::2]))
+        self.assertEqual('100', values['ipv4.route-table'])
+        self.assertEqual('priority 100 from 192.0.2.0/24 table 100', values['ipv4.routing-rules'])
+        self.assertEqual('site.example,~corp.example,~.', values['ipv4.dns-search'])
+        self.assertIn('table=100 mtu=1400 src=192.0.2.10', values['ipv4.routes'])
 
 
 unittest.main()

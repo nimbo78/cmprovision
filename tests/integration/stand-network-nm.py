@@ -142,6 +142,16 @@ try:
     token = tx.begin(forward)
     tx.confirm(token)
     assert address_on('cmp-test0.42', '172.20.0.1') and binding.read() == 'cmp-test0.42'
+    # Untagged management addressing remains editable when the stand is a tagged child.
+    # An IP reapply on the parent must preserve the child and its working DHCP/TFTP service.
+    token = tx.begin({'device': 'cmp-test0', 'uuid': source, 'profile': {'ipv4': {
+        'method': 'manual', 'addresses': ['192.0.2.20/24'], 'never_default': True}}})
+    assert address_on('cmp-test0', '192.0.2.20') and address_on('cmp-test0.42', '172.20.0.1')
+    probe('dhcp-probe.py', 'cmp-client42', 'offer')
+    probe('tftp-probe.py', 'cmp-client42', 'data')
+    tx.cancel(token)
+    assert address_on('cmp-test0', '192.0.2.10') and address_on('cmp-test0.42', '172.20.0.1')
+    probe('dhcp-probe.py', 'cmp-client42', 'offer')
     token = tx.begin(backward)
     tx.confirm(token)
     assert address_on('cmp-test0', '172.20.0.1') and binding.read() == 'cmp-test0'

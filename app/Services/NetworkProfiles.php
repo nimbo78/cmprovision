@@ -5,7 +5,8 @@ namespace App\Services;
 /** Read active Ethernet and VLAN profile settings without asking NetworkManager for secrets. */
 class NetworkProfiles
 {
-    const PROPERTIES = ['method', 'addresses', 'gateway', 'dns', 'routes', 'route-metric', 'never-default', 'ignore-auto-dns'];
+    const PROPERTIES = ['method', 'addresses', 'gateway', 'dns', 'routes', 'route-metric', 'never-default', 'ignore-auto-dns',
+        'ignore-auto-routes', 'route-table', 'routing-rules', 'dns-search'];
     private $run;
 
     public function __construct(?callable $run = null)
