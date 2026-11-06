@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](operations.md) | [Русский](ru/operations.md)
+
 # Operating the provisioner
 
 [Back to the README](../README.md) · [Upgrade and restore](upgrading.md) · [LED signals](leds.md) · [USB provisioning](usb-provisioning.md) · [Local console](local-console.md)

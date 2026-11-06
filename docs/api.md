@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](api.md) | [Русский](ru/api.md)
+
 # HTTP API
 
 [Back to the README](../README.md)

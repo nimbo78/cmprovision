@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](station-project-setup.md) | [Русский](ru/station-project-setup.md)
+
 # Provision another cmprovision station
 
 The development branch can configure a new station while writing the generic cmprovision Lite image.

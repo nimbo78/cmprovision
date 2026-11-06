@@ -1,69 +1,62 @@
-# Варианты развёртывания cmprovision: образ и VLAN
+> **Language / Язык:** [English](deployment-options.md) | [Русский](ru/deployment-options.md)
 
-В 2.24.0 добавлены управление сетью через UI и экспериментальный образ Raspberry Pi OS Lite. Исправленный вариант образа с Intel Wi‑Fi прошёл сетевую запись, первый запуск и перезагрузку на CM4; установленная из него станция также прошила тестовый сенсор через tagged VLAN. Настройка SSH и Wi-Fi из проекта, восстановление данных и холодный PoE-старт проверены на CM4. Пять страниц FPMS New и KEY2 проверены физически. Остальные кнопки, Classic/Dark и настройка образа через Raspberry Pi Imager ещё требуют проверки. FPMS развиваем для Raspberry Pi OS Lite; полноценный пакет панели для WLAN Pi OS не планируется. Это решение о панели не отменяет существующую совместимость самого cmprovision с WLAN Pi OS.
+# Deployment Options: Station Image and VLAN
 
-## Готовый образ станции
+Version 2.24.0 introduces UI-based network management and an experimental Raspberry Pi OS Lite image. An updated image build with Intel Wi‑Fi has completed network flashing, initial boot, and reboot on CM4; a station deployed from this image also flashed a test sensor over a tagged VLAN. Project-driven SSH and Wi-Fi provisioning, data restoration, and cold PoE startup have been verified on CM4. All five pages of the new FPMS and KEY2 navigation were tested on physical hardware. Classic/Dark themes, other buttons, and image configuration via Raspberry Pi Imager remain open for further testing. FPMS development is focused on Raspberry Pi OS Lite; a dedicated package for WLAN Pi OS is not planned. This front-panel design decision does not affect existing cmprovision compatibility with WLAN Pi OS.
 
-Пакет `.deb` ставится на уже работающую ОС. Готовый образ — файл накопителя для Raspberry Pi Imager: он содержит Raspberry Pi OS Lite arm64, cmprovision и, при необходимости, `fpms-lite`. Его можно записать на eMMC или microSD совместимой платы, запустить и закончить первичную настройку.
+## Pre-Built Station Image
 
-Планируемый состав одной версии для Raspberry Pi OS Lite:
+The `.deb` package installs onto an existing, running OS. The pre-built image is a full disk image for Raspberry Pi Imager containing Raspberry Pi OS Lite arm64, cmprovision, and optionally `fpms-lite`. It can be flashed onto eMMC or microSD of a supported carrier board, booted, and initialized.
 
-1. Закреплённые версия ОС, пакетов, утилитарной ОС и скриптов сборки; публикация версии, состава и SHA-256.
-2. Установленные пакеты cmprovision и опционально fpms-lite, но включение панели — только по выбору оператора. SPI также требуется включить для дисплея.
-3. Первый запуск: имя станции, пользователь и пароль, управление по Wi-Fi/Ethernet, часовой пояс и интерфейс стенда. Настройки нельзя копировать с действующего провижинера без явного восстановления резервной копии.
-4. Уникальные `machine-id`, SSH host keys и ключ приложения для каждой станции. Образы, проекты, пароли Wi-Fi, API-токены и ключи общей метки сенсоров в публичный образ не попадают.
-5. DHCP/TFTP стенда включаются после выбора правильного интерфейса и подтверждения настройки, чтобы случайно не включить раздачу адресов в офисной сети.
-6. Испытания: запись, первый холодный запуск на поддерживаемом CM4, доступ к вебу, HDMI и FPMS, перезагрузка, обновление, восстановление и настоящая прошивка тестового сенсора. Пользовательские данные и другие носители сборщик не трогает.
+Planned architecture for Raspberry Pi OS Lite releases:
 
-Продуктовая развилка: один образ с необязательным FPMS проще сопровождать; два образа для Lite и WLAN Pi OS делать не планируется. Уже установленная Raspberry Pi OS по-прежнему может получить cmprovision через `.deb` без перезаписи диска.
+1. Pinned versions of OS, packages, utility OS, and build scripts; published version metadata, component manifests, and SHA-256 hashes.
+2. Pre-installed cmprovision and optional fpms-lite packages, with the front-panel display activated only upon operator request. SPI must also be enabled for the screen.
+3. First-boot initialization: station hostname, user credentials, Wi-Fi/Ethernet management interface, time zone, and stand network interface. Settings must never be cloned from an existing provisioner without an explicit backup restoration.
+4. Unique `machine-id`, SSH host keys, and application encryption keys per station. Images, projects, Wi-Fi credentials, API tokens, and sensor deployment tags are excluded from the public image.
+5. Stand DHCP and TFTP services remain disabled until the proper interface is selected and configuration is confirmed, preventing accidental DHCP rogue offers on the office LAN.
+6. Validation test suite: flashing, first cold boot on supported CM4 hardware, web access, HDMI and FPMS displays, reboot, update, backup restore, and flashing a real test sensor. User data and other storage drives remain untouched by the image builder.
 
-Сборщик экспериментального образа и ручной порядок первого запуска описаны в [image/README.md](../image/README.md). Первичная настройка пока не оформлена как мастер, а пакеты из репозиториев не закреплены за снимком. Повторная прошивка сенсора с последнего образа, включающего LLDP, прошла за 7:07: сетевая загрузка, запись по частям, SHA-256, Resize и OS check завершились успешно, systemd сообщил `running` без ошибок служб. В повторный проект добавлен обход `wlanpi-firefox-setup.service`, который используется на обычном стенде и отсутствовал в первом прогоне.
+Product direction: maintaining a single image with optional FPMS is far more sustainable than building separate images for Lite and WLAN Pi OS. An already running Raspberry Pi OS can always install cmprovision via `.deb` without re-imaging the disk.
 
-## Настройка образа из проекта cmprovision
+The experimental image builder and manual first-boot procedure are documented in [image/README.md](../image/README.md). Initial setup is not yet wrapped in a guided wizard, and upstream repository packages are not yet pinned to snapshots. A re-test flashing a sensor from the latest image (including LLDP) completed in 7:07: network boot, chunked flashing, SHA-256 verification, partition resize, and OS check all passed; systemd reported status `running` with zero failed units. The repeated test project also incorporated a workaround for `wlanpi-firefox-setup.service` (present on standard test stands but omitted in the first run).
 
-С версии 2.24.0 готовый образ станции можно установить с другого cmprovision. В проекте
-есть блок первоначальной настройки: имя хоста, Linux-пользователь,
-пароль и/или публичные SSH-ключи, включение SSH, Wi-Fi SSID/защита/пароль и страна.
-Эта настройка относится к поддерживаемому образу станции, а не к произвольному образу ОС.
+## Configuring Station Images via cmprovision Projects
 
-Общий образ сохраняет свою контрольную сумму. Настройки применяются после проверки
-записи; секреты не попадают в общий файл образа, текст скриптов и журналы прошивки.
-Настройки передаются по временному SSH-каналу с проверкой ключа сервера,
-серийного номера, CID накопителя и текущего прогона. Начальная PXE/HTTP-загрузка
-по-прежнему требует изолированной сети стенда. При первом запуске
-DHCP/TFTP остаются выключенными до выбора интерфейса и роли станции.
-Нужен пересобранный образ со схемой setup 1: ранее проверенный dev2 её не содержит.
-Программные проверки, применение к arm64-системе в QEMU и аппаратный прогон настройки SSH/Wi-Fi с холодной перезагрузкой CM4 выполнены. Порядок работы — [настройка станции из проекта](station-project-setup.md).
+Starting with 2.24.0, a pre-built station image can be deployed directly from another cmprovision instance. Projects include an initial setup configuration block: hostname, Linux user account, password and/or public SSH keys, SSH daemon enablement, Wi-Fi SSID/security/passphrase, and regulatory country code. This setup mechanism applies specifically to supported station images rather than arbitrary OS images.
 
-## VLAN: два разных подключения
+The shared image retains its original SHA-256 checksum. Configuration is applied only after write verification succeeds; secrets are never injected into the shared image file, script outputs, or flashing logs. Provisioning data is transferred over an ephemeral SSH channel with strict server key, serial number, storage CID, and run ID validation. The initial PXE/HTTP boot process continues to require an isolated stand network. On first boot, DHCP and TFTP remain inactive until the operator assigns the interface and station role.
+An updated image with setup schema 1 is required (the earlier dev2 build does not support this schema). Software validation, application to an arm64 target under QEMU, and real hardware testing of SSH/Wi-Fi configuration with cold CM4 reboot have all passed. For full details, see [Station Setup from Project](station-project-setup.md).
 
-VLAN отделяет сеть прошивки на коммутаторе. Порты сенсоров обычно настроены как **access / untagged** в выбранном VLAN: сенсоры получают обычный Ethernet и не должны знать номер VLAN.
+## VLAN: Two Network Architectures
 
-### Вариант A: порт провижинера тоже untagged
+VLANs isolate provisioning traffic on managed switches. Target sensor ports are typically configured as **access / untagged** in the designated VLAN: sensors receive untagged Ethernet frames and do not need 802.1Q awareness.
+
+### Option A: Provisioner Port Also Untagged
 
 ```text
-Провижинер eth0 ── access VLAN 42 ── коммутатор ── access VLAN 42 ── сенсоры
-       Wi-Fi ───────────────────────── сеть управления / интернет
+Provisioner eth0 ── access VLAN 42 ── switch ── access VLAN 42 ── sensors
+       Wi-Fi ───────────────────────── management network / internet
 ```
 
-Коммутатор относит все кадры порта провижинера к VLAN 42, но сам провижинер видит обычный `eth0`. Это может работать с существующей схемой отдельной сети стенда без добавления VLAN в cmprovision. При этом VLAN 42 — только пример, не требуемый номер; нужно проверить реальные настройки коммутатора и DHCP до подключения.
+The switch tags all ingress frames from the provisioner port into VLAN 42, while the provisioner sees regular untagged `eth0`. This works seamlessly with the standard isolated stand topology without adding VLAN configuration inside cmprovision. VLAN 42 is merely an example; verify switch and DHCP configurations prior to connection.
 
-### Вариант B: trunk до провижинера
+### Option B: 802.1Q Trunk to Provisioner
 
 ```text
-Провижинер eth0.42 ── tagged VLAN 42 на trunk ── коммутатор ── access VLAN 42 ── сенсоры
-                └── при необходимости другие VLAN на том же кабеле
+Provisioner eth0.42 ── tagged VLAN 42 on trunk ── switch ── access VLAN 42 ── sensors
+                    └── additional VLANs on the same physical link if needed
 ```
 
-Здесь кадры между провижинером и коммутатором помечены 802.1Q, и на провижинере нужен VLAN-интерфейс поверх физического Ethernet. Разрабатываемые сетевые настройки создают VLAN-профили и позволяют перенести на них прошивочную сеть с подтверждением или автоматическим откатом. Сенсорные порты по-прежнему могут быть untagged. Связь через tagged VLAN и откат сетевых изменений проверены на d62 и Cisco 2960-CX; реальная прошивка CM4 через VLAN 15 также прошла. Для этого прогона адрес основной станции и привязку DHCP/TFTP временно настроили административными командами. Форма **Configure station role** задаёт первоначальную сеть и меняет роль primary/secondary/disabled с откатом адреса и служб. Она проверена на изолированном NetworkManager и systemd, а также на d62 с сохранением secondary после холодной перезагрузки. Подробнее — [сетевые настройки](operations.md#additional-tagged-vlans).
+Here, frames between provisioner and switch carry 802.1Q tags, requiring a VLAN sub-interface on top of physical Ethernet on the provisioner. The network management UI creates VLAN profiles and safely reassigns the provisioning network with interactive confirmation or automatic rollback on timeout. Sensor ports remain untagged. Tagged VLAN connectivity and rollback mechanisms were verified on d62 and Cisco 2960-CX; live CM4 flashing over VLAN 15 was also validated. For this test run, primary station IP assignment and DHCP/TFTP bindings were temporarily applied via administrative commands. The **Configure station role** form configures initial networking and switches between primary, secondary, and disabled roles with automatic rollback for addresses and services. It was tested against isolated NetworkManager and systemd, as well as on d62 retaining secondary status across cold reboot. For details, see [Network Operations](operations.md#additional-tagged-vlans).
 
-Текущая схема проекта использует сеть `172.20.0.0/16`, провижинер `172.20.0.1` и пул DHCP с `172.20.0.11`; эти адреса зависят от нескольких частей приложения и загрузочных файлов. VLAN ID сам по себе не меняет эту подсеть. Произвольные подсети, несколько независимых сетей прошивки или автоматическая настройка портов коммутатора — дополнительные задачи, а не следствие одного переключателя VLAN.
+The stand topology uses network `172.20.0.0/16`, provisioner IP `172.20.0.1`, and a DHCP pool starting at `172.20.0.11`; these addresses are referenced throughout boot files and application logic. Setting a VLAN ID does not alter this subnet. Arbitrary subnets, multiple concurrent flashing networks, and automated switch port provisioning are separate feature areas.
 
-Одна сеть стенда должна иметь один активный DHCP/TFTP-провижинер. Вторая станция в том же сегменте может наблюдать сенсоры, но включать на ней ещё одну раздачу без отдельного проектирования нельзя. На работающем стенде сетевую схему меняют только после проверки текущей прошивки и с подготовленным способом восстановить управление.
+Each stand network segment must have exactly one active DHCP/TFTP provisioner. A secondary station on the same segment can monitor sensor status, but running duplicate DHCP/TFTP servers will disrupt operations. Modify network topologies on live stands only after active flashing completes, ensuring a fallback management path is available.
 
-### Что выбрать
+### Recommendations
 
-- Для отдельного коммутатора стенда и управления через Wi-Fi достаточно текущего untagged подключения; готовый образ не обязателен.
-- Для общей управляемой сети с отдельным access-портом под провижинер часто достаточно VLAN только на коммутаторе.
-- Для нескольких VLAN по одному кабелю нужны trunk на коммутаторе и соответствующие VLAN-профили на провижинере; поддержка входит в 2.24.0.
-- Если нужно быстро тиражировать одинаковые станции, полезнее готовый образ с безопасной первичной настройкой; это независимая задача от VLAN.
+- For an isolated stand switch with Wi-Fi management, the current untagged setup is sufficient; a pre-built image is not required.
+- On a shared managed network with a dedicated access port for the provisioner, configuring VLANs solely on the switch is often easiest.
+- To carry multiple VLANs over a single cable, configure a switch trunk port and corresponding VLAN profiles on the provisioner (supported in 2.24.0).
+- For rapid deployment of identical stations, use the pre-built image with secure first-boot configuration.

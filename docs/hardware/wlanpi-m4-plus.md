@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](wlanpi-m4-plus.md) | [Русский](../ru/hardware/wlanpi-m4-plus.md)
+
 # WLAN Pi M4+ as provisioner and target
 
 [Back to the README](../../README.md) · [USB provisioning](../usb-provisioning.md) · [Local console](../local-console.md)

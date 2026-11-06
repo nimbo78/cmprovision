@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](unrecognized-devices.md) | [Русский](ru/unrecognized-devices.md)
+
 # Unrecognized devices on the stand
 
 [Back to the README](../README.md) · [Module diagnostics](module-diagnostics.md) · [USB provisioning](usb-provisioning.md)
