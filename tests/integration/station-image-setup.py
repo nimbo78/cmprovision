@@ -86,6 +86,21 @@ class SetupTest(unittest.TestCase):
         self.settings['wifi'] = None
         self.apply()
         self.assertFalse((self.root / 'etc/NetworkManager/system-connections/cmprovision-stand-uplink.nmconnection').exists())
+        self.assertFalse((self.root / 'etc/systemd/system/cmprovision-image-wifi.service').exists())
+
+    def test_wifi_radio_is_enabled_after_networkmanager_restores_its_state(self):
+        state = self.root / 'var/lib/NetworkManager/NetworkManager.state'
+        state.parent.mkdir(parents=True)
+        state.write_text('[main]\nWirelessEnabled=false\n')
+        self.apply()
+        unit = (self.root / 'etc/systemd/system/cmprovision-image-wifi.service').read_text()
+        self.assertIn('After=NetworkManager.service\n', unit)
+        self.assertIn('Wants=NetworkManager.service\n', unit)
+        self.assertIn('ExecStart=/usr/bin/nmcli radio wifi on\n', unit)
+        self.assertIn('ConditionPathExists=!/var/lib/cmprovision-image/wifi-radio-ready\n', unit)
+        self.assertIn('ExecStartPost=/usr/bin/touch /var/lib/cmprovision-image/wifi-radio-ready\n', unit)
+        self.assertIn((['systemctl', 'enable', 'cmprovision-image-wifi.service'], None), self.commands)
+        self.assertFalse((self.root / setup.STATE / 'wifi-radio-ready').exists())
 
 
 if __name__ == '__main__':

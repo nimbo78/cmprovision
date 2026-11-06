@@ -172,6 +172,16 @@ def configure(root, identity, settings, run=execute):
               '\n[Service]\nType=oneshot\nExecStart=/usr/sbin/iw reg set ' + wifi['country'] +
               '\nExecStart=/usr/sbin/rfkill unblock wifi\nRemainAfterExit=yes\n\n[Install]\nWantedBy=multi-user.target\n', 0o644)
         run(['systemctl', 'enable', 'cmprovision-image-country.service'])
+        # NetworkManager can reapply an image's saved radio-off state after rfkill.
+        # Enable Wi-Fi through its API once, preserving later operator choices.
+        write(root, 'etc/systemd/system/cmprovision-image-wifi.service',
+              '[Unit]\nDescription=Enable configured station Wi-Fi on its first boot\n'
+              'Wants=NetworkManager.service\nAfter=NetworkManager.service\nBefore=network-online.target\n'
+              'ConditionPathExists=!/var/lib/cmprovision-image/wifi-radio-ready\n'
+              '\n[Service]\nType=oneshot\nExecStart=/usr/bin/nmcli radio wifi on\n'
+              'ExecStartPost=/usr/bin/touch /var/lib/cmprovision-image/wifi-radio-ready\n'
+              'RemainAfterExit=yes\nUMask=0077\n\n[Install]\nWantedBy=multi-user.target\n', 0o644)
+        run(['systemctl', 'enable', 'cmprovision-image-wifi.service'])
     # The supported CM4 image uses eth0 for provisioning. never-default is a
     # profile property, not a NetworkManager.conf connection-default option.
     if wifi:
