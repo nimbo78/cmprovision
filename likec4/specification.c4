@@ -1,0 +1,72 @@
+specification {
+  element actor {
+    notation "Person"
+    style {
+      shape person
+      color slate
+    }
+  }
+
+  element hardware {
+    notation "Physical Hardware"
+    style {
+      shape rectangle
+      color slate
+    }
+  }
+
+  element network {
+    notation "Network Segment"
+    style {
+      shape rectangle
+      color gray
+    }
+  }
+
+  element system {
+    notation "Software System"
+    style {
+      shape rectangle
+      color primary
+    }
+  }
+
+  element container {
+    notation "Service / Process Container"
+    style {
+      shape rectangle
+      color primary
+    }
+  }
+
+  element component {
+    notation "Application Component"
+    style {
+      shape component
+      color secondary
+    }
+  }
+
+  element database {
+    notation "Database / Persistence"
+    style {
+      shape storage
+      color slate
+    }
+  }
+
+  element queue {
+    notation "Queue / Background Worker"
+    style {
+      shape queue
+      color amber
+    }
+  }
+
+  tag pxe
+  tag snmp
+  tag http
+  tag usb
+  tag internal
+  tag export
+}

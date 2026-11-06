@@ -1,0 +1,264 @@
+model {
+  // Actors
+  operator = actor "Provisioning Operator" {
+    description "Lab technician or engineer flashing batches of CM4s, monitoring progress, managing projects and images"
+    icon @mdi/account-tie.svg
+  }
+
+  admin = actor "System Administrator" {
+    description "Maintains provisioner host, manages Debian packages, system updates, backups, and network setup"
+    icon @mdi/account-cog.svg
+  }
+
+  // Target Hardware & Stand Peripherals
+  managed_switch = hardware "Managed PoE Switch" {
+    description "48-port PoE switch providing physical connectivity, power, and port control via SNMP v2c"
+    icon @mdi/switch.svg
+  }
+
+  cm4_targets = hardware "CM4 Target Modules (x48)" {
+    description "Raspberry Pi Compute Module 4 boards connected to switch ports for bulk provisioning"
+    icon @simple/raspberrypi.svg
+  }
+
+  label_printer = hardware "Thermal Label Printer" {
+    description "Network or USB printer generating MAC, serial, and hostname asset barcode labels upon completion"
+    icon @mdi/printer.svg
+  }
+
+  hdmi_wallboard = hardware "HDMI Wallboard Monitor" {
+    description "Stand monitor displaying real-time rotating device cards, progress metrics, and diagnostics"
+    icon @mdi/monitor.svg
+  }
+
+  fpms_display = hardware "FPMS Front Panel Screen" {
+    description "Small OLED/I2C front-panel display on WLAN Pi M4+ showing stand IP, status, and active batch"
+    icon @mdi/chip.svg
+  }
+
+  // External Systems
+  netbox = system "NetBox DCIM" {
+    description "Target DCIM inventory receiving exported CSVs with provisioned devices, interfaces, and MACs"
+    icon @mdi/server-network.svg
+  }
+
+  telegram_api = system "Telegram Bot API" {
+    description "Cloud messaging API delivering batch completion alerts and error notices to operator channels"
+    icon @simple/telegram.svg
+  }
+
+  webhook_targets = system "Notification Webhooks" {
+    description "Mattermost, Slack, or webhook endpoints for batch alerts"
+    icon @mdi/webhook.svg
+  }
+
+  image_sources = system "External Image Repositories" {
+    description "GitHub Releases, Raspberry Pi OS mirrors, or corporate image servers"
+    icon @simple/github.svg
+  }
+
+  // Provisioner Server Host
+  provisioner = hardware "WLAN Pi M4+ / Pi 4 Provisioner" {
+    description "Server running Raspberry Pi OS Trixie (Debian 13), coordinating stand network and provisioning services"
+    icon @simple/debian.svg
+
+    stand_net = network "Stand Network (172.20.0.0/16)" {
+      description "Isolated provisioning subnet on eth0 (172.20.0.1/16, never-default). Carries DHCP, TFTP, and HTTP"
+      icon @mdi/router-network.svg
+    }
+
+    uplink_net = network "Uplink Network" {
+      description "Internet / corporate uplink via Wi-Fi 6 (wlan0) or secondary Ethernet. Built-in radio acts as cold spare"
+      icon @mdi/router-network.svg
+    }
+
+    // Host Services (Containers)
+    nginx = container "Nginx Web Server" {
+      technology "nginx 1.26"
+      description "Reverse proxy for web UI, serves static image pieces, gates /scriptexecute to stand network"
+      icon @simple/nginx.svg
+    }
+
+    dnsmasq = container "Dnsmasq Service" {
+      technology "dnsmasq (systemd)"
+      description "DHCP server issuing 172.20.x.x leases and TFTP server providing PXE network boot files to CM4s"
+      icon @mdi/dns.svg
+    }
+
+    rpiboot = container "RpiBoot Daemon" {
+      technology "rpiboot (systemd)"
+      description "USB recovery boot daemon detecting CM4 in OTG mode and serving bootcode over USB"
+      icon @mdi/usb.svg
+    }
+
+    sqlite_db = database "SQLite Database" {
+      technology "SQLite 3 (WAL mode)"
+      description "Database file (database.sqlite) storing modules, images, switch states, projects, and logs. WAL mode with IMMEDIATE transactions"
+      icon @simple/sqlite.svg
+    }
+
+    queue_main = queue "Queue Service (Main)" {
+      technology "cmprovision-queue.service"
+      description "Systemd worker handling 'boards' and 'notifications' queues (concurrency & state changes)"
+      icon @mdi/tray-full.svg
+    }
+
+    queue_images = queue "Queue Service (Images)" {
+      technology "cmprovision-queue-images.service"
+      description "Systemd worker handling 'boards', 'images', and 'default' queues (SHA256 calculation, image downloads, decompression)"
+      icon @mdi/tray-full.svg
+    }
+
+    wallboard_svc = container "Wallboard Service" {
+      technology "cmprovision-wallboard.service"
+      description "Kiosk display service rendering full-screen dashboard on HDMI output"
+      icon @mdi/monitor.svg
+    }
+
+    fpms_svc = container "FPMS OLED Service" {
+      technology "cmprovision-fpms.service"
+      description "Hardware daemon updating WLAN Pi OLED screen with stand statistics"
+      icon @mdi/chip.svg
+    }
+
+    // Core Web Application
+    app = container "cmprovision Web Application" {
+      technology "PHP 8.4 + Laravel 13"
+      description "Application running inside dedicated php-fpm pool ([cmprovision], /run/php/cmprovision-fpm.sock)"
+      icon @simple/laravel.svg
+
+      ui = component "Livewire 3 UI" {
+        technology "Livewire 3 + Tailwind CSS 3.4"
+        description "Interactive dashboard: Module cards, batch statistics, switch port layout, settings, logs"
+        icon @simple/tailwindcss.svg
+      }
+
+      scriptexecute = component "ScriptExecute Controller" {
+        technology "Laravel Controller + StandNetworkOnly"
+        description "Secure target API: receives module discovery, step completions, first-boot OS checks"
+        icon @simple/php.svg
+      }
+
+      coordinator = component "Provisioning Coordinator" {
+        technology "App\\Services"
+        description "State machine orchestrating phases: pending -> writing -> verifying -> firstboot -> done"
+        icon @mdi/chip.svg
+      }
+
+      images = component "Image & Firmware Manager" {
+        technology "App\\Services"
+        description "Manages compressed OS images, 512MB fault-recovery chunk splitting, SHA256 checksums, and EEPROM firmware"
+        icon @mdi/database.svg
+      }
+
+      switches = component "SNMP Switch Manager" {
+        technology "App\\Services\\Snmp"
+        description "Queries switch ports, correlates MACs with physical ports (SwitchPortFinder), triggers PoE power cycles"
+        icon @mdi/switch.svg
+      }
+
+      notifier = component "Notification Manager" {
+        technology "App\\Services\\Notifier"
+        description "Constructs batch summaries, formats conditional alerts, and dispatches to channels"
+        icon @mdi/bell-ring.svg
+      }
+
+      netbox_exporter = component "NetBox Exporter" {
+        technology "App\\Services\\NetBoxExport"
+        description "Generates CSV files for NetBox bulk import: devices, interfaces, and MAC addresses"
+        icon @mdi/server-network.svg
+      }
+
+      backup_mgr = component "DataBackup Service" {
+        technology "App\\Services\\DataBackup"
+        description "Creates atomic online backups of WAL SQLite database and configuration for browser download"
+        icon @mdi/database.svg
+      }
+    }
+  }
+
+  // Relationships - Actors
+  operator -> provisioner.nginx "Monitors batches, configures projects, triggers PoE cycles via browser" {
+    technology "HTTPS"
+  }
+  operator -> provisioner.app.netbox_exporter "Downloads NetBox CSV export" {
+    technology "HTTPS / CSV"
+  }
+  admin -> provisioner "Manages server via SSH, debian upgrades, network profiles, and backups" {
+    technology "SSH / CLI"
+  }
+
+  // Relationships - Stand Hardware
+  managed_switch -> cm4_targets "Provides PoE power and Gigabit Ethernet connectivity" {
+    technology "802.3af/at PoE + 1000BASE-T"
+  }
+  cm4_targets -> provisioner.stand_net "Connects through switch to stand network" {
+    technology "1000BASE-T"
+  }
+  provisioner.stand_net -> provisioner.dnsmasq "DHCP requests & TFTP bootloader traffic" {
+    technology "DHCP UDP/67, TFTP UDP/69"
+  }
+  provisioner.stand_net -> provisioner.nginx "HTTP image streaming & /scriptexecute calls" {
+    technology "HTTP/1.1 TCP/80"
+  }
+  provisioner.rpiboot -> cm4_targets "Delivers bootcode via USB in OTG recovery mode" {
+    technology "USB 2.0 OTG"
+  }
+
+  // Relationships - Internal Routing
+  provisioner.nginx -> provisioner.app "Routes HTTP requests to PHP-FPM socket (/run/php/cmprovision-fpm.sock)" {
+    technology "FastCGI / Unix Socket"
+  }
+  provisioner.nginx -> provisioner.stand_net "Serves 512MB image chunks and script assets" {
+    technology "HTTP/1.1"
+  }
+  provisioner.app.scriptexecute -> provisioner.app.coordinator "Feeds target heartbeat, stage updates, and first-boot reports"
+  provisioner.app.ui -> provisioner.app.coordinator "Operator commands (start, retry, reprovision, identify)"
+  provisioner.app.ui -> provisioner.app.switches "Operator triggers port PoE restart or identify"
+  provisioner.app.switches -> managed_switch "SNMP v2c queries and PoE port power cycles (UDP 161)" {
+    technology "SNMP v2c"
+  }
+
+  // Persistence & Queues
+  provisioner.app -> provisioner.sqlite_db "Reads and writes module states, settings, and logs" {
+    technology "SQLite PDO (WAL)"
+  }
+  provisioner.queue_main -> provisioner.sqlite_db "Polls 'boards' and 'notifications' queues" {
+    technology "SQLite PDO"
+  }
+  provisioner.queue_images -> provisioner.sqlite_db "Polls 'images' and 'default' queues" {
+    technology "SQLite PDO"
+  }
+  provisioner.queue_main -> label_printer "Sends raw ZPL / ESC/POS print jobs (TCP/9100)" {
+    technology "Raw Socket / TCP 9100"
+  }
+  provisioner.queue_main -> telegram_api "Sends batch progress and completion alerts" {
+    technology "HTTPS REST"
+  }
+  provisioner.queue_main -> webhook_targets "Posts JSON webhook notifications" {
+    technology "HTTPS JSON"
+  }
+  provisioner.queue_images -> image_sources "Downloads remote OS images via uplink network" {
+    technology "HTTPS"
+  }
+  provisioner.queue_images -> provisioner.app.images "Processes background checksums and archive decompression"
+
+  // Displays
+  provisioner.wallboard_svc -> provisioner.nginx "Fetches Wallboard display UI (localhost:80)" {
+    technology "HTTP"
+  }
+  provisioner.wallboard_svc -> hdmi_wallboard "Outputs video signal via HDMI" {
+    technology "HDMI"
+  }
+  provisioner.fpms_svc -> fpms_display "Updates OLED display via I2C bus" {
+    technology "I2C"
+  }
+  provisioner.fpms_svc -> provisioner.sqlite_db "Reads active stand and batch statistics" {
+    technology "SQLite PDO"
+  }
+
+  // NetBox
+  operator -> netbox "Imports generated CSV files into DCIM" {
+    technology "CSV Bulk Import"
+  }
+}
