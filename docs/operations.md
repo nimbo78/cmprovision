@@ -10,6 +10,7 @@ For a CM4 that cannot enter normal network boot, use [USB provisioning](usb-prov
 For direct diagnosis on a target's screen and keyboard, use its [tty2 console](local-console.md).
 The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connectors and USB roles.
 
+- [Provisioning workflow](#provisioning-workflow)
 - [The order of the lists](#the-order-of-the-lists)
 - [A module that takes longer than the rest](#a-module-that-takes-longer-than-the-rest)
 - [Export for NetBox](#export-for-netbox)
@@ -25,6 +26,12 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 - [Additional tagged VLANs](#additional-tagged-vlans)
 - [Switches and PoE restart](#switches-and-poe-restart)
 - [Network access](#network-access)
+
+## Provisioning workflow
+
+<a href="diagrams/provisioning-flow.html" title="Open interactive Archify diagram"><img src="diagrams/provisioning-flow.png" width="100%" alt="End-to-End CM4 Provisioning Workflow diagram"></a>
+
+*End-to-end batch lifecycle from power-on and PXE boot to eMMC flashing, verification, and integrations. [Open standalone interactive diagram](diagrams/provisioning-flow.html) with pan, zoom, dark/light theme switching, and step animation.*
 
 ## The order of the lists
 
