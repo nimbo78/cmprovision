@@ -165,8 +165,30 @@ The [upgrade and restore guide](docs/upgrading.md) covers snapshots, rollback, P
 | Restrict access to the stand | [Network access](docs/operations.md#network-access) |
 | Back up or roll back a server | [Upgrade and restore](docs/upgrading.md) |
 | Automate projects, images and scripts | [HTTP API](docs/api.md) |
+| Architecture diagrams and workflows | [LikeC4 Architecture](likec4/README.md) |
 
 The `/scriptexecute` endpoint is restricted to the stand network and the server itself. Keep nginx connected directly to clients. Files under `/uploads` are downloadable by anyone who can reach the web server; keep secrets out of images and packages.
+
+### Architecture diagrams (LikeC4)
+
+The project architecture, container layout, and end-to-end provisioning workflows are modeled in [LikeC4](https://likec4.dev) in [`likec4/`](likec4/):
+
+- **Overview & ecosystem**: provisioner server, 48x CM4 targets, PoE switch, label printer, displays, NetBox, Telegram.
+- **Provisioner host services**: Nginx, PHP-FPM, Dnsmasq (DHCP/TFTP), RpiBoot, SQLite (WAL), systemd workers and display daemons.
+- **Application components**: Livewire 3 UI, ScriptExecute (`StandNetworkOnly`), Provisioning Coordinator state machine, queues.
+- **Stand network**: PoE delivery, PXE/TFTP boot, USB OTG recovery, and image chunk streaming.
+- **Provisioning flow**: dynamic end-to-end sequence from PoE power cycle to eMMC write, EEPROM update, first-boot OS check, and label printing.
+
+Mermaid-rendered versions are committed directly in [`likec4/README.md`](likec4/README.md).
+
+For an interactive, zoomable diagram in your browser:
+
+```sh
+npm run likec4:start      # Start local interactive UI (http://localhost:5173)
+npm run likec4:build      # Build standalone static site in likec4/dist
+npm run likec4:validate   # Validate model and relationships
+npm run likec4:export-md  # Re-export Mermaid diagrams to likec4/README.md
+```
 
 ## Development
 

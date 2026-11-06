@@ -1,0 +1,136 @@
+views {
+  // 1. High-Level System Context View
+  view overview {
+    title "cmprovision - Stand Context & Ecosystem"
+    description "High-level view of actors, bench hardware, provisioner server, and external integrations"
+
+    include
+      operator,
+      admin,
+      managed_switch,
+      cm4_targets,
+      label_printer,
+      hdmi_wallboard,
+      fpms_display,
+      provisioner,
+      netbox,
+      telegram_api,
+      webhook_targets,
+      image_sources
+
+    autoLayout TopBottom
+  }
+
+  // 2. Provisioner Host & Containers View
+  view provisioner_containers of provisioner {
+    title "Provisioner Host Services & Network Layout"
+    description "Services, daemons, and networks running on Raspberry Pi OS Trixie (Debian 13)"
+
+    include
+      operator,
+      managed_switch,
+      cm4_targets,
+      provisioner.*,
+      label_printer,
+      hdmi_wallboard,
+      fpms_display,
+      telegram_api,
+      image_sources
+
+    autoLayout TopBottom
+  }
+
+  // 3. Application Components View
+  view app_components of provisioner.app {
+    title "cmprovision - Web Application Internal Components"
+    description "Laravel 13 application components, controllers, coordinators, services, and persistence"
+
+    include
+      operator,
+      provisioner.nginx,
+      provisioner.sqlite_db,
+      provisioner.queue_main,
+      provisioner.queue_images,
+      managed_switch,
+      provisioner.app.*
+
+    autoLayout LeftRight
+  }
+
+  // 4. Stand Network & Boot Infrastructure View
+  view stand_network_view {
+    title "Stand Network & PXE / USB Boot Infrastructure"
+    description "Physical switch, PoE delivery, DHCP/TFTP PXE boot, USB OTG recovery, and image streaming"
+
+    include
+      managed_switch,
+      cm4_targets,
+      provisioner.stand_net,
+      provisioner.dnsmasq,
+      provisioner.rpiboot,
+      provisioner.nginx,
+      provisioner.app.scriptexecute
+
+    autoLayout TopBottom
+  }
+
+  // 5. Dynamic Provisioning Sequence Flow
+  dynamic view provisioning_flow {
+    title "End-to-End CM4 Provisioning Workflow"
+    description "Step-by-step lifecycle from power-on and PXE boot to eMMC flash, verification, first-boot OS check, and label printing"
+
+    // Step 1: Power & Boot Discovery
+    operator -> provisioner.app.ui "Selects active project and starts batch"
+    provisioner.app.ui -> provisioner.app.switches "Triggers PoE power cycle for target ports"
+    provisioner.app.switches -> managed_switch "SNMP v2c power cycle command (UDP 161)"
+    managed_switch -> cm4_targets "Delivers PoE power to target board"
+
+    // Step 2: PXE / USB Boot
+    alt "Boot mode selection" {
+      when "Network boot enabled" {
+        cm4_targets -> provisioner.dnsmasq "DHCP Discover over stand network"
+        cm4_targets <- provisioner.dnsmasq "DHCP Offer (IP + PXE boot filename)"
+        cm4_targets -> provisioner.dnsmasq "TFTP request for kernel & initramfs"
+        cm4_targets <- provisioner.dnsmasq "Transfers Utility OS micro-system"
+      }
+      else "Boot order blocked (OTG fallback)" {
+        provisioner.rpiboot -> cm4_targets "Injects bootcode.bin over USB OTG connection"
+      }
+    }
+
+    // Step 3: Discovery & Handshake
+    cm4_targets -> provisioner.nginx "Calls /scriptexecute with serial, MAC, and board revision"
+    provisioner.nginx -> provisioner.app.scriptexecute "Validates StandNetworkOnly middleware and forwards"
+    provisioner.app.scriptexecute -> provisioner.app.coordinator "Registers module, transitions phase to 'writing'"
+    provisioner.app.coordinator -> provisioner.sqlite_db "Saves module state and assigned IP"
+    provisioner.nginx <- provisioner.app.scriptexecute "Returns flashing script with image piece URLs"
+    cm4_targets <- provisioner.nginx "Executes provisioning script"
+
+    // Step 4: Stream Image & Write to eMMC
+    loop "Stream and write 512MB image chunks" {
+      cm4_targets -> provisioner.nginx "HTTP GET /storage/app/images/{chunk}"
+      cm4_targets <- provisioner.nginx "Streams compressed image stream"
+      cm4_targets -> cm4_targets "Decompresses and writes raw blocks to eMMC"
+    }
+
+    // Step 5: Verification & Firmware Update
+    cm4_targets -> provisioner.nginx "Heartbeat: writes completed, verifying SHA256"
+    cm4_targets -> cm4_targets "Calculates eMMC hash and updates EEPROM bootloader"
+    cm4_targets -> provisioner.nginx "Reports verification success, reboots into target OS"
+
+    // Step 6: First-Boot Checks & Completion
+    opt "First-boot OS check enabled" {
+      cm4_targets -> provisioner.nginx "Calls /scriptexecute from booted target OS"
+      provisioner.nginx -> provisioner.app.scriptexecute "Reports actual hostname, installs extra .deb packages"
+    }
+
+    provisioner.app.coordinator -> provisioner.sqlite_db "Marks module phase as 'done'"
+
+    // Step 7: Automation Fan-Out
+    parallel "Post-provisioning tasks" {
+      provisioner.queue_main -> label_printer "Sends raw barcode print job (MAC, Serial, Hostname)"
+      provisioner.queue_main -> telegram_api "Sends batch progress update"
+      provisioner.queue_main -> webhook_targets "Posts batch notification"
+    }
+  }
+}

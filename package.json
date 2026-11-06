@@ -1,6 +1,10 @@
 {
     "private": true,
     "scripts": {
-        "test:js": "node --test tests/js/upload-progress.test.mjs tests/js/tokens.test.mjs tests/js/appearance.test.mjs tests/js/tab-status.test.mjs tests/js/appearance-start.test.mjs tests/js/css-rules.test.mjs tests/js/settings-anchors.test.mjs"
+        "test:js": "node --test tests/js/upload-progress.test.mjs tests/js/tokens.test.mjs tests/js/appearance.test.mjs tests/js/tab-status.test.mjs tests/js/appearance-start.test.mjs tests/js/css-rules.test.mjs tests/js/settings-anchors.test.mjs",
+        "likec4:start": "likec4 start likec4",
+        "likec4:build": "likec4 build likec4 -o likec4/dist",
+        "likec4:validate": "likec4 validate likec4",
+        "likec4:export-md": "likec4 export markdown likec4"
     }
 }

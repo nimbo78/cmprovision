@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Стенд: `docker/bench.sh` поднимает контейнер trixie (PHP 8.4) с nginx и php-fpm в раскладке пакета; подробности в [docker/README.md](docker/README.md). На Windows ничего не запускается — стенд живёт на Docker-хосте или в WSL-дистрибутиве.
 - Зависимости: `composer install`. Node нужен только для `npm run test:js`.
+- Архитектура: диаграммы LikeC4 лежат в `likec4/` (Mermaid-версии — в `likec4/README.md`). Команды: `npm run likec4:start` (локальный интерактивный просмотр на http://localhost:5173), `npm run likec4:build` (сборка в `likec4/dist`), `npm run likec4:validate` (проверка модели), `npm run likec4:export-md` (обновление `likec4/README.md`).
 - Стили: `tailwindcss -c tailwind.config.js -i resources/css/app.css -o public/css/app.css --minify` бинарником Tailwind CLI 3.4.19 (плагины forms и typography внутри); Tailwind сканирует только `resources/views`, результат коммитится. Собирайте не в OneDrive (там нельзя `vendor/`): в WSL-стенде это `/root/bench/25-css.sh`.
 - Тесты: `php artisan test` (база в памяти задана в `phpunit.xml`); для одного класса или метода добавьте `--filter=AuthenticationTest`. JS без сборки: `npm run test:js` (Node ≥ 20; файлы `tests/js/` перечислены в `package.json`: каталог аргументом `node --test` не работает).
 - Линтера и форматтера в проекте нет.
