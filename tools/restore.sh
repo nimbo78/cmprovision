@@ -26,6 +26,27 @@ APP=/var/lib/cmprovision
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
 [ -f "$SRC/app.tar.gz" ] || { echo "$SRC: not a backup directory" >&2; exit 1; }
 [ ! -e "$SRC/.incomplete" ] || { echo "$SRC: the backup did not finish; refusing to restore it" >&2; exit 1; }
+
+network_guard()
+{
+    NETWORK_LOCK=/run/cmprovision-network/provisioning.lock
+    if [ -x /usr/lib/cmprovision/network-transaction ] || [ -e "$NETWORK_LOCK" ]; then
+        [ -f "$NETWORK_LOCK" ] && [ ! -L "$NETWORK_LOCK" ] || { echo "The network guard is unavailable." >&2; exit 1; }
+        exec 9< "$NETWORK_LOCK"
+        flock -w 10 9 || { echo "The network is changing; try the restore again." >&2; exit 1; }
+    fi
+    if [ -e /run/cmprovision-network/pending ] || [ -e /var/lib/cmprovision-network/transactions/pending.json ]; then
+        echo "Confirm or recover the pending network change before restoring a backup." >&2; exit 1
+    fi
+}
+
+stop_readers()
+{
+    systemctl stop nginx 'php*-fpm' cmprovision-queue cmprovision-queue-images cmprovision-dnsmasq cmprovision-rpiboot cmprovision-usb-diagnostics 2>/dev/null || true
+    systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data 2>/dev/null || true
+}
+
+network_guard
 # the version is the end of the directory name cmprovision-backup gives: <date>-<time>-<version>
 SNAPVER=$(basename "$SRC" | sed -n 's/^[0-9]\{8\}-[0-9]\{6\}-//p')
 INSTALLED=$(dpkg-query -W -f='${Version}' cmprovision4 2>/dev/null || true)
@@ -42,8 +63,7 @@ fi
 
 # The web server too: in WAL every connection opens -wal and -shm by name, and one left open across the swap would mix
 # the old files into the restored database. Everything is started again at the end.
-systemctl stop nginx 'php*-fpm' cmprovision-queue cmprovision-queue-images cmprovision-dnsmasq cmprovision-usb-diagnostics 2>/dev/null || true
-systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data 2>/dev/null || true
+stop_readers
 
 if [ "$DATA_ONLY" = 1 ]; then
     echo "restoring the data into $APP"
@@ -58,13 +78,16 @@ if [ "$DATA_ONLY" = 1 ]; then
 else
     DEB=$(ls "$SRC"/cmprovision4_*.deb 2>/dev/null | head -1)
     if [ -n "$DEB" ]; then
+        # Package prerm performs its own guarded recovery. Do not hold the same flock across apt.
+        exec 9<&-
         echo "reinstalling $DEB"
         apt-get install -y --allow-downgrades "$DEB" || dpkg -i "$DEB"
+        network_guard
     fi
 
     # postinst may have started the watchers again. Release their readers before
     # replacing the application and database from the snapshot below.
-    systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data 2>/dev/null || true
+    stop_readers
 
     echo "restoring $APP"
     tar xzf "$SRC/app.tar.gz" -C /
@@ -102,7 +125,14 @@ else
         fi
     fi
     rm -f "$STAND_LIST"
+    if [ -f "$SRC/boot-services.saved" ]; then
+        # Clear the later role's links before restoring the snapshot's links (including absent ones).
+        rm -f /etc/systemd/system/cmprovision-dnsmasq.service /etc/systemd/system/cmprovision-rpiboot.service \
+            /etc/systemd/system/multi-user.target.wants/cmprovision-dnsmasq.service \
+            /etc/systemd/system/multi-user.target.wants/cmprovision-rpiboot.service
+    fi
     tar xzf "$SRC/system-config.tar.gz" -C / 2>/dev/null || true
+    systemctl daemon-reload
 fi
 
 runuser -u www-data -- "$APP/artisan" config:clear >/dev/null

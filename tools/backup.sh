@@ -117,9 +117,14 @@ tar czf "$OUT/system-config.tar.gz" --ignore-failed-read \
     /etc/nginx/sites-available/cmprovision /etc/php/*/fpm/php.ini \
     /etc/sudoers.d/010_cmprovision /etc/dhcpcd.conf /etc/NetworkManager/system-connections \
     /var/lib/cmprovision-network/vlans \
+    /etc/systemd/system/cmprovision-dnsmasq.service /etc/systemd/system/cmprovision-rpiboot.service \
+    /etc/systemd/system/multi-user.target.wants/cmprovision-dnsmasq.service \
+    /etc/systemd/system/multi-user.target.wants/cmprovision-rpiboot.service \
     /lib/systemd/system/cmprovision-*.service /lib/systemd/system/cmprovision-*.timer \
     /etc/default/cmprovision-uplink /etc/default/cmprovision-wallboard.json /etc/default/cmprovision-fpms.json \
     /etc/default/cmprovision-stand-interface 2>/dev/null || true
+# The absence of a mask or WantedBy link is part of the saved role too.
+printf '%s\n' 1 > "$OUT/boot-services.saved"
 if [ "$NETWORK_LOCKED" = 1 ]; then flock -u 9; exec 9<&-; fi
 
 if command -v dpkg-repack >/dev/null 2>&1; then

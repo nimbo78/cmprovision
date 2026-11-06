@@ -10446,10 +10446,10 @@ index 0000000..55a6d72
 +                COLORS.update(old)
 diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
 new file mode 100644
-index 0000000..df4da9b
+index 0000000..2d70173
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_classic.py
-@@ -0,0 +1,350 @@
+@@ -0,0 +1,361 @@
 +"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
 +the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
@@ -10769,12 +10769,23 @@ index 0000000..df4da9b
 +                station.get("provisioning") or "No provisioning link",
 +                station.get("storage"),
 +            ]
++            services = station.get("services")
++            service_colour = "muted"
++            if isinstance(services, dict):
++                stopped = services.get("stopped")
++                disabled = services.get("disabled")
++                if isinstance(stopped, list) and stopped:
++                    lines[-1] = f"{len(stopped)} services stopped"
++                    service_colour = "bad"
++                elif isinstance(disabled, list) and disabled:
++                    lines[-1] = f"{len(disabled)} services disabled"
++
 +            for i, value in enumerate(lines):
 +                label(
 +                    5,
 +                    42 + i * 14,
 +                    value or "--",
-+                    "text" if i == 0 else "muted",
++                    "text" if i == 0 else (service_colour if i == 4 else "muted"),
 +                    panel.small,
 +                )
 +        draw.line((3, 115, 124, 115), fill=COLORS["line"])
@@ -11179,10 +11190,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..cc2e6f8
+index 0000000..b1028a6
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,993 @@
+@@ -0,0 +1,999 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -12132,7 +12143,13 @@ index 0000000..cc2e6f8
 +        elif stopped:
 +            rows.append(("bad", None, f"{len(stopped)} services stopped"))
 +        else:
-+            rows.append(("good", "Services", f"{int(number(services.get('up')))} of {int(number(services.get('total')))} up"))
++            disabled = services.get("disabled")
++            disabled = [text(s) for s in disabled if text(s)] if isinstance(disabled, list) else []
++            if disabled:
++                message = f"{disabled[0]} disabled" if len(disabled) == 1 else f"{len(disabled)} services disabled"
++                rows.append(("muted", None, message))
++            else:
++                rows.append(("good", "Services", f"{int(number(services.get('up')))} of {int(number(services.get('total')))} up"))
 +    # now on the server's clock: when the snapshot was made, and how old it is
 +    generated = number(panel.data.get("generated_at"), None)
 +    now = generated + (panel.age or 0) if generated is not None else None
@@ -12148,7 +12165,7 @@ index 0000000..cc2e6f8
 +            rows.append(("good", name, "answering"))
 +    if st.get("storage"):
 +        rows.append(("warn" if st.get("storage_low") else "good", "Disk", text(st.get("storage"))))
-+    order = {"bad": 0, "warn": 1, "good": 2}
++    order = {"bad": 0, "warn": 1, "muted": 2, "good": 3}
 +    return sorted(rows, key=lambda r: order[r[0]])
 +
 +
@@ -13062,10 +13079,10 @@ index 0000000..d024b09
 +    assert fonts.overlaps(ink) == []
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..919919c
+index 0000000..d862537
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1339 @@
+@@ -0,0 +1,1361 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -14405,6 +14422,28 @@ index 0000000..919919c
 +    assert a.frame().getpixel((127, 127)) == (255, 248, 240)
 +    assert b.frame().getpixel((127, 127)) == (0, 0, 0)
 +    assert a.frame().getpixel((127, 127)) == (255, 248, 240)
++
++
++@pytest.mark.parametrize("theme", ["classic", "new"])
++@pytest.mark.parametrize("mode", ["light", "dark"])
++def test_disabled_services_are_neutral_and_worker_failure_stays_red(tmp_path, theme, mode):
++    from fpms.integrations.cmprovision_new import station_rows
++    def disabled(station):
++        station["services"] = {"up": 4, "total": 6, "stopped": [], "disabled": ["dnsmasq", "rpiboot"]}
++    p = station_of(tmp_path, disabled)
++    p.data["panel"].update(theme=theme, color_mode=mode)
++    rows = station_rows(p, p.data["station"])
++    assert ("muted", None, "2 services disabled") in rows
++    assert not any(row[0] == "bad" for row in rows)
++    seen = set()
++    for _ in range(8):
++        _, ink, _ = drawn(p)
++        seen.update(strings(ink))
++        assert fonts.overlaps(ink) == []
++        p.key("DOWN")
++    assert "2 services disabled" in seen
++    p.data["station"]["services"]["stopped"] = ["queue"]
++    assert station_rows(p, p.data["station"])[0] == ("bad", None, "queue stopped")
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
 index 0000000..2ecec08

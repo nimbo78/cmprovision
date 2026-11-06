@@ -62,4 +62,5 @@ The implementation is tested with encrypted database records, Livewire forms, a 
 the NetworkManager keyfile parser and account configuration on a disposable copy of the real arm64 image under QEMU.
 A complete CM4 hardware run passed image verification, automatic management Wi-Fi association, password and public-key
 SSH login, real sudo elevation and a cold PoE boot. Existing station data and settings were restored from a verified
-off-device backup. Physical front-panel navigation and Raspberry Pi Imager customization remain pending acceptance.
+off-device backup. The physical panel rendered all five pages and KEY2 worked. Remaining controls,
+Classic/Dark appearance and Raspberry Pi Imager customization remain pending acceptance.

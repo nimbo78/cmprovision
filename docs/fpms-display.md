@@ -1,7 +1,8 @@
 # FPMS front panel
 
 **Preview.** The optional FPMS integration and `fpms-lite` are available from cmprovision 2.23.0.
-Physical navigation and a cold boot on clean Raspberry Pi OS Lite still need acceptance.
+A cold boot on Raspberry Pi OS Lite, all five pages and KEY2 were checked on a CM4 with the
+Waveshare display. The remaining physical controls and both themes still need acceptance.
 
 FPMS shows a compact read-only view on a Waveshare 1.44-inch 128×128 display.
 The first hardware target is CM4. A display is optional: web provisioning works
@@ -15,7 +16,7 @@ without it, and HDMI and FPMS can be used at the same time.
 A complete FPMS profile for WLAN Pi OS is not planned.
 
 The package recipes and current acceptance status are in
-[packaging/fpms](../packaging/fpms/README.md). Full ready-to-flash images are still in development.
+[packaging/fpms](../packaging/fpms/README.md). Version 2.24.0 also provides an experimental ready-to-flash Lite image.
 
 ## Enable the panel
 
@@ -116,3 +117,9 @@ On a 128×128 panel some list labels are shortened (a cut is shown with `...`); 
 the selected device's card wraps everything. The station page is a summary; network configuration remains
 in the web interface or installer. The Wi-Fi network's name is shown; NetworkManager profile names and keys never
 reach the panel.
+
+## Disabled boot services
+
+Station shows intentionally masked DHCP/TFTP and USB boot services as neutral `disabled`.
+A failed boot service or stopped worker remains red. Settings uses the same classification.
+HDMI currently shows provisioning and port states without a station-service list.

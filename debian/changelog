@@ -1,3 +1,18 @@
+cmprovision4 (2.24.0) unstable; urgency=medium
+
+  * Manage Ethernet, tagged VLANs, addresses, DNS and policy routes with
+    confirmation, durable rollback and primary/secondary station roles.
+  * Add an experimental Raspberry Pi OS Lite arm64 station image with
+    unique first-boot identity and project-driven SSH and Wi-Fi setup.
+  * Add independent Light, Dark and Auto modes for HDMI and FPMS.
+    Keep FPMS preview with physical rendering and KEY2 acceptance recorded.
+  * Distinguish intentionally disabled boot services from service failures
+    in Settings and both FPMS layouts.
+  * Preserve station boot-service roles in full backups and serialize
+    restoration against pending network transactions.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 06 Nov 2026 15:10:00 +0300
+
 cmprovision4 (2.24.0~dev4) unstable; urgency=medium
 
   * Configure Linux users, passwords, SSH keys and management Wi-Fi from

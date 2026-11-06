@@ -127,7 +127,19 @@ class FpmsTest extends TestCase
         $this->network([]);
 
         // the web interface has no unit of its own: it is not counted
-        $this->assertSame(['up' => 5, 'total' => 6, 'stopped' => ['dnsmasq']], DisplayStation::current()['services']);
+        $this->assertSame(['up' => 5, 'total' => 6, 'stopped' => ['dnsmasq'], 'disabled' => []], DisplayStation::current()['services']);
+    }
+
+    public function test_station_separates_disabled_boot_services_from_a_stopped_worker()
+    {
+        $this->app->instance(ServiceState::class, new FakeServiceState(
+            ['cmprovision-usb-diagnostics', 'cmprovision-queue-images', 'cmprovision-uplink.timer'],
+            ['cmprovision-dnsmasq', 'cmprovision-rpiboot', 'cmprovision-queue']
+        ));
+        $this->network([]);
+
+        $this->assertSame(['up' => 3, 'total' => 6, 'stopped' => ['queue'], 'disabled' => ['dnsmasq', 'rpiboot']],
+            DisplayStation::current()['services']);
     }
 
     public function test_station_lists_the_links_with_their_roles()

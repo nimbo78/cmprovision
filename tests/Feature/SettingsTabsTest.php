@@ -63,6 +63,18 @@ class SettingsTabsTest extends TestCase
         $this->tab('status')->assertDontSeeHtml('id="settings-health"');
     }
 
+    public function test_disabled_boot_services_are_neutral_on_status_and_in_the_strip()
+    {
+        $this->app->instance(ServiceState::class, new FakeServiceState(
+            array_values(array_diff(self::ALL_UNITS, ['cmprovision-dnsmasq', 'cmprovision-rpiboot'])),
+            ['cmprovision-dnsmasq', 'cmprovision-rpiboot']
+        ));
+
+        foreach (['status', 'network'] as $tab)
+            $this->tab($tab)->assertSee('disabled')->assertSeeHtml('cmp-chip-idle')->assertDontSee('stopped');
+        $this->tab('network')->assertSee('5 of 7 running')->assertSee('2 disabled');
+    }
+
     #[DataProvider('otherTabs')]
     public function test_every_other_tab_has_the_strip_with_a_count_in_words(string $tab)
     {

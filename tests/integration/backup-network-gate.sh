@@ -28,4 +28,9 @@ if sh "$(dirname "$0")/restore.sh" /tmp/incomplete >/tmp/restore.out 2>&1; then
     echo 'restore incorrectly accepted an incomplete backup' >&2; exit 1
 fi
 grep -Fq 'backup did not finish' /tmp/restore.out
+rm /tmp/incomplete/.incomplete
+if sh "$(dirname "$0")/restore.sh" /tmp/incomplete >/tmp/restore.out 2>&1; then
+    echo 'restore incorrectly accepted durable pending network state' >&2; exit 1
+fi
+grep -Fq 'pending network change' /tmp/restore.out
 printf '%s\n' 'PASS: pending network changes and incomplete snapshots fail closed'
