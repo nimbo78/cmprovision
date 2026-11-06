@@ -8,6 +8,7 @@ use App\Support\ColumnSort;
 use Livewire\Component;
 use App\Models\Package;
 use App\Models\Script;
+use App\Services\Configuration\Definitions;
 
 #[Title('Scripts')]
 class Scripts extends Component
@@ -17,13 +18,10 @@ class Scripts extends Component
     public $scripts, $packages;
     public $scriptid, $name, $script_type, $bg, $priority, $script;
 
-    protected $rules = [
-        'name' => 'required|max:255',
-        'script_type' => 'required|in:preinstall,postinstall,firstboot',
-        'bg' => 'required|boolean',
-        'priority' => 'required|numeric',
-        'script' => 'required'
-    ];
+    protected function rules(): array
+    {
+        return Definitions::scriptRules();
+    }
 
     /* The columns that sort the table of scripts by a click on their header; with none chosen the order is the name */
     protected function columns(): array
@@ -113,16 +111,14 @@ class Scripts extends Component
 
     public function store()
     {
-        $this->validate();
-
-        Script::updateOrCreate(['id' => $this->scriptid], [
+        $data = Definitions::script([
             'name' => $this->name,
             'script_type' => $this->script_type,
-            // a first-boot script runs in the new system's service, one after the other
-            'bg' => $this->script_type === 'firstboot' ? false : $this->bg,
+            'bg' => $this->bg,
             'priority' => $this->priority,
-            'script' => str_replace("\r", "", $this->script)
+            'script' => $this->script,
         ]);
+        Script::updateOrCreate(['id' => $this->scriptid], $data);
 
         $this->closeModal();
     }

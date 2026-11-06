@@ -15,12 +15,12 @@ use App\Models\Script;
 use App\Models\Setting;
 use App\Models\Firmware;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use App\Jobs\ComputeSHA256;
 use App\Services\EepromImage;
 use App\Services\FirmwareNotes;
 use App\Services\ProjectActivator;
-use App\Services\Sensor\ModuleMark;
+use App\Services\Configuration\Definitions;
 
 #[Title('Projects')]
 class Projects extends Component
@@ -45,29 +45,7 @@ class Projects extends Component
 
     protected function rules()
     {
-        return [
-            'name' => 'required|max:255',
-            'device' => 'required|in:cm4',
-            'storage' => 'required|max:255',
-            'image_id' => ['nullable', 'numeric', function ($attribute, $value, $fail) {
-                $image = $value ? Image::find($value) : null;
-                $own = $this->projectid ? Project::find($this->projectid)?->image_id : null;
-                if ($image && !$image->isReady() && (int) $value !== (int) $own)
-                    $fail('This image is not ready yet: it is still being fetched, repacked or checked, or it failed.');
-            }],
-            'label_id' => 'nullable|numeric',
-            // a file of the firmware store only: the name comes from the browser
-            'firmware' => ['nullable', 'max:255', Rule::in($this->firmwarePaths())],
-            'eeprom_settings' => 'nullable|max:2024',
-            'label_moment' => 'required|in:never,preinstall,postinstall,firstboot',
-            'selectedScripts' => 'array',
-            'selectedPackages' => 'array',
-            'verify' => 'required|boolean',
-            'os_check' => 'required|boolean',
-            'split_image' => 'required|boolean',
-            'reprovision' => 'required|boolean',
-            'mark_boots' => 'required|integer|min:0|max:'.ModuleMark::MAX_BOOTS,
-        ];
+        return Definitions::projectRules($this->projectid ? Project::find($this->projectid) : null);
     }
 
     /* The columns that sort the table of projects by a click on their header; with none chosen the order is the name */
@@ -247,58 +225,40 @@ class Projects extends Component
     public function store()
     {
         $this->validate();
-        $savedSetup = $this->projectid ? Project::find($this->projectid)?->station_setup : null;
-        $setup = null;
-        if ($this->stationEnabled || $savedSetup !== null) $this->ensurePasswordIsConfirmed();
-        if ($this->stationEnabled) {
-            if (!$this->image_id || !$this->verify || !preg_match('#^/dev/mmcblk[0-9]+$#D', $this->storage)) {
-                $this->addError('stationEnabled', 'Station setup requires an image, SHA-256 verification and eMMC/SD storage.');
-                return;
-            }
-            try {
-                $setup = \App\Support\StationSetupInput::normalize($this->station, $savedSetup);
-            } catch (\Illuminate\Validation\ValidationException $e) {
-                foreach ($e->errors() as $key => $messages) $this->addError('station.'.$key, $messages[0]);
-                $this->station['password'] = $this->station['wifi_password'] = '';
-                return;
-            }
+        $existing = $this->projectid ? Project::find($this->projectid) : null;
+        if ($this->stationEnabled || $existing?->station_setup !== null) {
+            $this->ensurePasswordIsConfirmed();
+        }
+        try {
+            $definition = Definitions::project([
+                'name' => $this->name,
+                'device' => $this->device,
+                'storage' => $this->storage,
+                'label_moment' => $this->label_moment,
+                'image_id' => $this->image_id,
+                'label_id' => $this->label_id,
+                'firmware' => $this->firmware,
+                'eeprom_settings' => $this->eeprom_settings,
+                'verify' => $this->verify,
+                'os_check' => $this->os_check,
+                'split_image' => $this->split_image,
+                'reprovision' => $this->reprovision,
+                'mark_boots' => $this->mark_boots,
+                'selectedScripts' => $this->selectedScripts ?: [],
+                'selectedPackages' => $this->selectedPackages ?: [],
+                'stationEnabled' => $this->stationEnabled,
+                'station' => $this->station,
+            ], $existing);
+        } catch (ValidationException $error) {
+            $this->station['password'] = $this->station['wifi_password'] = '';
+            throw $error;
         }
 
-        // what runs in the new system belongs to the OS check
-        if (!$this->os_check)
-        {
-            $errors = [];
-            if ($this->label_moment === 'firstboot')
-                $errors['label_moment'] = 'Printing after the OS check needs the OS check.';
-            if ($this->selectedPackages)
-                $errors['selectedPackages'] = 'Packages are installed by the OS check: turn it on or clear them.';
-            if (Script::whereIn('id', $this->selectedScripts ?: [])->where('script_type', 'firstboot')->exists())
-                $errors['selectedScripts'] = 'First-boot scripts run in the OS check: turn it on or clear them.';
-            foreach ($errors as $field => $message)
-                $this->addError($field, $message);
-            if ($errors)
-                return;
-        }
-
-        $project = Project::updateOrCreate(['id' => $this->projectid], [
-            'name' => $this->name,
-            'device' => $this->device,
-            'storage' => $this->storage,
-            'label_moment' => $this->label_moment,
-            'image_id' => $this->image_id ? $this->image_id : null,
-            'label_id' => $this->label_id ? $this->label_id : null,
-            'eeprom_firmware' => $this->firmware ? $this->firmware : null,
-            'eeprom_settings' => $this->eeprom_settings ? str_replace("\r", "", $this->eeprom_settings) : null,
-            'verify' => $this->verify,
-            'os_check' => (bool) $this->os_check,
-            'split_image' => (bool) $this->split_image,
-            'reprovision' => (bool) $this->reprovision,
-            'mark_boots' => (int) $this->mark_boots,
-        ]);
-        $project->station_setup = $setup;
+        $project = Project::updateOrCreate(['id' => $this->projectid], $definition['attributes']);
+        $project->station_setup = $definition['station_setup'];
         $project->save();
-        $project->scripts()->sync($this->selectedScripts);
-        $project->packages()->sync($this->selectedPackages ?: []);
+        $project->scripts()->sync($definition['script_ids']);
+        $project->packages()->sync($definition['package_ids']);
 
         if ($this->active)
         {

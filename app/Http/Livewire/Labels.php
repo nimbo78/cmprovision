@@ -7,6 +7,7 @@ use App\Http\Livewire\Concerns\SortsColumns;
 use App\Support\ColumnSort;
 use Livewire\Component;
 use App\Models\Label;
+use App\Services\Configuration\Definitions;
 
 #[Title('Labels')]
 class Labels extends Component
@@ -18,16 +19,10 @@ class Labels extends Component
     public $ftp_hostname, $ftp_username, $ftp_password, $file_extension, $template;
     public $dummypassword = "****************";
 
-    protected $rules = [
-        'name' => 'required|max:255',
-        'printer_type' => 'in:ftp,command',
-        'ftp_hostname' => 'nullable|max:255|required_if:printer_type,ftp',
-        'ftp_username' => 'nullable|max:255|required_if:printer_type,ftp',
-        'ftp_password' => 'nullable|max:255|required_if:printer_type,ftp',
-        'print_command' => 'nullable|max:255|required_if:printer_type,command',
-        'file_extension' => 'required|max:32|regex:/^[a-zA-Z0-9]+$/',
-        'template' => 'required'
-    ];
+    protected function rules(): array
+    {
+        return Definitions::labelRules();
+    }
 
     /* The columns that sort the table of labels by a click on their header; with none chosen the order is the name */
     protected function columns(): array
@@ -107,6 +102,12 @@ class Labels extends Component
         if ($this->ftp_password != $this->dummypassword)
         {
             $data['ftp_password'] = $this->ftp_password;
+        }
+
+        $existing = $this->labelid ? Label::findOrFail($this->labelid) : null;
+        $data = Definitions::label($data, $existing);
+        if ($this->ftp_password == $this->dummypassword) {
+            unset($data['ftp_password']);
         }
 
         Label::updateOrCreate(['id' => $this->labelid], $data);
