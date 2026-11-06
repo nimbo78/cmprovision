@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](usb-provisioning.md) | [Русский](ru/usb-provisioning.md)
+
 # Provision a CM4 over USB
 
 [Back to the README](../README.md) · [Local console](local-console.md) · [WLAN Pi M4+ hardware](hardware/wlanpi-m4-plus.md)

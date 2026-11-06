@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](local-console.md) | [Русский](ru/local-console.md)
+
 # Use the target's local console
 
 [Back to the README](../README.md) · [USB provisioning](usb-provisioning.md) · [WLAN Pi M4+ hardware](hardware/wlanpi-m4-plus.md)

@@ -1,39 +1,41 @@
-# Выкладка на провижинер
+> **Language / Язык:** [English](deploy-to-provisioner.md) | [Русский](ru/deploy-to-provisioner.md)
 
-Как обновить код на рабочем провижинере `wlanpi-da2` (стили, логотип, новая
-функция, исправление) — до пуша в GitHub или вместо него. Это ручной флоу для
-проверки на живом железе: пушим мы только после того, как пакет собрался и
-встал на провижинере.
+# Deployment to the Provisioner
 
-Пакет `cmprovision4` — `Architecture: all` (чистый PHP плюс заранее собранный
-ARM-бинарник `ledpattern`, он уходит в пакет как есть), а `vendor/` собирается из
-`composer.lock`, поэтому собирается где угодно на Debian 13. **Собираем не на
-провижинере:** сборка занимает его процессор и диск, и модули, которые в это время
-пишут образ, идут в разы медленнее (22–23 октября два модуля прошивались 42 и 48
-минут вместо 6–7 — шла сборка). Схема: собрать `.deb` в WSL (`tools/build-deb-wsl.sh`,
-около полутора минут) → отправить файл на da2 → поставить, когда на стенде тихо →
-`postinst` накатит миграции и перезапустит PHP-FPM.
+How to deploy updated code to the live provisioner `wlanpi-da2` (styles, logo, new
+features, bug fixes) — before or instead of pushing to GitHub. This is a manual workflow
+for validating on real hardware: we only push to the remote repository after the package
+has built and installed successfully on the provisioner.
 
-Кросс-ссылки: сеть провижинера — [provisioner-network.md](provisioner-network.md);
-про саму сборку `.deb` и про `vendor/` — в корневом `CLAUDE.md`.
+The `cmprovision4` package is `Architecture: all` (pure PHP plus a precompiled
+ARM binary `ledpattern`, included as-is), and `vendor/` is installed from
+`composer.lock`, so it can be built anywhere on Debian 13. **Do not build on the
+provisioner itself:** building consumes its CPU and I/O, slowing down active module
+flashing significantly (on October 22–23, two modules took 42 and 48 minutes instead of
+the usual 6–7 because a build was running). The workflow is: build the `.deb` in WSL
+(`tools/build-deb-wsl.sh`, ~1.5 minutes) → upload the package to da2 → install when
+the stand is idle → `postinst` runs migrations and restarts PHP-FPM.
 
-## Где запускать команды
+Cross-references: provisioner networking — [provisioner-network.md](provisioner-network.md);
+details on the `.deb` build process and `vendor/` handling — root `CLAUDE.md`.
 
-Сборку запускает **Git Bash** (ставится с Git для Windows): `tools/build-deb-wsl.sh` — скрипт
-`sh`, а сам `.deb` собирается в WSL. Остальное — `scp` и `ssh da2 '…'` — одинаково работает
-и в Git Bash, и в **PowerShell** (встроенный Windows PowerShell 5.1): обе читают один и тот же
-`C:\Users\igors\.ssh\config`. Тяжёлая часть идёт на провижинере внутри одинарных кавычек, а
-локальная оболочка её не трогает; двойные кавычки внутри `ssh da2 '…'` PowerShell 5.1
-теряет, поэтому удалённые команды написаны без них. В VS Code любая оболочка открывается
-стрелкой рядом с «+» в панели терминала.
+## Where to Run Commands
 
-Архив с исходниками на da2 больше не отправляется (раньше его гнали трубой `git archive | ssh`, и PowerShell 5.1
-портил байты): `.deb` едет файлом через `scp` и проверяется по SHA256.
+Builds are triggered from **Git Bash** (installed with Git for Windows): `tools/build-deb-wsl.sh`
+is an `sh` script, and the package itself builds inside WSL. Everything else — `scp` and
+`ssh da2 '…'` — works identically in both Git Bash and **PowerShell** (built-in Windows
+PowerShell 5.1): both read the same `C:\Users\igors\.ssh\config`. Heavy lifting happens on
+the provisioner within single quotes, leaving the local shell unaffected; Windows PowerShell 5.1
+drops nested double quotes inside `ssh da2 '…'`, so remote commands are written without them.
+In VS Code, any shell can be opened using the dropdown arrow next to the `+` button in the terminal panel.
 
-## Один раз: псевдоним `da2`
+Source code archives are no longer streamed to da2 (previously piped via `git archive | ssh`,
+which PowerShell 5.1 corrupted): `.deb` files are transferred cleanly via `scp` and verified with SHA-256.
 
-Адрес, пользователь и псевдоним ключа хоста лежат в `C:\Users\igors\.ssh\config` —
-этот файл читают оба клиента SSH (Git Bash и Windows):
+## One-Time Setup: SSH Alias `da2`
+
+The provisioner's address, user, and host key alias are defined in `C:\Users\igors\.ssh\config` —
+read by both SSH clients (Git Bash and Windows):
 
 ```
 Host da2
@@ -42,128 +44,128 @@ Host da2
     HostKeyAlias 192.168.25.30
 ```
 
-- `HostName` — адрес провижинера по Wi-Fi. Его раздаёт DHCP, и он уже менялся
-  (`192.168.25.30` → `192.168.68.237`): если `ssh da2` перестал подключаться, узнайте
-  новый адрес и поправьте эту строку.
-- `User claude` — вход по ключу (`~/.ssh/id_ed25519`), sudo без пароля. У пользователя
-  `wlanpi` sudo просит пароль: тогда команды с `sudo` запускайте как `ssh -t da2 '…'`.
-- `HostKeyAlias` — ключ хоста записан в `known_hosts` под старым адресом.
+- `HostName` — Provisioner IP address over Wi-Fi. Assigned via DHCP and has changed before
+  (`192.168.25.30` → `192.168.68.237`): if `ssh da2` fails to connect, determine the new
+  IP address and update this line.
+- `User claude` — Key-based authentication (`~/.ssh/id_ed25519`) with passwordless sudo.
+  For the `wlanpi` user, sudo prompts for a password, requiring `ssh -t da2 '…'`.
+- `HostKeyAlias` — Preserves host key identity in `known_hosts` across address changes.
 
-Проверка (из любой оболочки):
+Verification (from any shell):
 
 ```sh
 ssh da2 'hostname; dpkg-query -W cmprovision4'
 ```
 
-Ответ — `wlanpi-da2` и установленная версия пакета.
+Expected output: `wlanpi-da2` and the currently installed package version.
 
-Пакеты на провижинере лежат в `~/cmprovision/build/` (там же остаются прошлые версии для отката).
+Packages on the provisioner reside in `~/cmprovision/build/` (previous versions remain there for rollback).
 
-## Один раз: WSL для сборки
+## One-Time Setup: WSL for Building
 
-В WSL-дистрибутиве (у нас `cmprov-trixie`, Debian 13) нужны `dpkg-dev`, `debhelper`,
-`fakeroot`, `composer` и PHP 8.4 **не ниже 8.4.27**: `composer.json` не даст
-собрать с непропатченным PHP (`pre-install-cmd: composer check-platform-reqs`). Если сборка
-остановилась на этой проверке — `apt-get install --only-upgrade 'php8.4*'` в WSL. Другой
-дистрибутив задаёт `CMP_WSL_DISTRO`.
+The WSL distribution (`cmprov-trixie`, Debian 13) requires `dpkg-dev`, `debhelper`,
+`fakeroot`, `composer`, and PHP 8.4 **no lower than 8.4.27**: `composer.json` blocks
+building on unpatched PHP (`pre-install-cmd: composer check-platform-reqs`). If the build
+aborts on this check, run `apt-get install --only-upgrade 'php8.4*'` inside WSL. An
+alternate distribution can be specified with `CMP_WSL_DISTRO`.
 
-## 1. Собрать `.deb` в WSL
+## 1. Build the `.deb` in WSL
 
-**Сначала закоммитьте:** собирается коммит или тег, а не несохранённые правки (`git archive`).
-Для проверки сгодится черновой коммит — потом его можно поправить (`git commit --amend`)
-или снять (`git reset`). Из Git Bash, из корня репозитория:
+**Commit your changes first:** the build archives a commit or tag, not uncommitted working tree edits (`git archive`).
+A draft commit works fine for testing — you can amend it later (`git commit --amend`) or undo it (`git reset`).
+From Git Bash at the repository root:
 
 ```sh
-tools/build-deb-wsl.sh HEAD /tmp/cmprovision-pkg      # или тег: tools/build-deb-wsl.sh v2.18.0 …
+tools/build-deb-wsl.sh HEAD /tmp/cmprovision-pkg      # or a tag: tools/build-deb-wsl.sh v2.18.0 …
 ```
 
-Скрипт отправляет `git archive` в WSL, там `tools/build-deb.sh` (`dpkg-buildpackage -b -us -uc`,
-в нём `composer install --optimize-autoloader --no-dev` из `Makefile`) собирает пакет, готовый
-`.deb` возвращается в указанный каталог вместе с `SHA256SUMS`. Версия — верхняя строка
-`debian/changelog`.
+The script pipes `git archive` into WSL, where `tools/build-deb.sh` (`dpkg-buildpackage -b -us -uc`,
+invoking `composer install --optimize-autoloader --no-dev` from `Makefile`) builds the package. The compiled
+`.deb` is returned to the specified directory alongside `SHA256SUMS`. The version is taken from the top entry
+of `debian/changelog`.
 
-## 2. Отправить на провижинер
+## 2. Upload to the Provisioner
 
 ```sh
-scp /tmp/cmprovision-pkg/cmprovision4_<версия>_all.deb /tmp/cmprovision-pkg/SHA256SUMS da2:cmprovision/build/
+scp /tmp/cmprovision-pkg/cmprovision4_<version>_all.deb /tmp/cmprovision-pkg/SHA256SUMS da2:cmprovision/build/
 ssh da2 'cd ~/cmprovision/build && sha256sum -c --ignore-missing SHA256SUMS'
 ```
 
-Вторая команда должна ответить `OK`: файл дошёл целым (по Wi-Fi передача уже обрывалась). Ставьте, когда на стенде
-тихо: модуль в фазе записи, загрузки или проверки ОС не трогаем.
+The second command must output `OK`, confirming integrity (Wi-Fi transfers have dropped packets before).
+Install only when the stand is quiet: avoid updating while a module is writing an image, booting, or undergoing OS check.
 
-## 3. Установить
+## 3. Install
 
 ```sh
-ssh da2 'sudo dpkg -i ~/cmprovision/build/cmprovision4_<версия>_all.deb'
+ssh da2 'sudo dpkg -i ~/cmprovision/build/cmprovision4_<version>_all.deb'
 ```
 
-Перед распаковкой `preinst` берёт снимок данных (с 2.17.0 при каждом обновлении, в `/var/backups/cmprovision`,
-остаются пять последних; см. [upgrading.md](upgrading.md)). `postinst` сам выполнит
-`php artisan migrate --force`, поправит владельцев, перепишет пул FPM и перезапустит
-PHP-FPM; службы очереди перезапустит `dh_installsystemd`. Если dpkg пожалуется на
-зависимости (на машине, где пакет уже работает, не должен) —
+Before unpacking, `preinst` creates an automatic backup snapshot (starting with 2.17.0, stored in
+`/var/backups/cmprovision`, keeping the last five snapshots; see [upgrading.md](upgrading.md)).
+`postinst` runs `php artisan migrate --force`, fixes file permissions, regenerates the FPM pool
+configuration, and restarts PHP-FPM; queue services are restarted by `dh_installsystemd`.
+If dpkg warns about missing dependencies (unlikely on an already working system), run:
 `ssh da2 'sudo apt-get -f install'`.
 
-### Ловушка одинаковой версии
+### The Identical Version Trap
 
-debhelper ставит всем файлам пакета mtime из даты записи changelog. Поставьте **ту
-же** версию второй раз — opcache PHP не заметит изменённый код, а dpkg может не
-счесть это обновлением (и не перезапустит FPM). Два выхода:
+debhelper stamps all package files with mtime from the changelog entry date. Installing the
+**exact same** version a second time causes PHP opcache to ignore modified files, and dpkg may
+not consider it an upgrade (skipping FPM restarts). Two solutions:
 
-- **Менять версию на каждую сборку** (чисто): для теста достаточно поправить номер в
-  верхней строке `debian/changelog`, например `(2.6.0)` → `(2.6.0+test1)`, и
-  закоммитить — `git archive` берёт только коммит. Для настоящего релиза — новая
-  запись сверху.
-- **Либо перезапустить вручную** после установки той же версии:
+- **Bump the version for each build** (cleanest): for testing, tweak the top version in
+  `debian/changelog` (e.g. `(2.6.0)` → `(2.6.0+test1)`) and commit — `git archive` only
+  packages committed files. For an actual release, add a proper new entry at the top.
+- **Or restart services manually** after reinstalling the same version:
 
 ```sh
 ssh da2 'sudo systemctl restart php8.4-fpm cmprovision-queue cmprovision-queue-images'
 ```
 
-## 4. Проверить
+## 4. Verification
 
-- Открыть веб-интерфейс провижинера и глянуть **Settings → Status**: два
-  воркера очереди и dnsmasq должны быть зелёными.
-- Версия: `ssh da2 'dpkg-query -W cmprovision4'`.
-- Журнал, последние 50 строк:
+- Open the provisioner web interface and check **Settings → Status**: both queue workers
+  and dnsmasq should be green.
+- Check package version: `ssh da2 'dpkg-query -W cmprovision4'`.
+- Inspect recent logs (last 50 lines):
   `ssh da2 'sudo journalctl -u php8.4-fpm -u cmprovision-queue -n 50 --no-pager'`.
 
-## 5. Откат
+## 5. Rollback
 
-Собранные пакеты, свежие сверху:
+List available packages, newest first:
 
 ```sh
 ssh da2 'ls -t ~/cmprovision/build/*.deb'
 ```
 
-Вернуться на нужный (подставьте файл из списка):
+Roll back to a previous version (substitute package name from the list):
 
 ```sh
 ssh da2 'sudo apt-get install --reinstall --allow-downgrades ~/cmprovision/build/cmprovision4_2.6.0_all.deb'
 ```
 
-Это откат **кода**: миграции базы, которые успела выполнить новая версия, остаются.
-Откат **данных** (база, прошивки, `.env`) — отдельно, через `cmprovision-restore` из
-снимка; см. `CLAUDE.md`.
+This rolls back **code**: database migrations executed by the newer version remain in place.
+Rolling back **data** (database, firmware images, `.env`) is performed separately using
+`cmprovision-restore` from a snapshot; see `CLAUDE.md`.
 
-## Чистка после установки
+## Post-Installation Disk Cleanup
 
-С тех пор как пакет собирается в WSL, на da2 нет ни дерева исходников, ни сборочного каталога: остаются только
-присланные `.deb` (по 55–60 МБ). eMMC провижинера всего 29 ГБ, а на ней лежат образы (по 1–2 ГБ) и снимки бэкапов;
-старые `.deb` уберите, оставив два-три последних для отката:
+Since packages are built in WSL, da2 maintains neither source trees nor build artifacts:
+only uploaded `.deb` files (~55–60 MB each) remain. The provisioner's eMMC is only 29 GB,
+hosting OS images (1–2 GB each) and backup snapshots. Prune old `.deb` files, keeping the
+last 2–3 for rollback:
 
 ```sh
 ssh da2 'ls -t ~/cmprovision/build/*.deb | tail -n +4 | xargs -r rm -f; df -h / | tail -1'
 ```
 
-## 6. Когда всё хорошо — пуш
+## 6. Once Verified — Push
 
-Установка на провижинере намеренно идёт до пуша: сначала пакет доказан на живом
-железе. После успешной проверки:
+Installing on the provisioner intentionally precedes pushing to git: the package is first
+proven on real hardware. After successful verification:
 
 ```sh
-git push origin <ветка>
+git push origin <branch>
 ```
 
-и тег релиза — по обычному порядку.
+Follow standard procedure for release tags.

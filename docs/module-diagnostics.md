@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](module-diagnostics.md) | [Русский](ru/module-diagnostics.md)
+
 # Module diagnostics
 
 cmprovision collects a read-only snapshot from the target's temporary utility OS at
