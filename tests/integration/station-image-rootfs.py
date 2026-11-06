@@ -53,7 +53,7 @@ try:
     assert (root / 'etc/hostname').read_text().strip() == 'cmprov-lab'
     assert (root / 'home/operator/.ssh/authorized_keys').stat().st_uid == 1000
     assert (root / 'etc/systemd/system/multi-user.target.wants/ssh.service').is_symlink()
-    assert not (root / 'etc/systemd/system/multi-user.target.wants/userconfig.service').exists()
+    assert not os.path.lexists(root / 'etc/systemd/system/multi-user.target.wants/userconfig.service')
     for service in ('cmprovision-dnsmasq', 'cmprovision-rpiboot'):
         assert os.readlink(root / ('etc/systemd/system/' + service + '.service')) == '/dev/null'
     assert not list((root / 'etc/ssh').glob('ssh_host_*_key'))

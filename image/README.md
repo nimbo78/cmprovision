@@ -26,6 +26,14 @@ builder. Build paths must not contain spaces. The source tree and package must a
 on the builder. The build directory is retained for investigation; the script does not write
 to a physical disk or remove an existing build directory.
 
+On WSL 2, check that ARM64 emulation remains available for the whole build. In the tested
+WSL 6.6 environment, starting Ubuntu while the Debian builder was running replaced their
+shared binfmt registrations and removed `qemu-aarch64`, causing `Exec format error` during
+package configuration. Start both distributions first, keep their WSL clients open, then
+register ARM64 in the builder before launching pi-gen. Retain those clients until export
+finishes. WSL's generated systemd units manage binfmt registration during startup.
+[WSL systemd documentation](https://github.com/microsoft/WSL/blob/master/doc/docs/technical-documentation/systemd.md)
+
 Run the image safety tests on a disposable Debian host:
 
 ```sh
