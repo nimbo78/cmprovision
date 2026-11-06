@@ -157,6 +157,7 @@ The [upgrade and restore guide](docs/upgrading.md) covers snapshots, rollback, P
 | Diagnose a target with a monitor and keyboard | [Local console (tty2)](docs/local-console.md) |
 | Show stand progress on the provisioner's monitor | [HDMI display](docs/hdmi-display.md) |
 | Use a small front panel display (development preview) | [FPMS display](docs/fpms-display.md) |
+| Plan a prebuilt station image or VLAN connection | [Deployment options](docs/deployment-options.md) |
 | Diagnose a module over Ethernet or USB fallback | [Module diagnostics](docs/module-diagnostics.md) |
 | Investigate a new board shown as Unrecognized / UNR | [Discovery troubleshooting](docs/unrecognized-devices.md) |
 | Connect WLAN Pi M4+ as server and target | [M4+ hardware and BOOT/OTG](docs/hardware/wlanpi-m4-plus.md) |

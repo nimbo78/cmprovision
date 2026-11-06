@@ -25,6 +25,7 @@ use App\Services\LabelPrinter;
 use App\Support\ImagePieces;
 use App\Support\ModuleDiagnostics;
 use App\Services\ModuleOperationLock;
+use App\Services\NetworkChangeGate;
 use App\Services\Sensor\ModuleMark;
 use App\Services\Sensor\ReprovisionAgent;
 use App\Services\Sensor\ProvisionerKey;
@@ -181,10 +182,14 @@ exit 1
 
     public function startProvisoning(Request $req)
     {
-        // a module may say a serial that another row has: the start holds the lock of the row it is, and of the serial it said
-        $serials = array_unique(array_filter([$this->serial, $this->findForStart($req)?->serial]));
+        // The root network transaction takes this lock when checking active runs and setting its pending flag.
+        // Keep it until the new run's active phase is saved, so a change cannot race a module just starting.
+        return app(NetworkChangeGate::class)->start(function () use ($req) {
+            // a module may say a serial that another row has: hold the lock of both serials
+            $serials = array_unique(array_filter([$this->serial, $this->findForStart($req)?->serial]));
 
-        return ModuleOperationLock::run($serials, fn () => $this->startLockedProvisioning($req));
+            return ModuleOperationLock::run($serials, fn () => $this->startLockedProvisioning($req));
+        });
     }
 
     /* The module of a start. The MAC is its key: a module is found by it first. One that comes with another MAC but a
@@ -350,6 +355,10 @@ exit 1
         if (!$project)
         {
             return $this->refuse("Could not provision, because there is no active project", 'No active project set in CMprovisioning');
+        }
+
+        if ($project->station_setup !== null && $this->cm->utility_os === null) {
+            return $this->refuse('Station setup requires the 64-bit utility OS. Select it in Settings before writing this image.');
         }
 
         // an image from the internet is written only after it is fetched, repacked and checked
@@ -601,6 +610,15 @@ exit 1
                              . 'echo Computed SHA256: "$READ_SHA256"'."\n"
                              . 'if [ "$READ_SHA256" = "'.$image->uncompressed_sha256.'" ]; then echo Verification successful!; else echo Verification failed; exit 2; fi'."\n";
             $postinstall_scripts->prepend($fscript);
+        }
+        if ($project->station_setup !== null) {
+            $setup = new Script;
+            $setup->id = -2;
+            $setup->name = 'Configuring the station';
+            $setup->bg = false;
+            $setup->script = app(\App\Services\StationSetup::class)->prepare($this->cm, $project, $server);
+            // Verification must precede all modifications to the shared image.
+            $postinstall_scripts->splice(1, 0, [$setup]);
         }
         if ($project->reprovision && $image)
         {

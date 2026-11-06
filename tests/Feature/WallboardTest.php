@@ -229,6 +229,33 @@ class WallboardTest extends TestCase
         $this->assertSame(0, Cm::count(), 'an observation does not register or provision a module');
     }
 
+    public function test_snapshot_resolves_auto_for_both_displays_and_falls_back_safely()
+    {
+        config(['app.display_timezone' => 'Europe/Moscow']);
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-12T09:00:00Z'));
+        $this->assertSame('light', app(WallboardSnapshot::class)->current()['display_auto_mode']);
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-12T15:00:00Z'));
+        $this->assertSame('dark', app(WallboardSnapshot::class)->current()['display_auto_mode']);
+        config(['app.display_timezone' => 'UTC']);
+        $this->assertSame('dark', app(WallboardSnapshot::class)->current()['display_auto_mode']);
+    }
+
+    public function test_existing_hdmi_palette_is_split_without_changing_its_meaning()
+    {
+        $service = $this->mock(Wallboard::class);
+        $service->shouldReceive('settings')->andReturn(
+            array_merge(Wallboard::DEFAULTS, ['palette' => 'neutral-light']),
+            array_merge(Wallboard::DEFAULTS, ['palette' => 'warm']),
+            array_merge(Wallboard::DEFAULTS, ['palette' => 'warm'])
+        );
+        $service->shouldReceive('status')->andReturn(['state' => 'off', 'connected' => false]);
+        $user = User::factory()->create();
+        Livewire::actingAs($user)->test(WallboardSettings::class)->assertSet('style', 'neutral')->assertSet('color_mode', 'light');
+        Livewire::actingAs($user)->test(WallboardSettings::class)->assertSet('style', 'warm')->assertSet('color_mode', 'dark');
+        \App\Models\Setting::updateOrCreate(['key' => 'hdmi_color_mode'], ['value' => 'auto']);
+        Livewire::actingAs($user)->test(WallboardSettings::class)->assertSet('style', 'warm')->assertSet('color_mode', 'auto');
+    }
+
     public function test_settings_require_login_validate_all_fields_and_send_only_the_fixed_schema()
     {
         Livewire::test(WallboardSettings::class)->call('save')->assertForbidden();
@@ -240,10 +267,14 @@ class WallboardTest extends TestCase
             ->set('mode', 'shell')->call('save')->assertHasErrors('mode')
             ->set('mode', 'auto')->set('rotation', 0)->call('save')->assertHasErrors('rotation')
             ->set('rotation', 12)->call('save')->assertHasNoErrors()->assertSee('Saved.');
-        foreach (['warm-light', 'neutral', 'neutral-light'] as $palette) {
+        foreach ([['warm', 'light', 'warm-light'], ['neutral', 'dark', 'neutral'], ['neutral', 'light', 'neutral-light'],
+                  ['warm', 'auto', 'warm'], ['neutral', 'auto', 'neutral']] as [$style, $colorMode, $palette]) {
             $service->shouldReceive('save')->once()->with(['mode' => 'auto', 'palette' => $palette, 'view' => 'auto', 'rotation' => 12]);
-            $component->set('palette', $palette)->call('save')->assertHasNoErrors();
+            $component->set('style', $style)->set('color_mode', $colorMode)->call('save')->assertHasNoErrors();
         }
-        $component->set('palette', 'invalid')->call('save')->assertHasErrors('palette');
+        $this->assertSame('auto', \App\Models\Setting::find('hdmi_color_mode')->value);
+        $this->assertTrue(app(WallboardSnapshot::class)->current()['hdmi_auto_mode']);
+        $component->set('style', 'invalid')->call('save')->assertHasErrors('style');
+        $component->set('style', 'warm')->set('color_mode', 'invalid')->call('save')->assertHasErrors('color_mode');
     }
 }

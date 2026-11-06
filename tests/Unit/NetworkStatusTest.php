@@ -187,6 +187,13 @@ class NetworkStatusTest extends TestCase
         $this->assertNull($modules['speed']);
     }
 
+    public function test_a_disconnected_preferred_tagged_management_profile_is_reported()
+    {
+        $this->nmcli['list'] .= "99999999:vlan::no\n";
+        $this->nmcli['99999999'] = "management-vlan42\nyes\n50\nno\n";
+        $this->assertSame('management-vlan42', $this->readStatus()['preferred_down']);
+    }
+
     public function test_a_preferred_profile_that_is_not_connected_is_reported()
     {
         file_put_contents($this->root.'/route', "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"

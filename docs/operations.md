@@ -17,8 +17,10 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 - [Images from the internet](#images-from-the-internet)
 - [Image download and write recovery](#image-download-and-write-recovery)
 - [Re-provision an installed sensor](#re-provision-an-installed-sensor)
+- [Set up a new provisioner from a project](station-project-setup.md)
 - [Built-in Wi-Fi as a cold spare](#built-in-wi-fi-as-a-cold-spare)
 - [Wi-Fi networks](#wi-fi-networks)
+- [Additional tagged VLANs](#additional-tagged-vlans)
 - [Switches and PoE restart](#switches-and-poe-restart)
 - [Network access](#network-access)
 
@@ -235,6 +237,114 @@ Settings → Network → Wi-Fi networks lists the networks the provisioner conne
 - A provisioner set up with Raspberry Pi Imager keeps its Wi-Fi in a netplan profile, shown greyed: add the same network here, check it, then remove the old profile with `sudo nmcli connection delete <name>`.
 - It works where NetworkManager runs the Wi-Fi (Raspberry Pi OS); on WLAN Pi OS the section says it is not available.
 
+## Additional tagged VLANs
+
+On a station whose Ethernet is managed by NetworkManager, **Settings → Network → Tagged VLANs**
+shows the tagged interfaces that currently exist, including interfaces configured outside cmprovision.
+The switch port can carry these tagged networks alongside the Ethernet port's existing untagged network.
+
+To add a separate static IPv4 network, choose **Add VLAN**, enter the physical interface (for example
+`eth0`), VLAN ID and optionally a station address with its prefix (for example `192.168.50.10/24`), and confirm
+your account password. Leave the address empty to create a layer-2 VLAN without IPv4. Configure the same VLAN as tagged on the switch port. The network must not
+overlap another connected network or the provisioning subnet `172.20.0.0/16`. A new VLAN has no
+default gateway and does not change existing connections or routes. Other subnets need routing
+configured separately.
+
+Use **Ethernet and VLAN profiles → Disconnect**, then confirm, before removing a VLAN.
+That section also deletes saved inactive profiles after IP settings have been edited. Profiles carrying
+the provisioning subnet cannot be deleted there. The older **Managed by cmprovision → Remove** action
+only accepts unchanged profiles created by the VLAN form. Both controls wait while another network
+change is pending.
+
+### Saved Ethernet and VLAN connections
+
+**New Ethernet profile** creates a disconnected profile bound to a physical interface, without enabling
+autoconnect or changing the current connection. Select **Edit** in **Saved connections** to set its IP
+settings before connecting. Existing profiles created with the system tools are also listed; an unbound
+Ethernet profile needs an interface selection. Wi-Fi has its own settings section.
+
+**Connect** activates a saved profile. **Apply and connect temporarily** applies edited IP settings and
+activates it together. Both temporarily replace the current profile on that interface. After confirmation,
+the new profile autoconnects and the previous profile's autoconnect is disabled. **Disconnect** similarly
+requires timed confirmation and disables autoconnect for the disconnected profile. Cancellation or timeout
+restores the previous profiles, autoconnect settings and active connection. An independently activated
+third profile pauses recovery so it is not overwritten.
+
+**Delete saved profile** removes an inactive profile and its saved settings; disconnect and confirm first.
+Bridge/bond ports, dependent VPN connections and unsupported IP assignment methods stay with the system
+network tools. A connection that carries the provisioning network, including a physical parent of a
+provisioning VLAN, cannot be disconnected or replaced here.
+
+### Addresses, routes and the provisioning network
+
+Settings → Network also lists active Ethernet and VLAN connections. Their IP settings support DHCP or
+static addresses, DNS, default gateways, static routes and policy routing for IPv4 and IPv6. A newly
+created VLAN can be left without an address and then configured through its network profile.
+Unsupported IP assignment methods cannot be edited here.
+
+Each route occupies one line: a destination prefix, an optional gateway and metric, then optional
+attributes. Both `203.0.113.0/24 via 192.0.2.1 metric 25` and the saved NetworkManager form
+`203.0.113.0/24 192.0.2.1 25` are accepted. Supported attributes are `table`, `mtu`, `src`, `onlink`
+and `type` (`unicast`, `blackhole`, `unreachable`, `prohibit`, `throw`). For example:
+
+```text
+203.0.113.0/24 via 192.0.2.1 metric 25 table=100 mtu=1400
+198.51.100.0/24 type=blackhole table=100
+```
+
+**Routing table** selects the profile's default table; `0` uses the system default. For an independent
+management uplink, give it a separate table such as `100` and add a rule such as
+`priority 100 from 192.0.2.0/24 table 100`. Rules occupy one line each and need distinct numeric priorities
+and numeric table IDs. Supported selectors are `from`, `to`, `fwmark` (optionally with `/mask`), `iif`
+and `oif`. Lower priorities run first. A rule must select the separate table before its routes can be used.
+The system's local table (`255`) is reserved. Routes and rules that divert provisioning traffic through
+another interface are rejected and the change is rolled back.
+
+**Ignore automatic routes** keeps DHCP addresses while ignoring DHCP-provided routes. DNS search domains
+are also editable; `~corp.example` is a routing-only domain and `~.` selects all DNS names. Routing-only
+domains need a system resolver with split-DNS support; adding one does not install or enable that resolver.
+Unknown route attributes are reported as an error, rather than silently removed when saving.
+
+Changes to IP settings require the account password and are temporary until confirmed. The server
+automatically rolls them back after two minutes if you cannot reconnect and confirm them. Check both
+the new address and the route you use for administration before confirming. A restart during a pending
+change triggers recovery; if an administrator has modified the same profile independently, automatic
+recovery stops rather than overwrite those changes. Check the network recovery service and journal in
+that case. Start such changes only when no modules are being provisioned: new provisioning starts are
+held while the change is pending.
+
+The provisioning subnet can be moved between active Ethernet and VLAN connections on the same physical
+port. Configure the switch first and keep an independent management connection available. The move
+preserves the station's existing provisioning address and the original DHCP/TFTP service state, with
+the same timed confirmation and rollback. A secondary station using `172.20.0.2/16` must keep its own
+DHCP/TFTP service stopped when it shares the stand with a primary station at `172.20.0.1/16`.
+If the stand uses a tagged VLAN, the physical parent's independent untagged IP settings remain editable.
+**Configure station role** sets up a new stand or changes the role on its current interface:
+
+- **Primary** assigns `172.20.0.1/16`, binds and starts DHCP/TFTP on that interface, and optionally
+  enables USB boot. Confirm that the segment is isolated and has no other DHCP server.
+- **Secondary** assigns `172.20.0.2/16` and masks this station's DHCP/TFTP and USB boot services.
+  Use this role alongside a primary station; it does not provide a second DHCP server.
+- **Disabled** removes the stand address and binding and masks both services.
+
+Choose an active Ethernet or VLAN connection. For a new connection, create and connect its profile
+first. To change the interface of an existing stand, use the move control before changing its role.
+An ARP probe refuses an address already in use on the selected segment; this is an address-conflict
+check, not a guarantee that no DHCP server is present. Both station addresses and the `172.20.0.0/16`
+provisioning subnet are fixed in this version.
+
+The role change retains explicitly configured management addresses but replaces DHCPv4 with static
+configuration on that connection. Its previous DHCP address can disappear immediately. Keep an
+independent management path, such as Wi-Fi, to confirm the change. Address, binding and service changes
+share the two-minute rollback; confirmation also saves service startup settings for the next boot.
+Recovery restores the original masks and startup settings, including a disabled secondary station.
+
+For example, a hybrid switch port can carry the provisioning network untagged in VLAN 1 and a management
+network tagged in VLAN 15. Leave the provisioning address on the Ethernet connection and create VLAN 15
+on that interface. Configure VLAN 15's address, routes and the switch uplink to match the actual management
+network; merely choosing VLAN 15 does not create a DHCP server or make that network reachable. Keep a
+working Wi-Fi or other independent management path until the tagged connection has been verified.
+
 ## Switches and PoE restart
 
 Settings → Network → Ethernet switches lists the switches of the stand; **Add switch** takes a switch's address and SNMP read access (a community for v2c, a user for v3). With them a module gets its switch and port as its board, `sw01 Gi0/3` (the switch's sysName before the first dot, then the port's description or name), and the Ports page shows each switch's front panel port by port. A port that leads to another switch of the list is a link, never a module's port: it shows that switch's own MAC (its base MAC, the MAC of its VLAN interface, or the MAC of its address in the provisioner's ARP cache). The same switch cannot be added twice under two addresses. Two switches with the same sysName give boards that look the same: Settings and the Ports page warn about it, rename one on the switch.
@@ -247,7 +357,9 @@ A device on a port that announces itself over LLDP or CDP (switches, access poin
 
 ## Network access
 
-Connect the provisioner's `eth0` only to the isolated provisioning switch. Use Wi-Fi for the web interface and the upstream network.
+Keep the provisioning subnet isolated on the switch. A dedicated Ethernet port with Wi-Fi for management
+is one option; a correctly configured hybrid port can carry an isolated provisioning VLAN alongside tagged
+management networks. Do not bridge the provisioning subnet into an ordinary LAN.
 
 The modules' `/scriptexecute` endpoint has no login: it accepts only clients on `172.20.0.0/16` and the server itself. Other networks receive HTTP 403. Keep nginx connected directly to the clients; do not put a reverse proxy in front of this endpoint or configure nginx `set_real_ip_from` / `real_ip_header`, which would make the client address depend on a forwarded header.
 

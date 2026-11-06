@@ -9,7 +9,8 @@ class Project extends Model
 {
     use HasFactory;
     protected $fillable = ['name','device','storage','image_id','label_id','label_moment','eeprom_firmware','eeprom_settings','verify','os_check','split_image','reprovision','mark_boots'];
-    protected $casts = ['verify' => 'boolean', 'os_check' => 'boolean', 'split_image' => 'boolean', 'reprovision' => 'boolean', 'mark_boots' => 'integer'];
+    protected $casts = ['verify' => 'boolean', 'os_check' => 'boolean', 'split_image' => 'boolean', 'reprovision' => 'boolean', 'mark_boots' => 'integer', 'station_setup' => 'encrypted:array'];
+    protected $hidden = ['station_setup'];
 
     function image()
     {

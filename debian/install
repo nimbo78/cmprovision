@@ -31,5 +31,9 @@ debian/cmprovision-wallboard-display.service lib/systemd/system
 debian/cmprovision-wallboard-data.service lib/systemd/system
 debian/011_cmprovision-wallboard etc/sudoers.d
 debian/012_cmprovision-fpms etc/sudoers.d
+debian/013_cmprovision-vlan etc/sudoers.d
+debian/014_cmprovision-network etc/sudoers.d
+debian/cmprovision-network-init.service lib/systemd/system
+debian/cmprovision-network-recover.service lib/systemd/system
 debian/cmprovision-fpms.service lib/systemd/system
 debian/cmprovision-fpms-data.service lib/systemd/system

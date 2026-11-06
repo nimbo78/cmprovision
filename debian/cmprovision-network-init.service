@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepare cmprovision network change guard
+After=local-fs.target
+Before=NetworkManager.service nginx.service cmprovision-dnsmasq.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/cmprovision/network-transaction init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

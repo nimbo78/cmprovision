@@ -127,7 +127,19 @@ class FpmsTest extends TestCase
         $this->network([]);
 
         // the web interface has no unit of its own: it is not counted
-        $this->assertSame(['up' => 5, 'total' => 6, 'stopped' => ['dnsmasq']], DisplayStation::current()['services']);
+        $this->assertSame(['up' => 5, 'total' => 6, 'stopped' => ['dnsmasq'], 'disabled' => []], DisplayStation::current()['services']);
+    }
+
+    public function test_station_separates_disabled_boot_services_from_a_stopped_worker()
+    {
+        $this->app->instance(ServiceState::class, new FakeServiceState(
+            ['cmprovision-usb-diagnostics', 'cmprovision-queue-images', 'cmprovision-uplink.timer'],
+            ['cmprovision-dnsmasq', 'cmprovision-rpiboot', 'cmprovision-queue']
+        ));
+        $this->network([]);
+
+        $this->assertSame(['up' => 3, 'total' => 6, 'stopped' => ['queue'], 'disabled' => ['dnsmasq', 'rpiboot']],
+            DisplayStation::current()['services']);
     }
 
     public function test_station_lists_the_links_with_their_roles()
@@ -154,19 +166,22 @@ class FpmsTest extends TestCase
         $service->shouldReceive('settings')->andReturn(Fpms::DEFAULTS);
         $service->shouldReceive('status')->andReturn(['state' => 'off']);
         $service->shouldReceive('save')->andThrow(new \RuntimeException('Could not save FPMS settings.'));
-        $this->assertSame(['theme' => 'new', 'ports_map' => 'pages'], FpmsPanelSettings::get());
+        $this->assertSame(['theme' => 'new', 'ports_map' => 'pages', 'color_mode' => 'dark'], FpmsPanelSettings::get());
 
         Livewire::actingAs(User::factory()->create())->test(FpmsSettings::class)
             ->assertSet('theme', 'new')->assertSet('ports_map', 'pages')
             ->set('theme', 'x')->call('save')->assertHasErrors('theme')
-            ->set('theme', 'classic')->set('ports_map', 'whole')->call('save')->assertHasErrors('enabled');
+            ->set('theme', 'new')->set('color_mode', 'invalid')->call('save')->assertHasErrors('color_mode')
+            ->set('theme', 'classic')->set('ports_map', 'whole')->set('color_mode', 'auto')->call('save')->assertHasErrors('enabled');
 
         // the root helper failed, the panel's look is the server's own setting and is kept
-        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole'], FpmsPanelSettings::get());
-        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole'], app(WallboardSnapshot::class)->current()['panel']);
+        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'auto'], FpmsPanelSettings::get());
+        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'auto'], app(WallboardSnapshot::class)->current()['panel']);
 
         Setting::updateOrCreate(['key' => 'fpms_theme'], ['value' => 'rainbow']);
         $this->assertSame('new', FpmsPanelSettings::get()['theme']);
+        Setting::updateOrCreate(['key' => 'fpms_color_mode'], ['value' => 'invalid']);
+        $this->assertSame('dark', FpmsPanelSettings::get()['color_mode']);
     }
 
     public function test_modules_carry_step_and_short_cause()

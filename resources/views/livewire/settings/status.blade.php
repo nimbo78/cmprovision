@@ -3,7 +3,7 @@
         @foreach ($services as $service)
             <li class="cmp-row">
                 <span class="cmp-row-name">{{ $service['label'] }}</span>
-                <span class="cmp-chip {{ $service['running'] ? 'cmp-chip-ok' : 'cmp-chip-fail' }}"><span class="dot"></span>{{ $service['running'] ? 'running' : 'stopped' }}</span>
+                <span class="cmp-chip {{ $service['chip'] }}"><span class="dot"></span>{{ $service['status'] }}</span>
                 <button wire:click="{{ $service['method'] }}()" class="cmp-btn cmp-btn-secondary cmp-btn-small">View log</button>
             </li>
         @endforeach

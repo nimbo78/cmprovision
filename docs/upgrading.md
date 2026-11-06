@@ -149,3 +149,10 @@ The package's post-installation step adjusts existing servers:
 - PHP's `upload_tmp_dir` moves to disk next to the images.
 - `.env` uses `APP_ENV=production` and `APP_DEBUG=false`.
 - Firmware channels move from `stable` / `beta` to `default` / `latest`. Previously downloaded firmware remains available to projects using it.
+
+## Network roles in backups
+
+Full snapshots from 2.24.0 save DHCP/TFTP and USB service masks and boot links with the network
+configuration. Full restore replaces the current role with those saved links. Older snapshots
+without this metadata keep the current boot-service role. `--data-only` also keeps the current
+system role. Confirm or recover any pending network change before backup or restore.

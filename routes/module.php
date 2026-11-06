@@ -15,3 +15,4 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::any('/scriptexecute', ScriptExecuteController::class);
+Route::post('/station-setup', \App\Http\Controllers\StationSetupController::class);

@@ -42,10 +42,11 @@ class PackagingTest extends TestCase
     {
         $this->assertStringContainsString('/etc/default/cmprovision-fpms.json', $this->file('tools/backup.sh'));
         $restore = $this->file('tools/restore.sh');
-        $stop = strpos($restore, 'systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data');
+        $this->assertStringContainsString('systemctl stop cmprovision-wallboard cmprovision-wallboard-display cmprovision-fpms cmprovision-fpms-data cmprovision-wallboard-data', $restore);
+        $stop = strpos($restore, "\nstop_readers\n");
         $this->assertNotFalse($stop);
         $this->assertLessThan(strpos($restore, 'restoring the data into'), $stop);
-        $secondStop = strpos($restore, 'systemctl stop cmprovision-wallboard', $stop + 1);
+        $secondStop = strpos($restore, "\n    stop_readers\n", $stop + 1);
         $this->assertGreaterThan(strpos($restore, 'apt-get install -y --allow-downgrades'), $secondStop);
         $this->assertLessThan(strpos($restore, 'echo "restoring $APP"'), $secondStop);
         $this->assertStringContainsString('deb-systemd-invoke stop cmprovision-fpms.service cmprovision-fpms-data.service cmprovision-wallboard-data.service', $this->file('debian/prerm'),
@@ -191,6 +192,45 @@ class PackagingTest extends TestCase
         $this->assertStringNotContainsString('*', $sudoers);
         $this->assertSame(6, substr_count($sudoers, 'NOPASSWD'), 'the dnsmasq restart and the five Wi-Fi commands');
         $this->assertStringEndsWith("\n", $sudoers);
+    }
+
+    public function test_vlan_helper_is_root_owned_and_sudo_allows_only_its_named_commands()
+    {
+        $this->assertStringContainsString("\tinstall -D -m 755 tools/vlan-networks debian/cmprovision4/usr/lib/cmprovision/vlan-networks\n",
+            $this->file('debian/rules'));
+        $this->assertStringContainsString("debian/013_cmprovision-vlan etc/sudoers.d\n", $this->file('debian/install'));
+        $sudoers = $this->file('debian/013_cmprovision-vlan');
+        foreach (['list', 'add', 'remove'] as $command)
+            $this->assertStringContainsString("www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/vlan-networks $command\n", $sudoers);
+        $this->assertSame(3, substr_count($sudoers, 'NOPASSWD'));
+        $this->assertStringNotContainsString('*', $sudoers);
+        $this->assertStringContainsString('/var/lib/cmprovision-network/vlans', $this->file('tools/backup.sh'));
+        $this->assertStringContainsString('/etc/default/cmprovision-stand-interface', $this->file('tools/backup.sh'));
+        $this->assertStringContainsString('flock -w 10 9', $this->file('tools/backup.sh'));
+        $this->assertStringContainsString('the backup did not finish', $this->file('tools/restore.sh'));
+    }
+
+    public function test_network_guard_and_boot_recovery_are_installed_before_nginx(): void
+    {
+        $install = $this->file('debian/install');
+        foreach (['cmprovision-network-init.service', 'cmprovision-network-recover.service'] as $unit)
+            $this->assertStringContainsString("debian/$unit lib/systemd/system\n", $install);
+        $init = $this->file('debian/cmprovision-network-init.service');
+        $recover = $this->file('debian/cmprovision-network-recover.service');
+        $this->assertStringContainsString('Before=NetworkManager.service nginx.service cmprovision-dnsmasq.service', $init);
+        $this->assertStringContainsString('network-transaction init', $init);
+        $this->assertStringContainsString('After=cmprovision-network-init.service NetworkManager.service', $recover);
+        $this->assertStringContainsString('Before=nginx.service cmprovision-dnsmasq.service', $recover);
+        $this->assertStringContainsString('network-transaction recover', $recover);
+        $this->assertStringContainsString('/usr/lib/cmprovision/network-transaction recover || {', $this->file('debian/prerm'));
+        $sudoers = $this->file('debian/014_cmprovision-network');
+        foreach (['status', 'begin', 'confirm', 'cancel', 'profiles'] as $command)
+            $this->assertStringContainsString("www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/network-transaction $command\n", $sudoers);
+        $this->assertSame(5, substr_count($sudoers, 'NOPASSWD'));
+        $this->assertStringNotContainsString('network-transaction recover', $sudoers);
+        $this->assertStringNotContainsString('*', $sudoers);
+        $this->assertStringContainsString('ExecStart=/usr/lib/cmprovision/dnsmasq-start', $this->file('debian/cmprovision-dnsmasq.service'));
+        $this->assertStringContainsString('install -D -m 755 tools/dnsmasq-start', $this->file('debian/rules'));
     }
 
     public function test_the_hdmi_display_has_a_renderer_user_of_its_own_and_a_data_unit_without_a_terminal()

@@ -1,0 +1,16 @@
+[Unit]
+Description=Recover an unconfirmed cmprovision network change
+Requires=cmprovision-network-init.service
+Wants=NetworkManager.service
+After=cmprovision-network-init.service NetworkManager.service
+Before=nginx.service cmprovision-dnsmasq.service cmprovision-rpiboot.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/cmprovision/network-transaction recover-boot
+Restart=on-failure
+RestartSec=30s
+
+[Install]
+WantedBy=multi-user.target

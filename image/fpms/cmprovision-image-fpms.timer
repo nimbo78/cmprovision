@@ -1,0 +1,10 @@
+[Unit]
+Description=Reconcile the optional FPMS setting
+
+[Timer]
+OnBootSec=5s
+OnUnitActiveSec=30s
+Unit=cmprovision-image-fpms.service
+
+[Install]
+WantedBy=timers.target

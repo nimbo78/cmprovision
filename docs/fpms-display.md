@@ -1,7 +1,8 @@
 # FPMS front panel
 
-**Development preview.** This feature needs the cmprovision changes in this branch
-and a compatible FPMS build. It is not part of the existing public release.
+**Preview.** The optional FPMS integration and `fpms-lite` are available from cmprovision 2.23.0.
+A cold boot on Raspberry Pi OS Lite, all five pages and KEY2 were checked on a CM4 with the
+Waveshare display. The remaining physical controls and both themes still need acceptance.
 
 FPMS shows a compact read-only view on a Waveshare 1.44-inch 128×128 display.
 The first hardware target is CM4. A display is optional: web provisioning works
@@ -9,33 +10,29 @@ without it, and HDMI and FPMS can be used at the same time.
 
 ## Choose the installation profile
 
-- **WLAN Pi OS:** a compatible `wlanpi-fpms` package adds a cmprovision entry to the
-  existing menu. The existing FPMS process retains ownership of the screen and buttons.
 - **Raspberry Pi OS Lite Trixie arm64:** `fpms-lite` supplies the compact station menu
   and hardware driver, without WLAN Pi applications or service dependencies.
 
+A complete FPMS profile for WLAN Pi OS is not planned.
+
 The package recipes and current acceptance status are in
-[packaging/fpms](../packaging/fpms/README.md). Full ready-to-flash images are still in development.
+[packaging/fpms](../packaging/fpms/README.md). Version 2.24.0 also provides an experimental ready-to-flash Lite image.
 
 ## Enable the panel
 
 1. Install the matching FPMS package and cmprovision package on the station.
 2. Open **Settings → Provisioning → FPMS display**.
 3. Check **Enable cmprovision in FPMS**, then **Save FPMS settings**.
-4. Optionally check **Open cmprovision when FPMS starts**. On WLAN Pi it takes effect
-   at the next FPMS startup; saving it does not interrupt someone using another page.
-5. Check the displayed status. `running` means the FPMS display process is alive, an SPI device
+4. Check the displayed status. `running` means the FPMS display process is alive, an SPI device
    for the display exists and the shared snapshot is fresh. The panel itself is write-only: nothing can
    read back whether a screen is really connected, so `running` with a dark screen means a wiring or
    power fault. `not installed`, `incompatible`, `no hardware` (no SPI device) and `waiting for FPMS`
    distinguish missing support from a missing or stopped display process.
 
-The default is off. Turning it off removes the section from the WLAN Pi menu;
-normal WLAN Pi functions continue to work. On Lite the panel says the integration is off.
+The default is off. On Lite the panel says the integration is off until enabled.
 The integration settings are included in normal cmprovision backups (a `--data-only` restore does not bring them back:
 enable the panel again). A restore stops both display consumers before replacing the database, then starts their watchers
-again. `apt remove` keeps `/etc/default/cmprovision-fpms.json`, so a WLAN Pi menu entry that was enabled stays and says
-`Waiting for data`; `apt purge` removes the file.
+again. `apt remove` keeps `/etc/default/cmprovision-fpms.json`; `apt purge` removes the file.
 
 ## Raspberry Pi OS Lite: turn SPI on first
 
@@ -43,13 +40,6 @@ Raspberry Pi OS ships with SPI off. Add `dtparam=spi=on` to `/boot/firmware/conf
 service stays idle and the status says `no hardware`. While `/dev/spidev0.0` does not exist the service
 touches no GPIO line at all. Once it exists, the service takes the display lines and pulls up the eight button
 lines (GPIO 5, 6, 13, 16, 19, 20, 21, 26): do not install it on a board where those pins serve something else.
-
-## Keeping the patched FPMS on WLAN Pi OS
-
-The package of the WLAN Pi profile is the upstream `wlanpi-fpms` with the version suffix `+cmprovision1`. The next
-upstream release in the WLAN Pi apt repository is newer than it, and `apt upgrade` would replace it with a stock
-FPMS: the cmprovision entry disappears and the status says `not installed`. Hold the package until a build of the new
-upstream version with the patch is ready: `sudo apt-mark hold wlanpi-fpms`, and `sudo apt-mark unhold wlanpi-fpms` to release it.
 
 ## What the panel trusts
 
@@ -64,9 +54,12 @@ snapshot at all: it judges the data by the age of the file.
 **Settings → Provisioning → FPMS display** has two choices that reach the panel with its data (no restart, no
 root helper):
 
-- **Theme.** *New* (the default) is drawn for this 1.44" screen, whose backlight washes out the dark: bitmap fonts one
+- **Layout.** *New* (the default) is drawn for this 1.44" screen, whose backlight washes out the dark: bitmap fonts one
   to one with its pixels, saturated colours, whole tiles of colour for what needs a look. *Classic* is the first look
   of the panel, kept for whom it suits.
+- **Color mode.** *Dark*, *Light*, or *Auto* applies to either layout. Auto uses the same sunrise/sunset calculation
+  as the web interface at the reference location of the station's display time zone. Without coordinates or during
+  polar day/night it falls back to Dark; the display has no browser system preference. Existing settings stay Dark.
 - **Ports map** (New only). A switch of up to 8 columns is drawn whole with its port numbers either way. A wider one
   is drawn either as *Pages with numbers* (8 columns, 16 ports, to a screen; `2/3` and dots tell the page) or as
   *Whole switch* (every port at once in narrow cells; the number of the selected port is in the line below).
@@ -97,14 +90,8 @@ the diagnostics (a healthy report has no title), MAC, serial and switch.
 | Up / down | Select a row or a port; scroll Station | Scroll the text |
 | Joystick centre | Open the card (on Overview with failures: Errors) | Back to the list |
 | Button 1 | Overview | Overview |
-| Button 2 | Leave: the first press asks (`Press 2 again to leave cmprovision`, 3 seconds), the second goes to the WLAN Pi menu; on Lite it is Overview | Back to the list |
+| Button 2 | Overview | Back to the list |
 | Button 3 | Nothing | Nothing |
-
-Outside the cmprovision page the buttons are the stock WLAN Pi ones: button 1 cycles the shortcuts (Reachability,
-LLDP, IP), button 2 rotates the display, button 3 jumps to Reboot/Shutdown, where the joystick centre confirms. That is
-why button 3 does nothing inside the panel: a press of it that left the panel would leave the next press of the centre
-— "open the card" — to confirm a reboot. A press of button 2 within two seconds after leaving is swallowed, so a hurried
-third press does not turn the display over.
 
 The controls cannot erase storage, start provisioning, change a project or switch off PoE.
 Inside a device card, the identity stays pinned: if it disconnects, the display says
@@ -112,8 +99,7 @@ it left the stand instead of silently showing another device.
 
 Lite blanks after 60 seconds of inactivity; a button wakes it without performing an
 action. Its service can use `--sleep 0` to stay on or `--rotate 180` for a reversed
-installation (buttons 1 and 3 swap with the screen; button 2 stays in the middle). WLAN Pi retains its own sleep and
-orientation settings.
+installation (buttons 1 and 3 swap with the screen; button 2 stays in the middle).
 
 ## Data freshness and resource use
 
@@ -131,3 +117,9 @@ On a 128×128 panel some list labels are shortened (a cut is shown with `...`); 
 the selected device's card wraps everything. The station page is a summary; network configuration remains
 in the web interface or installer. The Wi-Fi network's name is shown; NetworkManager profile names and keys never
 reach the panel.
+
+## Disabled boot services
+
+Station shows intentionally masked DHCP/TFTP and USB boot services as neutral `disabled`.
+A failed boot service or stopped worker remains red. Settings uses the same classification.
+HDMI currently shows provisioning and port states without a station-service list.

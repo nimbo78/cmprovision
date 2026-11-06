@@ -49,10 +49,13 @@ class Settings extends Component
         $state = app(ServiceState::class);
         $services = [];
         foreach (self::SERVICES as $source => [$label, $unit, $short]) {
+            $status = $unit === null ? 'running' : $state->status($unit);
             $services[$source] = [
                 'label' => $label,
                 'short' => $short,
-                'running' => $unit === null || $state->isActive($unit),
+                'running' => $status === 'running',
+                'status' => $status,
+                'chip' => ['running' => 'cmp-chip-ok', 'disabled' => 'cmp-chip-idle', 'stopped' => 'cmp-chip-fail'][$status],
                 'method' => 'viewLog'.str_replace(' ', '', ucwords(str_replace('-', ' ', $source))),
             ];
         }
@@ -60,6 +63,7 @@ class Settings extends Component
             'tabs' => self::TABS,
             'services' => $services,
             'runningCount' => count(array_filter(array_column($services, 'running'))),
+            'disabledCount' => count(array_filter($services, fn ($service) => $service['status'] === 'disabled')),
         ];
         if ($this->tab === 'status') {
             $os = app(UtilityOs::class);

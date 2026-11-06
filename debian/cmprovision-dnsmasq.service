@@ -10,7 +10,7 @@ Type=forking
 PIDFile=/run/cmprovision-dnsmasq.pid
 
 ExecStartPre=/usr/sbin/dnsmasq -C /var/lib/cmprovision/etc/dnsmasq.conf --test
-ExecStart=/usr/sbin/dnsmasq -C /var/lib/cmprovision/etc/dnsmasq.conf --pid-file=/run/cmprovision-dnsmasq.pid
+ExecStart=/usr/lib/cmprovision/dnsmasq-start
 ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]

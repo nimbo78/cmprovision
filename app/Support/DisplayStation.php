@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Cache;
    of its Wi-Fi, its services and its free space. Names of NetworkManager profiles and keys never get here. */
 class DisplayStation
 {
-    const CACHE_KEY = 'display-station-v2';
+    const CACHE_KEY = 'display-station-v3';
     /* less free space than this is told in yellow: an image download or two more and it runs out */
     const LOW_STORAGE = 2 * 1073741824;
 
@@ -69,17 +69,20 @@ class DisplayStation
     {
         $state = app(ServiceState::class);
         $up = $total = 0;
-        $stopped = [];
+        $stopped = $disabled = [];
         foreach (Settings::SERVICES as [, $unit, $short])
         {
             if ($unit === null)
                 continue;
             $total++;
-            if ($state->isActive($unit))
+            $status = $state->status($unit);
+            if ($status === 'running')
                 $up++;
+            elseif ($status === 'disabled')
+                $disabled[] = $short;
             else
                 $stopped[] = $short;
         }
-        return ['up' => $up, 'total' => $total, 'stopped' => $stopped];
+        return ['up' => $up, 'total' => $total, 'stopped' => $stopped, 'disabled' => $disabled];
     }
 }

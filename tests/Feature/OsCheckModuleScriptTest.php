@@ -156,6 +156,9 @@ class OsCheckModuleScriptTest extends TestCase
             file_put_contents($this->dir.'/bin/'.$name, "#!/bin/sh\n".$body."\n");
             chmod($this->dir.'/bin/'.$name, 0755);
         }
+        // The written system is a fixture. Never flush the host's filesystems (including WSL mounts).
+        file_put_contents($this->dir.'/bin/sync', "#!/bin/sh\nexit 0\n");
+        chmod($this->dir.'/bin/sync', 0755);
         file_put_contents($this->dir.'/ledpattern', 'helper');
         chmod($this->dir.'/ledpattern', 0755);
     }
