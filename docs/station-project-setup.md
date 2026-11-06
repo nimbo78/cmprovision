@@ -32,6 +32,7 @@ then use [Configure station role](operations.md#addresses-routes-and-the-provisi
 The Linux password does not create or change a web account. Without Wi-Fi setup, the image keeps its
 normal Ethernet management behavior; with Wi-Fi, a DHCP profile for the CM4's provisioning port `eth0`
 excludes its default routes and DNS, leaving management to Wi-Fi.
+Wi-Fi setup enables the radio once after NetworkManager starts. Later boots retain the operator's radio setting.
 
 ## Delivery and failures
 
@@ -58,7 +59,7 @@ the post-install phase. Do not place credentials in a custom script to work arou
 ## Validation status
 
 The implementation is tested with encrypted database records, Livewire forms, a real loopback OpenSSH server,
-the NetworkManager keyfile parser and a disposable copy of the real arm64 image under QEMU. Password and key-only
-account configuration are checked; QEMU user-mode does not validate setuid sudo elevation from an unprivileged
-login. A complete hardware run, Wi-Fi association, SSH login and sudo on the resulting station remain required
-before treating this path as accepted on hardware.
+the NetworkManager keyfile parser and account configuration on a disposable copy of the real arm64 image under QEMU.
+A complete CM4 hardware run passed image verification, automatic management Wi-Fi association, password and public-key
+SSH login, real sudo elevation and a cold PoE boot. Existing station data and settings were restored from a verified
+off-device backup. Physical front-panel navigation and Raspberry Pi Imager customization remain pending acceptance.

@@ -1,6 +1,6 @@
 # Experimental provisioner image
 
-This image builder is under development and is not a released or hardware-accepted image.
+A CM4 hardware run validated project-driven setup and a cold PoE boot of the experimental image.
 It targets Raspberry Pi OS Lite Trixie arm64 and runs on a separate disposable Debian 13
 build system. Never build on a station which is provisioning modules.
 
