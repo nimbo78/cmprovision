@@ -15,7 +15,7 @@
             @if ($operation->error)<p class="text-neg" role="alert">{{ $operation->error }}</p>@endif
             @if (in_array($status, ['queued', 'preparing', 'reviewing', 'applying']))
                 <p role="status">{{ match ($status) { 'queued' => 'Waiting for the images worker…', 'reviewing' => 'Checking choices and receiving files…', 'applying' => 'Applying reviewed configuration…', default => 'Preparing and verifying files…' } }}</p>
-                <progress class="cmp-progress mt-2" aria-label="Transfer preparation" @if($operation->total_bytes) value="{{ $operation->progress_bytes }}" max="{{ $operation->total_bytes }}" @endif></progress>
+                <x-progress label="Transfer preparation" class="mt-2" :value="$operation->progress_bytes" :max="$operation->total_bytes" />
             @elseif ($status === 'prepared')
                 <button type="button" class="cmp-btn" wire:click="review">Prepare preview again</button>
             @elseif ($status === 'ready')

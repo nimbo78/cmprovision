@@ -1,3 +1,11 @@
+cmprovision4 (2.25.0~dev3) unstable; urgency=medium
+
+  * Draw unknown-size preparation as a moving themed segment, instead of a
+    native progress control that can appear full or change browser colors.
+  * Keep measured progress proportional and respect reduced-motion preferences.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 08 Nov 2026 02:30:00 +0300
+
 cmprovision4 (2.25.0~dev2) unstable; urgency=medium
 
   * Keep selective import/export entry points in Settings > Status > Backup.

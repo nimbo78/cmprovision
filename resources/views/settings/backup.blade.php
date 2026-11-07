@@ -11,7 +11,7 @@
             <div role="status" aria-live="polite" aria-atomic="true">
                 <div x-show="state === 'preparing'" x-cloak>
                     <p class="font-bold mb-3">Preparing backup…</p>
-                    <progress class="cmp-progress" aria-label="Preparing backup"></progress>
+                    <x-progress label="Preparing backup" />
                     <p class="text-sm text-fg-muted mt-3">This can take a few minutes. You can return to Backup at any time.</p>
                 </div>
                 <div x-show="state === 'started'" x-cloak>
