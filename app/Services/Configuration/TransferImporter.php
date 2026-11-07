@@ -4,6 +4,7 @@ namespace App\Services\Configuration;
 
 use App\Models\ConfigurationTransferOperation;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
 
@@ -60,6 +61,71 @@ class TransferImporter
             $operation->update(['status' => 'previewed', 'options' => array_replace($options, ['preview' => $resolved['private']])]);
             return $resolved['public'];
         });
+    }
+
+    public function apply(ConfigurationTransferOperation $operation, string $previewFingerprint): array
+    {
+        return $this->workspace->locked($operation, function () use ($operation, $previewFingerprint) {
+            if ($operation->direction !== 'import') throw new RuntimeException('This operation is not an import.');
+            if ($operation->status === 'applied') return $operation->result;
+            $saved = $operation->options['preview'] ?? null;
+            if ($operation->status !== 'previewed' || !is_array($saved)
+                || !hash_equals($saved['fingerprint'], $previewFingerprint)) {
+                throw new RuntimeException('Review the current import preview before applying it.');
+            }
+            $manifest = $this->manifest($operation);
+            $resolved = app(TransferPreview::class)->resolve($operation, $manifest, []);
+            if (!$resolved['public']['can_apply'] || !hash_equals($previewFingerprint, $resolved['public']['fingerprint'])) {
+                throw new RuntimeException('The preview is incomplete or receiving configuration changed. Review the import again.');
+            }
+            $assets = app(TransferAssets::class);
+            try {
+                $staged = $assets->stage($operation, $resolved['private']['objects']);
+                $result = DB::transaction(function () use ($operation, $resolved, $staged) {
+                    $current = ConfigurationTransferOperation::findOrFail($operation->id);
+                    if ($current->status === 'applied') return $current->result;
+                    if (!$current->expires_at->isFuture() || $current->status !== 'previewed'
+                        || !hash_equals($resolved['private']['revision'], TransferState::revision())) {
+                        throw new RuntimeException('The receiving configuration changed. Review the import again.');
+                    }
+                    $written = app(TransferWriter::class)->apply($resolved['private']['objects'], $staged);
+                    $current->update(['status' => 'applied', 'result' => $written['result'], 'secrets' => null, 'error' => null,
+                        'options' => ['drafts' => $written['drafts']]]);
+                    return $written['result'];
+                });
+            } catch (Throwable $error) {
+                // A callback/connection can fail after COMMIT. The durable result decides whether files belong to rows.
+                try { $current = ConfigurationTransferOperation::find($operation->id); }
+                catch (Throwable $unavailable) {
+                    // Do not guess whether COMMIT succeeded while the database is unreachable.
+                    throw new RuntimeException('The import outcome is temporarily unavailable. Reopen this transfer before trying again.');
+                }
+                if ($current?->status === 'applied') {
+                    $operation->setRawAttributes($current->getAttributes(), true);
+                    $this->clearPreparedFiles($operation);
+                    $source = $this->workspace->path($operation, 'source');
+                    if (is_file($source)) @unlink($source);
+                    return $current->result;
+                }
+                $assets->cleanup($operation);
+                throw new RuntimeException('The import was not applied. Review the preview and available space, then try again.');
+            }
+            $operation->refresh();
+            $this->clearPreparedFiles($operation);
+            $source = $this->workspace->path($operation, 'source');
+            if (is_file($source)) @unlink($source);
+            return $result;
+        });
+    }
+
+    private function manifest(ConfigurationTransferOperation $operation): array
+    {
+        $path = $this->workspace->path($operation, 'manifest.json');
+        if (!is_file($path) || filesize($path) > TransferCatalog::MAX_JSON_BYTES
+            || !hash_equals($operation->options['manifest_sha256'], hash_file('sha256', $path))) {
+            throw new RuntimeException('The prepared manifest changed. Start a new import.');
+        }
+        return $this->catalog->validate(json_decode(file_get_contents($path), true, 64, JSON_THROW_ON_ERROR));
     }
 
     private function clearPreparedFiles(ConfigurationTransferOperation $operation): void

@@ -116,6 +116,7 @@ class TransferWorkspace
                 if ($current !== null && $current->expires_at->isFuture()) {
                     continue;
                 }
+                if ($current !== null) app(TransferAssets::class)->cleanup($current);
                 if (File::deleteDirectory($directory)) {
                     $current?->delete();
                 }

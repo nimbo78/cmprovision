@@ -189,7 +189,7 @@ class TransferCatalog
             'label' => $project->label_id ? $this->label($project->label()->firstOrFail(), $secrets) : null,
             'scripts' => [], 'packages' => [], 'firmware' => $project->eeprom_firmware ? $this->firmware($project->eeprom_firmware) : null,
             'station_setup' => $project->station_setup];
-        foreach ($project->scripts()->orderBy('scripts.id')->get() as $script) $data['scripts'][] = $this->script($script);
+        foreach ($project->orderedScripts()->get() as $script) $data['scripts'][] = $this->script($script);
         foreach ($project->packages()->orderBy('packages.id')->get() as $package) $data['packages'][] = $this->package($package);
         if (is_array($data['station_setup'])) {
             $data['station_setup'] = Arr::only($data['station_setup'], ['schema', 'hostname', 'username', 'password_hash', 'keys', 'ssh', 'wifi']);

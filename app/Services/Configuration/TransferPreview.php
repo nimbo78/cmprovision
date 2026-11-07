@@ -70,6 +70,7 @@ class TransferPreview
         foreach ($choices['objects'] ?? [] as $ref => $choice) if (($choice['selected'] ?? null) === true) $visit($ref);
         $public = $plans = $snapshot = $requirements = [];
         $changes = 0;
+        $usedScripts = [];
         foreach ($this->ordered($known) as $object) {
             $ref = $object['ref'];
             $type = $object['type'];
@@ -103,6 +104,8 @@ class TransferPreview
                     ? ($candidate['data']['mac'] === strtolower($data['mac']) || $candidate['data']['ip'] === $data['ip'])
                     : $candidate['name'] === $this->name($object)) $conflicts[] = $candidate;
             }
+            // Distinct source records represent distinct executions, even if their contents match.
+            if ($type === 'script') $matches = array_values(array_filter($matches, fn ($match) => !isset($usedScripts[$match['id']])));
             $action = $choice['action'] ?? ($matches ? 'reuse' : ($conflicts ? 'copy' : 'create'));
             if (!isset($choice['action']) && $conflicts && in_array($type, ['settings', 'switch', 'host'], true)) $action = 'skip';
             if (in_array($type, ['settings', 'switch', 'host'], true) && $action === 'copy') {
@@ -112,11 +115,19 @@ class TransferPreview
                 $errors['action'] = ['This configuration already exists. Choose explicit replacement, reuse or skip.'];
             }
             if (!$isSelected) $action = 'skip';
+            if ($type === 'firmware' && $action === 'replace') $errors['action'] = ['Firmware files are immutable. Choose a separate copy or reuse identical bytes.'];
             if (!in_array($action, ['create', 'reuse', 'copy', 'skip', 'replace'], true)) throw new RuntimeException('Choose an available import action.');
             $target = $choice['target'] ?? ($action === 'reuse' && $matches ? $matches[0]['id'] : null);
             $targetRow = null;
             foreach ($candidates as $candidate) if ((string) $candidate['id'] === (string) $target) $targetRow = $candidate;
             if ($targetRow !== null) $target = $targetRow['id'];
+            if ($isSelected && $type === 'script' && in_array($action, ['reuse', 'replace'], true) && $target !== null) {
+                if (isset($usedScripts[$target])) $errors['target'] = ['Distinct source scripts need distinct receiving scripts.'];
+                $usedScripts[$target] = true;
+            }
+            if ($isSelected && $action === 'replace' && TransferState::protected($type, $target)) {
+                $errors['action'] = ['This object is used by the active project or a running device. Choose a copy or wait until it is unused.'];
+            }
             if ($isSelected && in_array($action, ['reuse', 'replace'], true) && $targetRow === null) {
                 $requirements[] = $this->requirement($ref, 'target', 'Choose an existing receiving object.');
             }
@@ -154,7 +165,7 @@ class TransferPreview
                 foreach ($missing as $path) $requirements[] = $this->requirement($ref, $path, 'Supply the excluded secret or explicitly reuse an existing complete object.');
                 foreach ($errors as $field => $messages) $requirements[] = $this->requirement($ref, $field, $messages[0]);
                 foreach ($action === 'reuse' ? [] : TransferCatalog::references($object) as $dependency => $dependencyType) {
-                    if (!isset($selected[$dependency]) || ($choices['objects'][$dependency]['action'] ?? '') === 'skip') {
+                    if (!isset($selected[$dependency]) || ($plans[$dependency]['action'] ?? '') === 'skip') {
                         $requirements[] = $this->requirement($ref, $dependency, 'This selected object requires its excluded dependency.');
                     }
                 }
@@ -162,16 +173,17 @@ class TransferPreview
             }
             $plans[$ref] = ['ref' => $ref, 'type' => $type, 'selected' => $isSelected, 'action' => $action,
                 'target' => $target, 'data' => $normalized ?? $data, 'file' => $file,
-                'file_source' => $matches[0]['id'] ?? null, 'interface' => $interface];
+                'file_source' => $matches[0]['id'] ?? null, 'file_facts' => $matches[0]['file'] ?? null, 'interface' => $interface];
             $public[] = ['ref' => $ref, 'type' => $type, 'name' => $this->name($object), 'selected' => $isSelected,
                 'action' => $action, 'target' => $target, 'file_status' => $fileStatus,
                 'matches' => array_map(fn ($candidate) => Arr::only($candidate, ['id', 'name']), $matches),
                 'conflicts' => array_map(fn ($candidate) => Arr::only($candidate, ['id', 'name']), $conflicts),
                 'requires' => array_keys(TransferCatalog::references($object)), 'interface' => $interface];
         }
-        $fingerprint = hash_hmac('sha256', self::canonical([$operation->id, $operation->options['manifest_sha256'], $choices, $plans, $snapshot]), (string) config('app.key'));
+        $revision = TransferState::revision();
+        $fingerprint = hash_hmac('sha256', self::canonical([$operation->id, $operation->options['manifest_sha256'], $choices, $plans, $snapshot, $revision]), (string) config('app.key'));
         return ['public' => ['objects' => $public, 'requirements' => $requirements, 'can_apply' => !$requirements && $changes > 0, 'fingerprint' => $fingerprint],
-            'private' => ['choices' => $choices, 'objects' => $plans, 'receiver' => $snapshot, 'fingerprint' => $fingerprint]];
+            'private' => ['choices' => $choices, 'objects' => $plans, 'receiver' => $snapshot, 'revision' => $revision, 'fingerprint' => $fingerprint]];
     }
 
     private function normalize(string $type, array $data): array
@@ -192,7 +204,7 @@ class TransferPreview
                 $localObjects = $this->known;
                 if ($type === 'project') {
                     foreach (array_slice(TransferCatalog::FIELDS['project'], 0, 10) as $key) $data[$key] = $model->$key;
-                    $scripts = $model->scripts()->orderBy('scripts.id')->get();
+                    $scripts = $model->orderedScripts()->get();
                     $data += ['image' => $model->image_id, 'label' => $model->label_id, 'firmware' => $model->eeprom_firmware,
                         'scripts' => $scripts->pluck('id')->all(), 'packages' => $model->packages()->orderBy('packages.id')->pluck('packages.id')->all(),
                         'station_setup' => $model->station_setup];
@@ -268,7 +280,7 @@ class TransferPreview
             foreach (['image', 'label', 'firmware'] as $key) $data[$key] = $target($data[$key]);
             foreach (['scripts', 'packages'] as $key) {
                 $data[$key] = array_map($target, $data[$key]);
-                sort($data[$key]);
+                if ($key === 'packages') sort($data[$key]);
             }
         }
         if ($type === 'settings' && $data['group'] === 'usb_prep') $data['values']['firmware'] = $target($data['values']['firmware']);
