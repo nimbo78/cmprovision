@@ -7,6 +7,12 @@ Reference guide detailing the provisioner network architecture for three milesto
 spare), and 2.5.3 (Wi-Fi management via web UI).
 Recorded from live production node `wlanpi-da2` on October 15, 2026 (`nmcli`, `ip`, `iw`).
 
+## Stand and Host Architecture
+
+<a href="diagrams/stand-architecture.html" title="Open interactive Archify diagram"><img src="diagrams/stand-architecture.png" width="100%" alt="cmprovision Stand Context and Host Services Architecture"></a>
+
+*Subsystems, daemons, and network isolation between management Wi-Fi and stand Ethernet. [Open standalone interactive diagram](diagrams/stand-architecture.html) with pan, zoom, dark/light theme switching, and subsystem inspection.*
+
 ## Target OS Network Differences
 
 The `cmprovision4` package targets two different Linux distributions with distinct network setups:
