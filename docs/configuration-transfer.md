@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](configuration-transfer.md) | [Русский](ru/configuration-transfer.md)
+
 # Move configuration between stations
 
 [Operations](operations.md) · [Backup and restore](upgrading.md) · [Station image setup](station-project-setup.md)
@@ -8,13 +10,41 @@ Configuration transfer copies selected definitions into an installed cmprovision
 
 For a new project, label or script, use the [creation wizards](creation-wizards.md), then export the saved result from its row.
 
+> [!NOTE]
+> Feature preview in `codex/configuration-transfer`: both stations need a build containing this feature. Screenshots use demo data.
+
+<a href="diagrams/configuration-transfer-flow.png"><img src="diagrams/configuration-transfer-flow.png" width="100%" alt="Export selected objects on the source station, review file or text on the receiver, then apply without automatically activating projects or changing the network"></a>
+
+*Select the image to enlarge it. Download [the standalone HTML](diagrams/configuration-transfer-flow.html) and open it locally for interactive exploration.*
+
+## Before you start
+
+- [ ] You can sign in to both stations and confirm your account password.
+- [ ] Their queues are running, especially the **images worker**.
+- [ ] You know which receiving objects to keep, copy or replace.
+- [ ] For protected exports, you have the transfer password or the same saved master password on the receiver.
+
 ## Choose what to export
 
 Select projects, standalone scripts and labels, and any settings groups you need. A project brings its image definition, scripts, label, first-boot packages and EEPROM firmware references automatically.
 
+<details>
+<summary>Settings groups and station-specific exclusions</summary>
+
 The settings groups cover NetBox defaults, display preferences, USB preparation, saved re-provision accounts, the shared sensor recognition key, notification channels, switches, DHCP reservations and Ethernet/VLAN drafts. They omit provisioning history, active-project selection, detected switch state, users, application keys and local operation records.
 
 Station-project definitions include their Linux access and management Wi-Fi setup. This feature does not transfer the source station's own saved management Wi-Fi connections.
+
+</details>
+
+1. Select the objects. Project dependencies are included automatically.
+2. Choose the format, optional binary files and password protection.
+3. Select **Prepare export** and confirm your **cmprovision account password** if prompted.
+4. Wait for ready, then download the file or select **Show text to copy** for JSON.
+
+<a href="assets/guides/transfer-export.png"><img src="assets/guides/transfer-export.png" width="560" alt="Actual export panel with numbered callouts for project selection, JSON format and password protection"></a>
+
+**1 — Objects. 2 — Format. 3 — Protection.** No need to select the project's required scripts and label a second time.
 
 Choose a format:
 
@@ -28,6 +58,12 @@ With JSON, upload missing images and packages normally on the receiving station 
 
 ## Passwords and secrets
 
+> [!WARNING]
+> Including saved passwords, tokens and the recognition key requires protection. Scripts, printer commands and templates can contain credentials written as ordinary text; protect those exports too when appropriate.
+
+<details>
+<summary>Master password and account-password confirmation</summary>
+
 You can save one **master password** on each station. Use the same password on another station, or enter a different one for an individual transfer. A new password needs 12–1024 characters. Forgetting it removes the station's saved copy; existing exports keep their original password.
 
 **Include saved passwords, tokens and recognition key** requires protection. Otherwise those fields are excluded and the preview asks for replacement values where needed. Scripts, printer commands and templates may contain credentials entered as ordinary text; enable protection for those exports too when appropriate.
@@ -35,6 +71,8 @@ You can save one **master password** on each station. Use the same password on a
 The saved master password and temporary supplied credentials are encrypted with the local application key. A protected export opens with its transfer password independently of the source application key. Imported encrypted settings are saved with the receiving station's key.
 
 Saving/forgetting the master password, preparing an export, viewing/downloading its text and applying configuration use the normal account-password confirmation. Enter your cmprovision account password there, rather than the transfer password.
+
+</details>
 
 ## Import and review
 
@@ -45,11 +83,21 @@ Saving/forgetting the master password, preparing an export, viewing/downloading 
 5. Select **Update preview** after changing choices. Required dependencies must remain selected unless you reuse a complete receiving project instead.
 6. Select **Apply reviewed import**. Application runs in the images queue. Its final report lists created, reused, replaced and skipped objects.
 
+<a href="assets/guides/transfer-preview.png"><img src="assets/guides/transfer-preview.png" width="500" alt="Actual project row in the import preview with callouts for Create copy and the new name, followed by Update preview and Apply reviewed import"></a>
+
+**1 — Conflict action. 2 — Copy name.** This crop shows the project row; its dependencies are listed above. **Expected before applying:** no unresolved requirements and the intended copy/reuse/replace choices. **Update preview** validates changed choices before **Apply reviewed import**.
+
 An active project and dependencies used by it or by a running device cannot be replaced. Images with pending split preparation also require a copy or waiting until preparation finishes. EEPROM files are immutable: reuse matching bytes or create a separate copy.
 
 If receiving configuration changes after preview, review again. A retry of an already applied operation returns its saved result and object IDs. The operation address survives a page reload in the same signed-in browser session. It is unavailable to another user/session and expires after 24 hours.
 
 ## Complete the follow-up actions
+
+<a href="assets/guides/transfer-complete.png"><img src="assets/guides/transfer-complete.png" width="500" alt="Actual Import complete report: 1 marks created and reused counts, 2 marks the link to review and activate the imported project"></a>
+
+- [ ] **Import complete** lists the expected objects and counts.
+- [ ] The imported project exists on **Projects** and is **inactive**.
+- [ ] Follow-up actions are reviewed before changing a working stand.
 
 Imported projects are saved without changing the active project. Review them on Projects and activate the intended one explicitly. Source script execution order is preserved when equally prioritised scripts have different IDs on the receiving station.
 
@@ -64,6 +112,9 @@ An expired or removed network draft is discarded with a notice; normal network s
 
 ## Limits and recovery
 
+<details>
+<summary>File sizes, expiry, verification and cleanup</summary>
+
 The manifest limit is 16 MiB; protected text is at most 32 MiB. A transfer contains at most 2048 objects and 4096 archive entries. The archive format supports 64 GiB, while the installed package's normal HTTP upload limit is 8 GiB. For larger images, use the existing image-upload workflow and transfer their definitions as JSON.
 
 Image verification permits up to 512 GiB unpacked data, with a two-hour per-file timeout and an XZ decoder memory limit of 128 MiB. Repack an unusually high-memory XZ image before importing it.
@@ -75,3 +126,5 @@ Replacing an image or package retires its superseded files only after the import
 If preparation fails, check its message, available space and password, then start a new transfer. If application stops, refresh the preview before retrying. If the result is temporarily unavailable, reopen the same operation first so its committed result can be recovered.
 
 Schema version 1 is accepted explicitly. Unsupported versions, unknown fields, broken references, archive links/traversal, undeclared members, mismatched hashes and incomplete protected streams are refused before configuration is applied.
+
+</details>

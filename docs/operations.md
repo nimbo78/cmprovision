@@ -20,6 +20,7 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 - [Images from the internet](#images-from-the-internet)
 - [Image download and write recovery](#image-download-and-write-recovery)
 - [Re-provision an installed sensor](#re-provision-an-installed-sensor)
+- [Prepare a CM4 for network boot (USB prep)](usb-prep.md)
 - [Set up a new provisioner from a project](station-project-setup.md)
 - [Move selected configuration between stations](configuration-transfer.md)
 - [Guided project, label and script creation](creation-wizards.md)

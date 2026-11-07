@@ -31,3 +31,13 @@ Interactive and static visual diagrams for cmprovision, generated with [`archify
 3. **Flashing & Recovery**: Device registration at `/scriptexecute` ➔ 512MB chunked image streaming from Nginx ➔ eMMC flashing (with chunk-level network resumption).
 4. **Verification & First Boot**: SHA256 disk checksum verification ➔ EEPROM bootloader upgrade ➔ Target OS first boot self-test.
 5. **Handoff & Integrations**: Batch dashboard marked done ➔ Raw ZPL thermal label printing (TCP/9100) ➔ NetBox DCIM bulk CSV generation ➔ Telegram Bot progress notification.
+
+
+## Illustrated task guides
+
+| Task | English | Русский |
+| --- | --- | --- |
+| USB boot preparation | [HTML](usb-prep-flow.html) · [PNG](usb-prep-flow.png) · [SVG](usb-prep-flow.svg) | [HTML](usb-prep-flow.ru.html) · [PNG](usb-prep-flow.ru.png) · [SVG](usb-prep-flow.ru.svg) |
+| Selective configuration transfer | [HTML](configuration-transfer-flow.html) · [PNG](configuration-transfer-flow.png) · [SVG](configuration-transfer-flow.svg) | [HTML](configuration-transfer-flow.ru.html) · [PNG](configuration-transfer-flow.ru.png) · [SVG](configuration-transfer-flow.ru.svg) |
+
+These focused operator workflows supplement the architecture diagrams above. Their repository evidence is pinned to commit 3eff311ee9e70685f128e50c9012d28783784078. UI screenshots use demo data; transfer is a branch preview pending release.

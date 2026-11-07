@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](creation-wizards.md) | [Русский](ru/creation-wizards.md)
+
 # Create projects, labels and scripts with a wizard
 
 [Operations](operations.md) · [Configuration transfer](configuration-transfer.md)
