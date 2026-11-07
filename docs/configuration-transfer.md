@@ -6,6 +6,8 @@ Open **Settings → Status → Backup → Selective import / export**. Projects,
 
 Configuration transfer copies selected definitions into an installed cmprovision station. A full backup and `cmprovision-restore --data-only` remain the recovery tools for a station's database and application key.
 
+For a new project, label or script, use the [creation wizards](creation-wizards.md), then export the saved result from its row.
+
 ## Choose what to export
 
 Select projects, standalone scripts and labels, and any settings groups you need. A project brings its image definition, scripts, label, first-boot packages and EEPROM firmware references automatically.

@@ -20,7 +20,7 @@ class WizardSecrets
     {
         $this->check($token);
         session()->put('configuration_wizards.'.$token, Crypt::encryptString(json_encode([
-            'expires' => now()->addHours(24)->getTimestamp(), 'values' => $values,
+            'user' => auth()->id(), 'expires' => now()->addHours(24)->getTimestamp(), 'values' => $values,
         ], JSON_THROW_ON_ERROR)));
     }
 
@@ -31,7 +31,8 @@ class WizardSecrets
             $value = session('configuration_wizards.'.$token);
             if (!is_string($value)) throw new RuntimeException;
             $data = json_decode(Crypt::decryptString($value), true, 64, JSON_THROW_ON_ERROR);
-            if (($data['expires'] ?? 0) <= time() || !is_array($data['values'] ?? null)) throw new RuntimeException;
+            if (($data['user'] ?? null) !== auth()->id() || ($data['expires'] ?? 0) <= now()->getTimestamp()
+                || !is_array($data['values'] ?? null)) throw new RuntimeException;
             return $data['values'];
         } catch (\Throwable $error) {
             throw new RuntimeException('This wizard has expired. Start it again.');
