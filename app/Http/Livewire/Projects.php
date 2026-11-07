@@ -214,6 +214,14 @@ class Projects extends Component
         $this->openModal();
     }
 
+    public function updatedStation($value, $key = null)
+    {
+        if ($key !== 'profile' || $value !== 'raspios') return;
+        $this->station['wifi'] = false;
+        $this->station['ssh'] = true;
+        if (($this->station['hostname'] ?? '') === 'cmprovision-{serial}') $this->station['hostname'] = '';
+    }
+
     /* Unticking the OS check drops what only it uses: its label moment, its packages and the first-boot scripts */
     public function updatedOsCheck($value)
     {
@@ -308,7 +316,7 @@ class Projects extends Component
     {
         $steps = [1 => 'Purpose and name', 2 => 'Image and storage', 3 => 'Checks and bootloader',
             4 => 'Scripts and packages', 5 => 'Label'];
-        if ($this->stationEnabled) $steps[6] = 'Station access and Wi-Fi';
+        if ($this->stationEnabled) $steps[6] = ($this->station['profile'] ?? 'station') === 'raspios' ? 'OS SSH access' : 'Station access and Wi-Fi';
         $steps[7] = 'Review and save';
         return $steps;
     }
