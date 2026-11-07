@@ -1,4 +1,4 @@
-<x-app-layout>
+<x-app-layout title="Download backup">
     <script src="{{ asset('js/download-status.js') }}?v={{ @filemtime(public_path('js/download-status.js')) }}"></script>
     <div class="cmp-page">
         <div class="cmp-title">
