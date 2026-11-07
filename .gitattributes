@@ -19,3 +19,4 @@ MANIFEST text eol=lf
 *.ico binary
 *.png binary
 public/tools/* binary
+public/tools/image-access text eol=lf diff merge

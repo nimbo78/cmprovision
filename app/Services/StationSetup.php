@@ -26,10 +26,15 @@ class StationSetup
             ]);
             \App\Jobs\ExpireStationSetup::dispatch($run->id)->delay($run->expires_at);
         }
+        if ($run->state === 'applied') return "#!/bin/sh\necho 'OS setup already applied for this provisioning run'\n";
+        $profile = $run->settings['profile'] ?? 'station';
         return view('scriptexecute.station-setup', [
             'stationStorage' => $project->storage, 'stationSerial' => $cm->serial, 'stationCid' => $cm->cid,
             'stationRun' => $run->run, 'stationPublic' => app(ProvisionerKey::class)->ensure(),
             'stationUrl' => 'http://'.$server.'/station-setup',
+            'stationProfile' => $profile,
+            'stationHelperUrl' => 'http://'.$server.'/tools/image-access',
+            'stationHelperSha256' => $profile === 'raspios' ? hash_file('sha256', public_path('tools/image-access')) : null,
         ])->render();
     }
 

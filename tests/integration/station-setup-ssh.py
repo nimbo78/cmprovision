@@ -24,7 +24,12 @@ if action == 'identity':
  print(json.dumps({'schema':1,'serial':'10000000e611110c','cid':'a'*32,'run':'x'*40}))
 elif action == 'apply':
  data = sys.stdin.buffer.read(32769)
- if (root/'mode').read_text() == 'fail':
+ mode = (root/'mode').read_text()
+ if mode.startswith('generic:'):
+  print('image-access:error:' + mode.split(':', 1)[1])
+  print(data.decode(), file=sys.stderr)
+  sys.exit(1)
+ if mode == 'fail':
   print(data.decode(), file=sys.stderr)
   sys.exit(1)
  (root/'received').write_bytes(data)

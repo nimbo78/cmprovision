@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Services\Sensor\ProvisionerKey;
+use App\Support\ImageAccessFailure;
 use Symfony\Component\Process\Process;
 
 /** A temporary forced-command SSH server runs inside the newly written station root. */
@@ -29,7 +30,8 @@ class StationSetupSsh
             $actual = json_decode($this->execute([...$argv, 'identity'], null), true);
             if ($actual !== $identity) throw new \RuntimeException('Station identity does not match this provisioning run.');
             // No credentials in arguments, shell text, HTTP responses or process logs.
-            $result = $this->execute([...$argv, 'apply'], json_encode(['identity' => $identity, 'settings' => $settings], JSON_THROW_ON_ERROR));
+            $result = $this->execute([...$argv, 'apply'], json_encode(['identity' => $identity, 'settings' => $settings], JSON_THROW_ON_ERROR),
+                ($settings['profile'] ?? null) === 'raspios');
             if (trim($result) !== 'applied') throw new \RuntimeException('Station setup did not confirm application.');
         } finally {
             @unlink($dir.'/known_hosts');
@@ -44,7 +46,7 @@ class StationSetupSsh
         return $blob !== false && strlen($blob) === 51 && substr($blob, 0, 19) === pack('N', 11).'ssh-ed25519'.pack('N', 32);
     }
 
-    private function execute(array $argv, ?string $input): string
+    private function execute(array $argv, ?string $input, bool $generic = false): string
     {
         $process = new Process($argv, null, ['LC_ALL' => 'C'], $input, 30);
         try {
@@ -53,10 +55,15 @@ class StationSetupSsh
                 if ($type === Process::OUT) $output .= $chunk;
                 if (strlen($output) > 4096) throw new \RuntimeException('Station response exceeded its limit.');
             });
-            if (!$process->isSuccessful()) throw new \RuntimeException('Station SSH setup failed.');
+            if (!$process->isSuccessful()) {
+                $failure = $generic ? ImageAccessFailure::fromResponse(trim($output)) : null;
+                if ($failure !== null) throw $failure;
+                throw new \RuntimeException('Station SSH setup failed.');
+            }
             return $output;
         } catch (\Throwable $e) {
             $process->stop(0);
+            if ($e instanceof ImageAccessFailure) throw $e;
             throw new \RuntimeException('Station SSH setup failed; check its connection and image compatibility.');
         }
     }
