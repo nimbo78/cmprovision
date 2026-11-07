@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](hdmi-display.md) | [Русский](ru/hdmi-display.md)
+
 # HDMI stand display
 
 Connect a monitor or TV to the **provisioner** to follow the bench without a browser. The optional terminal display

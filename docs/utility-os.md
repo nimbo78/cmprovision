@@ -1,170 +1,107 @@
-# Утилитарная ОС
+> **Language / Язык:** [English](utility-os.md) | [Русский](ru/utility-os.md)
 
-Модуль прошивается из маленькой ОС, которую грузит по сети (TFTP от dnsmasq) или по USB (`rpiboot`). С 2.7.0 их в
-пакете две:
+# Utility OS
 
-| Каталог | Что это |
+The target module boots into a minimal micro-OS loaded either over the network (TFTP via dnsmasq) or over USB (`rpiboot`). Starting with 2.7.0, two options are packaged:
+
+| Directory | Description |
 |---|---|
-| `scriptexecute64/` | наша: buildroot LTS, 64-битное ядро Raspberry Pi, свежие BusyBox, curl, e2fsprogs, flashrom. Собирается из `utility-os/` |
-| `scriptexecute/` | старая: готовые файлы raspberrypi/scriptexecutor 2022 года, 32 бита. Уйдёт отдельным выпуском |
+| `scriptexecute64/` | Primary modern OS: Buildroot LTS, 64-bit Raspberry Pi kernel, modern BusyBox, curl, e2fsprogs, flashrom. Built from `utility-os/` |
+| `scriptexecute/` | Legacy OS: prebuilt 32-bit binaries from raspberrypi/scriptexecutor (2022). Scheduled for removal in a future release |
 
-Какую получают модули, задаёт ссылка `/var/lib/cmprovision/etc/boot` (`../scriptexecute` или `../scriptexecute64`):
-по ней идут `tftp-root` у dnsmasq и `rpiboot -d /var/lib/cmprovision/etc/boot/usb`. Переключатель — Settings → Utility OS. Он заменяет ссылку сразу, без
-перезапуска служб, и пишет в журнал Laravel, кто переключил. Переключайте, когда ни один модуль не грузится: модуль,
-который грузится в эту секунду, может взять файлы обеих.
+The active operating system is controlled by the symlink `/var/lib/cmprovision/etc/boot` pointing to either `../scriptexecute` or `../scriptexecute64`: both dnsmasq `tftp-root` and `rpiboot -d /var/lib/cmprovision/etc/boot/usb` follow this link. The toggle is available in Settings → Utility OS. It updates the symlink immediately without requiring service restarts and logs operator actions in the Laravel audit log. Switch the OS only when no modules are actively booting: a module fetching files during the switch could download mismatched components.
 
-Вручную, если веб-интерфейс недоступен:
+Manual switch from the CLI:
 
-    sudo -u www-data ln -sfn ../scriptexecute /var/lib/cmprovision/etc/boot      # старая
-    sudo -u www-data ln -sfn ../scriptexecute64 /var/lib/cmprovision/etc/boot    # наша
+    sudo -u www-data ln -sfn ../scriptexecute /var/lib/cmprovision/etc/boot      # legacy 32-bit
+    sudo -u www-data ln -sfn ../scriptexecute64 /var/lib/cmprovision/etc/boot    # modern 64-bit
 
-Ссылку делает и чинит `tools/boot-link` (`/usr/lib/cmprovision/boot-link`). Его зовут `postinst`, `prerm` при откате
-ниже 2.7 и `cmprovision-restore`, всегда от www-data. Откат пакета ниже 2.7 возвращает модули на старую ОС.
+The symlink is created and validated by `tools/boot-link` (`/usr/lib/cmprovision/boot-link`), called by `postinst`, `prerm` (when rolling back below 2.7), and `cmprovision-restore`, always as `www-data`. Rolling back below 2.7 automatically reverts the boot link to the legacy OS.
 
-В обоих каталогах лежит `bootfiles.bin` из usbboot. С usbboot 20261002 `rpiboot` не несёт `bootcode4.bin` в себе, а с
-28 сентября 2026 usbboot держит его только внутри `bootfiles.bin` (член `2711/bootcode4.bin` вместе с нужными ему
-файлами). Найдя `bootfiles.bin` в каталоге `-d`, `rpiboot` берёт вторую ступень оттуда, а остальное — из каталога.
+Both directories include `bootfiles.bin` from usbboot. Starting with usbboot 20261002, `rpiboot` does not embed `bootcode4.bin` internally; since September 28, 2026, usbboot encapsulates it inside `bootfiles.bin` (`2711/bootcode4.bin` alongside required helpers). When `rpiboot` locates `bootfiles.bin` inside its `-d` directory, it extracts the second-stage bootloader directly from it and serves remaining files from the directory.
 
-Для USB в каждом варианте есть отдельный каталог `usb/`: его `config.txt` включает `boot_ramdisk=1`,
-а `boot.img` содержит FAT32 с теми же ядром, initramfs, DTB, overlays и настройками, что используются по сети.
-На стенде передача отдельных файлов останавливалась после `start4.elf` и `fixup4.dat`; единый `boot.img`
-позволил загрузить Linux. Такой способ [рекомендует Raspberry Pi для CM4](https://github.com/raspberrypi/usbboot#booting-linux).
-Файлы сетевой загрузки остаются в корне каталога ОС. `tools/utility-os/usb_image.py` собирает USB-образ,
-не монтируя файловую систему и не требуя root; `--check` извлекает его файлы и сравнивает с исходными.
-В MANIFEST входят и USB-файлы, поэтому повреждённый USB-образ также исключает ОС из переключателя.
+For USB booting, each variant contains a dedicated `usb/` subdirectory: its `config.txt` sets `boot_ramdisk=1`, and `boot.img` contains a FAT32 filesystem packaging the exact same kernel, initramfs, DTB, overlays, and configuration used for network booting. On test stands, streaming individual files over USB stalled after `start4.elf` and `fixup4.dat`; a consolidated `boot.img` resolved boot reliability. This approach is [recommended by Raspberry Pi for CM4](https://github.com/raspberrypi/usbboot#booting-linux). Network boot files remain in the root of the OS directory. The `tools/utility-os/usb_image.py` script builds the USB image without root privileges or loop mounts; `--check` extracts its contents and verifies parity with source files. Both network and USB files are validated by `MANIFEST`, ensuring corrupted USB images prevent the OS from being selected.
 
-`MANIFEST` каждого каталога говорит, что это за ОС (версия, ядро, разрядность, дата сборки), и перечисляет файлы с SHA256.
-Settings показывает его, а тесты сверяют с файлами.
-Каталог с отсутствующим файлом, неверным размером или SHA256 не предлагается для загрузки.
+The `MANIFEST` in each directory defines the OS release (version, kernel, architecture, build timestamp) and enumerates file SHA-256 checksums. Settings displays these details, and automated test suites verify them against disk contents. Any directory with missing files, altered sizes, or checksum mismatches is excluded from the boot switcher.
 
-## Использование
+## Usage Workflows
 
-Временная ОС загружается по сети или через USB, а её локальная консоль помогает
-разобраться с проблемой непосредственно на прошиваемом модуле:
+The temporary micro-OS boots via network or USB, and its local console provides direct troubleshooting access on the target module:
 
-- [Прошивка CM4 через USB](usb-provisioning.md): подготовка проекта, подключение,
-  запись со сверкой, возврат к загрузке с eMMC и ограничения OS check.
-- [Локальная консоль tty2](local-console.md): монитор и клавиатура на модуле,
-  вход и команды диагностики без сетевой службы SSH.
-- [WLAN Pi M4+](hardware/wlanpi-m4-plus.md): провижинер и сенсор на одинаковой
-  платформе, разъёмы двух исполнений Mcuzone, BOOT/OTG и питание.
+- [USB Provisioning for CM4](usb-provisioning.md): Project preparation, wiring, flashing with verification, eMMC boot restoration, and OS check constraints.
+- [Local Console tty2](local-console.md): Target monitor and keyboard access, login credentials, and diagnostic commands without SSH network dependencies.
+- [WLAN Pi M4+](hardware/wlanpi-m4-plus.md): Provisioner and target on matching hardware, Mcuzone carrier revisions, BOOT/OTG toggles, and power delivery.
 
-## Устройство
+## Architecture
 
-- `utility-os/` — BR2_EXTERNAL-дерево `CMPROVISION`: `configs/cmprovision_defconfig`, `board/cmprovision/` (фрагменты
-  конфигурации ядра и BusyBox, init `S99scriptexec`, `post-build.sh`, `post-image.sh`, шаблоны `config.txt` и
-  `cmdline.txt`), `package/` (загрузочные файлы, `raspberrypi/utils`, `bootfiles.bin`), `legacy-commands.txt`.
-- `utility-os/versions.env` — единственное место с версиями и SHA256.
-- XZ-образы распаковывает `xz-utils`: он сообщает об ошибке формата, где BusyBox xz может завершиться молча.
-  В BusyBox включена математика awk, а в util-linux — `ipcmk`, чтобы сохранить возможности прежней ОС.
-- lldpd (с 2026.10.2): модуль называет себя коммутатору по LLDP. `S60lldpd` из buildroot запускает демон на `eth0` (`/etc/default/lldpd`,
-  `-I eth0`), `S61lldpname` даёт ему имя `cm-<MAC eth0 без двоеточий>` и описание `cmprovision utility OS <версия> (Linux <ядро> <архитектура>)`
-  и ставит `lldp status tx-only`: ОС только говорит и кадры соседей не разбирает. Из протоколов собран один LLDP (CDP, FDP, EDP, SONMP,
-  LLDP-MED, DOT1, DOT3 и свои TLV выключены). Работа скрипта идёт в фоне, сбой оставляет имя по умолчанию и загрузку не задерживает.
-  Страница Ports по описанию узнаёт нашу ОС на порту (`StandMap::utilityOs()`): модуль, который загрузился, но не дошёл до сервера,
-  называется «утилитарная ОС стенда работает, скрипт не запрашивала», а не чужим устройством. Тесты — `UtilityOsLldpTest`,
-  проверка в QEMU — раздел `lldp` в `tools/utility-os/smoke/check.sh`.
-- Патч `patches/flashrom/` возвращает сообщение `identical` при пропущенной записи EEPROM. Скрипт модуля
-  различает по нему уже совпадающий образ и выполненную запись. В QEMU оба случая проверяются настоящим flashrom
-  на файловой эмуляции SPI-микросхемы (`dummy`), без обращения к оборудованию хоста.
-- `tools/utility-os/build.sh` — сборка, `test.sh` — проверки, `update.sh` — подъём версий, `manifest.sh` — `MANIFEST`.
-- `.github/workflows/utility-os.yml` — те же сборка и проверки в GitHub Actions.
+- `utility-os/` — BR2_EXTERNAL tree `CMPROVISION`: `configs/cmprovision_defconfig`, `board/cmprovision/` (kernel and BusyBox config fragments, init `S99scriptexec`, `post-build.sh`, `post-image.sh`, `config.txt` and `cmdline.txt` templates), `package/` (firmware bootloaders, `raspberrypi/utils`, `bootfiles.bin`), `legacy-commands.txt`.
+- `utility-os/versions.env` — Single source of truth for component versions and SHA-256 hashes.
+- XZ images are decompressed with `xz-utils`: it emits explicit format error messages where BusyBox xz can fail silently. BusyBox includes awk mathematical extensions, and util-linux provides `ipcmk` to retain legacy utility compatibility.
+- lldpd (since 2026.10.2): Target module advertises its identity to managed switches over LLDP. Buildroot `S60lldpd` launches the daemon on `eth0` (`/etc/default/lldpd`, `-I eth0`), `S61lldpname` assigns hostname `cm-<eth0 MAC without colons>` and system description `cmprovision utility OS <version> (Linux <kernel> <arch>)`, setting `lldp status tx-only`: the OS strictly transmits and ignores neighbor frames. Only the core LLDP protocol is built (CDP, FDP, EDP, SONMP, LLDP-MED, DOT1, DOT3, and custom TLVs are disabled). Script execution runs in the background; failures preserve fallback hostnames without blocking boot. The Ports web view identifies this OS on switch ports (`StandMap::utilityOs()`): a module booted into the utility OS but waiting for script execution is clearly marked as "Stand utility OS running, script not requested" rather than an unknown device. Automated tests: `UtilityOsLldpTest`; QEMU smoke test: `lldp` stage in `tools/utility-os/smoke/check.sh`.
+- Flashrom patch in `patches/flashrom/`: returns the message `identical` when EEPROM flashing is skipped. The provisioning script uses this to distinguish matching EEPROM images from performed writes. Both scenarios are validated in QEMU using real flashrom against a file-backed emulated SPI chip (`dummy`), requiring no host hardware access.
+- Scripts: `tools/utility-os/build.sh` (build), `test.sh` (automated validation), `update.sh` (version bump), `manifest.sh` (manifest generation).
+- GitHub Actions CI: `.github/workflows/utility-os.yml` runs identical builds and tests.
 
-Init повторяет старый: те же параметры старта в тех же форматах, плюс `uos=<версия>`. Сервер узнаёт модуль по серийному
-номеру, поэтому форматы менять нельзя (тест `UtilityOsInitTest`).
+The init system maintains backward compatibility with legacy formats, appending `uos=<version>` to start parameters. The server identifies targets by serial number, so parameter syntax is strictly preserved (`UtilityOsInitTest`).
 
-## Сборка
+## Building
 
-Хост — Debian или Ubuntu x86_64: WSL-стенд или раннер `ubuntu-24.04`. Сборка идёт от обычного пользователя,
-вне OneDrive и не на провижинере. Нужны `build-essential bc cpio rsync unzip file wget git python3 perl patch
-xz-utils bzip2`; для проверок — `qemu-system-arm`.
+Host requirement: Debian or Ubuntu x86_64 (WSL test stand or `ubuntu-24.04` runner). Builds run under a non-root user account, outside of OneDrive, and never on the provisioner. Required dependencies: `build-essential bc cpio rsync unzip file wget git python3 perl patch xz-utils bzip2`; for verification: `qemu-system-arm`.
 
     UOS_WORK=$HOME/uos-work UOS_CACHE=$HOME/uos-cache sh tools/utility-os/build.sh
 
-Скрипт проверяет программы хоста, скачивает buildroot из `versions.env` со сверкой SHA256 и собирает. Готовый каталог
-кладёт в `scriptexecute64/`, исходники и лицензии — в `$UOS_WORK/output/legal-info`. Первая сборка идёт около часа,
-дальше помогают кэш загрузок и ccache в `$UOS_CACHE`.
-При смене входов сборки рабочий output пересоздаётся: иначе `linux-custom` может сохранить исходники предыдущего ядра,
-а rootfs — старые утилиты или отключённые компоненты. Учитываются всё дерево `utility-os/` (рецепты, патчи,
-фрагменты и overlay) и скрипты сборки, хешей, манифеста и исходников; генерируемый `__pycache__` исключён.
-Кэши загрузок и компилятора сохраняются; с неизменными входами сборка остаётся инкрементальной.
+The script verifies host dependencies, downloads the Buildroot release from `versions.env` with SHA-256 verification, and compiles the system. The built OS tree is placed in `scriptexecute64/`, with full source packages and licenses exported to `$UOS_WORK/output/legal-info`. Initial compilation takes approximately one hour; subsequent runs leverage download caches and ccache in `$UOS_CACHE`.
+When build inputs change, the working output directory is rebuilt from scratch: otherwise `linux-custom` can retain stale kernel sources, and rootfs may retain obsolete binaries or disabled components. Cache tracking monitors the entire `utility-os/` tree (package recipes, patches, config fragments, rootfs overlays) and build, hashing, manifest, and licensing scripts; generated `__pycache__` artifacts are excluded. Download and compiler caches are preserved across clean builds, keeping unchanged runs fast and incremental.
 
-## Проверки
+## Automated Verification
 
     sh tools/utility-os/test.sh
 
-- ядро: обязательные опции встроены;
-- состав: все команды из `legacy-commands.txt` есть, модулей ядра нет, нет служб входа по сети;
-- QEMU (`qemu-system-aarch64 -M virt`) грузит тот же `kernel8.img` и `scriptexecute.img`, init получает скрипт от
-  тестового сервера после ответа 502 и возвращает параметры старта, версии программ и их сообщения;
-- размер и `MANIFEST`;
-- USB-образы обеих ОС: ядро, initramfs и настройки внутри FAT совпадают с файлами выбранной ОС.
+- Kernel: required configuration options are compiled in;
+- Composition: all utilities listed in `legacy-commands.txt` are present, loadable kernel modules are absent, network login services are removed;
+- QEMU (`qemu-system-aarch64 -M virt`) boots the exact `kernel8.img` and `scriptexecute.img`, init queries a mock server following an initial 502 response, returning startup parameters, utility versions, and CLI messages;
+- Size constraints and `MANIFEST` validation;
+- USB images for both operating systems: kernel, initramfs, and settings inside FAT match the corresponding standalone files.
 
-Сообщения программ ложатся в `tests/fixtures/utility-os/messages.txt`. PHPUnit (`UtilityOsMessagesTest`) сверяет их с
-шаблонами, по которым сервер объясняет сбои. Специфику Pi (светодиоды, SPI и flashrom, `vcgencmd`, перемычки, eMMC)
-проверяет только живая проверка.
+CLI messages are recorded in `tests/fixtures/utility-os/messages.txt`. PHPUnit (`UtilityOsMessagesTest`) validates them against regex patterns used by the server to explain failures. Pi-specific hardware features (LEDs, SPI/flashrom, `vcgencmd`, hardware jumpers, eMMC) are validated on real hardware.
 
-## Обновление версий
+## Version Updates
 
-    sh tools/utility-os/update.sh --check     # 0 — нового нет, 10 — есть, 1 — не удалось спросить
-    sh tools/utility-os/update.sh             # переписывает versions.env и печатает «было → стало»
+    sh tools/utility-os/update.sh --check     # 0: up to date, 10: updates available, 1: query failed
+    sh tools/utility-os/update.sh             # updates versions.env and displays diff
 
-Новейшее берётся так: buildroot — в пределах LTS-ветки, ядро — последний тег `stable_*`, прошивка — последний релиз,
-`raspberrypi/utils` — последний коммит, usbboot — последний тег. Переход на следующую LTS buildroot делается вручную.
-По [политике Buildroot](https://buildroot.org/lts.html) с 2025 года LTS выходит в феврале нечётных лет:
-после 2025.02 — 2027.02. Февральский релиз 2026 года не является LTS.
-Хэши строгие: файл, скачавшийся с другим SHA256, останавливает сборку.
-Команда принимает только полностью полученные ответы; ошибка оставляет закреплённые версии прежними.
+Component update policy: Buildroot tracks the active LTS branch, kernel follows the latest `stable_*` tag, firmware uses the latest release, `raspberrypi/utils` tracks latest commit, and usbboot tracks the latest tag. Migration to subsequent Buildroot LTS releases is performed manually. Under [Buildroot LTS policy](https://buildroot.org/lts.html), starting in 2025 LTS releases occur in February of odd years (2025.02, 2027.02). The February 2026 release is not an LTS release.
+Checksums are strictly enforced: downloads with mismatched SHA-256 abort the build immediately. Partial downloads leave pinned versions unchanged.
 
-Раз в месяц CI делает то же сам. Если есть новое, он собирает, проверяет и открывает PR в main с таблицей версий и
-размерами. Для этого в GitHub нужно включить Actions в форке и разрешить им создавать PR (Settings → Actions → General).
-PR, открытый токеном `GITHUB_TOKEN`, запускает свою проверку только после одобрения («Approve workflows to run»): сборка
-и проверки к этому времени уже прошли в прогоне по расписанию. См. [документацию GitHub](https://docs.github.com/en/actions/concepts/security/github_token).
-GitHub выключает расписание после 60 дней без коммитов: снова включает его кнопка «Enable workflow».
+Scheduled CI runs execute updates monthly. If updates exist, CI compiles, tests, and opens a PR against `main` containing version diffs and binary sizes. (Requires GitHub Actions permissions in fork settings: Settings → Actions → General). PRs opened by `GITHUB_TOKEN` require manual workflow approval before test execution. See [GitHub documentation](https://docs.github.com/en/actions/concepts/security/github_token). Scheduled runs are automatically paused by GitHub after 60 days of repository inactivity; use "Enable workflow" to resume.
 
-## Выпуск новой версии ОС
+## Releasing a New OS Version
 
-1. `update.sh` (или PR из CI), `build.sh`, `test.sh`.
-2. Коммит `utility-os/versions.env`, `scriptexecute64/`, `tests/fixtures/utility-os/messages.txt`; PHPUnit целиком.
-3. Пакет, установка на провижинер, живая проверка через переключатель: запись со сверкой, EEPROM, светодиоды, проверка ОС,
-   докачка после перезапуска по PoE, время загрузки.
-4. Выпуск cmprovision. Вместе с ним — GitHub Release `utility-os-<версия>` с архивом `legal-info`.
+1. Run `update.sh` (or merge CI PR), `build.sh`, and `test.sh`.
+2. Commit `utility-os/versions.env`, `scriptexecute64/`, and `tests/fixtures/utility-os/messages.txt`; run full PHPUnit test suite.
+3. Package `.deb`, deploy to provisioner, test on hardware via the UI switch: flashing with verification, EEPROM, LEDs, OS check, PoE restart resumption, and boot timings.
+4. Release cmprovision. Concurrently publish GitHub Release `utility-os-<version>` with the `legal-info` archive attached.
 
-## Исходники и лицензии
+## Source Code and Licensing
 
-В ОС — программы под GPL (ядро, BusyBox и другие). Исходники всех компонентов и тексты лицензий собирает
-`make legal-info` (`$UOS_WORK/output/legal-info`). Архив публикуется GitHub Release `utility-os-<версия>`, а CI кладёт
-его в артефакты каждого прогона.
-Для 2026.10.2 — [исходники и лицензии в GitHub Release](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10.2).
-Для 2026.10.1 — [исходники и лицензии в GitHub Release](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10.1).
-[Архив 2026.10](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10) также доступен.
+The utility OS packages GPL-licensed software (Linux kernel, BusyBox, etc.). Complete source code and license texts are generated via `make legal-info` (`$UOS_WORK/output/legal-info`). Archives are published with each GitHub Release `utility-os-<version>` and preserved in CI artifacts.
+Releases:
+- [Sources and licenses for 2026.10.2](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10.2)
+- [Sources and licenses for 2026.10.1](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10.1)
+- [Archive for 2026.10](https://github.com/nimbo78/cmprovision/releases/tag/utility-os-2026.10)
 
-`build.sh` дополняет стандартный вывод через `tools/utility-os/legal_info.py`: в нём остаются исходный архив Buildroot,
-наши рецепты и соответствующие исходники, патчи и лицензии Bootlin SDK. Компоненты определяются по `summary.csv` внутри
-проверенного SDK, их хэши — по исходному коммиту Buildroot этого SDK. Дополнение записывает `source-complete.json`;
-без него CI не архивирует исходники. Хэши отдельных лицензий ядра и Raspberry Pi utils выводятся из уже закреплённых
-исходных архивов, поэтому новые тексты GPL проверяются без ослабления проверки исходников.
+The `build.sh` script enriches standard licensing output with `tools/utility-os/legal_info.py`: bundling the upstream Buildroot archive, repository recipes, and matching Bootlin SDK source archives, patches, and licenses. Components are resolved against `summary.csv` inside the verified SDK, and their checksums are verified against the SDK's Buildroot commit. The builder writes `source-complete.json`, required by CI to archive sources. Checksums for individual kernel and Raspberry Pi utils licenses are validated against previously pinned source archives, ensuring updated GPL texts are verified without weakening source integrity checks.
 
-## Разбор проблем
+## Troubleshooting
 
-- Модуль с новой ОС не стартует или стартует не так: Settings → Utility OS → старая, модуль перезапустить. Журнал консоли
-  модуля (экран, tty1) и отчёты на сервере покажут, на каком шаге он встал.
-- Settings предупреждает, что dnsmasq не идёт по ссылке: в `etc/dnsmasq.conf` должна быть строка
-  `tftp-root=/var/lib/cmprovision/etc/boot`, затем `systemctl restart cmprovision-dnsmasq`.
-- Загрузка по USB не идёт: в каталоге, на который указывает `etc/boot`, должен лежать `bootfiles.bin`. Без него
-  `rpiboot` на первом же CM4 пишет «Failed to open second stage bootloader» и завершается (служба поднимает его снова).
-- Сборка встала на хэше: проверьте загрузку и исходный релиз. Изменившийся файл по прежнему тегу требует отдельного
-  разбора; `update.sh` пересчитывает хэши при смене версии, а не исправляет несоответствие прежнего закреплённого файла.
-- Проверка в QEMU не дошла до скрипта: в `$UOS_WORK/qemu.log` — консоль модуля в QEMU, в `$UOS_WORK/smoke/` — то, что
-  получил тестовый сервер.
+- Target module fails to boot with modern OS: Settings → Utility OS → select legacy OS, reboot module. Inspect the target console (display, tty1) and server logs to determine which step halted.
+- Settings warns dnsmasq is not following symlink: verify `etc/dnsmasq.conf` contains `tftp-root=/var/lib/cmprovision/etc/boot`, then run `systemctl restart cmprovision-dnsmasq`.
+- USB booting does not start: verify `bootfiles.bin` is present in the directory targeted by `etc/boot`. Without it, `rpiboot` aborts with "Failed to open second stage bootloader" (systemd restarts it automatically).
+- Build fails on checksum mismatch: verify download connection and upstream release. Altered files on existing tags require manual investigation; `update.sh` recalculates hashes when bumping versions, never to mask modified upstream artifacts.
+- QEMU test fails before script execution: inspect module console output in `$UOS_WORK/qemu.log` and mock server capture in `$UOS_WORK/smoke/`.
 
-## USB-диагностика (2026.10.1)
+## USB Diagnostics (2026.10.1)
 
-ОС запускает отдельный CDC ACM агент до ожидания eth0/DHCP. Основной канал отчётов —
-Ethernet; если ожидаемый отчёт не доставлен за 90 секунд, подключённый по USB
-провижинер может получить снимок через службу cmprovision-usb-diagnostics.
-Сборщик общий с серверными скриптами, агент не открывает shell и не предоставляет
-блочный диск. Снимок новой платы хранится отдельно от её будущей прошивки.
-Подробнее: [Module diagnostics](module-diagnostics.md#automatic-usb-fallback).
+The OS launches a background CDC ACM diagnostic agent before waiting for eth0/DHCP. Ethernet is the primary reporting link; if no report is received within 90 seconds, a USB-connected provisioner can capture a hardware diagnostic snapshot via `cmprovision-usb-diagnostics`. The snapshot tool shares logic with server scripts; the agent exposes neither a login shell nor a block storage device. Newly detected board snapshots are isolated from future flashing runs. For full details, see [Module Diagnostics](module-diagnostics.md#automatic-usb-fallback).
 
-Для сборки с ограничением числа параллельных задач: `UOS_JOBS=4 sh tools/utility-os/build.sh`.
+To limit parallel build jobs: `UOS_JOBS=4 sh tools/utility-os/build.sh`.

@@ -15,10 +15,13 @@ Palette: warm white `#FBF7F2`, ink `#2A1A0C`, orange `#E2681C`, muted brown `#77
 ## Files
 
 - `hero.png`: published 2400 × 800 hero, composed from the sources below; the README scales it to its content width.
+- `hero.ru.png`: published 2400 × 800 Russian-localized hero for `README.ru.md`.
 - `source/hero-layout.svg`: editable 1200 × 400 composition, including the original outlined logo, exact text and a named hardware illustration layer.
+- `source/hero-layout.ru.svg`: editable 1200 × 400 Russian composition layout.
 - `source/hero-subject.png`: transparent hardware illustration generated and refined with the built-in ImageGen tool on 2026-10-17.
 - `source/hero-prompt.txt`: generation and refinement prompts for the final illustration.
 - `stand.svg`: network topology; labels and network requirements are also explained in the README.
+- `stand.ru.svg`: Russian-localized network topology diagram for `README.ru.md`.
 - `screenshots/`: 28 PNG browser captures made with Playwright and headless Edge: 24 views from version 2.6.2 on 2026-10-17 and four re-provision views from the development implementation on 2026-10-18 (three dialogs and the saved-account settings). Each capture used a disposable local application copy in `cmprov-trixie` WSL, with its own SQLite database and demo account.
 
 ## Hero production

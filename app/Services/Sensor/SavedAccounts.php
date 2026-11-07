@@ -19,6 +19,12 @@ class SavedAccounts
         return array_map(fn ($a) => ['id'=>$a['id'],'name'=>$a['name'],'user'=>$a['user'],'enabled'=>$a['enabled']], $this->read());
     }
 
+    /** Server-side configuration transfer only; never put this in a browser snapshot. */
+    public function definitions(): array
+    {
+        return $this->read();
+    }
+
     public function enabled(): array
     {
         $accounts = []; $seen = [];

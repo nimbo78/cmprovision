@@ -395,7 +395,7 @@ exit 1
             }
         }
 
-        $preinstall_scripts = $project->scripts()->where('script_type','preinstall')->orderBy('priority')->orderBy('id')->get();
+        $preinstall_scripts = $project->orderedScripts('preinstall')->get();
         $server = $this->moduleServer($req);
 
         if ($project->eeprom_firmware)
@@ -589,7 +589,7 @@ exit 1
     /* The project's post-install scripts, the generated SHA256 verification first when the project verifies */
     protected function postinstallScripts(Project $project, ?Image $image, string $server)
     {
-        $postinstall_scripts = $project->scripts()->where('script_type','postinstall')->orderBy('priority')->orderBy('id')->get();
+        $postinstall_scripts = $project->orderedScripts('postinstall')->get();
         if ($project->verify && $image)
         {
             $fscript = new Script;
@@ -686,7 +686,7 @@ exit 1
         }
         /* The OS check: its first-boot scripts and packages go into the written system with its service */
         $osCheck = $this->cm->os_check === 'pending';
-        $firstboot_scripts = $osCheck ? $project->scripts()->where('script_type','firstboot')->orderBy('priority')->orderBy('id')->get() : collect();
+        $firstboot_scripts = $osCheck ? $project->orderedScripts('firstboot')->get() : collect();
         $packages = $osCheck ? $project->packages()->orderBy('packages.id')->get() : collect();
 
         if (!$this->cm->diagnostics_token)

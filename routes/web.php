@@ -48,4 +48,11 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 // the copy of the data holds the application key and every password of the server: the password is asked again
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])->get('/settings/backup', BackupDownloadController::class)->name('settings.backup');
 
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->group(function () {
+    Route::get('/settings/transfer', \App\Http\Livewire\ConfigurationTransfer::class)->name('settings.transfer');
+    Route::post('/settings/transfer/import', [\App\Http\Controllers\ConfigurationTransferController::class, 'store'])->name('settings.transfer.import');
+    Route::get('/settings/transfer/{operation}/download', [\App\Http\Controllers\ConfigurationTransferController::class, 'download'])
+        ->middleware('password.confirm')->name('settings.transfer.download');
+});
+
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/diagnostics/{id?}', \App\Http\Livewire\UsbDiagnostics::class)->whereNumber('id')->name('diagnostics');

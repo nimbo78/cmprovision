@@ -142,39 +142,9 @@ class Settings extends Component
 
     protected function regenDnsmasqConfAndRestart()
     {
-        $confFile = config('cmprovision.dnsmasq_conf');
-        $extraConf = "";
-        $hosts = Host::orderBy('ip')->get();
-        foreach ($hosts as $host)
-        {
-            $extraConf .= "dhcp-host=".$host->mac.",set:client_is_a_pi,".$host->ip;
-            if ($host->hostname)
-                $extraConf .= ','.$host->hostname;
-            $extraConf .= "\n";
-        }
-
-        $oldConf = @file_get_contents($confFile);
-        if (!$oldConf)
-        {
-            session()->flash('message', "Error reading existing $confFile");
-            return;
-        }
-
-        $oldConfLines = explode("\n", trim($oldConf));
-        $newConf = '';
-
-        foreach ($oldConfLines as $line)
-        {
-            if (strpos($line, "dhcp-host=") === 0)
-                continue;
-
-            $newConf .= $line."\n";
-        }
-        $newConf .= $extraConf;
-
-        if (!@file_put_contents($confFile, $newConf))
-        {
-            session()->flash('message', "Error writing to $confFile. Check file permissions.");
+        try { app(\App\Services\DhcpReservations::class)->write(); }
+        catch (\RuntimeException $error) {
+            session()->flash('message', $error->getMessage());
             return;
         }
 

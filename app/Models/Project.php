@@ -27,6 +27,13 @@ class Project extends Model
         return $this->belongsToMany(Script::class);
     }
 
+    /** An imported project keeps source order when equal-priority scripts have different local IDs. */
+    function orderedScripts(?string $phase = null)
+    {
+        return $this->scripts()->when($phase !== null, fn ($query) => $query->where('script_type', $phase))
+            ->orderBy('priority')->orderByRaw('COALESCE(project_script.position, scripts.id)')->orderBy('scripts.id');
+    }
+
     /* the .deb packages its OS check installs on the first boot (2.6.0) */
     function packages()
     {

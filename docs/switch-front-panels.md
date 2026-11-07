@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](switch-front-panels.md) | [Русский](ru/switch-front-panels.md)
+
 # Switch front panels
 
 The **Ports** page can draw a switch's Ethernet connectors in their physical positions, seen from the front.

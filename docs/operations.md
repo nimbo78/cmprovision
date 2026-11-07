@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](operations.md) | [Русский](ru/operations.md)
+
 # Operating the provisioner
 
 [Back to the README](../README.md) · [Upgrade and restore](upgrading.md) · [LED signals](leds.md) · [USB provisioning](usb-provisioning.md) · [Local console](local-console.md)
@@ -8,6 +10,7 @@ For a CM4 that cannot enter normal network boot, use [USB provisioning](usb-prov
 For direct diagnosis on a target's screen and keyboard, use its [tty2 console](local-console.md).
 The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connectors and USB roles.
 
+- [Provisioning workflow](#provisioning-workflow)
 - [The order of the lists](#the-order-of-the-lists)
 - [A module that takes longer than the rest](#a-module-that-takes-longer-than-the-rest)
 - [Export for NetBox](#export-for-netbox)
@@ -17,12 +20,21 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 - [Images from the internet](#images-from-the-internet)
 - [Image download and write recovery](#image-download-and-write-recovery)
 - [Re-provision an installed sensor](#re-provision-an-installed-sensor)
+- [Prepare a CM4 for network boot (USB prep)](usb-prep.md)
 - [Set up a new provisioner from a project](station-project-setup.md)
+- [Move selected configuration between stations](configuration-transfer.md)
+- [Guided project, label and script creation](creation-wizards.md)
 - [Built-in Wi-Fi as a cold spare](#built-in-wi-fi-as-a-cold-spare)
 - [Wi-Fi networks](#wi-fi-networks)
 - [Additional tagged VLANs](#additional-tagged-vlans)
 - [Switches and PoE restart](#switches-and-poe-restart)
 - [Network access](#network-access)
+
+## Provisioning workflow
+
+<a href="diagrams/provisioning-flow.html" title="Open interactive Archify diagram"><img src="diagrams/provisioning-flow.png" width="100%" alt="End-to-End CM4 Provisioning Workflow diagram"></a>
+
+*End-to-end batch lifecycle from power-on and PXE boot to eMMC flashing, verification, and integrations. [Open standalone interactive diagram](diagrams/provisioning-flow.html) with pan, zoom, dark/light theme switching, and step animation.*
 
 ## The order of the lists
 

@@ -23,7 +23,7 @@ class UtilityOsUpdateTest extends TestCase
         $this->dir = sys_get_temp_dir().'/uos-update-'.bin2hex(random_bytes(4));
         mkdir($this->dir.'/bin', 0755, true);
         mkdir($this->dir.'/www', 0755, true);
-        copy(dirname(__DIR__, 2).'/utility-os/versions.env', $this->dir.'/versions.env');
+        copy(dirname(__DIR__).'/fixtures/utility-os/versions.env', $this->dir.'/versions.env');
         // git ls-remote answers from <repo>.refs: --refs gives the tags without peeled lines, HEAD the head
         $this->stub('git', implode("\n", [
             '[ "$1" = ls-remote ] || exit 2',

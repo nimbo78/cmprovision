@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](gallery.md) | [Русский](ru/gallery.md)
+
 # Screenshot tour
 
 [Back to README](../README.md) · [Quick start](../README.md#quick-start) · [Operation guide](operations.md)

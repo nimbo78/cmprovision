@@ -20,6 +20,8 @@ yarn-error.log
 /.remember/
 /.codex-remote-attachments/
 /.agents/
+/.archify/
+/docs/diagrams/*.json
 
 # Local design notes and bench acceptance records
 /docs/superpowers/

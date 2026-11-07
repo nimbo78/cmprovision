@@ -7,27 +7,23 @@ use App\Http\Livewire\Concerns\SortsColumns;
 use App\Support\ColumnSort;
 use Livewire\Component;
 use App\Models\Label;
+use App\Services\Configuration\Definitions;
 
 #[Title('Labels')]
 class Labels extends Component
 {
     use SortsColumns;
+    use \App\Http\Livewire\Concerns\CreatesWithWizard;
     public $isOpen = false;
     public $labels;
     public $labelid, $name, $printer_type, $print_command;
     public $ftp_hostname, $ftp_username, $ftp_password, $file_extension, $template;
     public $dummypassword = "****************";
 
-    protected $rules = [
-        'name' => 'required|max:255',
-        'printer_type' => 'in:ftp,command',
-        'ftp_hostname' => 'nullable|max:255|required_if:printer_type,ftp',
-        'ftp_username' => 'nullable|max:255|required_if:printer_type,ftp',
-        'ftp_password' => 'nullable|max:255|required_if:printer_type,ftp',
-        'print_command' => 'nullable|max:255|required_if:printer_type,command',
-        'file_extension' => 'required|max:32|regex:/^[a-zA-Z0-9]+$/',
-        'template' => 'required'
-    ];
+    protected function rules(): array
+    {
+        return Definitions::labelRules();
+    }
 
     /* The columns that sort the table of labels by a click on their header; with none chosen the order is the name */
     protected function columns(): array
@@ -56,6 +52,8 @@ class Labels extends Component
 
     public function closeModal()
     {
+        $this->endWizard();
+        $this->ftp_password = '';
         $this->isOpen = false;
     }
     
@@ -67,6 +65,7 @@ class Labels extends Component
 
     public function create()
     {
+        $this->endWizard();
         $this->name = $this->labelid = '';
         $this->printer_type = 'command';
         $this->ftp_hostname = $this->ftp_username = $this->ftp_password = '';
@@ -78,6 +77,7 @@ class Labels extends Component
 
     public function edit($id)
     {
+        $this->endWizard();
         $l = Label::findOrFail($id);
         $this->labelid = $id;
         $this->name = $l->name;
@@ -93,6 +93,13 @@ class Labels extends Component
 
     public function store()
     {
+        $this->ensureWizardSummary();
+        if ($this->wizardMode) {
+            $data = Definitions::label($this->labelWizardValues());
+            Label::create($data);
+            $this->closeModal();
+            return;
+        }
         $this->validate();
 
         $data = [
@@ -109,6 +116,12 @@ class Labels extends Component
             $data['ftp_password'] = $this->ftp_password;
         }
 
+        $existing = $this->labelid ? Label::findOrFail($this->labelid) : null;
+        $data = Definitions::label($data, $existing);
+        if ($this->ftp_password == $this->dummypassword) {
+            unset($data['ftp_password']);
+        }
+
         Label::updateOrCreate(['id' => $this->labelid], $data);
 
         $this->closeModal();
@@ -121,14 +134,16 @@ class Labels extends Component
 
     public function printTestLabel()
     {
+        $wizard = null;
+        if ($this->wizardMode) {
+            if ($this->wizardStep < 3) throw \Illuminate\Validation\ValidationException::withMessages(['wizard' => 'Complete the printer and template steps before printing.']);
+            $wizard = Definitions::label($this->labelWizardValues());
+        }
         $serial = '1000000012345678';
-        $label = str_replace('$mac', '11:22:33:44:55:66', $this->template);
-        $label = str_replace('$serial', $serial, $label);
-        $label = str_replace('$hostname', 'wlanpi-a1b', $label);
-        $label = str_replace(['$provisionboard', '$switch', '$port'], ['sw01 Gi0/3', 'sw01', 'Gi0/3'], $label);
+        $label = $this->previewLabel();
         $tmpfile = tempnam(sys_get_temp_dir(), "label-");
-        $ftp_password = $this->ftp_password;
-        if ($ftp_password == $this->dummypassword)
+        $ftp_password = $wizard === null ? $this->ftp_password : $wizard['ftp_password'];
+        if ($wizard === null && $ftp_password == $this->dummypassword)
         {
             $l = Label::findOrFail($this->labelid);
             $ftp_password = $l->ftp_password;
@@ -172,4 +187,65 @@ class Labels extends Component
         }
         @unlink($tmpfile);
     }    
+
+    public function createWizard(?int $copyId = null): void
+    {
+        if ($copyId === null) $this->create();
+        else $this->edit($copyId);
+        $source = $copyId === null ? null : Label::findOrFail($copyId);
+        $this->beginWizard();
+        $this->labelid = '';
+        $this->ftp_password = '';
+        if ($source === null) $this->template = '$serial'."\n".'$mac'."\n".'$hostname';
+        else {
+            $base = mb_substr($source->name, 0, 220).' (copy)';
+            $name = $base;
+            for ($i = 2; Label::where('name', $name)->exists(); $i++) $name = $base.' '.$i;
+            $this->name = $name;
+            if ($source->printer_type === 'ftp') $this->keepWizardData(['ftp' => [
+                'hostname' => $source->ftp_hostname, 'username' => $source->ftp_username, 'password' => $source->ftp_password,
+            ]]);
+        }
+    }
+
+    public function wizardSteps(): array
+    {
+        return [1 => 'Name and output', 2 => 'Printer connection', 3 => 'Template and preview', 4 => 'Review and save'];
+    }
+
+    protected function validateWizardStep(#[\SensitiveParameter] array $secrets): void
+    {
+        if ($this->wizardStep === 1) $this->validate(array_intersect_key(Definitions::labelRules(), array_flip(['name', 'printer_type', 'file_extension'])));
+        if ($this->wizardStep === 2) {
+            if (array_diff(array_keys($secrets), ['ftp_password'])) throw \Illuminate\Validation\ValidationException::withMessages(['wizard' => 'Unsupported credential field.']);
+            \Illuminate\Support\Facades\Validator::make($secrets, ['ftp_password' => 'sometimes|string|max:255'])->validate();
+            $values = $this->labelWizardValues($secrets['ftp_password'] ?? null);
+            \Illuminate\Support\Facades\Validator::make($values, array_intersect_key(Definitions::labelRules(),
+                array_flip(['printer_type', 'ftp_hostname', 'ftp_username', 'ftp_password', 'print_command'])))->validate();
+            if ($this->printer_type === 'ftp') $this->keepWizardData(['ftp' => [
+                'hostname' => $this->ftp_hostname, 'username' => $this->ftp_username, 'password' => $values['ftp_password'],
+            ]]);
+            $this->dispatch('wizard-credentials-stored');
+        }
+        if ($this->wizardStep === 3) $this->validate(['template' => 'required|string']);
+    }
+
+    protected function labelWizardValues(#[\SensitiveParameter] ?string $password = null): array
+    {
+        $values = [];
+        foreach (['name', 'printer_type', 'ftp_hostname', 'ftp_username', 'print_command', 'template', 'file_extension'] as $key) $values[$key] = $this->$key;
+        $saved = $this->wizardData()['ftp'] ?? [];
+        if (($password === null || $password === '') && ($saved['hostname'] ?? null) === $this->ftp_hostname
+            && ($saved['username'] ?? null) === $this->ftp_username) $password = $saved['password'];
+        $values['ftp_password'] = $this->printer_type === 'ftp' ? ($password ?? '') : '';
+        return $values;
+    }
+
+    public function previewLabel(): string
+    {
+        return strtr((string) $this->template, [
+            '$serial' => '1000000012345678', '$mac' => '11:22:33:44:55:66', '$hostname' => 'wlanpi-a1b',
+            '$provisionboard' => 'sw01 Gi0/3', '$switch' => 'sw01', '$port' => 'Gi0/3',
+        ]);
+    }
 }
