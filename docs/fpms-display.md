@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](fpms-display.md) | [Русский](ru/fpms-display.md)
+
 # FPMS front panel
 
 **Preview.** The optional FPMS integration and `fpms-lite` are available from cmprovision 2.23.0.

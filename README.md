@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](README.md) | [Русский](README.ru.md)
+
 <img src="assets/readme/hero.png" width="100%" alt="cmprovision — One image. A whole batch. Raspberry Pi CM4 provisioning, illustrated by a WLAN Pi M4+ provisioner, an Ethernet switch and four modules. Write, verify and optionally check the installed OS on first boot.">
 
 # Batch provisioning for Raspberry Pi CM4

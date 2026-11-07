@@ -1,3 +1,5 @@
+> **Language / Язык:** [English](upgrading.md) | [Русский](ru/upgrading.md)
+
 # Upgrade and restore
 
 [Back to the README](../README.md) · [Operating the provisioner](operations.md)
