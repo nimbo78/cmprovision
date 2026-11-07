@@ -34,9 +34,9 @@ pack_old_version() {
     return $ret
 }
 
-# Room for a snapshot: twice what the application holds (without the uploads) must be free under /var/backups
+# Room for a snapshot: uploads and temporary configuration transfers are not archived.
 enough_space() {
-    need=$(du -sk --exclude=uploads /var/lib/cmprovision 2>/dev/null | cut -f1)
+    need=$(du -sk --exclude=uploads --exclude=/var/lib/cmprovision/storage/framework/configuration-transfer /var/lib/cmprovision 2>/dev/null | cut -f1)
     have=$(df -Pk /var/backups 2>/dev/null | awk 'NR==2 {print $4}')
     [ -z "$need" ] || [ -z "$have" ] || [ "$have" -gt $((need * 2)) ]
 }

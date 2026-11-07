@@ -24,8 +24,8 @@ class UpgradeSnapshotTest extends TestCase
         mkdir($this->dir.'/app');
         $script = file_get_contents(dirname(__DIR__, 2).'/debian/preinst');
         $script = str_replace(
-            ['/usr/sbin/cmprovision-backup', 'df -Pk /var/backups', 'du -sk --exclude=uploads /var/lib/cmprovision', '/var/backups/cmprovision', 'sleep 5'],
-            [$this->dir.'/bin/cmprovision-backup', $this->dir.'/bin/df', $this->dir.'/bin/du', $this->dir.'/backups', 'sleep 0'], $script);
+            ['/usr/sbin/cmprovision-backup', 'df -Pk /var/backups', 'du -sk', '/var/lib/cmprovision', '/var/backups/cmprovision', 'sleep 5'],
+            [$this->dir.'/bin/cmprovision-backup', $this->dir.'/bin/df', $this->dir.'/bin/du', $this->dir.'/app', $this->dir.'/backups', 'sleep 0'], $script);
         file_put_contents($this->dir.'/preinst', $script);
         $this->stub('df', "echo 'Filesystem 1K-blocks Used Available Use% Mounted'\necho \"x 1000000 1 \${FAKE_FREE_KB:-900000} 1% /\"\n");
         $this->stub('du', "echo \"\${FAKE_NEED_KB:-100000}\t/var/lib/cmprovision\"\n");
@@ -140,6 +140,23 @@ class UpgradeSnapshotTest extends TestCase
             $this->assertSame(0, $code, $args);
         }
         $this->assertSame(0, $this->calls());
+    }
+
+    public function test_transfer_scratch_does_not_use_the_space_reserved_for_a_snapshot()
+    {
+        $this->backup(true, '2.24.0');
+        mkdir($this->dir.'/app/storage/framework/configuration-transfer', 0700, true);
+        file_put_contents($this->dir.'/app/storage/framework/configuration-transfer/image', str_repeat('x', 16 * 1024 * 1024));
+        file_put_contents($this->dir.'/app/.env', 'keep this configuration');
+        // Use real du for this case: the ordinary fixture stubs its size.
+        $script = str_replace($this->dir.'/bin/du', 'du -sk', file_get_contents($this->dir.'/preinst'));
+        file_put_contents($this->dir.'/preinst', $script);
+
+        [$code, $out] = $this->run_('upgrade 2.24.0', ['FAKE_FREE_KB' => '8192']);
+
+        $this->assertSame(0, $code, $out);
+        $this->assertSame(1, $this->calls(), $out);
+        $this->assertFileExists($this->dir.'/backups/20261024-010000-2.24.0/database.sqlite');
     }
 
     public function test_a_server_with_no_backup_script_upgrades_without_a_snapshot()
