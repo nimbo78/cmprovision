@@ -1,3 +1,13 @@
+cmprovision4 (2.25.0~dev2) unstable; urgency=medium
+
+  * Keep selective import/export entry points in Settings > Status > Backup.
+  * Add a safe return and visible preparation/browser-handoff feedback for
+    full backup downloads, retaining native streaming and password confirmation.
+  * Show active transfer progress before forms, including unknown-size work,
+    and group creation actions to the right of page titles.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 07 Nov 2026 23:25:00 +0300
+
 cmprovision4 (2.25.0~dev1) unstable; urgency=medium
 
   * Add selective configuration import and export between stations with

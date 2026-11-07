@@ -4,11 +4,11 @@
 
 [Operations](operations.md) · [Backup and restore](upgrading.md) · [Station image setup](station-project-setup.md)
 
-Open **Settings → Status → Backup → Selective import / export**. Projects, Scripts and Labels also link to this page; an object's **Export** link selects it for you.
+Open **Settings → Status → Backup → Selective import / export**. This is the shared entry point; choose projects, scripts and labels on the transfer page.
 
 Configuration transfer copies selected definitions into an installed cmprovision station. A full backup and `cmprovision-restore --data-only` remain the recovery tools for a station's database and application key.
 
-For a new project, label or script, use the [creation wizards](creation-wizards.md), then export the saved result from its row.
+For a new project, label or script, use the [creation wizards](creation-wizards.md), then select the saved result in Backup's selective export.
 
 > [!NOTE]
 > Feature preview available from `2.25.0~dev1`: both stations need a build containing this feature. Screenshots use demo data.

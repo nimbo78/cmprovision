@@ -225,11 +225,16 @@ class DataBackupTest extends TestCase
         $this->app->instance(DataBackup::class, $this->backup());
 
         $this->get('/settings/backup')->assertRedirect('/login');
+        $this->post('/settings/backup')->assertRedirect('/login');
 
         $user = User::factory()->create();
         $this->actingAs($user)->get('/settings/backup')->assertRedirect('/user/confirm-password');
+        $this->actingAs($user)->post('/settings/backup')->assertRedirect('/user/confirm-password');
 
         $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()])->get('/settings/backup')
+            ->assertOk()->assertSee('Back to Backup')->assertSee('Preparing backup')
+            ->assertSeeHtml('method="POST"');
+        $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()])->post('/settings/backup')
             ->assertOk()->assertDownload();
     }
 
@@ -239,9 +244,10 @@ class DataBackupTest extends TestCase
         $this->app->instance(DataBackup::class, $this->backup());
         $user = User::factory()->create();
 
-        $response = $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()])->get('/settings/backup');
+        $response = $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()])->post('/settings/backup', ['download_id' => str_repeat('a', 32)]);
 
         $response->assertDownload();
+        $response->assertCookie('cmprovision_download_'.str_repeat('a', 32));
         $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'), 'a file with secrets is not kept by a cache');
         $this->assertMatchesRegularExpression('/cmprovision-backup-.+\.tar/', $response->headers->get('Content-Disposition'));
         $names = $this->listing($response->baseResponse->getFile()->getPathname());
@@ -256,9 +262,23 @@ class DataBackupTest extends TestCase
         $this->app->instance(DataBackup::class, new DataBackup($this->app_, ':memory:', $this->root.'/work'));
         $user = User::factory()->create();
 
-        $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()])->get('/settings/backup')
+        $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()])->post('/settings/backup')
             ->assertRedirect(route('settings', ['tab' => 'status']).'#backup')
             ->assertSessionHas('backupError', 'The database of this server is not a file that can be copied.');
+    }
+
+    public function test_opening_the_download_screen_does_not_create_an_archive(): void
+    {
+        $this->mock(DataBackup::class)->shouldNotReceive('make');
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()])
+            ->get('/settings/backup')->assertOk()->assertSee('Back to Backup')->assertSee('Preparing backup');
+    }
+
+    public function test_invalid_download_status_identifiers_are_rejected_before_building_a_copy(): void
+    {
+        $this->mock(DataBackup::class)->shouldNotReceive('make');
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()])
+            ->postJson('/settings/backup', ['download_id' => '../session'])->assertUnprocessable();
     }
 
     public function test_the_status_tab_has_the_card_with_the_link_and_the_way_back()

@@ -146,6 +146,7 @@ body { background: var(--page); color: var(--text); }
     .cmp-title { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
     .cmp-title h1 { font-size: 18px; font-weight: 700; }
     .cmp-card { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 8px; }
+    .cmp-progress { display: block; width: 100%; height: 10px; accent-color: var(--btn); }
 
     /* Settings (2.9): tabs that are links, sections as cards, the health strip and the menu of logs */
     .cmp-tabs { position: relative; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin: 14px 0 16px; border-bottom: 1px solid var(--panel-line); }

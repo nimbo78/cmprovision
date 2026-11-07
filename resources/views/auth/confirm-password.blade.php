@@ -10,7 +10,7 @@
 
         <x-validation-errors class="mb-4" />
 
-        <form method="POST" action="{{ route('password.confirm') }}">
+        <form method="POST" action="{{ route('password.confirm') }}" x-data="{ confirming: false }" x-on:submit="confirming = true">
             @csrf
 
             <div>
@@ -18,8 +18,12 @@
                 <x-input id="password" class="block mt-1 w-full" type="password" name="password" required autocomplete="current-password" autofocus />
             </div>
 
-            <div class="flex justify-end mt-4">
-                <x-button class="ms-4">
+            <p x-show="confirming" x-cloak role="status" class="text-sm text-fg-muted mt-4">Confirming password…</p>
+            <div class="flex justify-end items-center gap-3 mt-4">
+                @if (parse_url(session('url.intended', ''), PHP_URL_PATH) === parse_url(route('settings.backup'), PHP_URL_PATH))
+                    <a href="{{ route('settings', ['tab' => 'status']) }}#backup" class="cmp-btn cmp-btn-secondary">Back to Backup</a>
+                @endif
+                <x-button x-bind:disabled="confirming">
                     {{ __('Confirm') }}
                 </x-button>
             </div>

@@ -1,106 +1,21 @@
-<div class="cmp-page" x-data x-on:transfer-opened.window="const url = new URL(window.location.href); if ($event.detail.id) url.searchParams.set('operation', $event.detail.id); else url.searchParams.delete('operation'); history.replaceState({}, '', url)">
+<div class="cmp-page" x-data x-on:transfer-opened.window="const url = new URL(window.location.href); if ($event.detail.id) url.searchParams.set('operation', $event.detail.id); else url.searchParams.delete('operation'); history.replaceState({}, '', url); if ($event.detail.id) $nextTick(() => document.getElementById('current-transfer')?.focus())">
     <div class="cmp-title flex-wrap gap-3">
         <h1>Configuration transfer</h1>
-        <a href="{{ route('settings', ['tab' => 'status']) }}" class="cmp-btn cmp-btn-secondary ml-auto">Back to Settings</a>
+        <a href="{{ route('settings', ['tab' => 'status']) }}#backup" class="cmp-btn cmp-btn-secondary ml-auto">Back to Backup</a>
     </div>
     <p class="text-fg-muted mb-4">Move selected projects, scripts, labels and settings to another station. Review dependencies and conflicts before importing.</p>
     @if ($notice)<div class="cmp-flash mb-4" role="status">{{ $notice }}</div>@endif
     @if (session('transferError'))<div class="cmp-flash mb-4 text-neg" role="alert">{{ session('transferError') }}</div>@endif
     @if ($errors->any())<div class="cmp-flash mb-4 text-neg" role="alert" tabindex="-1" x-data x-init="$nextTick(() => $el.focus())"><p class="font-bold">Check this transfer</p>@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
 
-    <section class="cmp-card p-4 mb-4" x-data="{ masterSecret: '' }" x-on:master-password-saved.window="masterSecret = ''">
-        <h2 class="text-lg font-bold">Master password</h2>
-        <p class="text-sm text-fg-muted my-2">{{ $masterConfigured ? 'A master password is saved on this station.' : 'No master password is saved.' }} Use the same password on another station, or enter a one-time password for a transfer. The password protects exported secrets.</p>
-        <div class="flex flex-wrap gap-2 items-end">
-            <label class="w-full sm:w-auto sm:flex-1 min-w-0"><span class="block text-sm font-bold mb-1">New master password</span>
-                <input id="master-password" type="password" x-model="masterSecret" autocomplete="new-password" class="cmp-field w-full" minlength="12" maxlength="1024" aria-describedby="master-password-help">
-            </label>
-            <x-confirms-password wire:then="saveMasterPassword(masterSecret)"><button type="button" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Save password</button></x-confirms-password>
-            @if ($masterConfigured)<x-confirms-password wire:then="forgetMasterPassword"><button type="button" class="cmp-btn cmp-btn-secondary">Forget</button></x-confirms-password>@endif
-        </div>
-        <p id="master-password-help" class="text-xs text-fg-muted mt-2">12–1024 characters. The saved password is encrypted with this station's application key.</p>
-        @error('master_password')<p class="text-sm text-neg mt-1">{{ $message }}</p>@enderror
-    </section>
-
-    <div class="grid gap-4 lg:grid-cols-2">
-        <section class="cmp-card p-4" x-data="{ exportPassword: '' }" x-on:transfer-queued.window="exportPassword = ''">
-            <h2 class="text-lg font-bold">Export</h2>
-            <p class="text-sm text-fg-muted mt-1 mb-4">Projects include their required scripts, label, image, packages and EEPROM definitions.</p>
-            <div class="grid gap-4 sm:grid-cols-2">
-                @foreach (['projects' => 'Projects', 'scripts' => 'Scripts', 'labels' => 'Labels'] as $kind => $title)
-                    <fieldset><legend class="font-bold mb-2">{{ $title }}</legend>
-                        <div class="max-h-48 overflow-auto space-y-2">
-                            @forelse ($catalog[$kind] as $item)
-                                <label class="flex gap-2 items-start text-sm"><x-checkbox wire:model="selection.{{ $kind }}" value="{{ $item['id'] }}" /><span class="break-words min-w-0">{{ $item['name'] }}</span></label>
-                            @empty<p class="text-sm text-fg-muted">None saved</p>@endforelse
-                        </div>
-                    </fieldset>
-                @endforeach
-                <fieldset><legend class="font-bold mb-2">Settings groups</legend>
-                    <div class="space-y-2">@foreach ($catalog['groups'] as $key => $label)
-                        <label class="flex gap-2 items-start text-sm"><x-checkbox wire:model="selection.groups" value="{{ $key }}" /><span>{{ $label }}</span></label>
-                    @endforeach</div>
-                </fieldset>
-            </div>
-            <div class="mt-4">
-                <label for="transfer-format" class="block text-sm font-bold mb-1">Format</label>
-                <select id="transfer-format" wire:model.live="format" class="cmp-field w-full">
-                    <option value="json">JSON — download or copy as text</option><option value="archive">ZIP — optionally include binary files</option>
-                </select>
-            </div>
-            @if ($format === 'archive')
-                <fieldset class="mt-3"><legend class="text-sm font-bold">Include binary files</legend>
-                    <div class="flex flex-wrap gap-4 mt-2">@foreach (['images' => 'Images', 'packages' => 'Packages', 'firmware' => 'EEPROM'] as $key => $label)
-                        <label class="text-sm"><x-checkbox wire:model="selection.binaries" value="{{ $key }}" /> {{ $label }}</label>
-                    @endforeach</div>
-                </fieldset>
-            @endif
-            <div class="space-y-2 mt-4">
-                <label class="block text-sm"><x-checkbox wire:model.live="includeSecrets" /> Include saved passwords, tokens and recognition key</label>
-                <label class="block text-sm"><x-checkbox wire:model.live="protectExport" /> Protect this export with a password</label>
-                <p class="text-xs text-fg-muted">Secrets always require protection. Scripts, printer commands and templates may also contain credentials you entered; protect those exports when needed.</p>
-            </div>
-            @if ($protectExport || $includeSecrets)
-                <label class="block mt-3"><span class="block text-sm font-bold mb-1">Transfer password</span>
-                    <input type="password" x-model="exportPassword" autocomplete="new-password" class="cmp-field w-full" placeholder="{{ $masterConfigured ? 'Leave empty to use saved master password' : 'At least 12 characters' }}">
-                </label>
-            @endif
-            <div class="mt-4">
-                <x-confirms-password wire:then="startExport(exportPassword || null)"><button type="button" class="cmp-btn" wire:loading.attr="disabled">Prepare export</button></x-confirms-password>
-            </div>
-        </section>
-
-        <section class="cmp-card p-4" x-data>
-            <h2 class="text-lg font-bold">Import</h2>
-            <p class="text-sm text-fg-muted mt-1 mb-4">Load a file or paste configuration text. Preparation checks the manifest and verifies included files before preview.</p>
-            <form method="POST" action="{{ route('settings.transfer.import') }}" enctype="multipart/form-data">
-                @csrf
-                <label for="configuration-file" class="block text-sm font-bold mb-1">Configuration file</label>
-                <input id="configuration-file" type="file" name="configuration" accept=".json,.zip,.cmp" required class="cmp-field w-full">
-                <label for="configuration-password" class="block text-sm font-bold mb-1 mt-3">Password, if different from the saved master password</label>
-                <input id="configuration-password" type="password" name="password" autocomplete="off" class="cmp-field w-full">
-                <p class="text-xs text-fg-muted mt-2">JSON, ZIP or protected CMP. This server accepts uploads up to 8 GiB; the transfer format supports 64 GiB. Binary files can also be uploaded normally before importing JSON.</p>
-                <button type="submit" class="cmp-btn mt-3">Upload and prepare</button>
-            </form>
-            <div class="border-t border-pline mt-5 pt-4">
-                <label for="configuration-text" class="block text-sm font-bold mb-1">Or paste text</label>
-                <textarea id="configuration-text" x-ref="importText" rows="7" class="cmp-field w-full font-mono" spellcheck="false"></textarea>
-                <label class="block mt-3"><span class="block text-sm font-bold mb-1">Transfer password</span>
-                    <input type="password" x-ref="importPassword" autocomplete="off" class="cmp-field w-full">
-                </label>
-                <button type="button" class="cmp-btn mt-3" x-on:click="$wire.startTextImport($refs.importText.value, $refs.importPassword.value || null).then(() => { $refs.importPassword.value = ''; $refs.importText.value = '' })" wire:loading.attr="disabled">Prepare pasted text</button>
-            </div>
-        </section>
-    </div>
-
     @if ($operation)
         <section class="cmp-card p-4 mt-4" @if(in_array($status, ['queued', 'preparing', 'reviewing', 'applying'])) wire:poll.3s="refreshOperation" @endif>
-            <h2 class="text-lg font-bold">{{ $status === 'applied' ? 'Import complete' : 'Current transfer' }}</h2>
+            <h2 id="current-transfer" tabindex="-1" class="text-lg font-bold">{{ $status === 'applied' ? 'Import complete' : 'Current transfer' }}</h2>
             <p class="text-sm text-fg-muted my-2">{{ ucfirst($operation->direction) }} · {{ $status }} · expires {{ $operation->expires_at->format('d M H:i') }}</p>
             @if ($operation->error)<p class="text-neg" role="alert">{{ $operation->error }}</p>@endif
             @if (in_array($status, ['queued', 'preparing', 'reviewing', 'applying']))
                 <p role="status">{{ match ($status) { 'queued' => 'Waiting for the images worker…', 'reviewing' => 'Checking choices and receiving files…', 'applying' => 'Applying reviewed configuration…', default => 'Preparing and verifying files…' } }}</p>
-                @if ($operation->total_bytes)<progress class="w-full mt-2" value="{{ $operation->progress_bytes }}" max="{{ $operation->total_bytes }}"></progress>@endif
+                <progress class="cmp-progress mt-2" aria-label="Transfer preparation" @if($operation->total_bytes) value="{{ $operation->progress_bytes }}" max="{{ $operation->total_bytes }}" @endif></progress>
             @elseif ($status === 'prepared')
                 <button type="button" class="cmp-btn" wire:click="review">Prepare preview again</button>
             @elseif ($status === 'ready')
@@ -205,4 +120,91 @@
             @if ($status !== 'applied')<button type="button" class="cmp-btn cmp-btn-secondary mt-4" wire:click="cancelTransfer">Cancel transfer</button>@endif
         </section>
     @endif
+
+    <section class="cmp-card p-4 mb-4" x-data="{ masterSecret: '' }" x-on:master-password-saved.window="masterSecret = ''">
+        <h2 class="text-lg font-bold">Master password</h2>
+        <p class="text-sm text-fg-muted my-2">{{ $masterConfigured ? 'A master password is saved on this station.' : 'No master password is saved.' }} Use the same password on another station, or enter a one-time password for a transfer. The password protects exported secrets.</p>
+        <div class="flex flex-wrap gap-2 items-end">
+            <label class="w-full sm:w-auto sm:flex-1 min-w-0"><span class="block text-sm font-bold mb-1">New master password</span>
+                <input id="master-password" type="password" x-model="masterSecret" autocomplete="new-password" class="cmp-field w-full" minlength="12" maxlength="1024" aria-describedby="master-password-help">
+            </label>
+            <x-confirms-password wire:then="saveMasterPassword(masterSecret)"><button type="button" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Save password</button></x-confirms-password>
+            @if ($masterConfigured)<x-confirms-password wire:then="forgetMasterPassword"><button type="button" class="cmp-btn cmp-btn-secondary">Forget</button></x-confirms-password>@endif
+        </div>
+        <p id="master-password-help" class="text-xs text-fg-muted mt-2">12–1024 characters. The saved password is encrypted with this station's application key.</p>
+        @error('master_password')<p class="text-sm text-neg mt-1">{{ $message }}</p>@enderror
+    </section>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+        <section class="cmp-card p-4" x-data="{ exportPassword: '' }" x-on:transfer-queued.window="exportPassword = ''">
+            <h2 class="text-lg font-bold">Export</h2>
+            <p class="text-sm text-fg-muted mt-1 mb-4">Projects include their required scripts, label, image, packages and EEPROM definitions.</p>
+            <div class="grid gap-4 sm:grid-cols-2">
+                @foreach (['projects' => 'Projects', 'scripts' => 'Scripts', 'labels' => 'Labels'] as $kind => $title)
+                    <fieldset><legend class="font-bold mb-2">{{ $title }}</legend>
+                        <div class="max-h-48 overflow-auto space-y-2">
+                            @forelse ($catalog[$kind] as $item)
+                                <label class="flex gap-2 items-start text-sm"><x-checkbox wire:model="selection.{{ $kind }}" value="{{ $item['id'] }}" /><span class="break-words min-w-0">{{ $item['name'] }}</span></label>
+                            @empty<p class="text-sm text-fg-muted">None saved</p>@endforelse
+                        </div>
+                    </fieldset>
+                @endforeach
+                <fieldset><legend class="font-bold mb-2">Settings groups</legend>
+                    <div class="space-y-2">@foreach ($catalog['groups'] as $key => $label)
+                        <label class="flex gap-2 items-start text-sm"><x-checkbox wire:model="selection.groups" value="{{ $key }}" /><span>{{ $label }}</span></label>
+                    @endforeach</div>
+                </fieldset>
+            </div>
+            <div class="mt-4">
+                <label for="transfer-format" class="block text-sm font-bold mb-1">Format</label>
+                <select id="transfer-format" wire:model.live="format" class="cmp-field w-full">
+                    <option value="json">JSON — download or copy as text</option><option value="archive">ZIP — optionally include binary files</option>
+                </select>
+            </div>
+            @if ($format === 'archive')
+                <fieldset class="mt-3"><legend class="text-sm font-bold">Include binary files</legend>
+                    <div class="flex flex-wrap gap-4 mt-2">@foreach (['images' => 'Images', 'packages' => 'Packages', 'firmware' => 'EEPROM'] as $key => $label)
+                        <label class="text-sm"><x-checkbox wire:model="selection.binaries" value="{{ $key }}" /> {{ $label }}</label>
+                    @endforeach</div>
+                </fieldset>
+            @endif
+            <div class="space-y-2 mt-4">
+                <label class="block text-sm"><x-checkbox wire:model.live="includeSecrets" /> Include saved passwords, tokens and recognition key</label>
+                <label class="block text-sm"><x-checkbox wire:model.live="protectExport" /> Protect this export with a password</label>
+                <p class="text-xs text-fg-muted">Secrets always require protection. Scripts, printer commands and templates may also contain credentials you entered; protect those exports when needed.</p>
+            </div>
+            @if ($protectExport || $includeSecrets)
+                <label class="block mt-3"><span class="block text-sm font-bold mb-1">Transfer password</span>
+                    <input type="password" x-model="exportPassword" autocomplete="new-password" class="cmp-field w-full" placeholder="{{ $masterConfigured ? 'Leave empty to use saved master password' : 'At least 12 characters' }}">
+                </label>
+            @endif
+            <div class="mt-4">
+                <x-confirms-password wire:then="startExport(exportPassword || null)"><button type="button" class="cmp-btn" wire:loading.attr="disabled"><span wire:loading.remove wire:target="startExport">Prepare export</span><span wire:loading wire:target="startExport" role="status">Preparing export…</span></button></x-confirms-password>
+            </div>
+        </section>
+
+        <section class="cmp-card p-4" x-data>
+            <h2 class="text-lg font-bold">Import</h2>
+            <p class="text-sm text-fg-muted mt-1 mb-4">Load a file or paste configuration text. Preparation checks the manifest and verifies included files before preview.</p>
+            <form method="POST" action="{{ route('settings.transfer.import') }}" enctype="multipart/form-data">
+                @csrf
+                <label for="configuration-file" class="block text-sm font-bold mb-1">Configuration file</label>
+                <input id="configuration-file" type="file" name="configuration" accept=".json,.zip,.cmp" required class="cmp-field w-full">
+                <label for="configuration-password" class="block text-sm font-bold mb-1 mt-3">Password, if different from the saved master password</label>
+                <input id="configuration-password" type="password" name="password" autocomplete="off" class="cmp-field w-full">
+                <p class="text-xs text-fg-muted mt-2">JSON, ZIP or protected CMP. This server accepts uploads up to 8 GiB; the transfer format supports 64 GiB. Binary files can also be uploaded normally before importing JSON.</p>
+                <button type="submit" class="cmp-btn mt-3">Upload and prepare</button>
+            </form>
+            <div class="border-t border-pline mt-5 pt-4">
+                <label for="configuration-text" class="block text-sm font-bold mb-1">Or paste text</label>
+                <textarea id="configuration-text" x-ref="importText" rows="7" class="cmp-field w-full font-mono" spellcheck="false"></textarea>
+                <label class="block mt-3"><span class="block text-sm font-bold mb-1">Transfer password</span>
+                    <input type="password" x-ref="importPassword" autocomplete="off" class="cmp-field w-full">
+                </label>
+                <button type="button" class="cmp-btn mt-3" x-on:click="$wire.startTextImport($refs.importText.value, $refs.importPassword.value || null).then(() => { $refs.importPassword.value = ''; $refs.importText.value = '' })" wire:loading.attr="disabled">Prepare pasted text</button>
+            </div>
+        </section>
+    </div>
+
+
 </div>
