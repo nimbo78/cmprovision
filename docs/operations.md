@@ -22,6 +22,7 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 - [Re-provision an installed sensor](#re-provision-an-installed-sensor)
 - [Prepare a CM4 for network boot (USB prep)](usb-prep.md)
 - [Set up a new provisioner from a project](station-project-setup.md)
+- [Set the installed OS's SSH login and sudo policy](image-access.md)
 - [Move selected configuration between stations](configuration-transfer.md)
 - [Guided project, label and script creation](creation-wizards.md)
 - [Built-in Wi-Fi as a cold spare](#built-in-wi-fi-as-a-cold-spare)

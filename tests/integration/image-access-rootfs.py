@@ -17,7 +17,7 @@ assert root.parent.name.startswith('cmp-image-access-rootfs-') and root.name == 
 assert os.geteuid() == 0 and root.is_dir() and not root.is_symlink()
 assert os.readlink('/proc/self/ns/pid') != os.readlink('/proc/1/ns/pid'), 'Private PID namespace required'
 mode = sys.argv[3] if len(sys.argv) > 3 else 'pristine'
-assert mode in {'pristine', 'existing', 'keys', 'blocked', 'conflict'}
+assert mode in {'pristine', 'existing', 'keys', 'blocked', 'conflict', 'vendor', 'vendor-keys'}
 helper = importlib.machinery.SourceFileLoader('image_access', sys.argv[2]).load_module()
 mounts = []
 commands = []
@@ -64,9 +64,10 @@ try:
                 'password_hash': password, 'keys': [], 'ssh': True, 'wifi': None, 'sudo_passwordless': False}
     if mode in {'existing', 'blocked', 'conflict'}:
         run(['/usr/lib/userconf-pi/userconf', 'wlanpi', ''])
+    if mode in {'existing', 'blocked', 'conflict', 'vendor', 'vendor-keys'}:
         run(['useradd', '--create-home', '--shell', '/bin/bash', 'observer'])
         settings['username'] = 'wlanpi'
-    selected = 'wlanpi' if mode in {'existing', 'blocked', 'conflict'} else 'pi'
+    selected = 'wlanpi' if mode in {'existing', 'blocked', 'conflict', 'vendor', 'vendor-keys'} else 'pi'
     before = run(['getent', 'passwd', selected]).decode().strip().split(':')
     groups_before = set(run(['id', '-G', selected]).decode().split())
     marker = root / before[5].lstrip('/') / 'keep-this-file'
@@ -78,10 +79,10 @@ try:
     if mode == 'conflict':
         with (root / 'etc/ssh/sshd_config').open('a') as file:
             file.write('\nMatch User wlanpi\n    PasswordAuthentication no\n')
-    if mode == 'keys':
+    if mode in {'keys', 'vendor-keys'}:
         key = (runtime / 'host.pub').read_text().split()
         settings.update(password_hash=None, keys=[' '.join(key[:2])], sudo_passwordless=True)
-    other_before = ssh_options('observer') if mode in {'existing', 'conflict'} else None
+    other_before = ssh_options('observer') if mode in {'existing', 'conflict', 'vendor', 'vendor-keys'} else None
     passwd_before = (root / 'etc/passwd').read_text()
     if mode in {'blocked', 'conflict'}:
         try:
@@ -101,14 +102,14 @@ try:
         shadow = run(['getent', 'shadow', settings['username']]).decode().split(':')[1]
         assert shadow == (settings['password_hash'] or '*')
         policy = ssh_options(settings['username'])
-        assert policy['passwordauthentication'] == ('no' if mode == 'keys' else 'yes')
+        assert policy['passwordauthentication'] == ('no' if mode in {'keys', 'vendor-keys'} else 'yes')
         assert policy['pubkeyauthentication'] == 'yes' and policy['kbdinteractiveauthentication'] == 'no'
         run(['visudo', '-c'])
         listing = run(['sudo', '-l', '-U', settings['username']]).decode()
-        assert 'NOPASSWD: ALL' in listing if mode == 'keys' else 'PASSWD: ALL' in listing
+        assert 'NOPASSWD: ALL' in listing if mode in {'keys', 'vendor-keys'} else 'PASSWD: ALL' in listing
         assert (root / 'etc/systemd/system/multi-user.target.wants/ssh.service').is_symlink()
         assert not os.path.lexists(root / 'etc/systemd/system/multi-user.target.wants/userconfig.service')
-        if mode == 'keys':
+        if mode in {'keys', 'vendor-keys'}:
             authorized = root / after[5].lstrip('/') / '.ssh/authorized_keys'
             assert authorized.read_text() == settings['keys'][0] + '\n'
             assert authorized.stat().st_uid == int(before[2]) and authorized.stat().st_mode & 0o777 == 0o600

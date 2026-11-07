@@ -332,6 +332,35 @@ class ConfigurationImportPreviewTest extends TestCase
         $this->assertSame($preview['fingerprint'], app(TransferImporter::class)->preview($operation)['fingerprint']);
     }
 
+    public function test_generic_profile_requires_an_omitted_password_without_losing_account_or_sudo_choices(): void
+    {
+        $bytes = gzencode('image');
+        $manifest = $this->assetManifest($bytes);
+        $project = $this->projectObject();
+        $project['data']['scripts'] = [];
+        $project['data']['image'] = 'image-1';
+        $project['data']['station_setup'] = StationSetupInput::normalize(array_replace(StationSetupInput::form(), [
+            'profile' => 'raspios', 'hostname' => '', 'username' => 'operator', 'source_username' => 'wlanpi',
+            'password' => 'Fixture-Original-Password', 'sudo_passwordless' => false]));
+        unset($project['data']['station_setup']['password_hash']);
+        $project['omitted_secrets'] = ['station_setup.password_hash'];
+        $manifest['objects'][] = $project;
+        $manifest['roots'] = ['project-1'];
+        $operation = $this->operation();
+        app(TransferImporter::class)->prepare($operation, $this->zip($manifest, ['files/image-1.gz' => $bytes]), null);
+        $preview = app(TransferImporter::class)->preview($operation);
+        $this->assertFalse($preview['can_apply']);
+        $this->assertContains('station_setup.password_hash', array_column($preview['requirements'], 'field'));
+        $preview = app(TransferImporter::class)->preview($operation, ['secrets' => ['project-1' => [
+            'station_setup.password_hash' => 'Fixture-Replacement-Password']]]);
+        $this->assertTrue($preview['can_apply']);
+        $saved = $operation->fresh()->options['preview']['objects']['project-1']['data']['station_setup'];
+        $this->assertSame('raspios', $saved['profile']);
+        $this->assertSame('wlanpi', $saved['source_username']);
+        $this->assertFalse($saved['sudo_passwordless']);
+        $this->assertSame($saved['password_hash'], crypt('Fixture-Replacement-Password', $saved['password_hash']));
+    }
+
     public function test_vlan_draft_requires_a_receiver_interface_mapping(): void
     {
         $this->app->instance(NetworkProfiles::class, new class extends NetworkProfiles {
