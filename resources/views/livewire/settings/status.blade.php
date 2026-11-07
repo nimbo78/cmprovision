@@ -27,6 +27,7 @@
         </p>
         <div>
             <a href="{{ route('settings.backup') }}" class="cmp-btn cmp-btn-secondary">Download backup</a>
+            <a href="{{ route('settings.transfer') }}" class="cmp-btn cmp-btn-secondary">Selective import / export</a>
         </div>
     </div>
     <x-slot name="help">

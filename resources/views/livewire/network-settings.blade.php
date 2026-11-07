@@ -6,6 +6,23 @@
     @if ($notice)
         <div class="rounded px-4 py-2 mb-4 text-sm {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $notice }}</div>
     @endif
+    @if ($importedDraft && $available)
+        <div class="border border-pline rounded p-3 mb-4">
+            <h3 class="font-bold">Imported network draft: {{ $importedDraft['data']['name'] }}</h3>
+            <p class="text-sm text-fg-muted my-2">Receiving interface {{ $importedDraft['interface']['device'] }}.
+                Select its saved profile to load the imported values into the editor. Create a disconnected Ethernet profile below if needed; create a missing VLAN in the VLAN section first.</p>
+            <label for="import-target-profile" class="block text-sm font-bold mb-1">Receiving profile</label>
+            <select id="import-target-profile" wire:model="importTarget" class="cmp-field w-full">
+                <option value="">Choose a saved profile</option>
+                @foreach ($savedProfiles ?? [] as $profile)
+                    @if ($profile['device'] === $importedDraft['interface']['device'] && $profile['type'] === $importedDraft['data']['type'])
+                        <option value="{{ $profile['uuid'] }}">{{ $profile['name'] }} · {{ $profile['device'] }}</option>
+                    @endif
+                @endforeach
+            </select>
+            <button type="button" class="cmp-btn cmp-btn-secondary mt-2" wire:click="loadImportedDraft" wire:loading.attr="disabled">Load draft into editor</button>
+        </div>
+    @endif
     @if (!$available)
         <p class="text-sm text-fg-muted">Network profile editing is unavailable on this system.</p>
     @elseif ($statusError)

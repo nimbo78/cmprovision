@@ -37,6 +37,7 @@ class PrepareConfigurationTransfer implements ShouldQueue
                     (bool) ($options['include_secrets'] ?? false), $password);
             } else {
                 $importer->prepare($operation, $workspace->path($operation, 'source'), $password);
+                $importer->preview($operation);
             }
         } catch (TransferBusy $error) {
             $this->release(10);

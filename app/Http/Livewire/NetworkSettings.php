@@ -24,6 +24,59 @@ class NetworkSettings extends Component
     public $newDevice = '', $newProfileName = '';
     public $roleForm = false, $roleProfile = '', $stationRole = 'primary', $standUsb = false, $standIsolated = false;
     public $notice = null, $noticeIsError = false;
+    #[Locked] public $importSource = null;
+    public $importTarget = '';
+
+    public function mount(): void
+    {
+        $source = session('configuration_transfer_draft');
+        if (is_array($source) && isset($source['operation'], $source['ref'])) {
+            $this->importSource = $source;
+            $this->importedDraft(); // Validate ownership and expiry before showing an imported draft.
+        }
+    }
+
+    private function importedDraft(): ?array
+    {
+        if ($this->importSource === null) return null;
+        $operation = app(\App\Services\Configuration\TransferWorkspace::class)->owned(
+            $this->importSource['operation'], auth()->id(), session()->getId());
+        abort_unless($operation->status === 'applied', 409);
+        $draft = $operation->options['drafts'][$this->importSource['ref']] ?? null;
+        abort_unless(is_array($draft), 404);
+        return $draft;
+    }
+
+    public function loadImportedDraft(string $uuid = ''): void
+    {
+        $draft = $this->importedDraft();
+        if ($draft === null) return;
+        $reader = app(NetworkProfiles::class);
+        $uuid = $uuid ?: $this->importTarget;
+        $profile = collect($reader->saved() ?? [])->firstWhere('uuid', $uuid);
+        $mapping = $draft['interface'];
+        if ($profile === null || $profile['type'] !== $draft['data']['type'] || $profile['device'] !== $mapping['device']) {
+            $this->flash('Choose a saved profile on the mapped receiving interface.', true);
+            return;
+        }
+        if ($profile['type'] === 'vlan') {
+            $vlan = collect($reader->portable() ?? [])->firstWhere('device', $mapping['device']);
+            if ($vlan === null || $vlan['vlan_id'] !== $draft['data']['vlan_id'] || $vlan['parent'] !== $mapping['parent']) {
+                $this->flash('The receiving VLAN ID or parent differs from the imported mapping.', true);
+                return;
+            }
+        } elseif (!in_array($mapping['device'], $reader->ethernetDevices() ?? [], true)) {
+            $this->flash('The mapped Ethernet interface is unavailable.', true);
+            return;
+        }
+        $this->device = $profile['device'];
+        $this->uuid = $uuid;
+        $this->editingSaved = true;
+        $this->ipv4 = $this->formValues($draft['data']['ipv4']);
+        $this->ipv6 = $this->formValues($draft['data']['ipv6']);
+        $this->resetErrorBag();
+        $this->flash('Imported values loaded. Review them, apply temporarily, then confirm connectivity.');
+    }
 
     public function render()
     {
@@ -37,6 +90,7 @@ class NetworkSettings extends Component
         }
         $profiles = $available ? app(NetworkProfiles::class)->active() : null;
         return view('livewire.network-settings', [
+            'importedDraft' => $this->importedDraft(),
             'available' => $available,
             'profiles' => $profiles,
             'savedProfiles' => $available ? app(NetworkProfiles::class)->saved() : null,

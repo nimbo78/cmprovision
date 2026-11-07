@@ -174,10 +174,11 @@ class TransferPreview
             $plans[$ref] = ['ref' => $ref, 'type' => $type, 'selected' => $isSelected, 'action' => $action,
                 'target' => $target, 'data' => $normalized ?? $data, 'file' => $file,
                 'file_source' => $matches[0]['id'] ?? null, 'file_facts' => $matches[0]['file'] ?? null, 'interface' => $interface];
-            $public[] = ['ref' => $ref, 'type' => $type, 'name' => $this->name($object), 'selected' => $isSelected,
+            $public[] = ['ref' => $ref, 'type' => $type, 'name' => (string) ($data['name'] ?? $this->name($object)), 'selected' => $isSelected,
                 'action' => $action, 'target' => $target, 'file_status' => $fileStatus,
                 'matches' => array_map(fn ($candidate) => Arr::only($candidate, ['id', 'name']), $matches),
                 'conflicts' => array_map(fn ($candidate) => Arr::only($candidate, ['id', 'name']), $conflicts),
+                'targets' => array_map(fn ($candidate) => Arr::only($candidate, ['id', 'name']), $candidates),
                 'requires' => array_keys(TransferCatalog::references($object)), 'interface' => $interface];
         }
         $revision = TransferState::revision();

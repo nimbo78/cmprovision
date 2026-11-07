@@ -2,6 +2,7 @@
     <div class="contents">
         <div class="cmp-title">
             <h1>Labels</h1>
+            <a href="{{ route('settings.transfer') }}" class="cmp-btn cmp-btn-secondary">Import / export</a>
             <button wire:click="create()" class="cmp-btn ml-auto">Add label</button>
         </div>
         <div class="cmp-card px-4 py-3">
@@ -35,6 +36,7 @@
                             <td>@if ($l->printer_type == "ftp"){{ $l->ftp_hostname }}@else N/A @endif</td>
                             <td>
                                 <button wire:click="edit({{ $l->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
+                                <a href="{{ route('settings.transfer', ['label' => $l->id]) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Export</a>
                                 <button wire:click="delete({{ $l->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
                             </td>
                         </tr>

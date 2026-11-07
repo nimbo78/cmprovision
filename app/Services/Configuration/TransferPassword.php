@@ -21,12 +21,17 @@ class TransferPassword
 
     public function save(#[\SensitiveParameter] string $password): void
     {
+        self::validate($password);
+        Setting::updateOrCreate(['key' => self::SETTING], ['value' => Crypt::encryptString($password)]);
+    }
+
+    public static function validate(#[\SensitiveParameter] string $password): void
+    {
         if (!mb_check_encoding($password, 'UTF-8') || mb_strlen($password, 'UTF-8') < 12 || mb_strlen($password, 'UTF-8') > 1024) {
             throw ValidationException::withMessages([
                 'master_password' => 'Use a master password of 12 to 1024 characters.',
             ]);
         }
-        Setting::updateOrCreate(['key' => self::SETTING], ['value' => Crypt::encryptString($password)]);
     }
 
     public function read(): ?string

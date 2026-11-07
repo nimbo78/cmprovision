@@ -47,7 +47,7 @@ class TransferImporter
     public function preview(ConfigurationTransferOperation $operation, #[\SensitiveParameter] array $choices = []): array
     {
         return $this->workspace->locked($operation, function () use ($operation, $choices) {
-            if ($operation->direction !== 'import' || !in_array($operation->status, ['prepared', 'previewed'], true)) {
+            if ($operation->direction !== 'import' || !in_array($operation->status, ['prepared', 'previewed', 'reviewing'], true)) {
                 throw new RuntimeException('Prepare this import before reviewing it.');
             }
             $options = $operation->options;
@@ -58,7 +58,9 @@ class TransferImporter
             }
             $manifest = $this->catalog->validate(json_decode(file_get_contents($path), true, 64, JSON_THROW_ON_ERROR));
             $resolved = app(TransferPreview::class)->resolve($operation, $manifest, $choices);
-            $operation->update(['status' => 'previewed', 'options' => array_replace($options, ['preview' => $resolved['private']])]);
+            unset($options['review_choices']);
+            $operation->update(['status' => 'previewed', 'options' => array_replace($options, [
+                'preview' => $resolved['private'], 'public_preview' => $resolved['public']]), 'error' => null]);
             return $resolved['public'];
         });
     }
@@ -69,7 +71,7 @@ class TransferImporter
             if ($operation->direction !== 'import') throw new RuntimeException('This operation is not an import.');
             if ($operation->status === 'applied') return $operation->result;
             $saved = $operation->options['preview'] ?? null;
-            if ($operation->status !== 'previewed' || !is_array($saved)
+            if (!in_array($operation->status, ['previewed', 'applying'], true) || !is_array($saved)
                 || !hash_equals($saved['fingerprint'], $previewFingerprint)) {
                 throw new RuntimeException('Review the current import preview before applying it.');
             }
@@ -84,7 +86,7 @@ class TransferImporter
                 $result = DB::transaction(function () use ($operation, $resolved, $staged) {
                     $current = ConfigurationTransferOperation::findOrFail($operation->id);
                     if ($current->status === 'applied') return $current->result;
-                    if (!$current->expires_at->isFuture() || $current->status !== 'previewed'
+                    if (!$current->expires_at->isFuture() || !in_array($current->status, ['previewed', 'applying'], true)
                         || !hash_equals($resolved['private']['revision'], TransferState::revision())) {
                         throw new RuntimeException('The receiving configuration changed. Review the import again.');
                     }

@@ -2,6 +2,7 @@
     <div class="contents">
         <div class="cmp-title">
             <h1>Projects</h1>
+            <a href="{{ route('settings.transfer') }}" class="cmp-btn cmp-btn-secondary">Import / export</a>
             <button wire:click="create()" class="cmp-btn ml-auto">Add project</button>
         </div>
         <div class="cmp-card px-4 py-3">
@@ -33,6 +34,7 @@
                             <td>@if ($p->image) {{ $p->image->filename }} @else - @endif</td>
                             <td>
                                 <button wire:click="edit({{ $p->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
+                                <a href="{{ route('settings.transfer', ['project' => $p->id]) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Export</a>
                                 <button wire:click="setActive({{ $p->id }})" class="cmp-btn cmp-btn-small">Set active</button>
                                 <button wire:click="delete({{ $p->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
                             </td>
