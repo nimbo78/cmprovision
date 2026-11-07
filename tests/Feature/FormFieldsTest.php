@@ -35,7 +35,7 @@ class FormFieldsTest extends TestCase
 
     public function test_code_editors_are_monospaced_fields()
     {
-        foreach (['livewire/editscript.blade.php' => 'script', 'livewire/label-fields/template.blade.php' => 'template', 'livewire/project-fields/firmware.blade.php' => 'eeprom_settings'] as $view => $id) {
+        foreach (['livewire/script-fields/content.blade.php' => 'script', 'livewire/label-fields/template.blade.php' => 'template', 'livewire/project-fields/firmware.blade.php' => 'eeprom_settings'] as $view => $id) {
             $this->assertSame(1, preg_match('/<textarea[^>]*id="'.$id.'"[^>]*class="([^"]*)"/', $this->source($view), $m), $view);
             $classes = preg_split('/\s+/', $m[1]);
             $this->assertContains('cmp-field', $classes, $view);

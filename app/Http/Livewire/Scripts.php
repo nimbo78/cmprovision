@@ -14,6 +14,7 @@ use App\Services\Configuration\Definitions;
 class Scripts extends Component
 {
     use SortsColumns;
+    use \App\Http\Livewire\Concerns\CreatesWithWizard;
     public $isOpen = false;
     public $scripts, $packages;
     public $scriptid, $name, $script_type, $bg, $priority, $script;
@@ -51,6 +52,7 @@ class Scripts extends Component
 
     public function closeModal()
     {
+        $this->endWizard();
         $this->isOpen = false;
     }
     
@@ -89,6 +91,7 @@ class Scripts extends Component
 
     public function create()
     {
+        $this->endWizard();
         $this->name = $this->scriptid = '';
         $this->script_type = 'postinstall';
         $this->bg = false;
@@ -99,6 +102,7 @@ class Scripts extends Component
 
     public function edit($id)
     {
+        $this->endWizard();
         $s = Script::findOrFail($id);
         $this->scriptid = $id;
         $this->name = $s->name;
@@ -111,6 +115,11 @@ class Scripts extends Component
 
     public function store()
     {
+        $this->ensureWizardSummary();
+        if ($this->wizardMode) {
+            $this->scriptid = '';
+            $this->validate(array_replace(Definitions::scriptRules(), ['name' => 'required|string|max:255', 'script' => 'required|string']));
+        }
         $data = Definitions::script([
             'name' => $this->name,
             'script_type' => $this->script_type,
@@ -126,5 +135,40 @@ class Scripts extends Component
     public function cancel()
     {
         $this->closeModal();
+    }
+
+    public function createWizard(?int $copyId = null): void
+    {
+        if ($copyId === null) $this->create();
+        else $this->edit($copyId);
+        $source = $copyId === null ? null : Script::findOrFail($copyId);
+        $this->beginWizard();
+        $this->scriptid = '';
+        if ($source !== null) {
+            $base = mb_substr($source->name, 0, 220).' (copy)';
+            $name = $base;
+            for ($i = 2; Script::where('name', $name)->exists(); $i++) $name = $base.' '.$i;
+            $this->name = $name;
+        }
+        if ($this->script_type === 'firstboot') $this->bg = false;
+    }
+
+    public function wizardSteps(): array
+    {
+        return [1 => 'Name and purpose', 2 => 'Execution phase', 3 => 'Order and execution',
+            4 => 'Script content', 5 => 'Review and save'];
+    }
+
+    public function updatedScriptType(): void
+    {
+        if ($this->wizardMode && $this->script_type === 'firstboot') $this->bg = false;
+    }
+
+    protected function validateWizardStep(#[\SensitiveParameter] array $secrets): void
+    {
+        $fields = match ($this->wizardStep) { 1 => ['name'], 2 => ['script_type'], 3 => ['priority', 'bg'], 4 => ['script'], default => [] };
+        $rules = array_replace(Definitions::scriptRules(), ['name' => 'required|string|max:255', 'script' => 'required|string']);
+        if ($fields) $this->validate(array_intersect_key($rules, array_flip($fields)));
+        if ($this->script_type === 'firstboot') $this->bg = false;
     }
 }
