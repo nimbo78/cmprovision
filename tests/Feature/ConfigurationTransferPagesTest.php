@@ -86,6 +86,7 @@ class ConfigurationTransferPagesTest extends TestCase
         $this->confirmed();
         $component = Livewire::test(ConfigurationTransfer::class)->call('startTextImport', $this->text(), null)->assertHasNoErrors();
         $operation = ConfigurationTransferOperation::findOrFail($component->get('operationId'));
+        $component->assertDispatched('transfer-opened', id: $operation->id);
         $this->runPreparation($operation);
         $component->call('refreshOperation')->assertSet('status', 'previewed')->assertSee('Portable script');
         $this->assertSame(0, Script::count());

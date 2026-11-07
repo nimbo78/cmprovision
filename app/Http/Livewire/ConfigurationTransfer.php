@@ -87,6 +87,7 @@ class ConfigurationTransfer extends Component
     {
         app(TransferWorkspace::class)->owned($id, auth()->id(), session()->getId());
         $this->operationId = $id;
+        $this->dispatch('transfer-opened', id: $id);
         $this->reset('preview', 'report', 'choices', 'copyText', 'notice');
         $this->refreshOperation();
     }
@@ -167,6 +168,7 @@ class ConfigurationTransfer extends Component
             $row->update(['status' => 'cancelled', 'options' => null, 'secrets' => null, 'expires_at' => now()->subSecond()]);
         });
         $this->reset('operationId', 'status', 'preview', 'report', 'copyText', 'choices');
+        $this->dispatch('transfer-opened', id: null);
         app(TransferWorkspace::class)->prune();
     }
 

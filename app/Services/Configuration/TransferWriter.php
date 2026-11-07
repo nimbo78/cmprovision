@@ -28,10 +28,15 @@ class TransferWriter
             $action = $plan['action'];
             $data = $plan['data'];
             $id = $plan['target'];
-            if (!$plan['selected'] || $action === 'skip') { $counts['skipped']++; continue; }
+            if (!$plan['selected'] || $action === 'skip') {
+                $counts['skipped']++;
+                $objects[$ref] = ['type' => $type, 'action' => 'skip', 'id' => null,
+                    'name' => $data['name'] ?? $data['filename'] ?? $data['group'] ?? $ref];
+                continue;
+            }
             if ($action === 'reuse') {
                 $counts['reused']++;
-                $objects[$ref] = compact('type', 'action', 'id');
+                $objects[$ref] = compact('type', 'action', 'id') + ['name' => $data['name'] ?? $data['filename'] ?? $data['group'] ?? $ref];
                 continue;
             }
             if ($action === 'replace' && TransferState::protected($type, $id)) throw new \RuntimeException('A selected object is now in use. Review the import again.');

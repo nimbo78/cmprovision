@@ -1,4 +1,4 @@
-<div class="cmp-page">
+<div class="cmp-page" x-data x-on:transfer-opened.window="const url = new URL(window.location.href); if ($event.detail.id) url.searchParams.set('operation', $event.detail.id); else url.searchParams.delete('operation'); history.replaceState({}, '', url)">
     <div class="cmp-title flex-wrap gap-3">
         <h1>Configuration transfer</h1>
         <a href="{{ route('settings', ['tab' => 'status']) }}" class="cmp-btn cmp-btn-secondary ml-auto">Back to Settings</a>
@@ -12,7 +12,7 @@
         <h2 class="text-lg font-bold">Master password</h2>
         <p class="text-sm text-fg-muted my-2">{{ $masterConfigured ? 'A master password is saved on this station.' : 'No master password is saved.' }} Use the same password on another station, or enter a one-time password for a transfer. The password protects exported secrets.</p>
         <div class="flex flex-wrap gap-2 items-end">
-            <label class="flex-1 min-w-0"><span class="block text-sm font-bold mb-1">New master password</span>
+            <label class="w-full sm:w-auto sm:flex-1 min-w-0"><span class="block text-sm font-bold mb-1">New master password</span>
                 <input id="master-password" type="password" x-model="masterSecret" autocomplete="new-password" class="cmp-field w-full" minlength="12" maxlength="1024" aria-describedby="master-password-help">
             </label>
             <x-confirms-password wire:then="saveMasterPassword(masterSecret)"><button type="button" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Save password</button></x-confirms-password>
@@ -31,14 +31,14 @@
                     <fieldset><legend class="font-bold mb-2">{{ $title }}</legend>
                         <div class="max-h-48 overflow-auto space-y-2">
                             @forelse ($catalog[$kind] as $item)
-                                <label class="flex gap-2 items-start text-sm"><input type="checkbox" wire:model="selection.{{ $kind }}" value="{{ $item['id'] }}"><span class="break-words min-w-0">{{ $item['name'] }}</span></label>
+                                <label class="flex gap-2 items-start text-sm"><x-checkbox wire:model="selection.{{ $kind }}" value="{{ $item['id'] }}" /><span class="break-words min-w-0">{{ $item['name'] }}</span></label>
                             @empty<p class="text-sm text-fg-muted">None saved</p>@endforelse
                         </div>
                     </fieldset>
                 @endforeach
                 <fieldset><legend class="font-bold mb-2">Settings groups</legend>
                     <div class="space-y-2">@foreach ($catalog['groups'] as $key => $label)
-                        <label class="flex gap-2 items-start text-sm"><input type="checkbox" wire:model="selection.groups" value="{{ $key }}"><span>{{ $label }}</span></label>
+                        <label class="flex gap-2 items-start text-sm"><x-checkbox wire:model="selection.groups" value="{{ $key }}" /><span>{{ $label }}</span></label>
                     @endforeach</div>
                 </fieldset>
             </div>
@@ -51,13 +51,13 @@
             @if ($format === 'archive')
                 <fieldset class="mt-3"><legend class="text-sm font-bold">Include binary files</legend>
                     <div class="flex flex-wrap gap-4 mt-2">@foreach (['images' => 'Images', 'packages' => 'Packages', 'firmware' => 'EEPROM'] as $key => $label)
-                        <label class="text-sm"><input type="checkbox" wire:model="selection.binaries" value="{{ $key }}"> {{ $label }}</label>
+                        <label class="text-sm"><x-checkbox wire:model="selection.binaries" value="{{ $key }}" /> {{ $label }}</label>
                     @endforeach</div>
                 </fieldset>
             @endif
             <div class="space-y-2 mt-4">
-                <label class="block text-sm"><input type="checkbox" wire:model.live="includeSecrets"> Include saved passwords, tokens and recognition key</label>
-                <label class="block text-sm"><input type="checkbox" wire:model.live="protectExport"> Protect this export with a password</label>
+                <label class="block text-sm"><x-checkbox wire:model.live="includeSecrets" /> Include saved passwords, tokens and recognition key</label>
+                <label class="block text-sm"><x-checkbox wire:model.live="protectExport" /> Protect this export with a password</label>
                 <p class="text-xs text-fg-muted">Secrets always require protection. Scripts, printer commands and templates may also contain credentials you entered; protect those exports when needed.</p>
             </div>
             @if ($protectExport || $includeSecrets)
@@ -106,7 +106,7 @@
             @elseif ($status === 'ready')
                 <div class="flex flex-wrap gap-2">
                     <a href="{{ route('settings.transfer.download', $operationId) }}" class="cmp-btn">Download export</a>
-                    @if ($operation->format === 'json')<button type="button" class="cmp-btn cmp-btn-secondary" wire:click="showText">Show text to copy</button>@endif
+                    @if ($operation->format === 'json')<x-confirms-password wire:then="showText"><button type="button" class="cmp-btn cmp-btn-secondary">Show text to copy</button></x-confirms-password>@endif
                 </div>
                 @if ($copyText !== '')
                     <div class="mt-3" x-data="{ copied: false }">
@@ -124,7 +124,7 @@
                         @foreach ($preview['objects'] as $item)
                             <div class="border border-pline rounded p-3" wire:key="transfer-{{ $item['ref'] }}">
                                 <div class="flex gap-2 items-start">
-                                    <input type="checkbox" aria-label="Select {{ $item['name'] }}" wire:model="choices.objects.{{ $item['ref'] }}.selected">
+                                    <x-checkbox aria-label="Select {{ $item['name'] }}" wire:model="choices.objects.{{ $item['ref'] }}.selected" />
                                     <div class="min-w-0"><p class="font-bold break-words">{{ $item['name'] }}</p><p class="text-xs text-fg-muted">{{ $item['type'] }} · {{ $item['ref'] }} @if($item['file_status'])· file: {{ $item['file_status'] }}@endif</p></div>
                                 </div>
                                 <div class="grid gap-2 sm:grid-cols-2 mt-2">

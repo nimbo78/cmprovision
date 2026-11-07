@@ -68,6 +68,7 @@ class ConfigurationImportTest extends TestCase
         $this->assertSame('applied', $operation->fresh()->status);
         $this->assertSame(1, Script::count());
         $this->assertSame(1, $result['counts']['created']);
+        $this->assertSame('Setup', $result['objects']['script-1']['name']);
         $this->assertSame($result, app(TransferImporter::class)->apply($operation->fresh(), $preview['fingerprint']));
         $this->assertSame(1, Script::count());
         $this->assertNull($operation->fresh()->secrets);
