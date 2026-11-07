@@ -129,6 +129,63 @@ class ImageAccessTest(unittest.TestCase):
             self.configure()
         self.assertEqual([], self.commands)
 
+    def test_enabled_login_template_instances_block_rename_including_escaped_names(self):
+        self.write('usr/lib/systemd/system/vendor@.service', '[Service]\nUser=%i\nExecStart=/usr/bin/true\n')
+        directory = self.root / 'etc/systemd/system/multi-user.target.wants'
+        directory.mkdir(parents=True)
+        for instance in ['wlanpi', r'wlan\x70i']:
+            with self.subTest(instance=instance):
+                link = directory / ('vendor@' + instance + '.service')
+                link.symlink_to('/usr/lib/systemd/system/vendor@.service')
+                with self.assertRaisesRegex(access.Failure, 'rename_references'):
+                    self.configure()
+                self.assertEqual([], self.commands)
+                link.unlink()
+
+    def test_template_instances_allow_same_login_updates_and_numeric_uid_instances(self):
+        self.write('usr/lib/systemd/system/vendor@.service', '[Service]\nUser=%i\nExecStart=/usr/bin/true\n')
+        directory = self.root / 'etc/systemd/system/multi-user.target.wants'
+        directory.mkdir(parents=True)
+        link = directory / 'vendor@wlanpi.service'
+        link.symlink_to('/usr/lib/systemd/system/vendor@.service')
+        access.preflight(self.root, access.select_account(self.root, self.settings), dict(self.settings, username='wlanpi'))
+        link.unlink()
+        (directory / 'vendor@1000.service').symlink_to('/usr/lib/systemd/system/vendor@.service')
+        self.configure()
+
+    def test_connection_dependent_ssh_matches_are_rejected_before_account_changes(self):
+        for condition in ['User operator Address 192.0.2.0/24', 'Host *.example.invalid', 'LocalPort 2222', 'Group sudo']:
+            with self.subTest(condition=condition):
+                self.write('etc/ssh/sshd_config', 'Match ' + condition + '\n    PasswordAuthentication no\nMatch all\n')
+                with self.assertRaisesRegex(access.Failure, 'ssh_policy'):
+                    self.configure()
+                self.assertFalse(any(argv[0] in {'usermod', 'useradd', 'chpasswd'} for argv, _ in self.commands))
+                self.assertFalse((self.root / access.STATE / 'receipt.json').exists())
+
+    def test_ssh_includes_are_expanded_recursively_and_absolute_links_stay_in_the_image(self):
+        self.write('etc/ssh/sshd_config', 'Include sshd_config.d/*.conf\n')
+        self.write('etc/ssh/sshd_config.d/10-first.conf', 'Include /opt/vendor/ssh.conf\n')
+        self.write('opt/vendor/real.conf', 'Match User operator Address 192.0.2.0/24\n    PasswordAuthentication no\n')
+        (self.root / 'opt/vendor/ssh.conf').symlink_to('/opt/vendor/real.conf')
+        with self.assertRaisesRegex(access.Failure, 'ssh_policy'):
+            self.configure()
+        self.assertEqual([], self.commands)
+
+    def test_user_only_ssh_matches_are_supported_and_include_cycles_fail_closed(self):
+        self.write('etc/ssh/sshd_config', 'Match User observer\n    PasswordAuthentication no\nMatch all\n')
+        self.configure()
+        self.write('etc/ssh/sshd_config', 'Include /etc/ssh/loop.conf\n')
+        self.write('etc/ssh/loop.conf', 'Include /etc/ssh/loop.conf\n')
+        with self.assertRaisesRegex(access.Failure, 'ssh_policy'):
+            access.preflight(self.root, access.select_account(self.root, self.settings), self.settings)
+
+    def test_escaped_include_globs_fail_closed_instead_of_skipping_conditional_files(self):
+        self.write('etc/ssh/sshd_config', r'Include /etc/ssh/sshd_config.d/\[conditional\].conf' + '\n')
+        self.write('etc/ssh/sshd_config.d/[conditional].conf', 'Match User operator Address 192.0.2.0/24\n    PasswordAuthentication no\n')
+        with self.assertRaisesRegex(access.Failure, 'ssh_policy'):
+            self.configure()
+        self.assertEqual([], self.commands)
+
     def test_user_policy_does_not_replace_global_ssh_settings_or_existing_keys_when_empty(self):
         self.write('home/wlanpi/.ssh/authorized_keys', '# existing image key\n')
         self.configure()

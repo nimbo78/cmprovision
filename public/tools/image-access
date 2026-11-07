@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shlex
 import stat
 import struct
 import subprocess
@@ -250,6 +251,89 @@ def regular_files(root, member):
     return result
 
 
+def ssh_include_files(root, pattern):
+    """Expand OpenSSH includes inside the image, including absolute image symlinks."""
+    path = PurePosixPath(pattern)
+    if '..' in path.parts or '~' in pattern or '**' in pattern:
+        raise Failure('ssh_policy')
+    parts = [part for part in path.parts if part != '/']
+    if not path.is_absolute():
+        parts = ['etc', 'ssh', *parts]
+    candidates = ['']
+    for part in parts:
+        expanded = []
+        for candidate in candidates:
+            directory = resolved_read(root, candidate)
+            if not directory.is_dir():
+                continue
+            for entry in sorted(directory.iterdir()):
+                if entry.name.startswith('.') and not part.startswith('.'):
+                    continue
+                if fnmatch.fnmatchcase(entry.name, part):
+                    expanded.append((PurePosixPath(candidate) / entry.name).as_posix())
+                if len(expanded) > 256:
+                    raise Failure('ssh_policy')
+        candidates = expanded
+    return [resolved_read(root, member).relative_to(root).as_posix() for member in candidates
+            if resolved_read(root, member).is_file()]
+
+
+def check_ssh_conditions(root):
+    """Only user-only matches can be proven with one effective-policy check.
+
+    Reject connection/group-dependent policy before mutation rather than sample a
+    few client addresses and report access that can fail for other real clients.
+    """
+    active = set()
+    count = 0
+
+    def inspect(member):
+        nonlocal count
+        member = resolved_read(root, member).relative_to(root).as_posix()
+        count += 1
+        if member in active or len(active) >= 16 or count > 256:
+            raise Failure('ssh_policy')
+        active.add(member)
+        for line in read(root, member).splitlines():
+            try:
+                tokens = shlex.split(line, comments=True)
+            except ValueError:
+                raise Failure('ssh_policy') from None
+            if not tokens:
+                continue
+            if '=' in tokens[0]:
+                keyword, value = tokens[0].split('=', 1)
+                tokens = [keyword, *([value] if value else []), *tokens[1:]]
+            if len(tokens) > 1 and tokens[1] == '=':
+                tokens.pop(1)
+            keyword = tokens[0].lower()
+            # Do not confuse OpenSSH glob escaping with shlex token escaping.
+            if keyword in {'match', 'include'} and '\\' in line:
+                raise Failure('ssh_policy')
+            if keyword == 'match':
+                supported = len(tokens) == 2 and tokens[1].lower() == 'all' \
+                    or len(tokens) == 3 and tokens[1].lower() == 'user'
+                if not supported:
+                    raise Failure('ssh_policy')
+            elif keyword == 'include':
+                if len(tokens) < 2:
+                    raise Failure('ssh_policy')
+                for pattern in tokens[1:]:
+                    for child in ssh_include_files(root, pattern):
+                        inspect(child)
+        active.remove(member)
+
+    inspect('etc/ssh/sshd_config')
+
+
+def unit_names_login(name, login):
+    if '@' not in name or '.' not in name:
+        return False
+    instance = name.split('@', 1)[1].rsplit('.', 1)[0]
+    instance = re.sub(r'\\x([a-fA-F0-9]{2})', lambda match: chr(int(match[1], 16)), instance)
+    return instance == login
+
+
 def preflight(root, selected, settings):
     release = checked(root, 'etc/os-release') if not (root / 'etc/os-release').is_symlink() else None
     if release is None:
@@ -281,6 +365,8 @@ def preflight(root, selected, settings):
         renamed_metadata(root, selected['name'], settings['username'])
         for folder in ['usr/lib/systemd/system', 'etc/systemd/system']:
             members = regular_files(root, folder)
+            if any(unit_names_login(PurePosixPath(member).name, selected['name']) for member in members):
+                raise Failure('rename_references')
             directory = checked(root, folder)
             if directory.exists():
                 for parent, directories, files in os.walk(directory, followlinks=False):
@@ -290,6 +376,8 @@ def preflight(root, selected, settings):
                         if path.is_symlink():
                             target = resolved_read(root, path.relative_to(root).as_posix())
                             if target.is_file():
+                                if unit_names_login(path.name, selected['name']):
+                                    raise Failure('rename_references')
                                 members.append(target.relative_to(root).as_posix())
                     if len(members) > 8192:
                         raise Failure('unsupported_image')
@@ -307,6 +395,7 @@ def preflight(root, selected, settings):
                     index = 1 if fields[0].startswith('@') else 5
                     if len(fields) > index and fields[index] == selected['name']:
                         raise Failure('rename_references')
+    check_ssh_conditions(root)
 
 
 def user_ssh_policy(settings):

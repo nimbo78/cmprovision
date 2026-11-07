@@ -44,7 +44,7 @@ A rename preserves UID, primary GID, supplementary groups, file ownership and th
 
 The first implementation requires an **arm64** Raspberry Pi OS/Debian-style system, the **64-bit utility OS**, and an ext4 root on partition 2 of `/dev/mmcblkN`. The image must already include Python 3, `useradd`, `usermod`, `chpasswd`, sudo/visudo, OpenSSH server/key tools, systemd and the `sudo` group. It does not download missing packages while provisioning.
 
-Existing forced commands, MFA, group login restrictions or conflicting per-user SSH rules may prevent this profile from establishing the requested access. They cause a compatibility failure rather than a successful result with an unusable login. Other accounts' SSH authentication is preserved.
+Existing forced commands, MFA, group login restrictions or conflicting per-user SSH rules may prevent this profile from establishing the requested access. Only `Match User` and `Match all` are supported, including recursively included files; connection-dependent and group-dependent matches, include cycles and unsupported escaping are rejected before changing accounts. Enabled service instances naming the old login also block a rename, including escaped names; numeric UID instances and same-login updates remain supported. These cases cause a compatibility failure rather than a successful result with an unusable login. Other accounts' SSH authentication is preserved.
 
 The separate **cmprovision station image — access and Wi-Fi** profile retains its schema-1 behavior, management Wi-Fi and station first-boot checks. Use that profile when preparing a new provisioner. This SSH-only profile does not configure Wi-Fi, station roles or web users.
 

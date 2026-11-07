@@ -17,7 +17,9 @@ assert root.parent.name.startswith('cmp-image-access-rootfs-') and root.name == 
 assert os.geteuid() == 0 and root.is_dir() and not root.is_symlink()
 assert os.readlink('/proc/self/ns/pid') != os.readlink('/proc/1/ns/pid'), 'Private PID namespace required'
 mode = sys.argv[3] if len(sys.argv) > 3 else 'pristine'
-assert mode in {'pristine', 'existing', 'keys', 'blocked', 'conflict', 'vendor', 'vendor-keys'}
+assert mode in {'pristine', 'existing', 'keys', 'blocked', 'conflict', 'vendor', 'vendor-keys',
+                'conditional', 'template', 'template-escaped', 'user-match'}
+existing_modes = {'existing', 'blocked', 'conflict', 'conditional', 'template', 'template-escaped', 'user-match'}
 helper = importlib.machinery.SourceFileLoader('image_access', sys.argv[2]).load_module()
 mounts = []
 commands = []
@@ -62,12 +64,12 @@ try:
     identity = {'schema': 1, 'serial': '1000000012345678', 'cid': 'a' * 32, 'run': 'r' * 40}
     settings = {'schema': 2, 'profile': 'raspios', 'hostname': '', 'username': 'operator', 'source_username': '',
                 'password_hash': password, 'keys': [], 'ssh': True, 'wifi': None, 'sudo_passwordless': False}
-    if mode in {'existing', 'blocked', 'conflict'}:
+    if mode in existing_modes:
         run(['/usr/lib/userconf-pi/userconf', 'wlanpi', ''])
-    if mode in {'existing', 'blocked', 'conflict', 'vendor', 'vendor-keys'}:
+    if mode in existing_modes | {'vendor', 'vendor-keys'}:
         run(['useradd', '--create-home', '--shell', '/bin/bash', 'observer'])
         settings['username'] = 'wlanpi'
-    selected = 'wlanpi' if mode in {'existing', 'blocked', 'conflict', 'vendor', 'vendor-keys'} else 'pi'
+    selected = 'wlanpi' if mode in existing_modes | {'vendor', 'vendor-keys'} else 'pi'
     before = run(['getent', 'passwd', selected]).decode().strip().split(':')
     groups_before = set(run(['id', '-G', selected]).decode().split())
     marker = root / before[5].lstrip('/') / 'keep-this-file'
@@ -79,17 +81,29 @@ try:
     if mode == 'conflict':
         with (root / 'etc/ssh/sshd_config').open('a') as file:
             file.write('\nMatch User wlanpi\n    PasswordAuthentication no\n')
+    if mode == 'conditional':
+        included = root / 'etc/ssh/sshd_config.d/70-conditional.conf'
+        included.write_text('Match User wlanpi Address 192.0.2.0/24\n    PasswordAuthentication no\nMatch all\n')
+    if mode in {'template', 'template-escaped'}:
+        settings['username'] = 'operator'
+        unit = root / 'usr/lib/systemd/system/vendor@.service'
+        unit.write_text('[Service]\nUser=%i\nExecStart=/usr/bin/true\n')
+        instance = 'wlanpi' if mode == 'template' else r'wlan\x70i'
+        (root / ('etc/systemd/system/multi-user.target.wants/vendor@' + instance + '.service')).symlink_to('/usr/lib/systemd/system/vendor@.service')
+    if mode == 'user-match':
+        with (root / 'etc/ssh/sshd_config').open('a') as file:
+            file.write('\nMatch User observer\n    PasswordAuthentication no\nMatch all\n')
     if mode in {'keys', 'vendor-keys'}:
         key = (runtime / 'host.pub').read_text().split()
         settings.update(password_hash=None, keys=[' '.join(key[:2])], sudo_passwordless=True)
-    other_before = ssh_options('observer') if mode in {'existing', 'conflict', 'vendor', 'vendor-keys'} else None
+    other_before = ssh_options('observer') if mode in {'existing', 'conflict', 'vendor', 'vendor-keys', 'user-match'} else None
     passwd_before = (root / 'etc/passwd').read_text()
-    if mode in {'blocked', 'conflict'}:
+    if mode in {'blocked', 'conflict', 'conditional', 'template', 'template-escaped'}:
         try:
             helper.configure(root, identity, settings, run)
             raise AssertionError('Unsafe rename or conflicting authentication was accepted')
         except helper.Failure as error:
-            assert error.code == ('rename_references' if mode == 'blocked' else 'ssh_policy'), error.code
+            assert error.code == ('rename_references' if mode in {'blocked', 'template', 'template-escaped'} else 'ssh_policy'), error.code
         assert (root / 'etc/passwd').read_text() == passwd_before
         assert not (root / helper.STATE / 'receipt.json').exists()
     else:
