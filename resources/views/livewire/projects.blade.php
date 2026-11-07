@@ -2,8 +2,9 @@
     <div class="contents">
         <div class="cmp-title">
             <h1>Projects</h1>
+            <button type="button" wire:click="createWizard" class="cmp-btn">Create with wizard</button>
             <a href="{{ route('settings.transfer') }}" class="cmp-btn cmp-btn-secondary">Import / export</a>
-            <button wire:click="create()" class="cmp-btn ml-auto">Add project</button>
+            <button wire:click="create()" class="cmp-btn cmp-btn-secondary ml-auto">Add project</button>
         </div>
         <div class="cmp-card px-4 py-3">
             @if (session()->has('message'))
@@ -16,7 +17,7 @@
                 </div>
             @endif
             @if($isOpen)
-                @include('livewire.editproject')
+                @include($wizardMode ? 'livewire.project-wizard' : 'livewire.editproject')
             @endif
             <div class="cmp-card-scroll">
                 <table class="cmp-table w-full">
@@ -34,6 +35,7 @@
                             <td>@if ($p->image) {{ $p->image->filename }} @else - @endif</td>
                             <td>
                                 <button wire:click="edit({{ $p->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
+                                <button type="button" wire:click="createWizard({{ $p->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Copy with wizard</button>
                                 <a href="{{ route('settings.transfer', ['project' => $p->id]) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Export</a>
                                 <button wire:click="setActive({{ $p->id }})" class="cmp-btn cmp-btn-small">Set active</button>
                                 <button wire:click="delete({{ $p->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
