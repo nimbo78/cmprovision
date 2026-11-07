@@ -237,6 +237,19 @@ class ConfigurationTransfer extends Component
         });
     }
 
+    public function retryFileCleanup(): void
+    {
+        $this->ensurePasswordIsConfirmed();
+        $this->attempt(function () {
+            $row = $this->owned();
+            abort_unless($row->direction === 'import' && $row->status === 'applied', 409);
+            $complete = app(TransferWorkspace::class)->locked($row,
+                fn () => app(\App\Services\Configuration\TransferRetirement::class)->finish($row));
+            $this->notice = $complete ? 'Superseded file cleanup completed.'
+                : 'File cleanup is still pending. Check the file store permissions, then retry.';
+        });
+    }
+
     private function owned(): ConfigurationTransferOperation
     {
         return app(TransferWorkspace::class)->owned($this->operationId, auth()->id(), session()->getId());

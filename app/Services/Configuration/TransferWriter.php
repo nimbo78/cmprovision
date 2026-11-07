@@ -21,7 +21,7 @@ class TransferWriter
 {
     public function apply(array $plans, array $assets): array
     {
-        $objects = $drafts = $followups = [];
+        $objects = $drafts = $followups = $retired = [];
         $counts = ['created' => 0, 'reused' => 0, 'replaced' => 0, 'skipped' => 0];
         foreach ($plans as $ref => $plan) {
             $type = $plan['type'];
@@ -53,6 +53,11 @@ class TransferWriter
                     'image' => Image::class, 'package' => Package::class, 'switch' => EthernetSwitch::class,
                     'host' => Host::class, 'notification' => NotificationChannel::class][$type];
                 $model = $action === 'replace' ? $class::findOrFail($id) : new $class;
+                if ($action === 'replace' && in_array($type, ['image', 'package'], true)) {
+                    foreach ($type === 'image' ? ['filename_on_server', 'split_filename'] : ['filename_on_server'] as $field) {
+                        if ($model->$field) $retired[$type.':'.$model->$field] = ['type' => $type, 'filename' => $model->$field];
+                    }
+                }
                 if (in_array($type, ['project', 'script', 'label', 'notification'], true) && $action !== 'replace') {
                     $base = $data['name'];
                     $name = $base;
@@ -95,7 +100,7 @@ class TransferWriter
             $objects[$ref] = compact('type', 'action', 'id');
             if (isset($data['name'])) $objects[$ref]['name'] = $data['name'];
         }
-        return ['result' => compact('objects', 'counts', 'followups'), 'drafts' => $drafts];
+        return ['result' => compact('objects', 'counts', 'followups'), 'drafts' => $drafts, 'retired' => array_values($retired)];
     }
 
     private function settings(array $data, array $objects, array &$followups): void

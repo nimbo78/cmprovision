@@ -45,7 +45,7 @@ Saving/forgetting the master password, preparing an export, viewing/downloading 
 5. Select **Update preview** after changing choices. Required dependencies must remain selected unless you reuse a complete receiving project instead.
 6. Select **Apply reviewed import**. Application runs in the images queue. Its final report lists created, reused, replaced and skipped objects.
 
-An active project and dependencies used by it or by a running device cannot be replaced. Choose a copy, or wait until they are unused. EEPROM files are immutable: reuse matching bytes or create a separate copy.
+An active project and dependencies used by it or by a running device cannot be replaced. Images with pending split preparation also require a copy or waiting until preparation finishes. EEPROM files are immutable: reuse matching bytes or create a separate copy.
 
 If receiving configuration changes after preview, review again. A retry of an already applied operation returns its saved result and object IDs. The operation address survives a page reload in the same signed-in browser session. It is unavailable to another user/session and expires after 24 hours.
 
@@ -60,6 +60,8 @@ Some settings require another action:
 - **DHCP reservations:** definitions are saved first. Apply the report's DHCP action while the stand is idle to regenerate the host section and restart DHCP; other dnsmasq options are retained.
 - **USB preparation:** rebuild the selected EEPROM image through the report before enabling USB preparation. Import leaves that mode off.
 
+An expired or removed network draft is discarded with a notice; normal network settings remain accessible.
+
 ## Limits and recovery
 
 The manifest limit is 16 MiB; protected text is at most 32 MiB. A transfer contains at most 2048 objects and 4096 archive entries. The archive format supports 64 GiB, while the installed package's normal HTTP upload limit is 8 GiB. For larger images, use the existing image-upload workflow and transfer their definitions as JSON.
@@ -67,6 +69,8 @@ The manifest limit is 16 MiB; protected text is at most 32 MiB. A transfer conta
 Image verification permits up to 512 GiB unpacked data, with a two-hour per-file timeout and an XZ decoder memory limit of 128 MiB. Repack an unusually high-memory XZ image before importing it.
 
 Keep both queue workers running, especially the images worker. Temporary transfer files live privately under `storage/framework/configuration-transfer`, outside ordinary backups. Cleanup runs when new operations start and through a delayed images-queue job after expiry; a stopped worker delays that scheduled cleanup. Cancel removes an unused transfer's temporary files. Unregistered staged assets are cleaned on failure, retry or expiry; committed assets remain registered.
+
+Replacing an image or package retires its superseded files only after the import commits. Files still referenced by another record are retained, including shared image split files. If cleanup cannot finish, the applied result stays saved and the report offers **Retry file cleanup**. Check file-store permissions before retrying; expiry cleanup also retries pending files.
 
 If preparation fails, check its message, available space and password, then start a new transfer. If application stops, refresh the preview before retrying. If the result is temporarily unavailable, reopen the same operation first so its committed result can be recovered.
 

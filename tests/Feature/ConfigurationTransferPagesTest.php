@@ -216,6 +216,45 @@ class ConfigurationTransferPagesTest extends TestCase
         $this->assertArrayNotHasKey('dhcp', $row->fresh()->result['followups']);
     }
 
+    public function test_pending_file_cleanup_is_visible_retryable_and_keeps_the_applied_result(): void
+    {
+        $this->confirmed();
+        $filename = 'transfer-retired-'.bin2hex(random_bytes(6)).'.gz';
+        $path = public_path('uploads/'.$filename);
+        File::ensureDirectoryExists(dirname($path));
+        file_put_contents($path, 'superseded file');
+        $row = $this->workspace->create(auth()->id(), session()->getId(), 'import');
+        $result = ['counts' => ['created' => 0, 'replaced' => 1, 'reused' => 0, 'skipped' => 0],
+            'objects' => [], 'followups' => []];
+        $row->update(['status' => 'applied', 'result' => $result,
+            'options' => ['retired' => [['type' => 'image', 'filename' => $filename]]]]);
+        try {
+            Livewire::test(ConfigurationTransfer::class)->call('openOperation', $row->id)
+                ->assertSee('Retry file cleanup')->call('retryFileCleanup')->assertHasNoErrors()
+                ->assertSee('Superseded file cleanup completed.')->assertDontSee('Retry file cleanup');
+            $this->assertFileDoesNotExist($path);
+            $this->assertArrayNotHasKey('retired', $row->fresh()->options);
+            $this->assertSame($result, $row->fresh()->result);
+        } finally { @unlink($path); }
+    }
+
+    public static function unavailableDrafts(): array { return [['expired'], ['deleted']]; }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('unavailableDrafts')]
+    public function test_unavailable_import_draft_does_not_block_normal_network_settings(string $state): void
+    {
+        $this->confirmed();
+        $row = $this->workspace->create(auth()->id(), session()->getId(), 'import');
+        $row->update(['status' => 'applied', 'options' => ['drafts' => ['network-1' => ['data' => ['name' => 'Old draft']]]]]);
+        session()->put('configuration_transfer_draft', ['operation' => $row->id, 'ref' => 'network-1']);
+        if ($state === 'expired') $row->update(['expires_at' => now()->subSecond()]);
+        else $row->delete();
+        $this->mock(\App\Services\NetworkChanges::class)->shouldReceive('available')->andReturn(false);
+        Livewire::test(\App\Http\Livewire\NetworkSettings::class)->assertStatus(200)
+            ->assertSet('importSource', null)->assertSee('Ethernet and VLAN profiles');
+        $this->assertNull(session('configuration_transfer_draft'));
+    }
+
     private function confirmed(): void
     {
         $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);

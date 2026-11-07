@@ -92,4 +92,12 @@ class LabelWizardTest extends TestCase
             ->call('nextWizardStep')->assertHasErrors('print_command')->set('print_command', 'cat $file')
             ->call('nextWizardStep')->assertHasNoErrors()->assertSet('wizardStep', 3);
     }
+
+    public function test_client_credentials_are_cleared_only_after_the_connection_step_consumes_them(): void
+    {
+        Livewire::test(Labels::class)->call('createWizard')->set('name', 'FTP')->set('printer_type', 'ftp')
+            ->call('nextWizardStep', ['ftp_password' => 'new-private-password'])->assertNotDispatched('wizard-credentials-stored')
+            ->set('ftp_hostname', '192.0.2.10')->set('ftp_username', 'printer')
+            ->call('nextWizardStep', ['ftp_password' => 'new-private-password'])->assertDispatched('wizard-credentials-stored');
+    }
 }

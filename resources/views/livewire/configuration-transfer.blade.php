@@ -168,6 +168,12 @@
             @endif
             @if ($report && $status === 'applied')
                 <p class="text-sm my-3">Created {{ $report['counts']['created'] }} · reused {{ $report['counts']['reused'] }} · replaced {{ $report['counts']['replaced'] }} · skipped {{ $report['counts']['skipped'] }}</p>
+                @if (!empty($operation->options['retired']))
+                    <div class="rounded bg-warn-bg text-warn p-3 my-3">
+                        <p class="text-sm">Superseded file cleanup is pending. The imported configuration is saved; old files will be retried on cleanup.</p>
+                        <x-confirms-password wire:then="retryFileCleanup"><button type="button" class="cmp-btn cmp-btn-secondary mt-2" wire:loading.attr="disabled">Retry file cleanup</button></x-confirms-password>
+                    </div>
+                @endif
                 <div class="space-y-2">
                     @foreach ($report['objects'] as $ref => $item)
                         <div class="text-sm">{{ $item['name'] ?? $ref }} · {{ $item['action'] }}

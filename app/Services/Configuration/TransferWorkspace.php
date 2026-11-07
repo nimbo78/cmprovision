@@ -98,6 +98,7 @@ class TransferWorkspace
             }
             $directory = $root.'/'.$operation->id;
             if (!file_exists($directory) && !is_link($directory)) {
+                if ($operation->status === 'applied' && !app(TransferRetirement::class)->finish($operation)) continue;
                 $operation->delete();
                 continue;
             }
@@ -116,6 +117,7 @@ class TransferWorkspace
                 if ($current !== null && $current->expires_at->isFuture()) {
                     continue;
                 }
+                if ($current?->status === 'applied' && !app(TransferRetirement::class)->finish($current)) continue;
                 if ($current !== null) app(TransferAssets::class)->cleanup($current);
                 if (File::deleteDirectory($directory)) {
                     $current?->delete();

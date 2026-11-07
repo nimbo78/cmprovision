@@ -225,6 +225,7 @@ class Labels extends Component
             if ($this->printer_type === 'ftp') $this->keepWizardData(['ftp' => [
                 'hostname' => $this->ftp_hostname, 'username' => $this->ftp_username, 'password' => $values['ftp_password'],
             ]]);
+            $this->dispatch('wizard-credentials-stored');
         }
         if ($this->wizardStep === 3) $this->validate(['template' => 'required|string']);
     }

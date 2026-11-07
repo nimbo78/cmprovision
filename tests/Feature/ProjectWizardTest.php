@@ -84,7 +84,7 @@ class ProjectWizardTest extends TestCase
             ->set('station.wifi', true)->set('station.ssid', 'Workshop')->set('station.country', 'RU');
         while ($component->get('wizardStep') < 6) $component->call('nextWizardStep')->assertHasNoErrors();
         $component->call('nextWizardStep', ['password' => 'private-linux-password', 'wifi_password' => 'private-wifi-password'])
-            ->assertHasNoErrors()->assertSet('wizardStep', 7);
+            ->assertHasNoErrors()->assertSet('wizardStep', 7)->assertDispatched('wizard-credentials-stored');
         $this->assertStringNotContainsString('private-linux-password', json_encode($component->snapshot));
         $this->assertStringNotContainsString('private-wifi-password', json_encode($component->snapshot));
         $this->assertStringNotContainsString('private-wifi-password', session('configuration_wizards.'.$component->get('wizardToken')));

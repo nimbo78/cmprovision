@@ -89,7 +89,7 @@ class TransferPreview
             $normalized = null;
             $errors = [];
             if (!$missing) {
-                try { $normalized = $this->normalize($type, $data); }
+                try { $normalized = $this->normalize($type, $data, $plans); }
                 catch (ValidationException $error) { $errors = $error->errors(); }
             }
             $candidates = $this->candidates($object, $normalized === null ? null : $this->comparison($type, $normalized, $plans), $choice['target'] ?? null);
@@ -126,7 +126,7 @@ class TransferPreview
                 $usedScripts[$target] = true;
             }
             if ($isSelected && $action === 'replace' && TransferState::protected($type, $target)) {
-                $errors['action'] = ['This object is used by the active project or a running device. Choose a copy or wait until it is unused.'];
+                $errors['action'] = ['This object is used by an active project, running device or image preparation. Choose a copy or wait until it is unused.'];
             }
             if ($isSelected && in_array($action, ['reuse', 'replace'], true) && $targetRow === null) {
                 $requirements[] = $this->requirement($ref, 'target', 'Choose an existing receiving object.');
@@ -187,9 +187,17 @@ class TransferPreview
             'private' => ['choices' => $choices, 'objects' => $plans, 'receiver' => $snapshot, 'revision' => $revision, 'fingerprint' => $fingerprint]];
     }
 
-    private function normalize(string $type, array $data): array
+    private function normalize(string $type, array $data, array $plans): array
     {
-        return $this->definitions->normalize($type, $data, $this->known);
+        $effective = $this->known;
+        if ($type === 'project') {
+            foreach ($plans as $ref => $plan) {
+                if ($plan['type'] === 'script' && $plan['action'] !== 'skip') {
+                    $effective[$ref] = ['type' => 'script', 'data' => $plan['data']];
+                }
+            }
+        }
+        return $this->definitions->normalize($type, $data, $effective);
     }
 
     private function candidates(array $object, ?array $wanted = null, int|string|null $target = null): array

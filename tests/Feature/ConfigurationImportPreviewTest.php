@@ -218,6 +218,27 @@ class ConfigurationImportPreviewTest extends TestCase
         $this->assertContains('selectedScripts', array_column($preview['requirements'], 'field'));
     }
 
+    public static function mappedScriptPhases(): array
+    {
+        return [['postinstall', 'firstboot', false], ['firstboot', 'postinstall', true]];
+    }
+
+    #[DataProvider('mappedScriptPhases')]
+    public function test_project_checks_follow_the_effective_mapped_script_phase(string $source, string $receiver, bool $allowed): void
+    {
+        $manifest = $this->manifest();
+        $manifest['objects'][0]['data']['script_type'] = $source;
+        $existing = Script::create(array_replace($manifest['objects'][0]['data'], ['name' => 'Receiver script', 'script_type' => $receiver]));
+        $project = $this->projectObject();
+        $project['data']['os_check'] = false;
+        $manifest['objects'][] = $project;
+        $manifest['roots'] = ['project-1'];
+        $preview = app(TransferImporter::class)->preview($this->prepare($manifest),
+            ['objects' => ['script-1' => ['action' => 'reuse', 'target' => $existing->id]]]);
+        $this->assertSame($allowed, $preview['can_apply']);
+        if (!$allowed) $this->assertContains('selectedScripts', array_column($preview['requirements'], 'field'));
+    }
+
     public function test_singleton_settings_conflict_requires_explicit_replacement(): void
     {
         Setting::create(['key' => 'netbox_site', 'value' => 'Existing site']);

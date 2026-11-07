@@ -335,6 +335,7 @@ class Projects extends Component
                 throw ValidationException::withMessages(collect($error->errors())->mapWithKeys(fn ($value, $field) => ['station.'.$field => $value])->all());
             }
             $this->keepWizardData(['station_setup' => $setup]);
+            $this->dispatch('wizard-credentials-stored');
             $this->savedStationSetup = true;
             $this->station['password'] = $this->station['wifi_password'] = '';
         }

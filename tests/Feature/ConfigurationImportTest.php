@@ -396,6 +396,122 @@ class ConfigurationImportTest extends TestCase
         $this->assertNull(Project::getActiveId());
     }
 
+    public function test_replacing_an_image_retires_its_original_and_split_files_only_after_commit(): void
+    {
+        [$image, $original, $split] = $this->retirementImage();
+        [$operation, $preview] = $this->prepared($this->imageManifest(), ['objects' => ['image-1' => ['action' => 'replace', 'target' => $image->id]]], true);
+        $this->assertTrue($preview['can_apply']);
+        app(TransferImporter::class)->apply($operation, $preview['fingerprint']);
+        $this->assertFileExists($image->fresh()->imagepath());
+        $this->assertFileDoesNotExist($original);
+        $this->assertFileDoesNotExist($split);
+    }
+
+    public function test_replacement_rollback_preserves_the_original_and_split_files(): void
+    {
+        [$image, $original, $split] = $this->retirementImage();
+        $manifest = $this->imageManifest();
+        $manifest['roots'][] = 'script-1';
+        $manifest['objects'][] = $this->manifest()['objects'][0];
+        [$operation, $preview] = $this->prepared($manifest, ['objects' => ['image-1' => ['action' => 'replace', 'target' => $image->id]]], true);
+        Event::listen('eloquent.creating: '.Script::class, function () { throw new RuntimeException('rollback fixture'); });
+        try {
+            app(TransferImporter::class)->apply($operation, $preview['fingerprint']);
+            $this->fail('The injected transaction error must roll back the replacement.');
+        } catch (RuntimeException $error) {
+            $this->assertSame($original, $image->fresh()->imagepath());
+            $this->assertSame(basename($split), $image->fresh()->split_filename);
+            $this->assertFileExists($original);
+            $this->assertFileExists($split);
+        }
+    }
+
+    public function test_replacement_keeps_files_referenced_by_another_image_as_original_or_split(): void
+    {
+        [$image, $original, $split] = $this->retirementImage();
+        Image::forceCreate(['filename' => 'other.img.gz', 'filename_on_server' => basename($split), 'filename_extension' => 'gz',
+            'sha256' => hash_file('sha256', $split), 'uncompressed_sha256' => hash('sha256', 'image'), 'uncompressed_size' => 5,
+            'split_filename' => basename($original)]);
+        [$operation, $preview] = $this->prepared($this->imageManifest(), ['objects' => ['image-1' => ['action' => 'replace', 'target' => $image->id]]], true);
+        app(TransferImporter::class)->apply($operation, $preview['fingerprint']);
+        $this->assertFileExists($original);
+        $this->assertFileExists($split);
+    }
+
+    public function test_replacing_a_package_retires_its_old_file(): void
+    {
+        $path = public_path('uploads/packages/transfer-source-'.bin2hex(random_bytes(6)).'.deb');
+        if (!is_dir(dirname($path))) mkdir(dirname($path), 0755, true);
+        file_put_contents($path, 'disposable verified receiver package');
+        $this->publicFiles[] = $path;
+        $data = ['filename' => 'sensor.deb', 'deb_package' => 'sensor-tools', 'deb_version' => '1.0', 'deb_architecture' => 'all'];
+        $package = Package::create($data + ['filename_on_server' => basename($path), 'sha256' => hash_file('sha256', $path), 'size' => filesize($path)]);
+        $manifest = $this->manifest();
+        $manifest['roots'] = ['package-1'];
+        $manifest['objects'] = [['ref' => 'package-1', 'type' => 'package', 'data' => $data, 'omitted_secrets' => [],
+            'file' => ['member' => 'files/package-1.deb', 'size' => filesize($path), 'sha256' => hash_file('sha256', $path), 'included' => false]]];
+        [$operation, $preview] = $this->prepared($manifest, ['objects' => ['package-1' => ['action' => 'replace', 'target' => $package->id]]]);
+        app(TransferImporter::class)->apply($operation, $preview['fingerprint']);
+        $this->assertFileExists($package->fresh()->path());
+        $this->assertFileDoesNotExist($path);
+    }
+
+    public function test_an_image_with_pending_split_work_cannot_be_replaced_but_can_be_copied(): void
+    {
+        $image = $this->sourceImage();
+        $image->forceFill(['split_queued_at' => now()])->save();
+        [$operation, $preview] = $this->prepared($this->imageManifest(), ['objects' => ['image-1' => ['action' => 'replace', 'target' => $image->id]]], true);
+        $this->assertFalse($preview['can_apply']);
+        $copy = app(TransferImporter::class)->preview($operation, ['objects' => ['image-1' => ['action' => 'copy']]]);
+        $this->assertTrue($copy['can_apply']);
+    }
+
+    public function test_failed_retirement_stays_durable_and_an_applied_retry_keeps_the_same_mapping(): void
+    {
+        [$image, $original, $split] = $this->retirementImage();
+        $this->app->instance(\App\Services\Configuration\TransferRetirement::class,
+            new \App\Services\Configuration\TransferRetirement(fn ($path) => false));
+        [$operation, $preview] = $this->prepared($this->imageManifest(), ['objects' => ['image-1' => ['action' => 'replace', 'target' => $image->id]]], true);
+        $result = app(TransferImporter::class)->apply($operation, $preview['fingerprint']);
+        $this->assertSame('applied', $operation->fresh()->status);
+        $this->assertNotEmpty($operation->fresh()->options['retired']);
+        $this->assertFileExists($original);
+        $this->app->forgetInstance(\App\Services\Configuration\TransferRetirement::class);
+        $this->assertSame($result, app(TransferImporter::class)->apply($operation->fresh(), $preview['fingerprint']));
+        $this->assertEmpty($operation->fresh()->options['retired'] ?? []);
+        $this->assertFileDoesNotExist($original);
+        $this->assertFileDoesNotExist($split);
+    }
+
+    public function test_expiry_can_retry_retirement_without_the_private_operation_directory(): void
+    {
+        [$image, $original, $split] = $this->retirementImage();
+        $this->app->instance(\App\Services\Configuration\TransferRetirement::class,
+            new \App\Services\Configuration\TransferRetirement(fn ($path) => false));
+        [$operation, $preview] = $this->prepared($this->imageManifest(), ['objects' => ['image-1' => ['action' => 'replace', 'target' => $image->id]]], true);
+        app(TransferImporter::class)->apply($operation, $preview['fingerprint']);
+        $directory = dirname($this->workspace->path($operation, 'operation.lock'));
+        File::deleteDirectory($directory);
+        $operation->update(['expires_at' => now()->subSecond()]);
+        $this->workspace->prune();
+        $this->assertNotNull($operation->fresh(), 'The pending retirement ledger must survive an unavailable file store.');
+        $this->app->forgetInstance(\App\Services\Configuration\TransferRetirement::class);
+        $this->workspace->prune();
+        $this->assertFileDoesNotExist($original);
+        $this->assertFileDoesNotExist($split);
+        $this->assertNull($operation->fresh());
+    }
+
+    private function retirementImage(): array
+    {
+        $image = $this->sourceImage();
+        $split = public_path('uploads/transfer-old-split-'.bin2hex(random_bytes(6)).'.gz');
+        file_put_contents($split, gzencode('image'));
+        $this->publicFiles[] = $split;
+        $image->forceFill(['split_filename' => basename($split), 'split_offsets' => '[0,1,2]', 'split_piece_mb' => 4])->save();
+        return [$image, $image->imagepath(), $split];
+    }
+
     private function setKey(string $key): void
     {
         config(['app.key' => $key]);

@@ -69,7 +69,10 @@ class TransferImporter
     {
         return $this->workspace->locked($operation, function () use ($operation, $previewFingerprint) {
             if ($operation->direction !== 'import') throw new RuntimeException('This operation is not an import.');
-            if ($operation->status === 'applied') return $operation->result;
+            if ($operation->status === 'applied') {
+                app(TransferRetirement::class)->finish($operation);
+                return $operation->result;
+            }
             $saved = $operation->options['preview'] ?? null;
             if (!in_array($operation->status, ['previewed', 'applying'], true) || !is_array($saved)
                 || !hash_equals($saved['fingerprint'], $previewFingerprint)) {
@@ -92,7 +95,7 @@ class TransferImporter
                     }
                     $written = app(TransferWriter::class)->apply($resolved['private']['objects'], $staged);
                     $current->update(['status' => 'applied', 'result' => $written['result'], 'secrets' => null, 'error' => null,
-                        'options' => ['drafts' => $written['drafts']]]);
+                        'options' => ['drafts' => $written['drafts'], 'retired' => $written['retired']]]);
                     return $written['result'];
                 });
             } catch (Throwable $error) {
@@ -104,6 +107,7 @@ class TransferImporter
                 }
                 if ($current?->status === 'applied') {
                     $operation->setRawAttributes($current->getAttributes(), true);
+                    app(TransferRetirement::class)->finish($operation);
                     $this->clearPreparedFiles($operation);
                     $source = $this->workspace->path($operation, 'source');
                     if (is_file($source)) @unlink($source);
@@ -113,6 +117,7 @@ class TransferImporter
                 throw new RuntimeException('The import was not applied. Review the preview and available space, then try again.');
             }
             $operation->refresh();
+            app(TransferRetirement::class)->finish($operation);
             $this->clearPreparedFiles($operation);
             $source = $this->workspace->path($operation, 'source');
             if (is_file($source)) @unlink($source);

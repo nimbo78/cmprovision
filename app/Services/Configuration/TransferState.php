@@ -4,6 +4,7 @@ namespace App\Services\Configuration;
 
 use App\Models\Cm;
 use App\Models\Project;
+use App\Models\Image;
 use Illuminate\Support\Facades\DB;
 
 /** Cheap database snapshot; large file hashing happens before the write transaction. */
@@ -31,7 +32,7 @@ class TransferState
         $query = Project::whereIn('id', array_unique($projects));
         return match ($type) {
             'project' => in_array((int) $id, array_map('intval', $projects), true),
-            'image' => $query->where('image_id', $id)->exists(),
+            'image' => $query->where('image_id', $id)->exists() || (Image::find($id)?->splitPreparing() ?? false),
             'label' => $query->where('label_id', $id)->exists(),
             'firmware' => $query->where('eeprom_firmware', $id)->exists(),
             'script' => $query->whereHas('scripts', fn ($q) => $q->where('scripts.id', $id))->exists(),

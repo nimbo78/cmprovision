@@ -39,12 +39,18 @@ class NetworkSettings extends Component
     private function importedDraft(): ?array
     {
         if ($this->importSource === null) return null;
-        $operation = app(\App\Services\Configuration\TransferWorkspace::class)->owned(
-            $this->importSource['operation'], auth()->id(), session()->getId());
-        abort_unless($operation->status === 'applied', 409);
-        $draft = $operation->options['drafts'][$this->importSource['ref']] ?? null;
-        abort_unless(is_array($draft), 404);
-        return $draft;
+        try {
+            $operation = app(\App\Services\Configuration\TransferWorkspace::class)->owned(
+                $this->importSource['operation'], auth()->id(), session()->getId());
+            $draft = $operation->status === 'applied' ? ($operation->options['drafts'][$this->importSource['ref']] ?? null) : null;
+            if (is_array($draft)) return $draft;
+        } catch (\Illuminate\Auth\Access\AuthorizationException $unavailable) {
+            // A session may outlive the expiring operation. Its stale shortcut must not disable network management.
+        }
+        session()->forget('configuration_transfer_draft');
+        $this->importSource = null;
+        $this->flash('The imported network draft is no longer available. Import it again if needed.', true);
+        return null;
     }
 
     public function loadImportedDraft(string $uuid = ''): void
