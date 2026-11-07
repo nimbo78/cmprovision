@@ -11,7 +11,7 @@ Configuration transfer copies selected definitions into an installed cmprovision
 For a new project, label or script, use the [creation wizards](creation-wizards.md), then export the saved result from its row.
 
 > [!NOTE]
-> Feature preview in `codex/configuration-transfer`: both stations need a build containing this feature. Screenshots use demo data.
+> Feature preview available from `2.25.0~dev1`: both stations need a build containing this feature. Screenshots use demo data.
 
 <a href="diagrams/configuration-transfer-flow.png"><img src="diagrams/configuration-transfer-flow.png" width="100%" alt="Export selected objects on the source station, review file or text on the receiver, then apply without automatically activating projects or changing the network"></a>
 
