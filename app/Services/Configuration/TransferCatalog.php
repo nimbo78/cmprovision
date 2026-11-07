@@ -104,6 +104,7 @@ class TransferCatalog
             'roots' => 'required|array|min:1|max:'.self::MAX_OBJECTS, 'roots.*' => 'required|string|distinct|max:64',
             'objects' => 'required|array|min:1|max:'.self::MAX_OBJECTS,
         ])->validate();
+        if (($manifest['schema'] ?? null) !== self::SCHEMA || !array_is_list($manifest['roots']) || !array_is_list($manifest['objects'])) $this->invalid();
         $this->onlyKeys($manifest, ['format', 'schema', 'source', 'created_at', 'roots', 'objects']);
         $objects = [];
         foreach ($manifest['objects'] as $object) {
@@ -116,6 +117,7 @@ class TransferCatalog
                 || !is_array($object['data'] ?? null) || !is_array($object['omitted_secrets'] ?? null)
                 || !array_is_list($object['omitted_secrets'])) $this->invalid();
             $this->onlyKeys($object['data'], self::FIELDS[$type]);
+            $this->shape($type, $object['data']);
             foreach ($object['omitted_secrets'] as $path) {
                 if (!is_string($path) || !in_array($path, self::secretPaths($type, $object['data']), true)
                     || Arr::has($object['data'], $path)) $this->invalid();
@@ -326,6 +328,38 @@ class TransferCatalog
     private function onlyKeys(array $data, array $allowed): void
     {
         if (array_diff(array_keys($data), $allowed)) $this->invalid();
+    }
+
+    private function shape(string $type, array $data): void
+    {
+        $name = 'required|string|max:255';
+        $ref = fn ($kind) => ['present', 'nullable', 'string', 'regex:/^'.$kind.'-[1-9][0-9]{0,4}$/D'];
+        $rules = match ($type) {
+            'script' => ['name' => $name, 'script' => 'required|string', 'script_type' => 'required|in:preinstall,postinstall,firstboot', 'bg' => 'required|boolean', 'priority' => 'required|numeric'],
+            'label' => ['name' => $name, 'printer_type' => 'required|in:ftp,command', 'template' => 'required|string', 'file_extension' => 'required|string|max:32|regex:/^[A-Za-z0-9]+$/D',
+                'ftp_hostname' => 'nullable|string|max:255', 'ftp_username' => 'nullable|string|max:255', 'ftp_password' => 'nullable|string|max:255', 'print_command' => 'nullable|string|max:255'],
+            'project' => ['name' => $name, 'image' => $ref('image'), 'label' => $ref('label'), 'firmware' => $ref('firmware'),
+                'scripts' => 'present|array|max:2048', 'scripts.*' => ['required', 'string', 'distinct', 'regex:/^script-[1-9][0-9]{0,4}$/D'],
+                'packages' => 'present|array|max:2048', 'packages.*' => ['required', 'string', 'distinct', 'regex:/^package-[1-9][0-9]{0,4}$/D'],
+                'station_setup' => 'present|nullable|array'],
+            'image' => ['filename' => $name, 'filename_extension' => 'required|in:gz,xz,bz2',
+                'uncompressed_sha256' => ['nullable', 'string', 'regex:/^[0-9a-f]{64}$/D'],
+                'uncompressed_size' => 'nullable|integer|min:1|max:'.\App\Services\ImageVerification::MAX_BYTES],
+            'package' => ['filename' => $name, 'deb_package' => 'required|string|max:255|regex:/^[a-z0-9][a-z0-9+.-]*$/D',
+                'deb_version' => 'required|string|max:255', 'deb_architecture' => 'required|string|max:64|regex:/^[a-z0-9][a-z0-9-]*$/D'],
+            'firmware' => ['name' => 'required|string|max:255|regex:/^pieeprom-[A-Za-z0-9._-]+\.bin$/D', 'channel' => ['required', Rule::in(Firmware::CHANNELS)]],
+            'settings' => ['group' => 'required|string', 'values' => 'present|array'],
+            'host' => ['mac' => 'required|string|regex:/^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/D', 'ip' => 'required|ipv4', 'hostname' => 'nullable|string|max:63'],
+            'switch' => ['host' => $name, 'version' => 'required|in:2c,3', 'write' => 'present|array:community,user,auth_protocol,auth_password,priv_protocol,priv_password'],
+            'notification' => ['name' => $name, 'type' => ['required', Rule::in(array_keys(NotificationChannel::TYPES))],
+                'enabled' => 'required|boolean', 'events' => 'required|array|min:1', 'events.*' => [Rule::in(array_keys(NotificationChannel::EVENTS))],
+                'settings' => 'present|array:'.implode(',', self::NOTIFICATION_FIELDS)],
+            'network' => ['name' => $name, 'device' => 'present|nullable|string|max:15', 'type' => 'required|in:ethernet,vlan',
+                'vlan_id' => 'nullable|integer|between:1,4094', 'parent' => 'present|nullable|string|max:15', 'draft' => 'required|accepted',
+                'ipv4' => 'present|array:'.implode(',', \App\Services\NetworkProfiles::PROPERTIES),
+                'ipv6' => 'present|array:'.implode(',', \App\Services\NetworkProfiles::PROPERTIES)],
+        };
+        Validator::make($data, $rules)->validate();
     }
 
     private function invalid(): never

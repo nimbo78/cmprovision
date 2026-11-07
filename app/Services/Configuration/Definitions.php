@@ -112,21 +112,7 @@ class Definitions
 
         $scripts = $data['selectedScripts'] ?? [];
         $packages = $data['selectedPackages'] ?? [];
-        if (!$data['os_check']) {
-            $errors = [];
-            if ($data['label_moment'] === 'firstboot') {
-                $errors['label_moment'] = 'Printing after the OS check needs the OS check.';
-            }
-            if ($packages) {
-                $errors['selectedPackages'] = 'Packages are installed by the OS check: turn it on or clear them.';
-            }
-            if (Script::whereIn('id', $scripts)->where('script_type', 'firstboot')->exists()) {
-                $errors['selectedScripts'] = 'First-boot scripts run in the OS check: turn it on or clear them.';
-            }
-            if ($errors) {
-                throw ValidationException::withMessages($errors);
-            }
-        }
+        self::projectChecks($data, !$data['os_check'] && Script::whereIn('id', $scripts)->where('script_type', 'firstboot')->exists(), (bool) $packages);
 
         return [
             'attributes' => [
@@ -148,5 +134,39 @@ class Definitions
             'package_ids' => $packages,
             'station_setup' => $setup,
         ];
+    }
+
+    /** The same option checks before portable dependencies have receiving database identifiers. */
+    public static function projectDefinition(array $input, array $objects): array
+    {
+        $fields = ['name', 'device', 'storage', 'label_moment', 'eeprom_settings', 'verify', 'os_check', 'split_image', 'reprovision', 'mark_boots'];
+        $rules = array_intersect_key(self::projectRules(), array_flip($fields));
+        $rules['name'] .= '|string';
+        $rules['storage'] .= '|string';
+        $rules['eeprom_settings'] .= '|string';
+        $data = array_replace($input, Validator::make($input, $rules)->validate());
+        $firstboot = false;
+        foreach ($data['scripts'] as $ref) if (($objects[$ref]['data']['script_type'] ?? '') === 'firstboot') $firstboot = true;
+        self::projectChecks($data, $firstboot, (bool) $data['packages']);
+        foreach (['verify', 'os_check', 'split_image', 'reprovision'] as $key) $data[$key] = (bool) $data[$key];
+        $data['mark_boots'] = (int) $data['mark_boots'];
+        $data['eeprom_settings'] = ($data['eeprom_settings'] ?? '') !== '' ? str_replace("\r", '', $data['eeprom_settings']) : null;
+        if ($data['station_setup'] !== null) {
+            if (!$data['image'] || !$data['verify'] || !preg_match('#^/dev/mmcblk[0-9]+$#D', $data['storage'])) {
+                throw ValidationException::withMessages(['stationEnabled' => 'Station setup requires an image, SHA-256 verification and eMMC/SD storage.']);
+            }
+            $data['station_setup'] = StationSetupInput::saved($data['station_setup']);
+        }
+        return $data;
+    }
+
+    private static function projectChecks(array $data, bool $firstboot, bool $packages): void
+    {
+        if ($data['os_check']) return;
+        $errors = [];
+        if ($data['label_moment'] === 'firstboot') $errors['label_moment'] = 'Printing after the OS check needs the OS check.';
+        if ($packages) $errors['selectedPackages'] = 'Packages are installed by the OS check: turn it on or clear them.';
+        if ($firstboot) $errors['selectedScripts'] = 'First-boot scripts run in the OS check: turn it on or clear them.';
+        if ($errors) throw ValidationException::withMessages($errors);
     }
 }
