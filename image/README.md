@@ -9,6 +9,34 @@ against an independently supplied SHA-256, and writes the image and checksums un
 build directory. It uses the configured Debian and Raspberry Pi package repositories: their
 contents are not yet pinned to a dated snapshot, so the build is not fully reproducible.
 
+## Build in GitHub Actions
+
+Run **Actions → Application → Run workflow** with `station_image_tag` set to an existing
+release (`vX.Y.Z`), and supply independently verified `station_image_package_sha256`
+and `station_image_fpms_sha256` values. Leaving the tag empty runs the normal application
+checks only. `station_image_attach` defaults to false: enable it to attach the audited
+bundle to that same release, which must still be a draft. A published release can be rebuilt
+read-only with attachment disabled. The workflow never publishes a release or replaces public assets.
+For first attachment, prepare a draft containing the two verified packages and the matching
+`fpms-upstream.txt`/`fpms-patch.sha256` metadata. The workflow creates the complete image
+checksum manifest. Existing identical files are skipped; any conflicting file stops attachment
+before writing. Existing assets are never automatically deleted or replaced. Keep the release
+as a draft until attachment succeeds. Retry a failed attachment with the same retained artifact;
+a new image build with different hashes needs a clean draft or explicit operator cleanup first.
+Ordinary Application checks and image dispatches use separate concurrency groups.
+
+The build uses a native ARM64 hosted runner and a disposable Debian 13 container, downloads
+the package inputs from GitHub, and checks out the tag's exact source commit.
+It checks the production package/first boot, exported FAT/ext4 filesystems and factory rootfs.
+Two systemd integration cases run separately on the disposable host. Release credentials
+are absent from the build container; a separate upload job rechecks the tag, hashes and draft.
+The image, packages, inventory, build provenance and `SHA256SUMS` remain inside GitHub.
+Intermediate build artifacts expire after one day; attached release assets do not.
+
+Each image build still needs physical cold-boot/display acceptance. The image remains experimental.
+
+## Build on a disposable Debian host
+
 ```sh
 sudo bash image/build.sh /path/to/empty-build-directory /path/to/cmprovision4.deb EXPECTED_SHA256
 ```

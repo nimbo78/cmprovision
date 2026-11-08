@@ -1,0 +1,144 @@
+name: Station image
+
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+      package_sha256:
+        required: true
+        type: string
+      fpms_sha256:
+        required: true
+        type: string
+      attach_to_draft:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: station-image-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and audit / ARM64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 100
+    permissions:
+      contents: read
+    outputs:
+      source_sha: ${{ steps.prepare.outputs.source_sha }}
+      artifact: ${{ steps.artifact.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: control
+          persist-credentials: false
+      - name: Verify draft packages and resolve immutable source
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PACKAGE_SHA: ${{ inputs.package_sha256 }}
+          FPMS_SHA: ${{ inputs.fpms_sha256 }}
+          ATTACH_TO_DRAFT: ${{ inputs.attach_to_draft }}
+        run: |
+          python3 control/image/ci/release.py prepare --repository "$REPOSITORY" \
+            --tag "$RELEASE_TAG" --package-sha256 "$PACKAGE_SHA" --fpms-sha256 "$FPMS_SHA" \
+            --directory "$RUNNER_TEMP/station-release" --attach-to-draft "$ATTACH_TO_DRAFT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.prepare.outputs.source_sha }}
+          path: source
+          persist-credentials: false
+      - name: Reserve space on the disposable hosted runner
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          sudo rm -rf -- /opt/hostedtoolcache /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          docker image prune -af
+          df -h /
+          test "$(df -B1 --output=avail / | tail -1)" -gt 20000000000
+      - name: Build the disposable Debian Trixie builder
+        run: docker build --pull -f control/image/ci/Dockerfile -t cmprovision-image-builder control
+      - name: Build and audit the image without release credentials
+        env:
+          RELEASE_VERSION: ${{ steps.prepare.outputs.version }}
+          SOURCE_SHA: ${{ steps.prepare.outputs.source_sha }}
+          PACKAGE_SHA: ${{ inputs.package_sha256 }}
+          FPMS_SHA: ${{ inputs.fpms_sha256 }}
+          BUILD_CONTROL_SHA: ${{ github.sha }}
+          BUILD_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          test "$(git -C "$GITHUB_WORKSPACE/source" rev-parse HEAD)" = "$SOURCE_SHA"
+          mkdir -p "$RUNNER_TEMP/station-work" "$RUNNER_TEMP/station-release/audit"
+          docker run --rm --privileged -v /dev:/dev \
+            -v "$GITHUB_WORKSPACE/source:/source:ro" \
+            -v "$GITHUB_WORKSPACE/control/image/ci:/ci:ro" \
+            -v "$RUNNER_TEMP/station-release:/output" \
+            -v "$RUNNER_TEMP/station-work:/work" \
+            -e RELEASE_VERSION -e SOURCE_SHA -e PACKAGE_SHA -e FPMS_SHA \
+            -e BUILD_CONTROL_SHA -e BUILD_RUN_URL \
+            cmprovision-image-builder bash /ci/build.sh
+      - name: Check disposable systemd path and service integration
+        run: |
+          sudo env CMP_IMAGE_SYSTEMD_TEST=1 python3 -m unittest discover \
+            -s source/tests/image -p test_fpms_systemd.py -v \
+            2>&1 | tee "$RUNNER_TEMP/station-release/audit/systemd-tests.log"
+      - name: Name the audited artifact
+        id: artifact
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: echo "name=station-image-$RELEASE_TAG-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ runner.temp }}/station-release
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+      - name: Preserve diagnostic logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-image-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/station-release/audit
+          retention-days: 3
+          if-no-files-found: ignore
+
+  attach:
+    name: Attach to draft / no publication
+    if: inputs.attach_to_draft
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/station-release
+      - name: Verify files, source and draft before attaching
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PACKAGE_SHA: ${{ inputs.package_sha256 }}
+          FPMS_SHA: ${{ inputs.fpms_sha256 }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+        run: |
+          python3 image/ci/release.py upload --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
+            --package-sha256 "$PACKAGE_SHA" --fpms-sha256 "$FPMS_SHA" --source-sha "$SOURCE_SHA" \
+            --directory "$RUNNER_TEMP/station-release"

@@ -1,17 +1,35 @@
 name: Application
+run-name: ${{ inputs.station_image_tag && format('Station image {0}', inputs.station_image_tag) || 'Application checks' }}
 
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      station_image_tag:
+        description: 'Optional station image: existing release tag vX.Y.Z'
+        type: string
+        default: ''
+      station_image_package_sha256:
+        description: 'Independently verified cmprovision4 package SHA-256'
+        type: string
+        default: ''
+      station_image_fpms_sha256:
+        description: 'Independently verified fpms-lite package SHA-256'
+        type: string
+        default: ''
+      station_image_attach:
+        description: 'Attach audited image files to the existing draft (never publish)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: application-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: application-${{ github.workflow }}-${{ github.ref }}-${{ inputs.station_image_tag || 'checks' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || inputs.station_image_tag == '' }}
 
 jobs:
   php:
@@ -44,3 +62,23 @@ jobs:
         with:
           node-version: '22'
       - run: npm run test:js
+
+  image-release-checks:
+    name: Image release guards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests/image -p test_release_ci.py -v
+
+  station-image:
+    if: github.event_name == 'workflow_dispatch' && inputs.station_image_tag != ''
+    needs: [php, javascript, image-release-checks]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/station-image.yml
+    with:
+      release_tag: ${{ inputs.station_image_tag }}
+      package_sha256: ${{ inputs.station_image_package_sha256 }}
+      fpms_sha256: ${{ inputs.station_image_fpms_sha256 }}
+      attach_to_draft: ${{ inputs.station_image_attach }}

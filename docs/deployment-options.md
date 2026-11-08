@@ -23,6 +23,20 @@ Product direction: maintaining a single image with optional FPMS is far more sus
 
 The experimental image builder and manual first-boot procedure are documented in [image/README.md](../image/README.md). Initial setup is not yet wrapped in a guided wizard, and upstream repository packages are not yet pinned to snapshots. A re-test flashing a sensor from the latest image (including LLDP) completed in 7:07: network boot, chunked flashing, SHA-256 verification, partition resize, and OS check all passed; systemd reported status `running` with zero failed units. The repeated test project also incorporated a workaround for `wlanpi-firefox-setup.service` (present on standard test stands but omitted in the first run).
 
+## Building the Image in GitHub
+
+Use **Actions → Application → Run workflow** with an existing release tag in
+`station_image_tag` and the independently verified package hashes in
+`station_image_package_sha256` and `station_image_fpms_sha256`. Enable
+`station_image_attach` to attach the audited bundle to a still-draft release; publication is separate.
+Published releases support read-only rebuilds with attachment disabled.
+Prepare first-attachment drafts with the two packages and FPMS provenance files; the workflow
+creates the image checksum manifest. Identical existing files are skipped; conflicts abort,
+and existing assets are never automatically replaced. Keep the release as a draft until completion.
+The native ARM64 builder keeps the large disk image inside GitHub, with no upload from a
+PC or provisioner. See [build inputs, checks and limitations](../image/README.md#build-in-github-actions).
+Every rebuilt image still needs its own physical first-boot/display acceptance.
+
 ## Configuring Station Images via cmprovision Projects
 
 Starting with 2.24.0, a pre-built station image can be deployed directly from another cmprovision instance. Projects include an initial setup configuration block: hostname, Linux user account, password and/or public SSH keys, SSH daemon enablement, Wi-Fi SSID/security/passphrase, and regulatory country code. This setup mechanism applies specifically to supported station images rather than arbitrary OS images.
