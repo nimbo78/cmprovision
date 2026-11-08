@@ -6,6 +6,7 @@ use App\Models\Cm;
 use App\Models\StationSetupRun;
 use App\Services\StationSetupSsh;
 use App\Services\ModuleOperationLock;
+use App\Support\ImageAccessFailure;
 use Illuminate\Http\Request;
 
 class StationSetupController extends Controller
@@ -34,6 +35,8 @@ class StationSetupController extends Controller
             try {
                 app(StationSetupSsh::class)->deliver($address, $host,
                     ['schema' => 1, 'serial' => $serial, 'cid' => $cm->cid, 'run' => $nonce], $run->settings);
+            } catch (ImageAccessFailure $e) {
+                return response($e->response(), 502)->header('Cache-Control', 'no-store');
             } catch (\Throwable $e) {
                 // Do not report process exceptions: command input may contain credentials.
                 return response('Station setup failed; check the board connection and image compatibility.', 502)->header('Cache-Control', 'no-store');

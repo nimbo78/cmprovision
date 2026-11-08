@@ -8,9 +8,9 @@
             @endif
             @switch($wizardStep)
                 @case(1)
-                    <p class="text-sm text-fg-muted mb-4">Create a sensor project or prepare a new cmprovision station. Save first; activation is an explicit choice at the end.</p>
+                    <p class="text-sm text-fg-muted mb-4">Create a sensor project, configure its installed OS access or prepare a new cmprovision station. Save first; activation is an explicit choice at the end.</p>
                     @include('livewire.project-fields.name')
-                    <label class="flex gap-2 items-center text-sm"><x-checkbox wire:model.live="stationEnabled" /> Set up a cmprovision station</label>
+                    <label class="flex gap-2 items-center text-sm"><x-checkbox wire:model.live="stationEnabled" /> Configure installed OS access</label>
                     @break
                 @case(2)
                     @include('livewire.project-fields.image')
@@ -36,14 +36,14 @@
                 @case(7)
                     <dl class="grid grid-cols-2 gap-2 text-sm mb-5">
                         <dt class="text-fg-muted">Project</dt><dd class="break-words">{{ $name }}</dd>
-                        <dt class="text-fg-muted">Purpose</dt><dd>{{ $stationEnabled ? 'Provisioner station' : 'Sensor' }}</dd>
+                        <dt class="text-fg-muted">Purpose</dt><dd>{{ $stationEnabled ? (($station['profile'] ?? 'station') === 'raspios' ? 'Sensor with configured SSH access' : 'Provisioner station') : 'Sensor' }}</dd>
                         <dt class="text-fg-muted">Image</dt><dd class="break-words">{{ $images->firstWhere('id', $image_id)?->filename ?? 'None' }}</dd>
                         <dt class="text-fg-muted">Storage</dt><dd class="font-mono">{{ $storage }}</dd>
                         <dt class="text-fg-muted">Verify / OS check / Split</dt><dd>{{ $verify ? 'On' : 'Off' }} / {{ $os_check ? 'On' : 'Off' }} / {{ $split_image ? 'On' : 'Off' }}</dd>
                         <dt class="text-fg-muted">Re-provision / mark boots</dt><dd>{{ $reprovision ? 'On' : 'Off' }} / {{ $mark_boots }}</dd>
                         <dt class="text-fg-muted">Scripts / packages</dt><dd>{{ count($selectedScripts ?: []) }} / {{ count($selectedPackages ?: []) }}</dd>
                         <dt class="text-fg-muted">Label</dt><dd>{{ $label_moment }}</dd>
-                        @if ($stationEnabled)<dt class="text-fg-muted">Station access</dt><dd>{{ $station['username'] ?? '' }} · {{ ($station['wifi'] ?? false) ? 'Wi-Fi configured' : 'No Wi-Fi' }} · credentials retained privately</dd>@endif
+                        @if ($stationEnabled)<dt class="text-fg-muted">OS access</dt><dd>{{ $station['username'] ?? '' }} · {{ ($station['profile'] ?? 'station') === 'raspios' ? (($station['sudo_passwordless'] ?? false) ? 'Passwordless sudo' : 'Sudo asks for password') : (($station['wifi'] ?? false) ? 'Wi-Fi configured' : 'No Wi-Fi') }} · credentials retained privately</dd>@endif
                     </dl>
                     @include('livewire.project-fields.active')
                     @break

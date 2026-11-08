@@ -263,6 +263,24 @@ class ConfigurationExportTest extends TestCase
         $this->assertSame('wireless-secret', $objects['project']['data']['station_setup']['wifi']['password']);
     }
 
+    public function test_generic_account_selection_and_sudo_policy_remain_when_password_is_omitted(): void
+    {
+        [$project] = $this->project();
+        $setup = StationSetupInput::normalize(array_replace(StationSetupInput::form(), [
+            'profile' => 'raspios', 'hostname' => '', 'username' => 'operator', 'source_username' => 'wlanpi',
+            'password' => 'Fixture-Portable-Password', 'sudo_passwordless' => true]));
+        $project->station_setup = $setup;
+        $project->save();
+        $manifest = app(TransferCatalog::class)->export(['projects' => [$project->id]], false);
+        $object = collect($manifest['objects'])->firstWhere('type', 'project');
+        $this->assertSame('raspios', $object['data']['station_setup']['profile']);
+        $this->assertSame('wlanpi', $object['data']['station_setup']['source_username']);
+        $this->assertTrue($object['data']['station_setup']['sudo_passwordless']);
+        $this->assertArrayNotHasKey('password_hash', $object['data']['station_setup']);
+        $this->assertContains('station_setup.password_hash', $object['omitted_secrets']);
+        $this->assertStringNotContainsString($setup['password_hash'], json_encode($manifest));
+    }
+
     public function test_pending_images_and_files_outside_the_store_are_refused(): void
     {
         [$project, $image] = $this->project();

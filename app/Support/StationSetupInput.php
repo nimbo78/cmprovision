@@ -11,16 +11,22 @@ class StationSetupInput
     /** Validate a portable saved definition; password hashes are retained rather than hashed as passwords. */
     public static function saved(array $saved): array
     {
+        $generic = ($saved['schema'] ?? null) === 2;
         Validator::make($saved, [
-            'schema' => 'required|integer|in:1', 'hostname' => 'required|string|max:63', 'username' => 'required|string|max:32',
+            'schema' => 'required|integer|in:1,2', 'hostname' => ($generic ? 'present|nullable' : 'required').'|string|max:63', 'username' => 'required|string|max:32',
             'password_hash' => ['nullable', 'string', 'max:255', 'regex:/^\$6\$(?:rounds=100000\$)?[A-Za-z0-9.\/]{1,16}\$[A-Za-z0-9.\/]{86}$/D'],
             'keys' => 'present|array|max:10', 'keys.*' => 'string|max:16384', 'ssh' => 'required|boolean',
             'wifi' => 'present|nullable|array:ssid,security,password,country,hidden',
             'wifi.ssid' => 'required_with:wifi|string|max:32', 'wifi.security' => 'required_with:wifi|in:wpa2,wpa3,mixed',
             'wifi.password' => 'required_with:wifi|string|max:64', 'wifi.country' => ['required_with:wifi', 'regex:/^[A-Z]{2}$/D'],
             'wifi.hidden' => 'required_with:wifi|boolean',
+            'profile' => $generic ? 'required|in:raspios' : 'prohibited',
+            'source_username' => $generic ? 'present|nullable|string|max:32' : 'prohibited',
+            'sudo_passwordless' => $generic ? 'required|boolean' : 'prohibited',
         ])->validate();
-        if (array_diff(array_keys($saved), ['schema', 'hostname', 'username', 'password_hash', 'keys', 'ssh', 'wifi'])) {
+        $allowed = ['schema', 'hostname', 'username', 'password_hash', 'keys', 'ssh', 'wifi'];
+        if ($generic) $allowed = [...$allowed, 'profile', 'source_username', 'sudo_passwordless'];
+        if (array_diff(array_keys($saved), $allowed)) {
             throw ValidationException::withMessages(['station_setup' => 'The station definition contains an unsupported field.']);
         }
         return self::normalize(self::form($saved), $saved);
@@ -28,13 +34,18 @@ class StationSetupInput
 
     public static function normalize(array $input, ?array $saved = null): array
     {
+        $generic = ($input['profile'] ?? 'station') === 'raspios';
         $data = Validator::make($input, [
-            'hostname' => ['required', 'string', 'max:63', function ($attribute, $value, $fail) {
+            'profile' => 'sometimes|required|string|in:station,raspios',
+            'source_username' => ['nullable', 'string', 'max:32', 'regex:/^[a-z][a-z0-9-]*$/D', 'not_in:root,nobody,daemon,bin,sys,www-data,sshd'],
+            'sudo_passwordless' => 'sometimes|boolean',
+            'hostname' => [$generic ? 'nullable' : 'required', 'string', 'max:63', function ($attribute, $value, $fail) {
                 $expanded = str_replace('{serial}', '0123456789abcdef', $value);
                 if (strlen($expanded) > 63 || !preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/D', $expanded))
                     $fail('Use a Linux host name, optionally including {serial}.');
             }],
-            'username' => ['required', 'string', 'max:32', 'regex:/^[a-z][a-z0-9-]*$/D', 'not_in:root,nobody'],
+            'username' => ['required', 'string', 'max:32', 'regex:/^[a-z][a-z0-9-]*$/D',
+                $generic ? 'not_in:root,nobody,daemon,bin,sys,www-data,sshd' : 'not_in:root,nobody'],
             'password' => 'nullable|string|min:8|max:128',
             'password_login' => 'required|boolean',
             'keys' => 'nullable|string|max:16384',
@@ -47,6 +58,11 @@ class StationSetupInput
             'hidden' => 'required|boolean',
         ])->validate();
         $fail = fn ($field, $message) => throw ValidationException::withMessages([$field => $message]);
+        if ($generic && !$data['ssh']) $fail('ssh', 'Generic OS access requires SSH to be enabled.');
+        if ($generic && $data['wifi']) $fail('wifi', 'Use the cmprovision station profile to configure Wi-Fi.');
+        if ($generic && !$data['password_login'] && empty($data['sudo_passwordless'])) {
+            $fail('sudo_passwordless', 'Key-only administrators require sudo without a password.');
+        }
         $password = (string) ($data['password'] ?? '');
         if (preg_match('/[\x00-\x1f\x7f]/', $password)) $fail('password', 'The password must not contain control characters.');
         $hash = $data['password_login'] ? ($saved['password_hash'] ?? null) : null;
@@ -89,13 +105,18 @@ class StationSetupInput
             $wifi = ['ssid' => $ssid, 'security' => $data['security'], 'password' => $psk,
                 'country' => $data['country'], 'hidden' => (bool) $data['hidden']];
         }
-        return ['schema' => 1, 'hostname' => $data['hostname'], 'username' => $data['username'],
+        $settings = ['schema' => $generic ? 2 : 1, 'hostname' => (string) ($data['hostname'] ?? ''), 'username' => $data['username'],
             'password_hash' => $hash, 'keys' => $keys, 'ssh' => (bool) $data['ssh'], 'wifi' => $wifi];
+        if ($generic) $settings += ['profile' => 'raspios', 'source_username' => (string) ($data['source_username'] ?? ''),
+            'sudo_passwordless' => (bool) ($data['sudo_passwordless'] ?? false)];
+        return $settings;
     }
 
     public static function form(?array $saved = null): array
     {
-        return ['hostname' => $saved['hostname'] ?? 'cmprovision-{serial}', 'username' => $saved['username'] ?? '',
+        return ['profile' => $saved['profile'] ?? 'station', 'source_username' => $saved['source_username'] ?? '',
+            'sudo_passwordless' => $saved['sudo_passwordless'] ?? false,
+            'hostname' => $saved['hostname'] ?? 'cmprovision-{serial}', 'username' => $saved['username'] ?? '',
             'password' => '', 'password_login' => $saved === null || !empty($saved['password_hash']),
             'keys' => implode("\n", $saved['keys'] ?? []), 'ssh' => $saved['ssh'] ?? true,
             'wifi' => !empty($saved['wifi']), 'ssid' => $saved['wifi']['ssid'] ?? '',

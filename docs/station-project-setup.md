@@ -6,7 +6,7 @@ The development branch can configure a new station while writing the generic cmp
 The project supplies Linux access and optional management Wi-Fi; the shared image stays unchanged.
 This feature requires a rebuilt image with **station setup schema 1**, the 64-bit utility OS, and
 eMMC/SD with an ext4 root on partition 2. The previously tested `2.24.0~dev2` image predates this support.
-It is not a customization tool for arbitrary Raspberry Pi OS or WLAN Pi OS images.
+This page describes the **cmprovision station image — access and Wi-Fi** profile. For ordinary compatible OS images, see [installed OS SSH access](image-access.md).
 
 ## Prepare the project
 
@@ -14,7 +14,7 @@ It is not a customization tool for arbitrary Raspberry Pi OS or WLAN Pi OS image
 2. Create a project, select that image and turn on **Verify that image was written correctly**.
    Select **Check the OS after the first boot** to reboot and check the new station automatically.
    Splitting the image is optional. Keep EEPROM changes disabled unless the maintenance operation needs them.
-3. Enable **Set up a cmprovision station**. Enter its Linux administrator name and host name.
+3. Enable **Configure installed OS access**, select **cmprovision station image — access and Wi-Fi**, and enter its Linux administrator name and host name.
    The default `cmprovision-{serial}` gives each station a different name; `{serial}` expands to its full serial.
 4. Set an initial password, add public SSH keys, or use both. Turn on **Enable SSH** for remote access.
    With password login disabled, at least one public key and SSH are required; the administrator then uses

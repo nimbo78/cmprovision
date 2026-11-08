@@ -155,6 +155,7 @@ sudo apt install ./cmprovision4_*_all.deb
 | Вывод статуса стенда на HDMI-монитор провижинера | [HDMI-дисплей](docs/ru/hdmi-display.md) |
 | Компактная передняя панель FPMS (preview) | [Дисплей FPMS](docs/ru/fpms-display.md) |
 | Готовый образ станции и подключение через VLAN | [Варианты развёртывания](docs/ru/deployment-options.md) |
+| Задать логин Linux, пароль или SSH-ключи прошиваемой ОС | [SSH-доступ из проекта](docs/ru/image-access.md) |
 | Диагностика модуля по Ethernet и USB fallback | [Диагностика модуля](docs/ru/module-diagnostics.md) |
 | Анализ неизвестной платы со статусом UNR | [Диагностика обнаружения](docs/ru/unrecognized-devices.md) |
 | Подключение WLAN Pi M4+ как сервера и модуля | [Оборудование M4+ и BOOT/OTG](docs/ru/hardware/wlanpi-m4-plus.md) |

@@ -614,7 +614,8 @@ exit 1
         if ($project->station_setup !== null) {
             $setup = new Script;
             $setup->id = -2;
-            $setup->name = 'Configuring the station';
+            $setup->name = ($project->station_setup['profile'] ?? 'station') === 'raspios'
+                ? 'Configuring installed OS access' : 'Configuring the station';
             $setup->bg = false;
             $setup->script = app(\App\Services\StationSetup::class)->prepare($this->cm, $project, $server);
             // Verification must precede all modifications to the shared image.

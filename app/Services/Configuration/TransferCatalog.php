@@ -192,7 +192,8 @@ class TransferCatalog
         foreach ($project->orderedScripts()->get() as $script) $data['scripts'][] = $this->script($script);
         foreach ($project->packages()->orderBy('packages.id')->get() as $package) $data['packages'][] = $this->package($package);
         if (is_array($data['station_setup'])) {
-            $data['station_setup'] = Arr::only($data['station_setup'], ['schema', 'hostname', 'username', 'password_hash', 'keys', 'ssh', 'wifi']);
+            $data['station_setup'] = Arr::only($data['station_setup'], ['schema', 'hostname', 'username', 'password_hash', 'keys', 'ssh', 'wifi',
+                'profile', 'source_username', 'sudo_passwordless']);
             if (is_array($data['station_setup']['wifi'] ?? null)) {
                 $data['station_setup']['wifi'] = Arr::only($data['station_setup']['wifi'], ['ssid', 'security', 'password', 'country', 'hidden']);
             }

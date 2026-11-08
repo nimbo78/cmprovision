@@ -12,6 +12,8 @@ on:
       - 'resources/shell/**'
       - 'tools/usb-diagnostics.py'
       - 'tests/tools/**'
+      # This helper has its own workflow and does not change utility-OS binaries.
+      - '!tests/tools/test_image_access.py'
       - 'tools/utility-os/**'
       - '.github/workflows/utility-os.yml'
 

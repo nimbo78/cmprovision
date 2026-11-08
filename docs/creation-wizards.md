@@ -15,7 +15,7 @@ Each wizard shows its steps, checks the current step before continuing and provi
 3. Choose verification, OS check, resumable image pieces, re-provision access, mark duration and an optional EEPROM update.
 4. Select scripts and first-boot packages. First-boot scripts and packages require OS check. Lower script priorities run first.
 5. Choose a label and when to print it. Printing with the installed host name requires the OS check.
-6. For a station project, set its Linux user, password or SSH keys, and optional management Wi-Fi. These settings need a compatible [station image](station-project-setup.md).
+6. With **Configure installed OS access**, choose the profile: [SSH access for compatible OS images](image-access.md) updates an existing account where possible, with optional passwordless sudo; the [station image profile](station-project-setup.md) also configures management Wi-Fi.
 7. Review the summary, then save. Select **Set as active project** only when you want to activate it immediately.
 
 New guided projects start with Verify, OS check and Split enabled, and activation disabled. Re-provision stays off. The ordinary complete form retains its existing defaults.

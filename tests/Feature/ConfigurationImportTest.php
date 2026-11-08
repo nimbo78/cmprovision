@@ -298,6 +298,42 @@ class ConfigurationImportTest extends TestCase
         $this->assertSame($result, app(TransferImporter::class)->apply(\App\Models\ConfigurationTransferOperation::findOrFail($operationId), $preview['fingerprint']));
     }
 
+    public function test_generic_access_round_trips_between_independent_databases_and_application_keys(): void
+    {
+        $this->setKey('base64:'.base64_encode(str_repeat('a', 32)));
+        $image = $this->sourceImage();
+        $project = Project::create(array_replace($this->projectAttributes('Portable SSH sensor'), ['image_id' => $image->id]));
+        $saved = StationSetupInput::normalize(array_replace(StationSetupInput::form(), [
+            'profile' => 'raspios', 'hostname' => '', 'username' => 'operator', 'source_username' => 'wlanpi',
+            'password' => 'Fixture-Portable-Password', 'sudo_passwordless' => true]));
+        $project->station_setup = $saved;
+        $project->save();
+        $sourceCiphertext = $project->getRawOriginal('station_setup');
+        $sender = $this->workspace->create(User::factory()->create()->id, 'source-session', 'export');
+        app(TransferExporter::class)->prepare($sender, ['projects' => [$project->id], 'binaries' => ['images']],
+            'archive', true, 'Fixture-Transfer-Password');
+        $sender->refresh();
+        $source = $this->workspace->path($sender, $sender->result['member']);
+        $database = $this->directory.'/receiver.sqlite';
+        touch($database);
+        config(['database.connections.transfer_receiver' => array_replace(config('database.connections.sqlite'), ['database' => $database])]);
+        Artisan::call('migrate', ['--database' => 'transfer_receiver', '--force' => true]);
+        DB::setDefaultConnection('transfer_receiver');
+        $this->setKey('base64:'.base64_encode(str_repeat('b', 32)));
+        $active = Project::create($this->projectAttributes('Receiver active'));
+        Setting::create(['key' => 'active_project', 'value' => $active->id]);
+        $operation = $this->operation();
+        app(TransferImporter::class)->prepare($operation, $source, 'Fixture-Transfer-Password');
+        $preview = app(TransferImporter::class)->preview($operation);
+        $this->assertTrue($preview['can_apply']);
+        $result = app(TransferImporter::class)->apply($operation, $preview['fingerprint']);
+        $imported = Project::findOrFail(collect($result['objects'])->firstWhere('type', 'project')['id']);
+        $this->assertSame($saved, $imported->station_setup);
+        $this->assertNotSame($sourceCiphertext, $imported->getRawOriginal('station_setup'));
+        $this->assertSame($active->id, Project::getActiveId());
+        $this->assertSame($result, app(TransferImporter::class)->apply($operation->fresh(), $preview['fingerprint']));
+    }
+
     public function test_replacing_an_unused_script_preserves_its_project_relationship(): void
     {
         $script = Script::create(array_replace($this->manifest()['objects'][0]['data'], ['script' => 'old']));

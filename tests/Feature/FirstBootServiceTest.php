@@ -39,7 +39,23 @@ class FirstBootServiceTest extends TestCase
         file_put_contents($this->dir.'/hostname', "wlanpi-a1b\n");
         file_put_contents($this->dir.'/answers', '');
         // End finite polling scenarios after the last answer; real sleep still runs for scripts/timeouts.
-        $this->stub('sleep', 'case "$1" in 0.03|0.02) [ -s "$FAKE/answers" ] || [ "${FAKE_KEEP_POLLING:-0}" = 1 ] || exit 1 ;; esac' . "\n" . 'exec /bin/sleep "$@"');
+        $this->stub('sleep', <<<'SH'
+case "$1" in 0.03|0.02)
+    if [ ! -s "$FAKE/answers" ] && [ "${FAKE_KEEP_POLLING:-0}" != 1 ]; then
+        # Let an asynchronously started helper acknowledge the last transition before teardown kills it.
+        tries=200
+        while [ "${FAKE_EXPECT_PATTERNS:-0}" -gt 0 ] && [ "$tries" -gt 0 ]; do
+            seen=0
+            [ ! -f "$FAKE/patterns" ] || seen=$(wc -l < "$FAKE/patterns")
+            [ "$seen" -lt "$FAKE_EXPECT_PATTERNS" ] || break
+            /bin/sleep 0.002
+            tries=$((tries - 1))
+        done
+        exit 1
+    fi ;;
+esac
+exec /bin/sleep "$@"
+SH);
         $this->stub('systemctl', implode("\n", [
             'case "$*" in',
             '    *--wait*) exit 0 ;;',
@@ -378,7 +394,7 @@ class FirstBootServiceTest extends TestCase
     {
         file_put_contents($this->dir.'/answers', "\nidentify\nidentify\n\n");
         $marker = $this->dir.'/script-calls';
-        $this->firstBoot([$this->script(1, 'once', "echo once >> '$marker'\n")]);
+        $this->firstBoot([$this->script(1, 'once', "echo once >> '$marker'\n")], [], ['FAKE_EXPECT_PATTERNS' => '3']);
 
         $this->assertSame("ready\nidentify\nready", $this->ledPatterns());
         $this->assertSame("once\n", file_get_contents($marker));

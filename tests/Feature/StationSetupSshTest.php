@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\StationSetupSsh;
 use App\Services\Sensor\ProvisionerKey;
+use App\Support\ImageAccessFailure;
 use Tests\TestCase;
 
 class StationSetupSshTest extends TestCase
@@ -67,6 +68,35 @@ class StationSetupSshTest extends TestCase
             $this->fail('Remote failure accepted');
         } catch (\RuntimeException $e) {
             $this->assertStringNotContainsString('hidden-fixture-password', $e->getMessage());
+        }
+    }
+
+    public function test_generic_helper_errors_cross_real_ssh_as_allowlisted_messages_without_stderr_secrets(): void
+    {
+        $ssh = $this->transport();
+        file_put_contents($this->fixture.'/mode', 'generic:rename_references');
+        try {
+            $ssh->deliver('127.0.0.1', $this->host(), $this->identity(),
+                ['profile' => 'raspios', 'password_hash' => 'private-fixture-hash']);
+            $this->fail('Generic failure was accepted');
+        } catch (ImageAccessFailure $error) {
+            $this->assertSame('rename_references', $error->failureCode);
+            $this->assertStringNotContainsString('private-fixture-hash', $error->getMessage());
+        }
+    }
+
+    public function test_unknown_generic_stdout_and_legacy_failures_are_not_promoted_to_public_error_codes(): void
+    {
+        foreach ([['profile' => 'raspios'], []] as $settings) {
+            $ssh = $this->transport();
+            file_put_contents($this->fixture.'/mode', isset($settings['profile']) ? 'generic:private-fixture-hash' : 'generic:rename_references');
+            try {
+                $ssh->deliver('127.0.0.1', $this->host(), $this->identity(), $settings + ['password_hash' => 'private-fixture-hash']);
+                $this->fail('Failure was accepted');
+            } catch (\RuntimeException $error) {
+                $this->assertNotInstanceOf(ImageAccessFailure::class, $error);
+                $this->assertStringNotContainsString('private-fixture-hash', $error->getMessage());
+            }
         }
     }
 }
