@@ -93,6 +93,7 @@ jobs:
           docker run --rm --entrypoint bash \
             -v "$GITHUB_WORKSPACE/control/image/ci:/ci:ro" \
             -v "$GITHUB_WORKSPACE/control/tests/image:/control-tests:ro" \
+            -v "$GITHUB_WORKSPACE/source:/source:ro" \
             -v "$RUNNER_TEMP/package-input:/input:ro" \
             -v "$RUNNER_TEMP/release-packages:/output" \
             -e RELEASE_VERSION -e SOURCE_SHA cmprovision-package-builder /ci/packages.sh

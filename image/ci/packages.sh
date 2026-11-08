@@ -7,7 +7,9 @@ export COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_BIN_COMPAT=symlink
 [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
 test -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}"
 mkdir -p /work/tests /work/production /output/audit
-tar -xf /input/source.tar -C /work/tests
+# Source-contract tests expect checkout placeholders, before export-subst. Keep
+# their writable test copy separate from the versioned production archive.
+tar -C /source --exclude='./.git' -cf - . | tar -xf - -C /work/tests
 tar -xf /input/source.tar -C /work/production
 cd /work/tests
 composer install --no-interaction --prefer-dist --no-progress
