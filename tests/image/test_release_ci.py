@@ -173,6 +173,33 @@ class ReleaseCiTest(unittest.TestCase):
                     ci.upload(args, VERSION)
                 write.assert_not_called()
 
+    def test_publication_retry_verifies_complete_published_release_without_uploading(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, checks, value = upload_fixture(Path(tmp))
+            args.verify_published = True
+            value['draft'] = False
+            value['assets'] = [{'name': name, 'state': 'uploaded', 'digest': 'sha256:' + digest,
+                'size': (args.directory/'assets'/name).stat().st_size} for name,digest in checks.items()]
+            with patch.object(ci, 'release_for_tag', return_value=value), \
+                    patch.object(ci, 'tag_commit', return_value=args.source_sha), \
+                    patch.object(ci.subprocess, 'run') as write:
+                ci.upload(args, VERSION)
+            write.assert_not_called()
+            report = json.loads((args.directory/'release-report.json').read_text())
+            self.assertFalse(report['draft'])
+            self.assertEqual(42, report['release_id'])
+
+    def test_publication_retry_never_accepts_a_different_published_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, checks, value = upload_fixture(Path(tmp))
+            args.verify_published = True
+            value['draft'] = False
+            with patch.object(ci, 'release_for_tag', return_value=value), \
+                    patch.object(ci, 'tag_commit', return_value=args.source_sha), \
+                    patch.object(ci.subprocess, 'run') as write, self.assertRaises(ValueError):
+                ci.upload(args, VERSION)
+            write.assert_not_called()
+
     def test_new_draft_is_always_private_and_has_separate_language_blocks(self):
         created = {'id': 73, 'tag_name': TAG, 'draft': True, 'assets': []}
         with patch.object(ci, 'api_write', return_value=created, create=True) as write:

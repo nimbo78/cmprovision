@@ -11,9 +11,40 @@ contents are not yet pinned to a dated snapshot, so the build is not fully repro
 
 ## Build in GitHub Actions
 
+### Automatic complete releases
+
+A push to `main` first runs Application checks. If the first version in `debian/changelog`
+is a new stable `X.Y.Z`, the checked commit is tagged and the complete Release workflow runs.
+Versions such as `2.27.0~dev1` skip publication. An already published version, or a version
+already pinned to another commit, also skips; an existing tag is never moved.
+
+Automatic publication is enabled for `nimbo78/cmprovision`, the project's publishing repository.
+Other copies do not publish on main pushes. To explicitly enable another repository, set its
+`CMPROVISION_RELEASE_REPOSITORY` Actions variable to its own `owner/name`. This checks the publishing
+identity rather than the GitHub fork flag: this project itself is a fork of raspberrypi/cmprovision.
+
+Prepare both `docs/releases/X.Y.Z.md` and `docs/ru/releases/X.Y.Z.md` in the same change.
+Each starts with `# X.Y.Z` and contains the actual changes and operational limits in its own language.
+Publication combines the complete English block, a divider, then the complete Russian block.
+Missing notes stop candidate creation; manual publication checks them before building packages.
+
+The automatic chain runs tests → production `.deb` packages → ARM64 image → audits →
+draft upload → exact remote file/digest verification → publication. Both packages, the compressed
+image, `SHA256SUMS`, inventory and provenance are attached before the release becomes public.
+New main pushes do not cancel a running release. Finalization queues up to 100 waiting jobs across versions,
+and a delayed older version does not replace a newer stable Latest release.
+
+### Manual and trial builds
+
 Run **Actions → Release → Run workflow** with `release_tag=vX.Y.Z`. The tag must exist
 and match the first version in its `debian/changelog`; no prebuilt packages are needed.
-`attach_to_draft` defaults to false, so a trial run only produces downloadable CI artifacts.
+Both switches default to false, so a trial run only produces downloadable CI artifacts.
+
+| `attach_to_draft` | `publish_release` | Result |
+| --- | --- | --- |
+| false | false | Verified artifacts only |
+| true | false | Attach to a draft, leave unpublished |
+| either | true | Attach, verify the complete release, then publish |
 
 ```mermaid
 flowchart LR
@@ -22,7 +53,9 @@ flowchart LR
     D --> I[Native ARM64 image]
     I --> A[Package / first boot / filesystem audit]
     A --> F[Artifacts and SHA256SUMS]
-    F --> R[Optional draft attachment]
+    F --> R[Draft attachment]
+    R --> V[Verify uploaded files and hashes]
+    V --> PUBLISH[Publish when requested]
 ```
 
 The package job uses a fresh `git archive` with substituted version metadata. Tests have
@@ -38,7 +71,16 @@ checks pass**. This does not publish the release or change an existing draft's n
 Existing identical files are skipped; a conflicting or unexpected file stops attachment.
 Files are never deleted or overwritten. A retry after a partial upload must use the same
 retained artifact; a new build may have different hashes and need explicit operator cleanup.
-Published releases can only be rebuilt with attachment disabled.
+Published releases are never edited. A publication retry may verify an identical complete
+publication without uploading or replacing files. For a fresh rebuild of an existing public
+release, use artifacts-only mode; repository contents are not fully reproducible.
+
+If a package/image job fails, rerun failed jobs. If upload or publication fails, rerun only
+that failed job while its input artifact is retained: a full rebuild may produce different
+image hashes, and the workflow will refuse to replace existing files. A lost publication
+response is recoverable by verifying the existing complete publication on retry.
+Existing public titles and notes must match the versioned source; placeholder or edited metadata
+fails verification without changing the public release. A valid original build-run link may remain.
 
 **Compatibility entry point:** Application still accepts `station_image_tag`. Leave both
 package hash fields blank to run the complete Release pipeline after application checks.
@@ -46,7 +88,8 @@ Supply both `station_image_package_sha256` and `station_image_fpms_sha256` to re
 already uploaded to a release instead. That mode also needs matching `fpms-upstream.txt`
 and `fpms-patch.sha256`; attachment requires an existing draft. An empty tag runs ordinary
 application checks. Image builds and ordinary checks have separate concurrency groups;
-draft writers are serialized per tag.
+the compatibility draft writers are serialized per tag. Complete Release finalizers use
+a shared publication lock across versions.
 
 The image build uses a native ARM64 hosted runner and a disposable Debian 13 container,
 receives packages from the preceding job (or existing release), and checks out the tag's exact commit.

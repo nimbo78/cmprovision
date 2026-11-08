@@ -193,6 +193,18 @@ def prepare(args, version):
     print('Verified release packages and resolved source:', source)
 
 
+def attachment_report(args, target, checks):
+    verify_uploaded(target, checks)
+    if tag_commit(args.repository, args.tag) != args.source_sha:
+        raise ValueError('Source tag changed during attachment')
+    for name, asset in asset_map(target).items():
+        if asset['size'] != (args.directory / 'assets' / name).stat().st_size:
+            raise ValueError('Uploaded asset size differs: ' + name)
+    report = {'url': target['html_url'], 'repository': args.repository, 'tag': args.tag,
+              'release_id': target['id'], 'source_sha': args.source_sha, 'draft': target['draft'], 'checks': checks}
+    (args.directory / 'release-report.json').write_text(json.dumps(report, indent=2) + '\n')
+
+
 def upload(args, version):
     if not args.source_sha or not re.fullmatch(r'[0-9a-f]{40}', args.source_sha):
         raise ValueError('Supply the immutable source SHA produced by the build job')
@@ -215,6 +227,12 @@ def upload(args, version):
         run_id = os.environ.get('GITHUB_RUN_ID', '')
         run_url = f'https://github.com/{args.repository}/actions/runs/{run_id}' if run_id.isdigit() else None
         target = create_draft(args.repository, args.tag, args.source_sha, run_url)
+    if target.get('draft') is False and getattr(args, 'verify_published', False):
+        if target.get('tag_name') != args.tag or (state.get('release_id') is not None and state['release_id'] != target['id']):
+            raise ValueError('Published release destination changed after the build')
+        attachment_report(args, target, checks)
+        print('Existing publication verified; no files were uploaded or changed:', target['html_url'])
+        return
     require_draft_target(target, args.tag)
     target_id = target['id']
     if state.get('release_id') is not None and state['release_id'] != target_id:
@@ -237,14 +255,7 @@ def upload(args, version):
                         '--repo', args.repository], check=True)
     release = release_for_tag(args.repository, args.tag)
     require_draft_target(release, args.tag)
-    verify_uploaded(release, checks)
-    if tag_commit(args.repository, args.tag) != args.source_sha:
-        raise ValueError('Source tag changed during attachment')
-    for name, asset in asset_map(release).items():
-        if asset['size'] != (bundle / name).stat().st_size:
-            raise ValueError('Uploaded asset size differs: ' + name)
-    report = {'url': release['html_url'], 'source_sha': args.source_sha, 'draft': True, 'checks': checks}
-    (args.directory / 'release-report.json').write_text(json.dumps(report, indent=2) + '\n')
+    attachment_report(args, release, checks)
     print('All release files verified on GitHub. Release remains a draft:', release['html_url'])
 
 
@@ -259,6 +270,7 @@ def main():
     parser.add_argument('--source-sha')
     parser.add_argument('--attach-to-draft', choices=('true', 'false'), default='false')
     parser.add_argument('--create-draft', action='store_true')
+    parser.add_argument('--verify-published', action='store_true', help='Verify an identical published bundle without changing it')
     args = parser.parse_args()
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', args.repository):
         raise ValueError('Invalid repository name')

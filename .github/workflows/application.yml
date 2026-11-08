@@ -28,8 +28,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: application-${{ github.workflow }}-${{ github.ref }}-${{ inputs.station_image_tag || 'checks' }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || inputs.station_image_tag == '' }}
+  group: application-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || inputs.station_image_tag || 'checks' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.station_image_tag == '') }}
 
 jobs:
   php:
@@ -79,6 +79,44 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 -m unittest discover -s tests/power -p 'test_*.py' -v
       - run: sudo python3 tests/power/check_systemd.py
+
+  prepare-auto-release:
+    name: Prepare stable release candidate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == (vars.CMPROVISION_RELEASE_REPOSITORY || 'nimbo78/cmprovision')
+    needs: [php, javascript, image-release-checks, station-power]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.candidate.outputs.release_tag }}
+      source_sha: ${{ steps.candidate.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pin a new stable version after checks
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          CMPROVISION_RELEASE_REPOSITORY: ${{ vars.CMPROVISION_RELEASE_REPOSITORY || 'nimbo78/cmprovision' }}
+        run: |
+          python3 image/ci/automatic-release.py prepare --repository "$REPOSITORY" \
+            --source-sha "$SOURCE_SHA" --source-directory "$GITHUB_WORKSPACE"
+
+  automatic-release:
+    name: Publish complete stable release
+    if: needs.prepare-auto-release.outputs.release_tag != ''
+    needs: prepare-auto-release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ needs.prepare-auto-release.outputs.release_tag }}
+      expected_source_sha: ${{ needs.prepare-auto-release.outputs.source_sha }}
+      publish_release: true
 
   release:
     if: github.event_name == 'workflow_dispatch' && inputs.station_image_tag != '' && inputs.station_image_package_sha256 == '' && inputs.station_image_fpms_sha256 == ''
