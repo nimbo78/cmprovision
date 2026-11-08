@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         php${PHPV}-cli php${PHPV}-fpm php${PHPV}-sqlite3 php${PHPV}-bcmath php${PHPV}-mbstring \
         php${PHPV}-xml php${PHPV}-zip php${PHPV}-snmp php${PHPV}-curl \
         dpkg-dev debhelper build-essential fakeroot python3 dosfstools mtools busybox openssl \
+        openssh-client cpio bc wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Check the installed interpreter, not Composer's simulated config.platform.php.
