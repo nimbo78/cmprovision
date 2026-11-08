@@ -2,6 +2,19 @@
 
 This file provides guidance to AI coding agents (Claude Code, Antigravity/AGY, Codex, etc.) when working with code in this repository.
 
+## Стиль PR, коммитов, релизов и общения
+
+В проекте принят стандарт коммуникации и оформления: зумерский билингвальный стиль (английский + русский через `/` с эмодзи) в сочетании с железной технической строгостью (точные цифры тестов, шаги проверки, ссылки на файлы, анализ рисков и blast radius).
+
+> [!IMPORTANT]
+> **Языки строго раздельно, а не вперемешку!**
+> Категорически запрещено смешивать языки построчно или чередовать фразы внутри одного абзаца/списка (никакой каши). Описания PR, MR и релизов пишутся **строго последовательно**: сначала полный блок на английском (`# 🇬🇧 English`), затем разделитель `---`, затем полный блок на русском (`# 🇷🇺 Русский`). В документации — строго раздельные каталоги и файлы (`docs/` и `docs/ru/`). Исключение — только краткие двуязычные заголовки через слэш `/`.
+
+- Правило для агентов: `.agents/rules/pr-mr-commit-style.md`
+- Полное руководство: `docs/contributing.md` и `docs/ru/contributing.md`
+- Шаблон Pull Request: `.github/pull_request_template.md`
+- Conventional Commits: `type(scope): description`
+
 ## Обзор
 
 Веб-приложение для массовой прошивки Raspberry Pi Compute Module 4 (и Pi 4 с включённой сетевой загрузкой); CM3/3+ с 2.5.1 не поддерживаются. Стек: Laravel 13, Jetstream 5.5 (Livewire 3 + Fortify + Sanctum 4), Tailwind 3.4 (самостоятельный бинарник, без Node), SQLite. Форк `raspberrypi/cmprovision`.
