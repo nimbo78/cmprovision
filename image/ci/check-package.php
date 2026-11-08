@@ -13,7 +13,10 @@ if (($installed['dev'] ?? true) !== false || ($installed['dev-package-names'] ??
 $paths = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($app, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
 foreach ($paths as $path) {
     $name = $path->getFilename();
-    if ($name === '.env' || $name === '.git' || str_ends_with($name, '.bat')
+    $relative = substr($path->getPathname(), strlen($app) + 1);
+    // Upstream packages can ship Windows sources; reject only generated bin launchers.
+    if ($name === '.env' || $name === '.git'
+        || (str_starts_with($relative, 'vendor/bin/') && str_ends_with($name, '.bat'))
         || ($path->isFile() && str_ends_with($name, '.sqlite') && $path->getSize() > 0)) {
         throw new RuntimeException('Unexpected private or development payload: '.$path->getPathname());
     }
