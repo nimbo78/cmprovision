@@ -98,7 +98,8 @@ EXCLUDE="--exclude=$APP/public/uploads"
 # The database comes from the consistent copy above. A log or cache file that changes while tar
 # reads it is still archived; tar only warns about it and exits 1.
 # shellcheck disable=SC2086
-tar czf "$OUT/app.tar.gz" --warning=no-file-changed --exclude="$APP/database/database.sqlite*" $EXCLUDE "$APP" || [ $? = 1 ]
+tar czf "$OUT/app.tar.gz" --warning=no-file-changed --exclude="$APP/database/database.sqlite*" \
+    --exclude="$APP/storage/framework/configuration-transfer" $EXCLUDE "$APP" || [ $? = 1 ]
 
 # Serialize the network part with a new network change. This lock is held only for the small
 # system configuration archive, not while copying large uploaded images or the database.

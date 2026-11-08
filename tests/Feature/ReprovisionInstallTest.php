@@ -21,6 +21,8 @@ class ReprovisionInstallTest extends TestCase
         $this->bin('umount',"#!/bin/sh\necho unmounted >>\"\$CM_TEST_DIR/events\"");
         $this->bin('rmdir',"#!/bin/sh\nexit 0");
         $this->bin('sync',"#!/bin/sh\nexit 0");
+        // Ownership belongs to the simulated mounted OS, not the host test user.
+        $this->bin('chown',"#!/bin/sh\nexit 0");
     }
     private function bin(string $name,string $content): void { file_put_contents($this->dir.'/bin/'.$name,$content."\n"); chmod($this->dir.'/bin/'.$name,0755); }
     protected function tearDown(): void { if (isset($this->dir)) File::deleteDirectory($this->dir); parent::tearDown(); }

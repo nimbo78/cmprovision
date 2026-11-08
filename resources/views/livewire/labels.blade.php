@@ -2,7 +2,10 @@
     <div class="contents">
         <div class="cmp-title">
             <h1>Labels</h1>
-            <button wire:click="create()" class="cmp-btn ml-auto">Add label</button>
+            <div class="flex flex-wrap items-center gap-2 ml-auto">
+                <button type="button" wire:click="createWizard" class="cmp-btn">Create with wizard</button>
+                <button wire:click="create()" class="cmp-btn cmp-btn-secondary">Add label</button>
+            </div>
         </div>
         <div class="cmp-card px-4 py-3">
             @if (session()->has('message') && !$isOpen)
@@ -15,7 +18,7 @@
                 </div>
             @endif
             @if($isOpen)
-                @include('livewire.editlabel')
+                @include($wizardMode ? 'livewire.label-wizard' : 'livewire.editlabel')
             @endif
             <div class="cmp-card-scroll">
                 <table class="cmp-table min-w-full">
@@ -35,6 +38,7 @@
                             <td>@if ($l->printer_type == "ftp"){{ $l->ftp_hostname }}@else N/A @endif</td>
                             <td>
                                 <button wire:click="edit({{ $l->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
+                                <button type="button" wire:click="createWizard({{ $l->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Copy with wizard</button>
                                 <button wire:click="delete({{ $l->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
                             </td>
                         </tr>

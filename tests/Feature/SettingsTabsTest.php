@@ -72,7 +72,8 @@ class SettingsTabsTest extends TestCase
 
         foreach (['status', 'network'] as $tab)
             $this->tab($tab)->assertSee('disabled')->assertSeeHtml('cmp-chip-idle')->assertDontSee('stopped');
-        $this->tab('network')->assertSee('5 of 7 running')->assertSee('2 disabled');
+        $this->tab('network')->assertSee('5 of 7 running')->assertSee('2 disabled')
+            ->assertDontSee('@if')->assertDontSee('@endif');
     }
 
     #[DataProvider('otherTabs')]
@@ -84,6 +85,8 @@ class SettingsTabsTest extends TestCase
             ->assertSeeHtml('id="settings-health"')
             ->assertSeeHtml('wire:poll.30s')
             ->assertSee('3 of 7 running')   // the web interface answers, so it always runs
+            ->assertDontSee('0 disabled')
+            ->assertDontSee('@if')->assertDontSee('@endif')
             ->assertSee('stopped');
     }
 
@@ -94,7 +97,8 @@ class SettingsTabsTest extends TestCase
 
     public function test_the_strip_says_all_running_when_they_are()
     {
-        $this->tab('network')->assertSee('7 of 7 running')->assertDontSee('stopped');
+        $this->tab('network')->assertSee('7 of 7 running')->assertDontSee('stopped')
+            ->assertDontSee('0 disabled')->assertDontSee('@if')->assertDontSee('@endif');
     }
 
     public function test_the_network_tab_holds_wifi_switches_and_static_addresses()

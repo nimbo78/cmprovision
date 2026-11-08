@@ -108,27 +108,9 @@ This ordinary boot does not turn a completed USB run's **OS check: skipped** int
 
 ## Set a board to boot from the network (USB prep)
 
-Writing a whole image over USB is slow, and a board that holds somebody's system, or has a bootloader that does not
-try the network first, never reaches the stand's switch. **USB prep** changes only the bootloader over USB; the image is then
-written at the stand, over the network, to boards that are plugged into the PoE switch.
+To change the boot order without writing an OS image, use the separate [illustrated USB prep guide](usb-prep.md). It covers the stages, M4+ jumpers, Dashboard states and expected results.
 
-1. On the **Dashboard** press **Start USB prep** (the tile at the end of the row of the summary tiles; under a screen 1440 pixels
-   wide it has a row of its own under them). The bootloader a board gets (a firmware of the store and its
-   settings, **network first** by default: `BOOT_ORDER=0xf12`, the network, then the eMMC) is under **Settings →
-   Provisioning → USB prep**. Boards that boot from the network are provisioned as usual while it is on.
-2. Connect the board as in **Start through USB** (steps 3 to 6: no power but USB, `nRPIBOOT`, USB data cable, Ethernet to the
-   provisioning switch). The board loads the utility OS over USB, flashes the bootloader and the tile shows **ready** with the
-   board's MAC (both LEDs fade up and down in turn). The text of the tile is the next step for the board prepared last:
-   connect one, wait for ready, unplug it; boards prepared before it are counted (`+1 more`). Nothing else opens on the page. No image is written, no OS check and no label.
-3. Unplug USB and the power, release `nRPIBOOT`, and plug the board into the PoE switch. It boots from the network and the
-   stand provisions it with the active project.
-4. **Stop USB prep** when you are done. It also switches off by itself after an hour without a board.
-
-The bootloader keeps this order until something flashes another: a project with **EEPROM firmware update to apply** puts
-its own settings (for example the fleet's `0xf21`, eMMC first) back when it provisions the board. A project without one
-leaves the board network first, which makes it wait for the network at every start where no DHCP server answers (up to 45
-seconds) before it boots its eMMC. The prepared boards are not counted in a batch and nothing is sent to the notification
-channels; a board that cannot be flashed shows **failed** with the reason, and its card has the log.
+USB prep changes only EEPROM. The image is written later over Ethernet on the PoE stand; Ethernet is needed during both stages.
 
 ## Troubleshooting
 

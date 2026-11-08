@@ -109,6 +109,37 @@ class NetworkProfiles
         if ($list === null || !array_filter($list, fn ($profile) => $profile['device'] === $device && $profile['uuid'] === $uuid)) {
             return null;
         }
+        return $this->configuration($uuid);
+    }
+
+    /** Portable drafts: UUIDs stay local; a VLAN parent is expressed as a receiver-mappable interface. */
+    public function portable(): ?array
+    {
+        $profiles = $this->saved();
+        if ($profiles === null) return null;
+        $devices = array_column($profiles, 'device', 'uuid');
+        $result = [];
+        foreach ($profiles as $profile) {
+            $data = $this->configuration($profile['uuid']);
+            if ($data === null) return null;
+            $parent = null;
+            $tag = null;
+            if ($profile['type'] === 'vlan') {
+                $parent = $this->call(['timeout', '3', 'nmcli', '--escape', 'no', '-g', 'vlan.parent', 'connection', 'show', 'uuid', $profile['uuid']]);
+                $rawTag = $this->call(['timeout', '3', 'nmcli', '-g', 'vlan.id', 'connection', 'show', 'uuid', $profile['uuid']]);
+                if ($parent === null || $rawTag === null || !ctype_digit($rawTag) || (int) $rawTag < 1 || (int) $rawTag > 4094) return null;
+                $parent = $devices[$parent] ?? $parent;
+                if (!preg_match('/^[A-Za-z0-9_.-]{1,15}$/D', $parent)) return null;
+                $tag = (int) $rawTag;
+            }
+            $result[] = ['name' => $profile['name'], 'device' => $profile['device'], 'type' => $profile['type'],
+                'vlan_id' => $tag, 'parent' => $parent, 'draft' => true] + $data;
+        }
+        return $result;
+    }
+
+    private function configuration(string $uuid): ?array
+    {
         $profile = [];
         foreach (['ipv4', 'ipv6'] as $family) {
             foreach (self::PROPERTIES as $property) {

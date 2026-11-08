@@ -31,6 +31,14 @@ class PasswordConfirmationTest extends TestCase
         $response->assertSessionHasNoErrors();
     }
 
+    public function test_backup_password_confirmation_has_a_safe_return_to_the_backup_card(): void
+    {
+        $this->actingAs(User::factory()->create())->withSession(['url.intended' => route('settings.backup')])
+            ->get('/user/confirm-password')->assertOk()->assertSee('Back to Backup')
+            ->assertSeeHtml('href="'.route('settings', ['tab' => 'status']).'#backup"')
+            ->assertSee('Confirming password');
+    }
+
     public function test_password_is_not_confirmed_with_invalid_password(): void
     {
         $user = User::factory()->create();

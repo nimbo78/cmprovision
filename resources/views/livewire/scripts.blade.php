@@ -2,7 +2,10 @@
     <div class="contents">
         <div class="cmp-title">
             <h1>Scripts</h1>
-            <button wire:click="create()" class="cmp-btn ml-auto">Add script</button>
+            <div class="flex flex-wrap items-center gap-2 ml-auto">
+                <button type="button" wire:click="createWizard" class="cmp-btn">Create with wizard</button>
+                <button wire:click="create()" class="cmp-btn cmp-btn-secondary">Add script</button>
+            </div>
         </div>
         <div class="cmp-card px-4 py-3">
             @if (session()->has('message'))
@@ -15,7 +18,7 @@
                 </div>
             @endif
             @if($isOpen)
-                @include('livewire.editscript')
+                @include($wizardMode ? 'livewire.script-wizard' : 'livewire.editscript')
             @endif
             <div class="cmp-card-scroll">
                 <table class="cmp-table min-w-full">
@@ -35,6 +38,7 @@
                             <td>{{ $s->priority }}</td>
                             <td>
                                 <button wire:click="edit({{ $s->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
+                                <button type="button" wire:click="createWizard({{ $s->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Copy with wizard</button>
                                 <button wire:click="delete({{ $s->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
                             </td>
                         </tr>

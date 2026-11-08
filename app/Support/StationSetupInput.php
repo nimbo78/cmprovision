@@ -8,6 +8,24 @@ use Illuminate\Validation\ValidationException;
 /** Saved project settings never contain the clear-text Linux password. */
 class StationSetupInput
 {
+    /** Validate a portable saved definition; password hashes are retained rather than hashed as passwords. */
+    public static function saved(array $saved): array
+    {
+        Validator::make($saved, [
+            'schema' => 'required|integer|in:1', 'hostname' => 'required|string|max:63', 'username' => 'required|string|max:32',
+            'password_hash' => ['nullable', 'string', 'max:255', 'regex:/^\$6\$(?:rounds=100000\$)?[A-Za-z0-9.\/]{1,16}\$[A-Za-z0-9.\/]{86}$/D'],
+            'keys' => 'present|array|max:10', 'keys.*' => 'string|max:16384', 'ssh' => 'required|boolean',
+            'wifi' => 'present|nullable|array:ssid,security,password,country,hidden',
+            'wifi.ssid' => 'required_with:wifi|string|max:32', 'wifi.security' => 'required_with:wifi|in:wpa2,wpa3,mixed',
+            'wifi.password' => 'required_with:wifi|string|max:64', 'wifi.country' => ['required_with:wifi', 'regex:/^[A-Z]{2}$/D'],
+            'wifi.hidden' => 'required_with:wifi|boolean',
+        ])->validate();
+        if (array_diff(array_keys($saved), ['schema', 'hostname', 'username', 'password_hash', 'keys', 'ssh', 'wifi'])) {
+            throw ValidationException::withMessages(['station_setup' => 'The station definition contains an unsupported field.']);
+        }
+        return self::normalize(self::form($saved), $saved);
+    }
+
     public static function normalize(array $input, ?array $saved = null): array
     {
         $data = Validator::make($input, [

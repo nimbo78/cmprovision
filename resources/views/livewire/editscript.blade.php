@@ -10,46 +10,11 @@
     <div class="inline-block align-bottom bg-panel rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full" role="dialog" aria-modal="true" aria-labelledby="modal-headline">
       <div class="bg-panel px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
         <div >
-              <div class="mb-4">
-                  <label for="name" class="block text-fg text-sm font-bold mb-2">Script name:</label>
-                  <input type="text" id="name" name="name" wire:model="name" class="cmp-field w-full">
-                  @error('name') <span class="text-neg">{{ $message }}</span>@enderror
-              </div>
-              <div class="mb-4">
-                  <label for="script_type" class="block text-fg text-sm font-bold mb-2">Script type:</label>
-                  <select id="script_type" name="script_type" wire:model.live="script_type" class="cmp-field w-full">
-                    <option value="preinstall">preinstall</option>
-                    <option value="postinstall">postinstall</option>
-                    <option value="firstboot">first boot (in the written system, for the OS check)</option>
-                  </select>
-                  @error('script_type') <span class="text-neg">{{ $message }}</span>@enderror
-              </div>
-              <div class="mb-4">
-                  <label for="priority" class="block text-fg text-sm font-bold mb-2">Priority:</label>
-                  <input type="text" id="priority" name="priority" wire:model="priority" class="cmp-field w-full">
-                  <small>Script with lowest number is started first</small><br>
-                  @error('priority') <span class="text-neg">{{ $message }}</span>@enderror
-              </div>
-              @if ($script_type !== 'firstboot')
-              <div class="mb-4">
-                  <label class="inline-flex items-center">
-                    <input type="checkbox" id="bg" name="bg" wire:model="bg" class="form-checkbox h-6 w-6 text-accent">
-                    <span class="ml-3 text-sm">Run in background</span>
-                  </label>
-                  @error('bg') <span class="text-neg">{{ $message }}</span>@enderror
-              </div>
-              @endif
-              <div class="mb-4">
-                  <label for="script" class="block text-fg text-sm font-bold mb-2">Script:</label>
-                  <textarea wrap="off" type="text" id="script" name="script" wire:model="script" class="h-48 cmp-field w-full font-mono"></textarea>
-                  @if ($script_type === 'firstboot')
-                  <small>Runs in the written system on its first boot, as root, when the project checks the OS: a non-zero exit fails the check. Environment variable: $SERVER</small><br>
-                  @else
-                  <small>Available environment variables:<br>$SERVER $STORAGE $PART1 $PART2</small><br>
-                  @endif
-                  @error('script') <span class="text-neg">{{ $message }}</span>@enderror
-              </div>
-
+              @include('livewire.script-fields.name')
+              @include('livewire.script-fields.phase')
+              @include('livewire.script-fields.priority')
+              @include('livewire.script-fields.background')
+              @include('livewire.script-fields.content')
         </div>
       </div>
   

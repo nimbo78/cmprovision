@@ -15,17 +15,18 @@ use App\Models\Script;
 use App\Models\Setting;
 use App\Models\Firmware;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use App\Jobs\ComputeSHA256;
 use App\Services\EepromImage;
 use App\Services\FirmwareNotes;
 use App\Services\ProjectActivator;
-use App\Services\Sensor\ModuleMark;
+use App\Services\Configuration\Definitions;
 
 #[Title('Projects')]
 class Projects extends Component
 {
     use SortsColumns;
+    use \App\Http\Livewire\Concerns\CreatesWithWizard;
     use \Laravel\Jetstream\ConfirmsPasswords;
     public $stationEnabled = false, $station = [];
     #[Locked]
@@ -45,29 +46,7 @@ class Projects extends Component
 
     protected function rules()
     {
-        return [
-            'name' => 'required|max:255',
-            'device' => 'required|in:cm4',
-            'storage' => 'required|max:255',
-            'image_id' => ['nullable', 'numeric', function ($attribute, $value, $fail) {
-                $image = $value ? Image::find($value) : null;
-                $own = $this->projectid ? Project::find($this->projectid)?->image_id : null;
-                if ($image && !$image->isReady() && (int) $value !== (int) $own)
-                    $fail('This image is not ready yet: it is still being fetched, repacked or checked, or it failed.');
-            }],
-            'label_id' => 'nullable|numeric',
-            // a file of the firmware store only: the name comes from the browser
-            'firmware' => ['nullable', 'max:255', Rule::in($this->firmwarePaths())],
-            'eeprom_settings' => 'nullable|max:2024',
-            'label_moment' => 'required|in:never,preinstall,postinstall,firstboot',
-            'selectedScripts' => 'array',
-            'selectedPackages' => 'array',
-            'verify' => 'required|boolean',
-            'os_check' => 'required|boolean',
-            'split_image' => 'required|boolean',
-            'reprovision' => 'required|boolean',
-            'mark_boots' => 'required|integer|min:0|max:'.ModuleMark::MAX_BOOTS,
-        ];
+        return Definitions::projectRules($this->projectid ? Project::find($this->projectid) : null);
     }
 
     /* The columns that sort the table of projects by a click on their header; with none chosen the order is the name */
@@ -168,6 +147,7 @@ class Projects extends Component
 
     public function closeModal()
     {
+        $this->endWizard();
         $this->isOpen = false;
         $this->station = [];
     }
@@ -180,6 +160,7 @@ class Projects extends Component
 
     public function create()
     {
+        $this->endWizard();
         $this->stationEnabled = $this->savedStationSetup = false;
         $this->station = \App\Support\StationSetupInput::form();
         $this->name = $this->projectid = $this->label_id = '';
@@ -204,6 +185,7 @@ class Projects extends Component
 
     public function edit($id)
     {
+        $this->endWizard();
         $p = Project::findOrFail($id);
         $this->stationEnabled = $this->savedStationSetup = $p->station_setup !== null;
         $this->station = \App\Support\StationSetupInput::form($p->station_setup);
@@ -246,59 +228,37 @@ class Projects extends Component
 
     public function store()
     {
+        $this->ensureWizardSummary();
+        if ($this->wizardMode) {
+            $this->projectid = '';
+            $this->validateWizardReferences();
+        }
         $this->validate();
-        $savedSetup = $this->projectid ? Project::find($this->projectid)?->station_setup : null;
-        $setup = null;
-        if ($this->stationEnabled || $savedSetup !== null) $this->ensurePasswordIsConfirmed();
-        if ($this->stationEnabled) {
-            if (!$this->image_id || !$this->verify || !preg_match('#^/dev/mmcblk[0-9]+$#D', $this->storage)) {
-                $this->addError('stationEnabled', 'Station setup requires an image, SHA-256 verification and eMMC/SD storage.');
-                return;
-            }
-            try {
-                $setup = \App\Support\StationSetupInput::normalize($this->station, $savedSetup);
-            } catch (\Illuminate\Validation\ValidationException $e) {
-                foreach ($e->errors() as $key => $messages) $this->addError('station.'.$key, $messages[0]);
-                $this->station['password'] = $this->station['wifi_password'] = '';
-                return;
-            }
+        $existing = $this->projectid ? Project::find($this->projectid) : null;
+        if ($this->wizardMode && $this->stationEnabled) {
+            $existing = new Project;
+            $existing->station_setup = $this->wizardData()['station_setup'] ?? null;
+        }
+        if ($this->stationEnabled || $existing?->station_setup !== null) {
+            $this->ensurePasswordIsConfirmed();
+        }
+        try {
+            $definition = Definitions::project($this->projectInput(), $existing);
+        } catch (ValidationException $error) {
+            $this->station['password'] = $this->station['wifi_password'] = '';
+            throw $error;
         }
 
-        // what runs in the new system belongs to the OS check
-        if (!$this->os_check)
-        {
-            $errors = [];
-            if ($this->label_moment === 'firstboot')
-                $errors['label_moment'] = 'Printing after the OS check needs the OS check.';
-            if ($this->selectedPackages)
-                $errors['selectedPackages'] = 'Packages are installed by the OS check: turn it on or clear them.';
-            if (Script::whereIn('id', $this->selectedScripts ?: [])->where('script_type', 'firstboot')->exists())
-                $errors['selectedScripts'] = 'First-boot scripts run in the OS check: turn it on or clear them.';
-            foreach ($errors as $field => $message)
-                $this->addError($field, $message);
-            if ($errors)
-                return;
-        }
-
-        $project = Project::updateOrCreate(['id' => $this->projectid], [
-            'name' => $this->name,
-            'device' => $this->device,
-            'storage' => $this->storage,
-            'label_moment' => $this->label_moment,
-            'image_id' => $this->image_id ? $this->image_id : null,
-            'label_id' => $this->label_id ? $this->label_id : null,
-            'eeprom_firmware' => $this->firmware ? $this->firmware : null,
-            'eeprom_settings' => $this->eeprom_settings ? str_replace("\r", "", $this->eeprom_settings) : null,
-            'verify' => $this->verify,
-            'os_check' => (bool) $this->os_check,
-            'split_image' => (bool) $this->split_image,
-            'reprovision' => (bool) $this->reprovision,
-            'mark_boots' => (int) $this->mark_boots,
-        ]);
-        $project->station_setup = $setup;
+        $project = Project::updateOrCreate(['id' => $this->projectid], $definition['attributes']);
+        $project->station_setup = $definition['station_setup'];
         $project->save();
-        $project->scripts()->sync($this->selectedScripts);
-        $project->packages()->sync($this->selectedPackages ?: []);
+        $scripts = $definition['script_ids'];
+        if ($this->wizardMode) {
+            $scripts = [];
+            foreach ($definition['script_ids'] as $position => $id) $scripts[$id] = ['position' => $position];
+        }
+        $project->scripts()->sync($scripts);
+        $project->packages()->sync($definition['package_ids']);
 
         if ($this->active)
         {
@@ -323,6 +283,89 @@ class Projects extends Component
     public function cancel()
     {
         $this->closeModal();
+    }
+
+    public function createWizard(?int $copyId = null): void
+    {
+        if ($copyId === null) $this->create();
+        else $this->edit($copyId);
+        $source = $copyId === null ? null : Project::findOrFail($copyId);
+        $this->beginWizard();
+        $this->projectid = '';
+        $this->active = false;
+        if ($source === null) $this->verify = $this->os_check = $this->split_image = true;
+        else {
+            $base = mb_substr($source->name, 0, 220).' (copy)';
+            $name = $base;
+            for ($i = 2; Project::where('name', $name)->exists(); $i++) $name = $base.' '.$i;
+            $this->name = $name;
+            $this->selectedScripts = $source->orderedScripts()->pluck('scripts.id')->map(fn ($id) => (string) $id)->all();
+            if ($source->station_setup !== null) $this->keepWizardData(['station_setup' => $source->station_setup]);
+        }
+    }
+
+    public function wizardSteps(): array
+    {
+        $steps = [1 => 'Purpose and name', 2 => 'Image and storage', 3 => 'Checks and bootloader',
+            4 => 'Scripts and packages', 5 => 'Label'];
+        if ($this->stationEnabled) $steps[6] = 'Station access and Wi-Fi';
+        $steps[7] = 'Review and save';
+        return $steps;
+    }
+
+    protected function validateWizardStep(#[\SensitiveParameter] array $secrets): void
+    {
+        $fields = match ($this->wizardStep) {
+            1 => ['name', 'stationEnabled'], 2 => ['image_id', 'storage'],
+            3 => ['verify', 'os_check', 'split_image', 'reprovision', 'mark_boots', 'firmware', 'eeprom_settings'],
+            4 => ['selectedScripts', 'selectedPackages'], 5 => ['label_id', 'label_moment'], default => [],
+        };
+        if ($fields) $this->validate(array_intersect_key(Definitions::projectRules(), array_flip($fields)));
+        $this->validateWizardReferences();
+        if (in_array($this->wizardStep, [4, 5], true)) Definitions::project($this->projectInput(false));
+        if ($this->wizardStep === 3 && $this->stationEnabled && !$this->verify) {
+            throw ValidationException::withMessages(['verify' => 'Station setup requires SHA-256 verification.']);
+        }
+        if ($this->wizardStep === 6) {
+            if (array_diff(array_keys($secrets), ['password', 'wifi_password'])) throw ValidationException::withMessages(['wizard' => 'Unsupported credential field.']);
+            $input = $this->station;
+            foreach ($secrets as $key => $value) $input[$key] = $value;
+            try { $setup = \App\Support\StationSetupInput::normalize($input, $this->wizardData()['station_setup'] ?? null); }
+            catch (ValidationException $error) {
+                throw ValidationException::withMessages(collect($error->errors())->mapWithKeys(fn ($value, $field) => ['station.'.$field => $value])->all());
+            }
+            $this->keepWizardData(['station_setup' => $setup]);
+            $this->dispatch('wizard-credentials-stored');
+            $this->savedStationSetup = true;
+            $this->station['password'] = $this->station['wifi_password'] = '';
+        }
+    }
+
+    protected function projectInput(bool $station = true): array
+    {
+        $input = [];
+        foreach (['name', 'device', 'storage', 'label_moment', 'image_id', 'label_id', 'firmware', 'eeprom_settings',
+            'verify', 'os_check', 'split_image', 'reprovision', 'mark_boots', 'stationEnabled', 'station'] as $key) $input[$key] = $this->$key;
+        $input['selectedScripts'] = $this->selectedScripts ?: [];
+        $input['selectedPackages'] = $this->selectedPackages ?: [];
+        if (!$station) $input['stationEnabled'] = false;
+        return $input;
+    }
+
+    protected function validateWizardReferences(): void
+    {
+        $rules = [];
+        if (in_array($this->wizardStep, [1, 7], true)) $rules['name'] = 'required|string|max:255|unique:projects,name';
+        if (in_array($this->wizardStep, [2, 7], true)) {
+            $rules['image_id'] = ($this->stationEnabled ? 'required' : 'nullable').'|integer|exists:images,id';
+            if ($this->stationEnabled) $rules['storage'] = 'required|regex:#^/dev/mmcblk[0-9]+$#D';
+        }
+        if (in_array($this->wizardStep, [4, 7], true)) {
+            $rules['selectedScripts.*'] = 'integer|distinct|exists:scripts,id';
+            $rules['selectedPackages.*'] = 'integer|distinct|exists:packages,id';
+        }
+        if (in_array($this->wizardStep, [5, 7], true)) $rules['label_id'] = ($this->label_moment === 'never' ? 'nullable' : 'required').'|integer|exists:labels,id';
+        if ($rules) $this->validate($rules);
     }
 
     public function setActive($id)

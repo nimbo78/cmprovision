@@ -1,0 +1,46 @@
+name: Application
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: application-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  php:
+    name: PHP / Debian Trixie
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the test bench
+        run: |
+          docker build --pull --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" \
+            -f docker/Dockerfile -t cmprovision-test .
+      - name: Install locked dependencies and run PHP tests
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --entrypoint sh -v "$GITHUB_WORKSPACE:/var/lib/cmprovision" \
+            -e HOME=/tmp -e COMPOSER_HOME=/tmp/composer cmprovision-test -ec '
+              composer install --no-interaction --prefer-dist --no-progress
+              cp debian/env.example .env
+              php artisan key:generate --force
+              php artisan test
+            '
+  javascript:
+    name: JavaScript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run test:js
