@@ -71,9 +71,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 -m unittest discover -s tests/image -p 'test_release_*.py' -v
 
+  station-power:
+    name: Station power controller
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 -m unittest discover -s tests/power -p 'test_*.py' -v
+      - run: sudo python3 tests/power/check_systemd.py
+
   release:
     if: github.event_name == 'workflow_dispatch' && inputs.station_image_tag != '' && inputs.station_image_package_sha256 == '' && inputs.station_image_fpms_sha256 == ''
-    needs: [php, javascript, image-release-checks]
+    needs: [php, javascript, image-release-checks, station-power]
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml
@@ -83,7 +92,7 @@ jobs:
 
   station-image:
     if: github.event_name == 'workflow_dispatch' && inputs.station_image_tag != '' && (inputs.station_image_package_sha256 != '' || inputs.station_image_fpms_sha256 != '')
-    needs: [php, javascript, image-release-checks]
+    needs: [php, javascript, image-release-checks, station-power]
     permissions:
       contents: write
     uses: ./.github/workflows/station-image.yml

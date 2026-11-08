@@ -31,6 +31,9 @@ override_dh_install:
 	install -D -m 755 tools/wallboard-control debian/cmprovision4/usr/lib/cmprovision/wallboard-control
 	install -D -m 755 tools/fpms-control.py debian/cmprovision4/usr/lib/cmprovision/fpms-control.py
 	install -D -m 755 tools/fpms-control debian/cmprovision4/usr/lib/cmprovision/fpms-control
+	install -D -m 755 tools/station-power.py debian/cmprovision4/usr/lib/cmprovision/station-power.py
+	install -D -m 755 tools/station-power debian/cmprovision4/usr/lib/cmprovision/station-power
+	install -D -m 755 tools/station-power-panel debian/cmprovision4/usr/lib/cmprovision/station-power-panel
 
 # The watcher alone decides whether there is a display (it starts the display, which wants the data unit). A static unit
 # would otherwise be started by dh as well.

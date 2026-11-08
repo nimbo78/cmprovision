@@ -120,6 +120,28 @@ On every tab except Status a strip at the top shows the same services in one lin
 
 Links from before the tabs (`/settings#wifi`, `#reprovision-key`, `#utility-os`, `#hdmi-display`) still work: the page takes them to the tab that holds the section.
 
+## Restart and shut down the provisioner
+
+Open **Settings → Status → Station power**. Check the station name, select **Restart station** or
+**Shut down station**, confirm your account password when asked, then confirm the action.
+This controls the provisioner itself, including its web interface and boot services.
+
+If any module has an unfinished provisioning run, a separate **Interrupt provisioning?** warning
+appears. Confirm again to proceed, or cancel. Image and EEPROM writes can fail and require recovery.
+Silent unfinished runs also count; the server checks live state again at confirmation. A newly started
+run causes an updated warning. Once scheduled, new provisioning starts are refused.
+
+The normal system shutdown starts about five seconds after final confirmation; it cannot be cancelled
+from this screen. The browser waits for a changed boot identity before calling a restart complete.
+An HTTP error, a timeout or a closed connection does not prove that shutdown has finished.
+After shutdown, allow the system to finish stopping before cycling **PoE or external power** to start it again.
+
+On **FPMS Lite**, press **KEY3** for the same controls in either layout and any colour mode.
+Use up/down and the joystick centre to select; **KEY1** confirms and **KEY2** cancels or goes back.
+Active provisioning requires another KEY1 confirmation. The centre never executes a power action.
+Confirmations expire after two minutes. This menu requires the updated `cmprovision4` and `fpms-lite`
+packages; the retained full WLAN Pi OS adapter and read-only previews have no power controls.
+
 ## First-boot OS check
 
 A project with **Check the OS after the first boot** does not stop when the image is written. The module reboots into its new system right on the stand, where a one-shot service checks it:

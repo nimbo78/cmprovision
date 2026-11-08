@@ -93,9 +93,14 @@ the diagnostics (a healthy report has no title), MAC, serial and switch.
 | Joystick centre | Open the card (on Overview with failures: Errors) | Back to the list |
 | Button 1 | Overview | Overview |
 | Button 2 | Overview | Back to the list |
-| Button 3 | Nothing | Nothing |
+| Button 3 | Station power menu (Lite only) | Station power menu (Lite only) |
 
 The controls cannot erase storage, start provisioning, change a project or switch off PoE.
+In Lite's power menu, up/down selects Cancel, Restart or Shut down; the centre opens confirmation.
+KEY1 confirms, KEY2 cancels. Unfinished provisioning requires a separate KEY1 confirmation based on live
+server data. Confirmations expire after two minutes; no action is taken from a display snapshot.
+After shutdown, cycle PoE or external power to start the station again.
+See [station power](operations.md#restart-and-shut-down-the-provisioner) for the complete flow.
 Inside a device card, the identity stays pinned: if it disconnects, the display says
 it left the stand instead of silently showing another device.
 

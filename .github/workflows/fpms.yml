@@ -19,6 +19,6 @@ jobs:
       - run: python -m unittest discover -s tests/tools -p test_fpms_control.py -v
       - run: sudo python3 tests/tools/check_display_systemd.py
       - run: sh packaging/fpms/prepare.sh /tmp/cmprovision-fpms-source
-      - run: python -m pytest tests/test_cmprovision.py tests/test_cmprovision_fonts.py tests/test_cmprovision_v2.py tests/test_portable_display.py -q
+      - run: python -m pytest tests/test_cmprovision.py tests/test_cmprovision_fonts.py tests/test_cmprovision_v2.py tests/test_portable_display.py tests/test_cmprovision_power.py -q
         working-directory: /tmp/cmprovision-fpms-source
       - run: sh /tmp/cmprovision-fpms-source/tools/build-lite-deb.sh /tmp/fpms-packages
