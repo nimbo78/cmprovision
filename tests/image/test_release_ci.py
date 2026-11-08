@@ -1,9 +1,12 @@
 """Release CI refuses unsafe inputs and incomplete or mismatched artifacts."""
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('image_release_ci', ROOT / 'image/ci/release.py')
@@ -20,6 +23,31 @@ def release():
         {'name': 'cmprovision4_2.26.0_all.deb', 'state': 'uploaded', 'digest': 'sha256:' + APP},
         {'name': 'fpms-lite_2.26.0_all.deb', 'state': 'uploaded', 'digest': 'sha256:' + FPMS},
     ]}
+
+
+def upload_fixture(directory):
+    bundle = directory / 'assets'
+    bundle.mkdir()
+    rows = []
+    for name in ci.asset_names(VERSION):
+        body = name.encode()
+        (bundle / name).write_bytes(body)
+        rows.append(f'{hashlib.sha256(body).hexdigest()}  {name}\n')
+    (bundle / 'SHA256SUMS').write_text(''.join(rows))
+    checks = ci.verify_bundle(bundle, VERSION)
+    args = SimpleNamespace(directory=directory, repository='test/repo', tag=TAG,
+                           source_sha='c' * 40,
+                           package_sha256=checks['cmprovision4_2.26.0_all.deb'],
+                           fpms_sha256=checks['fpms-lite_2.26.0_all.deb'])
+    state = vars(args).copy()
+    del state['directory']
+    state['release_id'] = 42
+    (directory / 'state.json').write_text(json.dumps(state))
+    value = {'id': 42, 'tag_name': TAG, 'draft': True, 'html_url': 'https://example.test/release',
+             'assets': [{'name': name, 'state': 'uploaded', 'digest': 'sha256:' + checks[name],
+                         'size': (bundle / name).stat().st_size}
+                        for name in ('cmprovision4_2.26.0_all.deb', 'fpms-lite_2.26.0_all.deb')]}
+    return args, checks, value
 
 
 class ReleaseCiTest(unittest.TestCase):
@@ -106,6 +134,44 @@ class ReleaseCiTest(unittest.TestCase):
                        [dict(asset, digest=None) for asset in assets]):
             with self.subTest(assets=broken), self.assertRaises(ValueError):
                 ci.verify_uploaded({'assets': broken}, checks)
+
+    def test_attachment_never_clobbers_existing_assets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, checks, value = upload_fixture(Path(tmp))
+            def uploaded(command, **kwargs):
+                self.assertNotIn('--clobber', command, 'CLI overwrite can race with publication')
+                name = Path(command[4]).name
+                value['assets'].append({'name': name, 'state': 'uploaded',
+                                        'digest': 'sha256:' + checks[name],
+                                        'size': (args.directory / 'assets' / name).stat().st_size})
+            with patch.object(ci, 'release_for_tag', return_value=value), \
+                    patch.object(ci, 'tag_commit', return_value=args.source_sha), \
+                    patch.object(ci.subprocess, 'run', side_effect=uploaded):
+                ci.upload(args, VERSION)
+            ci.verify_uploaded(value, checks)
+
+    def test_conflicting_existing_file_stops_before_any_upload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, checks, value = upload_fixture(Path(tmp))
+            value['assets'].append({'name': 'image-uncompressed.sha256', 'state': 'uploaded',
+                                    'digest': 'sha256:' + 'd' * 64, 'size': 1})
+            with patch.object(ci, 'release_for_tag', return_value=value), \
+                    patch.object(ci, 'tag_commit', return_value=args.source_sha), \
+                    patch.object(ci.subprocess, 'run') as write:
+                with self.assertRaisesRegex(ValueError, 'Existing release asset differs'):
+                    ci.upload(args, VERSION)
+                write.assert_not_called()
+
+    def test_published_release_stops_attachment_before_any_upload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, checks, value = upload_fixture(Path(tmp))
+            value['draft'] = False
+            with patch.object(ci, 'release_for_tag', return_value=value), \
+                    patch.object(ci, 'tag_commit', return_value=args.source_sha), \
+                    patch.object(ci.subprocess, 'run') as write:
+                with self.assertRaises(ValueError):
+                    ci.upload(args, VERSION)
+                write.assert_not_called()
 
 
 if __name__ == '__main__':

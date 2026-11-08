@@ -30,6 +30,9 @@ Use **Actions → Application → Run workflow** with an existing release tag in
 `station_image_package_sha256` and `station_image_fpms_sha256`. Enable
 `station_image_attach` to attach the audited bundle to a still-draft release; publication is separate.
 Published releases support read-only rebuilds with attachment disabled.
+Prepare first-attachment drafts with the two packages and FPMS provenance files; the workflow
+creates the image checksum manifest. Identical existing files are skipped; conflicts abort,
+and existing assets are never automatically replaced. Keep the release as a draft until completion.
 The native ARM64 builder keeps the large disk image inside GitHub, with no upload from a
 PC or provisioner. See [build inputs, checks and limitations](../image/README.md#build-in-github-actions).
 Every rebuilt image still needs its own physical first-boot/display acceptance.

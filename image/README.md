@@ -17,6 +17,13 @@ and `station_image_fpms_sha256` values. Leaving the tag empty runs the normal ap
 checks only. `station_image_attach` defaults to false: enable it to attach the audited
 bundle to that same release, which must still be a draft. A published release can be rebuilt
 read-only with attachment disabled. The workflow never publishes a release or replaces public assets.
+For first attachment, prepare a draft containing the two verified packages and the matching
+`fpms-upstream.txt`/`fpms-patch.sha256` metadata. The workflow creates the complete image
+checksum manifest. Existing identical files are skipped; any conflicting file stops attachment
+before writing. Existing assets are never automatically deleted or replaced. Keep the release
+as a draft until attachment succeeds. Retry a failed attachment with the same retained artifact;
+a new image build with different hashes needs a clean draft or explicit operator cleanup first.
+Ordinary Application checks and image dispatches use separate concurrency groups.
 
 The build uses a native ARM64 hosted runner and a disposable Debian 13 container, downloads
 the package inputs from GitHub, and checks out the tag's exact source commit.

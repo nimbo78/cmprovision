@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare independently verified image inputs and update only a matching draft."""
+"""Verify image inputs; attach to a matching draft without overwriting existing assets."""
 import argparse
 import hashlib
 import json
@@ -170,10 +170,17 @@ def upload(args, version):
         assets = require_draft(release, args.tag, args.package_sha256, args.fpms_sha256)
         if release['id'] != state['release_id'] or tag_commit(args.repository, args.tag) != args.source_sha:
             raise ValueError('Release or source tag changed after the image build')
-        if assets.get(name, {}).get('digest') == 'sha256:' + digest:
+        # Never delete or overwrite an asset: publication can race with client checks.
+        # Check every existing name before the first write, including later-sorted files.
+        for existing_name, existing in assets.items():
+            if existing_name not in checks:
+                raise ValueError('Unexpected existing release asset: ' + existing_name)
+            if existing.get('state') != 'uploaded' or existing.get('digest') != 'sha256:' + checks[existing_name]:
+                raise ValueError('Existing release asset differs; no files were replaced: ' + existing_name)
+        if name in assets:
             continue
         subprocess.run(['gh', 'release', 'upload', args.tag, str(bundle / name),
-                        '--repo', args.repository, '--clobber'], check=True)
+                        '--repo', args.repository], check=True)
     release = release_for_tag(args.repository, args.tag)
     require_draft(release, args.tag, args.package_sha256, args.fpms_sha256)
     verify_uploaded(release, checks)

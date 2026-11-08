@@ -1,4 +1,5 @@
 name: Application
+run-name: ${{ inputs.station_image_tag && format('Station image {0}', inputs.station_image_tag) || 'Application checks' }}
 
 on:
   pull_request:
@@ -27,8 +28,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: application-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: application-${{ github.workflow }}-${{ github.ref }}-${{ inputs.station_image_tag || 'checks' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || inputs.station_image_tag == '' }}
 
 jobs:
   php:
