@@ -19,7 +19,8 @@ yarn-error.log
 /.superpowers/
 /.remember/
 /.codex-remote-attachments/
-/.agents/
+/.agents/*
+!/.agents/rules/
 /.archify/
 /docs/diagrams/*.json
 
