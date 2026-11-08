@@ -6,6 +6,8 @@ Version 2.24.0 introduces UI-based network management and an experimental Raspbe
 
 ## Pre-Built Station Image
 
+For 2.26.0, use the matching package and experimental Lite image from the [release assets](https://github.com/nimbo78/cmprovision/releases/tag/v2.26.0). The refreshed image includes the station-role form and project-driven setup. Its publication does not replace the physical first-boot and display checks below; the application package is stable while the ready-made station image remains experimental.
+
 The `.deb` package installs onto an existing, running OS. The pre-built image is a full disk image for Raspberry Pi Imager containing Raspberry Pi OS Lite arm64, cmprovision, and optionally `fpms-lite`. It can be flashed onto eMMC or microSD of a supported carrier board, booted, and initialized.
 
 Planned architecture for Raspberry Pi OS Lite releases:
