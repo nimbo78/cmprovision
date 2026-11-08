@@ -173,6 +173,73 @@ class ReleaseCiTest(unittest.TestCase):
                     ci.upload(args, VERSION)
                 write.assert_not_called()
 
+    def test_new_draft_is_always_private_and_has_separate_language_blocks(self):
+        created = {'id': 73, 'tag_name': TAG, 'draft': True, 'assets': []}
+        with patch.object(ci, 'api_write', return_value=created, create=True) as write:
+            self.assertEqual(created, ci.create_draft('test/repo', TAG, 'c' * 40,
+                                                    'https://github.com/test/repo/actions/runs/123'))
+        endpoint, payload = write.call_args.args
+        self.assertTrue(payload['draft'])
+        self.assertFalse(payload['prerelease'])
+        self.assertEqual('c' * 40, payload['target_commitish'])
+        self.assertTrue(payload['body'].startswith('# 🇬🇧 English\n'))
+        self.assertIn('\n---\n\n# 🇷🇺 Русский\n', payload['body'])
+
+    def test_missing_release_needs_explicit_creation_permission(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, checks, value = upload_fixture(Path(tmp))
+            with patch.object(ci, 'release_for_tag', return_value=None), \
+                    patch.object(ci, 'tag_commit', return_value=args.source_sha), \
+                    patch.object(ci, 'api_write', create=True) as create, \
+                    patch.object(ci.subprocess, 'run') as write:
+                with self.assertRaises(ValueError):
+                    ci.upload(args, VERSION)
+                create.assert_not_called()
+                write.assert_not_called()
+
+    def test_changed_tag_stops_before_draft_creation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, checks, value = upload_fixture(Path(tmp))
+            args.create_draft = True
+            state = json.loads((args.directory / 'state.json').read_text())
+            state['release_id'] = None
+            (args.directory / 'state.json').write_text(json.dumps(state))
+            with patch.object(ci, 'release_for_tag', return_value=None), \
+                    patch.object(ci, 'tag_commit', return_value='f' * 40), \
+                    patch.object(ci, 'api_write', create=True) as create, \
+                    patch.object(ci.subprocess, 'run') as write:
+                with self.assertRaisesRegex(ValueError, 'Source tag changed'):
+                    ci.upload(args, VERSION)
+                create.assert_not_called()
+                write.assert_not_called()
+
+    def test_missing_release_can_be_created_then_filled_without_clobber(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, checks, value = upload_fixture(Path(tmp))
+            args.create_draft = True
+            state = json.loads((args.directory / 'state.json').read_text())
+            state['release_id'] = None
+            (args.directory / 'state.json').write_text(json.dumps(state))
+            value['assets'] = []
+            target = [None]
+            def created(*_):
+                target[0] = value
+                return value
+            def uploaded(command, **kwargs):
+                self.assertNotIn('--clobber', command)
+                name = Path(command[4]).name
+                value['assets'].append({'name': name, 'state': 'uploaded',
+                    'digest': 'sha256:' + checks[name],
+                    'size': (args.directory / 'assets' / name).stat().st_size})
+            with patch.object(ci, 'release_for_tag', side_effect=lambda *a, **kw: target[0]), \
+                    patch.object(ci, 'tag_commit', return_value=args.source_sha), \
+                    patch.object(ci, 'api_write', side_effect=created) as create, \
+                    patch.object(ci.subprocess, 'run', side_effect=uploaded) as write:
+                ci.upload(args, VERSION)
+            self.assertEqual(1, create.call_count)
+            self.assertEqual(10, write.call_count)
+            ci.verify_uploaded(value, checks)
+
 
 if __name__ == '__main__':
     unittest.main()

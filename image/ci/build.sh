@@ -65,6 +65,11 @@ test "$(dpkg-query --admindir=/work/audit-root/var/lib/dpkg -W -f='${Version}' f
 printf '\ncmprovision source %s (v%s)\nNative ARM64 GitHub Actions build.\nFactory-rootfs, compressed/raw hashes, FAT and ext4 audit passed.\n' \
     "$SOURCE_SHA" "$RELEASE_VERSION" >> "$OUT/cmprovision-build-manifest.txt"
 printf 'Build control %s\nBuild run %s\n' "$BUILD_CONTROL_SHA" "$BUILD_RUN_URL" >> "$OUT/cmprovision-build-manifest.txt"
+if [ -f "$AUDIT/package-source.txt" ]; then
+    cat "$AUDIT/package-source.txt" >> "$OUT/cmprovision-build-manifest.txt"
+    python3 -c 'import json; s=json.load(open("/output/state.json")); print("Production source archive SHA256 " + s["source_archive_sha256"])' \
+        >> "$OUT/cmprovision-build-manifest.txt"
+fi
 cd "$OUT"
 sha256sum ./*.deb ./*.img.xz cmprovision-build-manifest.txt \
     "cmprovision-lite-${RELEASE_VERSION}-packages.txt" cmprovision-image-source.sha256 \

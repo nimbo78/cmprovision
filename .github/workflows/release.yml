@@ -1,0 +1,174 @@
+name: Release
+run-name: Release build ${{ inputs.release_tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Immutable source tag vX.Y.Z matching debian/changelog'
+        required: true
+        type: string
+      attach_to_draft:
+        description: 'Create/update a draft after all checks (never publish or replace files)'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+      attach_to_draft:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-build-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  packages:
+    name: Test and build production packages / Debian Trixie
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      source_sha: ${{ steps.packages.outputs.source_sha }}
+      package_sha256: ${{ steps.packages.outputs.package_sha256 }}
+      fpms_sha256: ${{ steps.packages.outputs.fpms_sha256 }}
+      artifact: ${{ steps.artifact.outputs.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: control
+          persist-credentials: false
+      - name: Resolve immutable source and validate version
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          ATTACH_TO_DRAFT: ${{ inputs.attach_to_draft }}
+        run: |
+          python3 control/image/ci/pipeline.py resolve --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
+            --directory "$RUNNER_TEMP/release-packages" --attach-to-draft "$ATTACH_TO_DRAFT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.resolve.outputs.source_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create clean production source archive
+        env:
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_SHA: ${{ steps.resolve.outputs.source_sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/package-input"
+          python3 control/image/ci/pipeline.py archive --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
+            --source-sha "$SOURCE_SHA" --source-directory "$GITHUB_WORKSPACE/source" \
+            --source-tar "$RUNNER_TEMP/package-input/source.tar" --directory "$RUNNER_TEMP/release-packages"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Test tagged JavaScript
+        working-directory: source
+        run: npm run test:js 2>&1 | tee "$RUNNER_TEMP/release-packages/audit/javascript-tests.log"
+      - name: Build disposable package builder
+        run: |
+          docker build --pull -f docker/Dockerfile -t cmprovision-test .
+          docker build -f image/ci/packages.Dockerfile -t cmprovision-package-builder .
+        working-directory: control
+      - name: Test source and build clean production packages
+        env:
+          RELEASE_VERSION: ${{ steps.resolve.outputs.version }}
+          SOURCE_SHA: ${{ steps.resolve.outputs.source_sha }}
+        run: |
+          docker run --rm --entrypoint bash \
+            -v "$GITHUB_WORKSPACE/control/image/ci:/ci:ro" \
+            -v "$GITHUB_WORKSPACE/control/tests/image:/control-tests:ro" \
+            -v "$RUNNER_TEMP/package-input:/input:ro" \
+            -v "$RUNNER_TEMP/release-packages:/output" \
+            -e RELEASE_VERSION -e SOURCE_SHA cmprovision-package-builder /ci/packages.sh
+      - name: Bind package hashes to the source and producing job
+        id: packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_SHA: ${{ steps.resolve.outputs.source_sha }}
+        run: |
+          python3 control/image/ci/pipeline.py record --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
+            --source-sha "$SOURCE_SHA" --source-tar "$RUNNER_TEMP/package-input/source.tar" \
+            --directory "$RUNNER_TEMP/release-packages"
+      - name: Name package artifact
+        id: artifact
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: echo "name=release-packages-$RELEASE_TAG-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ runner.temp }}/release-packages
+          retention-days: 1
+          if-no-files-found: error
+      - name: Preserve package diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-packages-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-packages/audit
+          retention-days: 3
+          if-no-files-found: ignore
+
+  image:
+    needs: packages
+    # The reusable workflow also declares an optional writer; its build stays read-only.
+    permissions:
+      contents: write
+    uses: ./.github/workflows/station-image.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
+      package_sha256: ${{ needs.packages.outputs.package_sha256 }}
+      fpms_sha256: ${{ needs.packages.outputs.fpms_sha256 }}
+      package_artifact: ${{ needs.packages.outputs.artifact }}
+      package_source_sha: ${{ needs.packages.outputs.source_sha }}
+      attach_to_draft: false
+
+  attach:
+    name: Create or update audited draft / no publication
+    if: inputs.attach_to_draft
+    needs: [packages, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    concurrency:
+      group: release-assets-${{ inputs.release_tag }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.image.outputs.artifact }}
+          path: ${{ runner.temp }}/station-release
+      - name: Verify audited bundle and attach without replacing files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PACKAGE_SHA: ${{ needs.packages.outputs.package_sha256 }}
+          FPMS_SHA: ${{ needs.packages.outputs.fpms_sha256 }}
+          SOURCE_SHA: ${{ needs.packages.outputs.source_sha }}
+        run: |
+          python3 image/ci/release.py upload --create-draft --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
+            --package-sha256 "$PACKAGE_SHA" --fpms-sha256 "$FPMS_SHA" --source-sha "$SOURCE_SHA" \
+            --directory "$RUNNER_TEMP/station-release"

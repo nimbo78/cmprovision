@@ -15,6 +15,16 @@ on:
       attach_to_draft:
         type: boolean
         default: false
+      package_artifact:
+        type: string
+        default: ''
+      package_source_sha:
+        type: string
+        default: ''
+    outputs:
+      artifact:
+        description: Audited image and packages artifact
+        value: ${{ jobs.build.outputs.artifact }}
 
 permissions:
   contents: read
@@ -38,11 +48,16 @@ jobs:
       source_sha: ${{ steps.prepare.outputs.source_sha }}
       artifact: ${{ steps.artifact.outputs.name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: control
           persist-credentials: false
-      - name: Verify draft packages and resolve immutable source
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.package_artifact != ''
+        with:
+          name: ${{ inputs.package_artifact }}
+          path: ${{ runner.temp }}/package-input
+      - name: Verify packages and resolve immutable source
         id: prepare
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,11 +66,19 @@ jobs:
           PACKAGE_SHA: ${{ inputs.package_sha256 }}
           FPMS_SHA: ${{ inputs.fpms_sha256 }}
           ATTACH_TO_DRAFT: ${{ inputs.attach_to_draft }}
+          PACKAGE_ARTIFACT: ${{ inputs.package_artifact }}
+          SOURCE_SHA: ${{ inputs.package_source_sha }}
         run: |
-          python3 control/image/ci/release.py prepare --repository "$REPOSITORY" \
-            --tag "$RELEASE_TAG" --package-sha256 "$PACKAGE_SHA" --fpms-sha256 "$FPMS_SHA" \
-            --directory "$RUNNER_TEMP/station-release" --attach-to-draft "$ATTACH_TO_DRAFT"
-      - uses: actions/checkout@v4
+          if [ -n "$PACKAGE_ARTIFACT" ]; then
+            python3 control/image/ci/pipeline.py adopt --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
+              --source-sha "$SOURCE_SHA" --package-sha256 "$PACKAGE_SHA" --fpms-sha256 "$FPMS_SHA" \
+              --incoming "$RUNNER_TEMP/package-input" --directory "$RUNNER_TEMP/station-release"
+          else
+            python3 control/image/ci/release.py prepare --repository "$REPOSITORY" \
+              --tag "$RELEASE_TAG" --package-sha256 "$PACKAGE_SHA" --fpms-sha256 "$FPMS_SHA" \
+              --directory "$RUNNER_TEMP/station-release" --attach-to-draft "$ATTACH_TO_DRAFT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.prepare.outputs.source_sha }}
           path: source
@@ -98,7 +121,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: echo "name=station-image-$RELEASE_TAG-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: ${{ runner.temp }}/station-release
@@ -107,7 +130,7 @@ jobs:
           if-no-files-found: error
       - name: Preserve diagnostic logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: station-image-failure-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/station-release/audit
@@ -122,11 +145,14 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+    concurrency:
+      group: release-assets-${{ inputs.release_tag }}
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: ${{ runner.temp }}/station-release
