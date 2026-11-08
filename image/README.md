@@ -90,8 +90,8 @@ connected to a production provisioning VLAN while performing the test.
    **Secondary** instead: it uses `172.20.0.2/16` and keeps DHCP/TFTP and USB boot masked.
    See [network operations](../docs/operations.md#addresses-routes-and-the-provisioning-network).
 
-   The accepted `2.24.0~dev2` image predates this form. Until a rebuilt image includes it, upgrade
-   the package first or use the following console alternative. For untagged `eth0`, with no other DHCP server on
+   Images built with `2.26.0` include this form. The earlier accepted `2.24.0~dev2` image
+   predates it: upgrade that package first or use the following console alternative. For untagged `eth0`, with no other DHCP server on
    that segment, create the stand profile from the local console:
 
    ```sh
@@ -122,7 +122,9 @@ connected to a production provisioning VLAN while performing the test.
 
 The image can also be written to a station by another cmprovision server over network boot.
 Rebuilt images with setup schema 1 support [project-driven Linux, SSH and Wi-Fi configuration](../docs/station-project-setup.md)
-after SHA-256 verification. This path has software/QEMU coverage; its full hardware acceptance remains open.
+after SHA-256 verification. This setup path has software/QEMU coverage and CM4 acceptance for SSH/Wi-Fi,
+data restoration and a cold PoE boot. Each newly rebuilt image still needs its own first-boot checks;
+earlier hardware acceptance does not establish physical acceptance of the latest artifact.
 The writing server uses its **active project** for newly booting devices, so isolate the test or,
 for a fresh image with no resumable writes, use a pre-install check which refuses every serial
 except the intended station. A resumed write skips pre-install scripts, so such a check is not a
