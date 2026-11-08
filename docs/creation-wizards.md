@@ -55,4 +55,4 @@ Back preserves the script body. Save normalises line endings and creates the def
 
 Passwords entered in guided forms are action arguments and are retained encrypted in the signed-in user's browser session, outside the Livewire snapshot. Private state expires after 24 hours and is removed on Save or Cancel. Keep using the same signed-in session while completing a wizard; a page reload does not reopen its unfinished form.
 
-After saving, use the object's **Export** link to [transfer its configuration](configuration-transfer.md). The same definition checks serve wizards, full forms and import. Transfer includes required dependencies, offers protected secrets separately and leaves imported projects inactive.
+After saving, open **Settings → Status → Backup → Selective import / export** and select the object to [transfer its configuration](configuration-transfer.md). The same definition checks serve wizards, full forms and import. Transfer includes required dependencies, offers protected secrets separately and leaves imported projects inactive.

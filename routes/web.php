@@ -46,7 +46,10 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/firmware', Firmwares::class)->name('firmware');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/settings', Settings::class)->name('settings');
 // the copy of the data holds the application key and every password of the server: the password is asked again
-Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])->get('/settings/backup', BackupDownloadController::class)->name('settings.backup');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])->group(function () {
+    Route::get('/settings/backup', [BackupDownloadController::class, 'show'])->name('settings.backup');
+    Route::post('/settings/backup', BackupDownloadController::class)->name('settings.backup.download');
+});
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->group(function () {
     Route::get('/settings/transfer', \App\Http\Livewire\ConfigurationTransfer::class)->name('settings.transfer');

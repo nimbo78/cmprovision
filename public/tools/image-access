@@ -417,6 +417,7 @@ def validate_ssh(run, settings, config=None):
     options = dict(rows)
     if options.get('passwordauthentication') != ('yes' if settings['password_hash'] else 'no') or options.get('pubkeyauthentication') != 'yes' \
             or options.get('kbdinteractiveauthentication') != 'no' or options.get('forcecommand', 'none') != 'none' \
+            or options.get('chrootdirectory', 'none') != 'none' \
             or options.get('authenticationmethods', 'any') != ('any' if settings['password_hash'] else 'publickey'):
         raise Failure('ssh_policy')
     if settings['keys'] and (options.get('authorizedkeysfile') != '.ssh/authorized_keys' or options.get('authorizedkeyscommand', 'none') != 'none'):

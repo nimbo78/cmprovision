@@ -44,11 +44,21 @@ class ConfigurationTransferPagesTest extends TestCase
         $this->get('/settings/transfer/00000000-0000-0000-0000-000000000001/download')->assertRedirect('/login');
     }
 
-    public function test_page_and_entity_entry_points_show_portable_transfer(): void
+    public function test_only_the_settings_backup_card_links_to_configuration_transfer(): void
     {
+        $this->app->instance(\App\Services\ServiceState::class, new \Tests\Support\FakeServiceState(['cmprovision-queue']));
         $this->actingAs(User::factory()->create());
         $this->get('/settings/transfer')->assertOk()->assertSee('Configuration transfer')->assertSee('Master password');
-        foreach (['/projects', '/scripts', '/labels'] as $page) $this->get($page)->assertOk()->assertSee('/settings/transfer', false);
+        $this->get('/settings?tab=status')->assertOk()->assertSee('Selective import / export')
+            ->assertSeeHtml('href="'.route('settings.transfer').'"');
+        $this->script();
+        \App\Models\Label::create(['name' => 'Portable label', 'printer_type' => 'command', 'print_command' => 'cat $file',
+            'template' => '$serial', 'file_extension' => 'txt']);
+        \App\Models\Project::create(['name' => 'Portable project', 'device' => 'cm4', 'storage' => '/dev/mmcblk0', 'label_moment' => 'never']);
+        foreach (['/projects', '/scripts', '/labels'] as $page) {
+            $this->get($page)->assertOk()->assertDontSee('href="'.route('settings.transfer'), false)
+                ->assertSee('Create with wizard');
+        }
     }
 
     public function test_saved_master_password_changes_require_confirmation(): void
@@ -77,6 +87,9 @@ class ConfigurationTransferPagesTest extends TestCase
             ->call('startExport', 'portable-master-password')->assertHasNoErrors();
         $operation = ConfigurationTransferOperation::findOrFail($component->get('operationId'));
         $this->assertSame('queued', $operation->status);
+        $component->assertSeeHtml('aria-label="Transfer preparation"');
+        $html = $component->html();
+        $this->assertLessThan(strpos($html, '>Master password</h2>'), strpos($html, '>Current transfer</h2>'), 'The active transfer must be above the password and selection forms.');
         $this->assertSame('portable-master-password', $operation->secrets['password']);
         Bus::assertDispatched(PrepareConfigurationTransfer::class, fn ($job) => $job->operationId === $operation->id && !str_contains(serialize($job), 'portable-master-password'));
     }

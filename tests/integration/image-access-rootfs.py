@@ -18,8 +18,8 @@ assert os.geteuid() == 0 and root.is_dir() and not root.is_symlink()
 assert os.readlink('/proc/self/ns/pid') != os.readlink('/proc/1/ns/pid'), 'Private PID namespace required'
 mode = sys.argv[3] if len(sys.argv) > 3 else 'pristine'
 assert mode in {'pristine', 'existing', 'keys', 'blocked', 'conflict', 'vendor', 'vendor-keys',
-                'conditional', 'template', 'template-escaped', 'user-match'}
-existing_modes = {'existing', 'blocked', 'conflict', 'conditional', 'template', 'template-escaped', 'user-match'}
+                'conditional', 'template', 'template-escaped', 'user-match', 'chroot'}
+existing_modes = {'existing', 'blocked', 'conflict', 'conditional', 'template', 'template-escaped', 'user-match', 'chroot'}
 helper = importlib.machinery.SourceFileLoader('image_access', sys.argv[2]).load_module()
 mounts = []
 commands = []
@@ -81,6 +81,10 @@ try:
     if mode == 'conflict':
         with (root / 'etc/ssh/sshd_config').open('a') as file:
             file.write('\nMatch User wlanpi\n    PasswordAuthentication no\n')
+    if mode == 'chroot':
+        settings['username'] = 'operator'
+        with (root / 'etc/ssh/sshd_config').open('a') as file:
+            file.write('\nChrootDirectory /srv/ssh/%u\n')
     if mode == 'conditional':
         included = root / 'etc/ssh/sshd_config.d/70-conditional.conf'
         included.write_text('Match User wlanpi Address 192.0.2.0/24\n    PasswordAuthentication no\nMatch all\n')
@@ -98,7 +102,7 @@ try:
         settings.update(password_hash=None, keys=[' '.join(key[:2])], sudo_passwordless=True)
     other_before = ssh_options('observer') if mode in {'existing', 'conflict', 'vendor', 'vendor-keys', 'user-match'} else None
     passwd_before = (root / 'etc/passwd').read_text()
-    if mode in {'blocked', 'conflict', 'conditional', 'template', 'template-escaped'}:
+    if mode in {'blocked', 'conflict', 'conditional', 'template', 'template-escaped', 'chroot'}:
         try:
             helper.configure(root, identity, settings, run)
             raise AssertionError('Unsafe rename or conflicting authentication was accepted')

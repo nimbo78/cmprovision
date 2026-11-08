@@ -50,6 +50,8 @@ The separate **cmprovision station image — access and Wi-Fi** profile retains 
 
 ## Scripts and failures
 
+SSH chroots are unsupported: the effective `ChrootDirectory` must be `none`. A conflicting value is rejected before accounts or credentials change.
+
 The built-in setup is a post-install helper delivered through temporary, restricted SSH. Its credential snapshot is encrypted on the provisioner; passwords/hashes do not appear in public module scripts or HTTP responses. Ordinary custom scripts still run in their [documented phases](creation-wizards.md#scripts); a later script can intentionally change the same OS settings.
 
 | Post-install result | Next action |

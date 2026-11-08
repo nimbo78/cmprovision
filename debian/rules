@@ -7,7 +7,8 @@ WEB_CONTENT = debian/cmprovision4/var/lib/cmprovision/
 
 # Backup/restore run as root: install them outside the www-data-owned application directory.
 override_dh_install:
-	dh_install
+	# Composer may fall back to source checkouts; their VCS files are not runtime content.
+	dh_install --exclude=.git --exclude=.hg --exclude=.svn
 	install -D -m 755 tools/sensor-askpass $(WEB_CONTENT)tools/sensor-askpass
 	install -D -m 755 tools/backup.sh debian/cmprovision4/usr/sbin/cmprovision-backup
 	install -D -m 755 tools/restore.sh debian/cmprovision4/usr/sbin/cmprovision-restore

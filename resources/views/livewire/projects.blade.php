@@ -2,9 +2,10 @@
     <div class="contents">
         <div class="cmp-title">
             <h1>Projects</h1>
-            <button type="button" wire:click="createWizard" class="cmp-btn">Create with wizard</button>
-            <a href="{{ route('settings.transfer') }}" class="cmp-btn cmp-btn-secondary">Import / export</a>
-            <button wire:click="create()" class="cmp-btn cmp-btn-secondary ml-auto">Add project</button>
+            <div class="flex flex-wrap items-center gap-2 ml-auto">
+                <button type="button" wire:click="createWizard" class="cmp-btn">Create with wizard</button>
+                <button wire:click="create()" class="cmp-btn cmp-btn-secondary">Add project</button>
+            </div>
         </div>
         <div class="cmp-card px-4 py-3">
             @if (session()->has('message'))
@@ -36,7 +37,6 @@
                             <td>
                                 <button wire:click="edit({{ $p->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Edit</button>
                                 <button type="button" wire:click="createWizard({{ $p->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Copy with wizard</button>
-                                <a href="{{ route('settings.transfer', ['project' => $p->id]) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Export</a>
                                 <button wire:click="setActive({{ $p->id }})" class="cmp-btn cmp-btn-small">Set active</button>
                                 <button wire:click="delete({{ $p->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
                             </td>

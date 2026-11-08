@@ -287,5 +287,14 @@ class ImageAccessTest(unittest.TestCase):
         self.assertEqual(0o600, (self.root / 'home/wlanpi/.ssh/authorized_keys').stat().st_mode & 0o777)
         self.assertIn((self.root / 'home/wlanpi/.ssh/authorized_keys', 1000, 1000), self.chowns)
         self.assertIn('NOPASSWD: ALL', (self.root / 'etc/cmprovision-image-access.sudoers').read_text())
+
+    def test_chroot_access_is_rejected_before_renaming_or_writing_credentials(self):
+        original = (self.root / 'etc/passwd').read_text()
+        self.extra_ssh_options = 'chrootdirectory /srv/ssh/%u\n'
+        with self.assertRaisesRegex(access.Failure, 'ssh_policy'):
+            self.configure()
+        self.assertEqual(original, (self.root / 'etc/passwd').read_text())
+        self.assertFalse(any(argv[0] in {'usermod', 'useradd', 'chpasswd'} for argv, _ in self.commands))
+        self.assertFalse((self.root / 'var/lib/cmprovision-image-access/receipt.json').exists())
 if __name__ == '__main__':
     unittest.main()
