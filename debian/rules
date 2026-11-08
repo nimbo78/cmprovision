@@ -1,6 +1,8 @@
 #!/usr/bin/make -f
 
 WEB_CONTENT = debian/cmprovision4/var/lib/cmprovision/
+RUNTIME_DIRS = storage/app/public storage/framework/cache/data storage/framework/sessions \
+ storage/framework/testing storage/framework/views storage/logs bootstrap/cache public/uploads
 
 %:
 	dh $@
@@ -9,6 +11,8 @@ WEB_CONTENT = debian/cmprovision4/var/lib/cmprovision/
 override_dh_install:
 	# Composer may fall back to source checkouts; their VCS files are not runtime content.
 	dh_install --exclude=.git --exclude=.hg --exclude=.svn
+	# VCS exclusion also removes .gitignore-only trees; fresh installs still need these directories.
+	install -d -m 755 $(addprefix $(WEB_CONTENT),$(RUNTIME_DIRS))
 	install -D -m 755 tools/sensor-askpass $(WEB_CONTENT)tools/sensor-askpass
 	install -D -m 755 tools/backup.sh debian/cmprovision4/usr/sbin/cmprovision-backup
 	install -D -m 755 tools/restore.sh debian/cmprovision4/usr/sbin/cmprovision-restore
