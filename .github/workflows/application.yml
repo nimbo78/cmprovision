@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       station_image_tag:
-        description: 'Optional station image: existing release tag vX.Y.Z'
+        description: 'Optional release tag vX.Y.Z (blank package hashes build everything from source)'
         type: string
         default: ''
       station_image_package_sha256:
@@ -20,7 +20,7 @@ on:
         type: string
         default: ''
       station_image_attach:
-        description: 'Attach audited image files to the existing draft (never publish)'
+        description: 'Attach audited files to a draft (never publish)'
         type: boolean
         default: false
 
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build the test bench
         run: |
           docker build --pull --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" \
@@ -57,8 +57,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
       - run: npm run test:js
@@ -68,11 +68,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - run: python3 -m unittest discover -s tests/image -p test_release_ci.py -v
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 -m unittest discover -s tests/image -p 'test_release_*.py' -v
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.station_image_tag != '' && inputs.station_image_package_sha256 == '' && inputs.station_image_fpms_sha256 == ''
+    needs: [php, javascript, image-release-checks]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ inputs.station_image_tag }}
+      attach_to_draft: ${{ inputs.station_image_attach }}
 
   station-image:
-    if: github.event_name == 'workflow_dispatch' && inputs.station_image_tag != ''
+    if: github.event_name == 'workflow_dispatch' && inputs.station_image_tag != '' && (inputs.station_image_package_sha256 != '' || inputs.station_image_fpms_sha256 != '')
     needs: [php, javascript, image-release-checks]
     permissions:
       contents: write

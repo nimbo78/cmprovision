@@ -33,6 +33,8 @@ class PackageRuntimeLayoutTest(unittest.TestCase):
                     self.assertFalse(path.is_symlink())
                     metadata = path.stat()
                     self.assertEqual((metadata.st_uid, metadata.st_gid), (owner.pw_uid, owner.pw_gid))
+                    self.assertTrue(metadata.st_mode & stat.S_IWUSR, f'owner cannot write: {name}')
+                    self.assertTrue(metadata.st_mode & stat.S_IXUSR, f'owner cannot enter: {name}')
                     self.assertFalse(stat.S_IMODE(metadata.st_mode) & 0o002)
 
 

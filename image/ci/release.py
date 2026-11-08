@@ -9,12 +9,17 @@ import re
 import subprocess
 
 
-def validate_request(tag, package_sha, fpms_sha):
+def validate_tag(tag):
     if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag):
         raise ValueError('Choose a stable release tag: vX.Y.Z')
+    return tag[1:]
+
+
+def validate_request(tag, package_sha, fpms_sha):
+    version = validate_tag(tag)
     if not all(re.fullmatch(r'[0-9a-f]{64}', value) for value in (package_sha, fpms_sha)):
         raise ValueError('Supply independent lowercase SHA-256 hashes for both packages')
-    return tag[1:]
+    return version
 
 
 def asset_names(version):
@@ -45,9 +50,14 @@ def require_packages(release, tag, package_sha, fpms_sha):
 
 
 def require_draft(release, tag, package_sha, fpms_sha):
-    if release['draft'] is not True:
-        raise ValueError('Only a still-draft release may be updated')
+    require_draft_target(release, tag)
     return require_packages(release, tag, package_sha, fpms_sha)
+
+
+def require_draft_target(release, tag):
+    if not release or release.get('tag_name') != tag or release.get('draft') is not True:
+        raise ValueError('Only a still-draft release may be updated')
+    return asset_map(release)
 
 
 def parse_sums(text, version):
@@ -100,10 +110,18 @@ def api(path):
     return json.loads(gh('api', path))
 
 
-def release_for_tag(repository, tag):
+def api_write(path, payload):
+    result = subprocess.run(['gh', 'api', '--method', 'POST', path, '--input', '-'],
+                            input=json.dumps(payload).encode(), stdout=subprocess.PIPE, check=True)
+    return json.loads(result.stdout)
+
+
+def release_for_tag(repository, tag, missing_ok=False):
     # GitHub's tag endpoint does not return every authenticated draft.
     pages = json.loads(gh('api', '--paginate', '--slurp', f'repos/{repository}/releases?per_page=100'))
     matches = [item for page in pages for item in page if item['tag_name'] == tag]
+    if not matches and missing_ok:
+        return None
     if len(matches) != 1:
         raise ValueError('Expected exactly one existing release for the selected tag')
     return matches[0]
@@ -118,6 +136,29 @@ def tag_commit(repository, tag):
             break
         obj = api(f'repos/{repository}/git/tags/{obj["sha"]}')['object']
     raise ValueError('Release tag must resolve to a commit')
+
+
+def create_draft(repository, tag, source, run_url=None):
+    validate_tag(tag)
+    if not re.fullmatch(r'[0-9a-f]{40}', source):
+        raise ValueError('Invalid source commit')
+    if run_url and not re.fullmatch(r'https://github\.com/' + re.escape(repository) + r'/actions/runs/[0-9]+', run_url):
+        raise ValueError('Invalid build provenance URL')
+    english_run = f'\nBuild: [GitHub Actions]({run_url}).\n' if run_url else ''
+    russian_run = f'\nСборка: [GitHub Actions]({run_url}).\n' if run_url else ''
+    body = (f'# 🇬🇧 English\n\n## 📦 Verified build artifacts\n\nSource: `{source}`.\n'
+            + english_run + '\nPackages and the experimental station image were built from the selected tag. '
+            'Review the changes, hardware acceptance and checksums before publishing. '
+            'This workflow leaves the release as a draft.\n\n---\n\n'
+            f'# 🇷🇺 Русский\n\n## 📦 Проверенные артефакты сборки\n\nИсходный коммит: `{source}`.\n'
+            + russian_run + '\nПакеты и экспериментальный образ станции собраны из выбранного тега. '
+            'Перед публикацией проверьте описание изменений, аппаратную приёмку и контрольные суммы. '
+            'Workflow оставляет релиз черновиком.\n')
+    result = api_write(f'repos/{repository}/releases', {
+        'tag_name': tag, 'target_commitish': source, 'draft': True, 'prerelease': False,
+        'name': f'📦 {tag} Release / Релиз {tag} 🚀', 'body': body})
+    require_draft_target(result, tag)
+    return result
 
 
 def prepare(args, version):
@@ -165,10 +206,23 @@ def upload(args, version):
     if checks[f'cmprovision4_{version}_all.deb'] != args.package_sha256 or \
             checks[f'fpms-lite_{version}_all.deb'] != args.fpms_sha256:
         raise ValueError('Built bundle changed an independently verified package')
+    if tag_commit(args.repository, args.tag) != args.source_sha:
+        raise ValueError('Source tag changed after the build')
+    target = release_for_tag(args.repository, args.tag, missing_ok=True)
+    if target is None:
+        if not getattr(args, 'create_draft', False) or state.get('release_id') is not None:
+            raise ValueError('Release is missing; explicit draft creation permission is required')
+        run_id = os.environ.get('GITHUB_RUN_ID', '')
+        run_url = f'https://github.com/{args.repository}/actions/runs/{run_id}' if run_id.isdigit() else None
+        target = create_draft(args.repository, args.tag, args.source_sha, run_url)
+    require_draft_target(target, args.tag)
+    target_id = target['id']
+    if state.get('release_id') is not None and state['release_id'] != target_id:
+        raise ValueError('Release changed after the build')
     for name, digest in sorted(checks.items()):
         release = release_for_tag(args.repository, args.tag)
-        assets = require_draft(release, args.tag, args.package_sha256, args.fpms_sha256)
-        if release['id'] != state['release_id'] or tag_commit(args.repository, args.tag) != args.source_sha:
+        assets = require_draft_target(release, args.tag)
+        if release['id'] != target_id or tag_commit(args.repository, args.tag) != args.source_sha:
             raise ValueError('Release or source tag changed after the image build')
         # Never delete or overwrite an asset: publication can race with client checks.
         # Check every existing name before the first write, including later-sorted files.
@@ -182,7 +236,7 @@ def upload(args, version):
         subprocess.run(['gh', 'release', 'upload', args.tag, str(bundle / name),
                         '--repo', args.repository], check=True)
     release = release_for_tag(args.repository, args.tag)
-    require_draft(release, args.tag, args.package_sha256, args.fpms_sha256)
+    require_draft_target(release, args.tag)
     verify_uploaded(release, checks)
     if tag_commit(args.repository, args.tag) != args.source_sha:
         raise ValueError('Source tag changed during attachment')
@@ -204,6 +258,7 @@ def main():
     parser.add_argument('--directory', type=Path, required=True)
     parser.add_argument('--source-sha')
     parser.add_argument('--attach-to-draft', choices=('true', 'false'), default='false')
+    parser.add_argument('--create-draft', action='store_true')
     args = parser.parse_args()
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', args.repository):
         raise ValueError('Invalid repository name')

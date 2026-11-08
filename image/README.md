@@ -11,22 +11,45 @@ contents are not yet pinned to a dated snapshot, so the build is not fully repro
 
 ## Build in GitHub Actions
 
-Run **Actions → Application → Run workflow** with `station_image_tag` set to an existing
-release (`vX.Y.Z`), and supply independently verified `station_image_package_sha256`
-and `station_image_fpms_sha256` values. Leaving the tag empty runs the normal application
-checks only. `station_image_attach` defaults to false: enable it to attach the audited
-bundle to that same release, which must still be a draft. A published release can be rebuilt
-read-only with attachment disabled. The workflow never publishes a release or replaces public assets.
-For first attachment, prepare a draft containing the two verified packages and the matching
-`fpms-upstream.txt`/`fpms-patch.sha256` metadata. The workflow creates the complete image
-checksum manifest. Existing identical files are skipped; any conflicting file stops attachment
-before writing. Existing assets are never automatically deleted or replaced. Keep the release
-as a draft until attachment succeeds. Retry a failed attachment with the same retained artifact;
-a new image build with different hashes needs a clean draft or explicit operator cleanup first.
-Ordinary Application checks and image dispatches use separate concurrency groups.
+Run **Actions → Release → Run workflow** with `release_tag=vX.Y.Z`. The tag must exist
+and match the first version in its `debian/changelog`; no prebuilt packages are needed.
+`attach_to_draft` defaults to false, so a trial run only produces downloadable CI artifacts.
 
-The build uses a native ARM64 hosted runner and a disposable Debian 13 container, downloads
-the package inputs from GitHub, and checks out the tag's exact source commit.
+```mermaid
+flowchart LR
+    T[Immutable tag] --> P[PHP / JS / FPMS tests]
+    P --> D[Clean production packages]
+    D --> I[Native ARM64 image]
+    I --> A[Package / first boot / filesystem audit]
+    A --> F[Artifacts and SHA256SUMS]
+    F --> R[Optional draft attachment]
+```
+
+The package job uses a fresh `git archive` with substituted version metadata. Tests have
+their own dependencies and `.env`; production packaging extracts another clean copy and
+installs only locked production dependencies. CI checks the actual package's version,
+source commit, dependency metadata and writable Laravel runtime directories. It builds
+`fpms-lite` from the tagged portable patch and pinned upstream source, then passes all
+four verified package/provenance files to the image job. Hashes are passed independently
+as job outputs and checked again before image creation.
+
+Enable `attach_to_draft` to create a missing draft or fill an existing draft **after all
+checks pass**. This does not publish the release or change an existing draft's notes.
+Existing identical files are skipped; a conflicting or unexpected file stops attachment.
+Files are never deleted or overwritten. A retry after a partial upload must use the same
+retained artifact; a new build may have different hashes and need explicit operator cleanup.
+Published releases can only be rebuilt with attachment disabled.
+
+**Compatibility entry point:** Application still accepts `station_image_tag`. Leave both
+package hash fields blank to run the complete Release pipeline after application checks.
+Supply both `station_image_package_sha256` and `station_image_fpms_sha256` to reuse packages
+already uploaded to a release instead. That mode also needs matching `fpms-upstream.txt`
+and `fpms-patch.sha256`; attachment requires an existing draft. An empty tag runs ordinary
+application checks. Image builds and ordinary checks have separate concurrency groups;
+draft writers are serialized per tag.
+
+The image build uses a native ARM64 hosted runner and a disposable Debian 13 container,
+receives packages from the preceding job (or existing release), and checks out the tag's exact commit.
 It checks the production package/first boot, exported FAT/ext4 filesystems and factory rootfs.
 Two systemd integration cases run separately on the disposable host. Release credentials
 are absent from the build container; a separate upload job rechecks the tag, hashes and draft.

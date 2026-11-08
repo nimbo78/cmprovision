@@ -25,16 +25,21 @@ The experimental image builder and manual first-boot procedure are documented in
 
 ## Building the Image in GitHub
 
-Use **Actions → Application → Run workflow** with an existing release tag in
-`station_image_tag` and the independently verified package hashes in
-`station_image_package_sha256` and `station_image_fpms_sha256`. Enable
-`station_image_attach` to attach the audited bundle to a still-draft release; publication is separate.
-Published releases support read-only rebuilds with attachment disabled.
-Prepare first-attachment drafts with the two packages and FPMS provenance files; the workflow
-creates the image checksum manifest. Identical existing files are skipped; conflicts abort,
-and existing assets are never automatically replaced. Keep the release as a draft until completion.
-The native ARM64 builder keeps the large disk image inside GitHub, with no upload from a
-PC or provisioner. See [build inputs, checks and limitations](../image/README.md#build-in-github-actions).
+Use **Actions → Release → Run workflow**, select an existing `release_tag=vX.Y.Z`
+matching its source changelog, and leave `attach_to_draft` off for a trial build.
+CI runs PHP, JavaScript and FPMS tests, builds both production packages from a clean source
+archive, then builds and audits the station image on native ARM64. Packages, image, inventory,
+provenance and `SHA256SUMS` stay in GitHub; nothing needs uploading from a PC or station.
+
+With `attach_to_draft` enabled, a separate final step creates a missing draft or attaches to
+an existing draft after all checks pass. Publication remains manual. Identical files are skipped;
+conflicts stop the step, and existing files are never deleted or replaced. Published releases
+support read-only rebuilds with attachment disabled. CI artifacts expire after one day.
+
+The Application workflow remains an alternative: set `station_image_tag` and leave both
+package hashes blank for the full pipeline. Supplying both verified hashes selects the earlier
+mode using packages and FPMS provenance already attached to a release.
+See [build inputs, checks and limitations](../image/README.md#build-in-github-actions).
 Every rebuilt image still needs its own physical first-boot/display acceptance.
 
 ## Configuring Station Images via cmprovision Projects
