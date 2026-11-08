@@ -1,28 +1,43 @@
-## 🌟 What's Cookin'? / Чо за движ тут происходит? ✨💅
+# 🇬🇧 English
 
-<!-- High-level bilingual overview: what problem this solves and why it's cool / Краткое саммари на русском -->
+## 🌟 What's Cookin'? ✨💅
+<!-- High-level executive summary: why this change was made and the vibe it brings -->
 
----
-
-### 🎨 What Changed? / Что завезли в этом дропе? 🖼️⚡
-
+### 🎨 What Changed? 🖼️⚡
 - **Feature / Component:** Description with links to files
 - **UI / Diagrams:** Visual assets or interactive diagrams
-- **Docs:** Bilingual docs updates
+- **Docs:** Docs updates
 
----
-
-### 🧪 Verification / Тесты и валидация 💯
-
+### 🧪 Verification 💯
 - [ ] **Unit / Feature Tests:** `php artisan test` (`<count>` passed)
 - [ ] **JavaScript Tests:** `npm run test:js` (`<count>` passed)
-- [ ] **Station / Manual Validation:** Tested on real hardware (`wlanpi-da2` / `d62`) or Docker bench
-- [ ] **Isolation:** Built in dedicated worktree without stepping on other branches
+- [ ] **Hardware / Manual:** Tested on real stations (`wlanpi-da2` / `d62`) or Docker bench
+- [ ] **Worktree Isolation:** Built in dedicated worktree without conflicts
 
----
-
-### ⚠️ Merge Danger & Blast Radius / Риски и влияние 🛡️
-
+### ⚠️ Merge Danger & Blast Radius 🛡️
 - **Door Type:** Two-way with data backup / One-way
 - **Blast Radius:** Configuration, database, queue, or docs-only
 - **Rollback Plan:** Reinstall previous `.deb` or restore backup
+
+---
+
+# 🇷🇺 Русский
+
+## 🌟 Чо за движ тут происходит? ✨💅
+<!-- Краткое вводное саммари на русском: какую проблему решаем и в чём профит -->
+
+### 🎨 Что завезли в этом дропе? 🖼️⚡
+- **Компонент / Фича:** Подробное описание со ссылками на файлы
+- **Интерфейс / Схемы:** Графика, ассеты, интерактивные схемы
+- **Документация:** Обновления в гайдах и документах
+
+### 🧪 Тесты и валидация 💯
+- [ ] **PHP-тесты:** `php artisan test` (`<count>` пройдено)
+- [ ] **JS-тесты:** `npm run test:js` (`<count>` пройдено)
+- [ ] **Стенд / Железо:** Проверено на реальных станциях (`da2` / `d62`) или в Docker
+- [ ] **Изоляция:** Разработка в отдельном git worktree без сайд-эффектов
+
+### ⚠️ Риски и влияние 🛡️
+- **Тип двери:** Двусторонняя с бэкапом / Односторонняя
+- **Зона влияния:** Конфигурация, БД, очереди или только документация
+- **План отката:** Повторная установка прежнего `.deb` или рестор снимка

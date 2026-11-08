@@ -7,7 +7,7 @@ Welcome to **cmprovision**! This guide details our workflow standards for commit
 ## 🌟 The Vibe: Zoomer Dual-Language + Hardcore Precision 🚀💯
 
 We embrace high developer empathy and positive energy:
-- **Dual-Language Parity:** PR titles, overviews, documentation, and release announcements live in harmony across English and Russian.
+- **Dual-Language Parity (Sequential):** PR overviews, documentation, and release announcements live in harmony across English and Russian. Avoid mixing languages line-by-line within the same section; provide the full English version first, followed by the full Russian version (or separate localized files like `docs/` and `docs/ru/`). PR and release titles remain dual-language separated by `/`.
 - **Expressive Emojis & Modern Tech Slang:** We celebrate ship-days and code drops with style (*Glow Up, Drop, What's Cookin', no cap, на ультра-вайбе, без кринжа*).
 - **Ironclad Technical Rigor:** No fluff replaces facts. Every change must be verified with exact test numbers, reproduction steps, isolated worktrees, and explicit failure-mode analysis.
 

@@ -4,11 +4,15 @@ This rule defines the official communication, pull request, merge request, commi
 
 ---
 
-## 🌟 Core Philosophy: "Vibe + Ironclad Evidence" 💅💯
+## 🌟 Core Philosophy: "Vibe + Ironclad Evidence + Sequential Parity" 💅💯
 
-Every PR, MR, release note, and conversational update in this repo balances two pillars:
-1. **Zoomer Dual-Language Vibe (Энергичный билингвал):** Friendly, high-energy, dual-language (EN/RU) presentation packed with expressive emojis and modern tech slang (*Glow Up, Drop, What's Cookin', no cap, на ультра-вайбе, без кринжа, лютый, завезли, фулл, фарш, годнота*).
-2. **Hardcore Technical Rigor (Железные пруфы и точность):** Zero sacrifice of precision. Exact test counts (`2095 PHP tests, 69 JS tests`), real file paths with clickable links, hardware targets (`wlanpi-da2`, `d62`), exact failure modes, checksums, blast radiuses, and migration door types.
+Every PR, MR, release note, and document in this repo balances:
+1. **Sequential Dual-Language Parity (Последовательный билингвал):** 
+   - **Do NOT mix or interleave languages line-by-line within the same section.**
+   - In PR descriptions and release notes, provide the **English section in full first**, followed by a divider (`---`), and then the **Russian section in full** (or separate dedicated localized files like `docs/` and `docs/ru/`).
+   - PR / MR titles remain dual-language separated by `/`.
+2. **Zoomer Vibe (Ультра-вайб без кринжа):** Friendly, high-energy presentation packed with expressive emojis and modern tech slang (*Glow Up, Drop, What's Cookin', no cap, на ультра-вайбе, без кринжа, лютый, завезли, фулл, фарш, годнота*).
+3. **Hardcore Technical Rigor (Железные пруфы и точность):** Zero sacrifice of precision. Exact test counts (`2095 PHP tests, 69 JS tests`), real file paths with clickable links, hardware targets (`wlanpi-da2`, `d62`), exact failure modes, checksums, blast radiuses, and migration door types.
 
 ---
 
@@ -27,40 +31,50 @@ Format:
 
 ---
 
-## 📝 PR & MR Body Structure
+## 📝 PR & MR Body Structure (Sequential Format)
 
-Every PR body must follow this structure (see `.github/pull_request_template.md`):
+PR descriptions must be structured sequentially (English part fully, then Russian part fully; see `.github/pull_request_template.md`):
 
 ```markdown
-## 🌟 What's Cookin'? / Чо за движ тут происходит? ✨💅
+# 🇬🇧 English
 
-<High-level bilingual summary / elevator pitch explaining why this change was made and what vibe it brings.>
-*(Краткое саммари на русском с ключевой сутью изменений).*
+## 🌟 What's Cookin'? ✨💅
+<High-level summary / elevator pitch explaining why this change was made.>
 
----
-
-### 🎨 What Changed? / Что завезли в этом дропе? 🖼️⚡
-
+### 🎨 What Changed? 🖼️⚡
 - **<Component / Feature 1>:** Detailed explanation with links to changed files.
 - **<Component / Feature 2>:** Explanation of fixes, UI tweaks, or architecture updates.
-- **<Docs & Extras>:** Documentation updates, schema validations, assets.
 
----
+### 🧪 Verification 💯
+- [x] **Unit/Feature Tests:** `<count> PHP tests passed`.
+- [x] **Frontend/JS Tests:** `<count> JavaScript tests passed`.
+- [x] **Hardware / Docker:** Station tests (`wlanpi-da2`, `d62`) or Docker bench.
+- [x] **Isolation:** Isolated worktree (`<worktree-name>`).
 
-### 🧪 Verification / Тесты и валидация 💯
-
-- [x] **Unit/Feature Tests:** `<count> PHP tests passed` (PHPUnit in-memory SQLite / Docker).
-- [x] **Frontend/JS Tests:** `<count> JavaScript tests passed` (`npm run test:js`).
-- [x] **Station / Hardware Verification:** Real station tests (`wlanpi-da2`, `d62`) or Docker bench.
-- [x] **Isolation:** Isolated worktree (`<worktree-name>`) to avoid interfering with concurrent agent sessions.
-
----
-
-### ⚠️ Merge Danger & Blast Radius / Риски и влияние 🛡️
-
-- **Door Type:** Two-way with data backup / One-way (migrations).
+### ⚠️ Merge Danger & Blast Radius 🛡️
+- **Door Type:** Two-way / One-way.
 - **Blast Radius:** Configuration, database schema, queues, systemd services, or docs only.
-- **Rollback Plan:** Steps to revert if something goes sideways.
+
+---
+
+# 🇷🇺 Русский
+
+## 🌟 Чо за движ тут происходит? ✨💅
+<Краткое саммари на русском с ключевой сутью изменений.>
+
+### 🎨 Что завезли в этом дропе? 🖼️⚡
+- **<Компонент / Фича 1>:** Подробное описание со ссылками на файлы.
+- **<Компонент / Фича 2>:** Исправления, косметика, обновление диаграмм.
+
+### 🧪 Тесты и валидация 💯
+- [x] **PHP-тесты:** `<count> тестов пройдено`.
+- [x] **JS-тесты:** `<count> тестов пройдено`.
+- [x] **Стенд / Железо:** Проверено на стендах (`da2`, `d62`).
+- [x] **Изоляция:** Ветка изолирована в worktree (`<worktree-name>`).
+
+### ⚠️ Риски и влияние 🛡️
+- **Тип двери:** Двусторонняя с бэкапом / Односторонняя.
+- **Зона влияния:** Конфиги, база, очереди или только доки.
 ```
 
 ---
@@ -82,57 +96,11 @@ Follow Conventional Commits with an imperative, concise description:
 - `perf`: Performance improvement.
 - `chore`: Maintenance, CI, dependencies, build scripts.
 
-### Examples:
-- `docs(diagrams): add interactive Archify provisioning workflow diagram (EN and RU)`
-- `docs(assets): add Russian-localized hero and stand network diagram`
-- `fix(settings): fix literal Blade directives in Settings service summary`
-- `feat(transfer): add selective configuration transfer and creation wizards`
-
 ---
 
-## 🚀 Release Notes Structure
+## 🚀 Release Notes Structure (Sequential Format)
 
-Releases celebrate major milestones with maximum visual appeal and complete technical fidelity:
-
-```markdown
-## 🌟 What's Cookin'? / Главный замес релиза ✨💅
-
-<Exciting bilingual opening paragraph highlighting the milestone.>
-
----
-
-### 🎁 What's in the Box? / Что завезли в этом дропе? 📦⚡
-
-#### 1. 🔀 <Major Feature 1>
-- Bullet points explaining the capability and security/UX aspects.
-
-#### 2. 🧙‍♂️ <Major Feature 2>
-- Details on wizards, workflows, or architectural improvements.
-
-#### 3. 💾 <Polish & Fixes>
-- Specific bugs fixed, performance wins, UI polish.
-
----
-
-### 🧪 Quality Assurance & Evidence / Пруфы и тесты 💯
-
-- **PHP Test Suite:** `<count> tests passed`.
-- **JavaScript Test Suite:** `<count> tests passed`.
-- **Live Station Verification:** Results on testbeds (`da2`, `d62`).
-- **Accessibility & Themes:** Mobile, dark/light themes, motion.
-
----
-
-### 🚀 How to Upgrade / Как накатить обновление 🛠️
-
-> [!IMPORTANT]
-> Backup warning with `cmprovision-backup` or `Settings → Status → Backup`.
-
-1. Download `<package>.deb` and `SHA256SUMS`.
-2. Check sums: `sha256sum -c SHA256SUMS`.
-3. Install: `sudo dpkg -i <package>.deb`.
-
----
-
-*Enjoy the vibe and happy provisioning! / Всем кайфового провижининга без факапов!* 🍓🎉✨
-```
+Releases are published sequentially:
+1. Complete English release notes (`# 🇬🇧 English`).
+2. Divider `---`.
+3. Complete Russian release notes (`# 🇷🇺 Русский`).
