@@ -6,6 +6,14 @@ This rule defines the official communication, pull request, merge request, commi
 
 ## 🌟 Core Philosophy: "Vibe + Ironclad Evidence + Sequential Parity" 💅💯
 
+> [!CRITICAL]
+> **STRICT LANGUAGE SEPARATION / ЯЗЫКИ СТРОГО РАЗДЕЛЬНО:**
+> Never mix languages line-by-line or sentence-by-sentence within the same section!
+> Always provide complete language blocks sequentially:
+> Full English block first (`# 🇬🇧 English`) → Divider `---` → Full Russian block (`# 🇷🇺 Русский`).
+> In documentation, maintain strictly separate directories (`docs/` and `docs/ru/`).
+> Only PR/MR/Release titles are dual-language separated by `/`.
+
 Every PR, MR, release note, and document in this repo balances:
 1. **Sequential Dual-Language Parity (Последовательный билингвал):** 
    - **Do NOT mix or interleave languages line-by-line within the same section.**

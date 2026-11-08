@@ -6,6 +6,10 @@ Welcome to **cmprovision**! This guide details our workflow standards for commit
 
 ## 🌟 The Vibe: Zoomer Dual-Language + Hardcore Precision 🚀💯
 
+> [!IMPORTANT]
+> **Strict Language Separation:**
+> Never interleave or mix languages within the same sentence or bullet point. In PR descriptions and release notes, provide the **complete English block first**, then a divider `---`, followed by the **complete Russian block**. In documentation, maintain separate directories (`docs/` and `docs/ru/`). Only titles use the dual `/` format.
+
 We embrace high developer empathy and positive energy:
 - **Dual-Language Parity (Sequential):** PR overviews, documentation, and release announcements live in harmony across English and Russian. Avoid mixing languages line-by-line within the same section; provide the full English version first, followed by the full Russian version (or separate localized files like `docs/` and `docs/ru/`). PR and release titles remain dual-language separated by `/`.
 - **Expressive Emojis & Modern Tech Slang:** We celebrate ship-days and code drops with style (*Glow Up, Drop, What's Cookin', no cap, на ультра-вайбе, без кринжа*).
