@@ -38,13 +38,16 @@ Run the image safety tests on a disposable Debian host:
 
 ```sh
 sudo python3 -m unittest discover -s tests/image -p 'test_*.py'
-sudo env CMP_IMAGE_LARAVEL_SOURCE=/path/to/test-copy-with-vendor \
-    python3 tests/image/test_real_firstboot.py
+sudo env CMP_IMAGE_PACKAGE=/path/to/cmprovision4.deb \
+    CMP_IMAGE_LARAVEL_SOURCE=/path/to/test-copy-with-vendor \
+    python3 -m unittest discover -s tests/image -p 'test_*.py'
 ```
 
-The second test makes two temporary application copies and uses the real Laravel key generator
+The second command also checks the actual package's writable runtime directories. It makes two temporary application copies and uses the real Laravel key generator
 and `ssh-keygen`, with SSH keys confined to temporary directories. The source may also be
 the `var/lib/cmprovision` directory extracted from the built `.deb` to validate its actual contents.
+Set `CMP_IMAGE_SYSTEMD_TEST=1` only on an explicitly disposable systemd host to include the two
+FPMS path/service integration tests.
 
 The image setup currently:
 

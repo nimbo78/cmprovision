@@ -6,6 +6,8 @@ cmprovision4 (2.26.0) unstable; urgency=medium
     SSH policies, and support protected profile transfer between stations.
   * Document hardware acceptance, supported image layouts and SSH limitations,
     and standardize contributor and release descriptions in English and Russian.
+  * Preserve empty Laravel storage and upload directories in production packages
+    after VCS exclusion, with an actual-package fresh-install regression check.
 
  -- nimbo78 <igor.sin.78@gmail.com>  Sun, 08 Nov 2026 18:36:23 +0300
 
