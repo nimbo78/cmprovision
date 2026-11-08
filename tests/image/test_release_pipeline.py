@@ -5,6 +5,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -42,6 +45,15 @@ def incoming(root):
 
 
 class ReleasePipelineTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('php'), 'PHP CLI is required for the relocated payload audit')
+    def test_payload_audit_supports_container_test_mount_outside_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / 'test_release_package.py'
+            shutil.copyfile(ROOT / 'tests/image/test_release_package.py', script)
+            result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True,
+                env=dict(os.environ, CMP_RELEASE_PACKAGE_CHECK=str(ROOT / 'image/ci/check-package.php')))
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
     def test_changelog_must_match_selected_release(self):
         self.assertEqual('2.26.0', pipeline.validate_changelog('cmprovision4 (2.26.0) stable; urgency=medium\n', TAG))
         for text in ('cmprovision4 (2.25.0) stable;', 'other (2.26.0) stable;', ''):

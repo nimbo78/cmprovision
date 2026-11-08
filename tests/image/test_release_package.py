@@ -1,12 +1,14 @@
 """Exercise the production payload audit with valid and contaminated packages."""
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
 
-CHECK = Path(__file__).resolve().parents[2] / 'image/ci/check-package.php'
+CHECK = (Path(os.environ['CMP_RELEASE_PACKAGE_CHECK']) if os.environ.get('CMP_RELEASE_PACKAGE_CHECK')
+         else Path(__file__).resolve().parents[2] / 'image/ci/check-package.php')
 
 
 @unittest.skipUnless(shutil.which('php'), 'PHP CLI is required for the package payload audit')

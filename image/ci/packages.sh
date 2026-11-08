@@ -7,7 +7,8 @@ export COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_BIN_COMPAT=symlink
 [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
 test -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}"
 mkdir -p /work/tests /work/production /output/audit
-python3 -m unittest discover -s /control-tests -p test_release_package.py -v \
+CMP_RELEASE_PACKAGE_CHECK=/ci/check-package.php \
+    python3 -m unittest discover -s /control-tests -p test_release_package.py -v \
     2>&1 | tee /output/audit/package-payload-tests.log
 # Source-contract tests expect checkout placeholders, before export-subst. Keep
 # their writable test copy separate from the versioned production archive.
