@@ -14,8 +14,8 @@ sh packaging/fpms/build.sh lite /tmp/fpms-packages
 
 ```
 
-`fpms-lite` includes only the display driver, GPIO discovery, read-only panel and
-navigation. It depends on Debian's Python, Pillow, libgpiod and spidev packages.
+`fpms-lite` includes the display driver, GPIO discovery, station panel, navigation and
+explicitly confirmed power controls. It depends on Debian's Python, Pillow, libgpiod and spidev packages.
 It does not include WLAN Pi network tools, Profiler, Bluetooth or their Python dependencies.
 It conflicts with `wlanpi-fpms` to prevent competing services and file ownership.
 
@@ -35,12 +35,19 @@ appearance still need acceptance. FPMS remains preview.
 A full FPMS package for WLAN Pi OS is no longer planned. The existing adapter is retained for compatibility,
 but its build, upgrade and hardware acceptance are outside the supported scope.
 
+KEY3 opens the Lite power menu; KEY1 confirms, KEY2 cancels. The joystick centre only selects.
+The package's fixed root bridge starts a bounded `www-data` Artisan command through systemd,
+using the same live confirmation service as the web UI. Root never reads the application database,
+and the display sandbox remains unchanged. The updated `cmprovision4` package is required;
+read-only previews and the retained WLAN Pi OS adapter do not supply a power callback.
+Real reboot, shutdown and physical KEY1/KEY3 acceptance remain pending.
+
 The separate image builder includes this package optionally. Network profiles and
 station roles are configured in the web UI. See
 [deployment options](../../docs/deployment-options.md).
 
 For a source-only check, run `prepare.sh` with a new directory, then run
-`python3 -m pytest tests/test_cmprovision.py tests/test_cmprovision_fonts.py tests/test_cmprovision_v2.py tests/test_portable_display.py`
+`python3 -m pytest tests/test_cmprovision.py tests/test_cmprovision_fonts.py tests/test_cmprovision_v2.py tests/test_portable_display.py tests/test_cmprovision_power.py`
 there. Pillow >=10.1 and pytest are required. `tools/preview-cmprovision.py OUTPUT` renders
 every page and a device card in each look (new with either Ports map, classic) with labelled DEMO data, or with
 `--snapshot FILE` the snapshot of a station. The root-only hardware runner in the patched source

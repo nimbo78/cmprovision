@@ -25,6 +25,7 @@
     var TAB_OF = {
         'services': 'status',
         'backup': 'status',
+        'station-power': 'status',
         'wifi': 'network',
         'switches': 'network',
         'dhcp': 'network',

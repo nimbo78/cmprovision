@@ -15,6 +15,8 @@
     </ul>
 </x-settings-card>
 
+<livewire:station-power />
+
 <x-settings-card title="Backup" description="A copy of the data of this server to keep somewhere else." id="backup" help-title="How to restore">
     <div class="flex flex-col gap-3">
         @if (session('backupError'))

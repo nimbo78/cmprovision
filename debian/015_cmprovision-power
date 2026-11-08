@@ -1,0 +1,2 @@
+# Only the fixed action parser; no arguments, unit names or command strings from www-data.
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/station-power ""

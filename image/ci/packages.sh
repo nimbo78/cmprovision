@@ -19,12 +19,19 @@ composer install --no-interaction --prefer-dist --no-progress
 cp debian/env.example .env
 php artisan key:generate --force
 php artisan test 2>&1 | tee /output/audit/php-tests.log
+# Older supported tags predate power controls. New sources must test the executor too.
+if [ -d tests/power ]; then
+    python3 -m unittest discover -s tests/power -p 'test_*.py' -v \
+        2>&1 | tee /output/audit/station-power-tests.log
+fi
 
 # The pinned upstream + the tagged portable patch are tested before packaging.
 sh /work/production/packaging/fpms/prepare.sh /work/fpms-tests
 cd /work/fpms-tests
+power_tests=()
+if [ -f tests/test_cmprovision_power.py ]; then power_tests+=(tests/test_cmprovision_power.py); fi
 python3 -m pytest tests/test_cmprovision.py tests/test_cmprovision_fonts.py \
-    tests/test_cmprovision_v2.py tests/test_portable_display.py -q \
+    tests/test_cmprovision_v2.py tests/test_portable_display.py "${power_tests[@]}" -q \
     2>&1 | tee /output/audit/fpms-tests.log
 
 # build-deb extracts the immutable archive again; it never sees test vendor/.env.
