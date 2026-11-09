@@ -1,3 +1,10 @@
+cmprovision4 (2.27.0~dev3) unstable; urgency=medium
+
+  * Restart update-status polling when Livewire recreates Alpine data,
+    so completed operations and component details refresh automatically.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Tue, 10 Nov 2026 02:00:00 +0300
+
 cmprovision4 (2.27.0~dev2) unstable; urgency=medium
 
   * Add independent signed application and Utility OS checks in Settings,

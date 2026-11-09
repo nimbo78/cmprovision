@@ -109,6 +109,35 @@ class StationUpdatesTest extends TestCase
             ->assertDontSee('<script>alert(1)</script>', false)->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false);
     }
 
+    public function test_status_changes_preserve_the_browser_controller_scope_and_escape_initial_data(): void
+    {
+        $control = $this->control(['operation' => ['id' => str_repeat('a', 32), 'state' => 'queued',
+            'message' => 'Queued \'"<img src=x onerror=alert(1)>&', 'log' => ['First operation']]]);
+        $this->actingAs(User::factory()->create());
+        $read = function () {
+            $response = $this->get('/settings?tab=updates')->assertOk()
+                ->assertDontSee('<img src=x onerror=alert(1)>', false);
+            $document = new \DOMDocument();
+            $previous = libxml_use_internal_errors(true);
+            try { $document->loadHTML($response->getContent()); }
+            finally { libxml_clear_errors(); libxml_use_internal_errors($previous); }
+            foreach ((new \DOMXPath($document))->query('//*[@id="updates"]//*[@x-data]') as $element) {
+                if (str_starts_with($element->getAttribute('x-data'), 'StationUpdatesStatus.create(')) {
+                    return [$element->getAttribute('x-data'), $element->getAttribute('data-initial-status')];
+                }
+            }
+            $this->fail('The browser update controller was not rendered.');
+        };
+        [$firstBinding, $firstData] = $read();
+        $initial = $control->state;
+        $control->state['operation']['state'] = 'succeeded';
+        $control->state['operation']['log'] = ['Different operation log'];
+        [$nextBinding, $nextData] = $read();
+        $this->assertSame($firstBinding, $nextBinding, 'Livewire must not replace Alpine state and leave stale log scopes.');
+        $this->assertSame($initial, json_decode($firstData, true, flags: JSON_THROW_ON_ERROR));
+        $this->assertSame($control->state, json_decode($nextData, true, flags: JSON_THROW_ON_ERROR));
+    }
+
     public function test_fpm_health_is_loopback_only_and_does_not_need_a_session(): void
     {
         $this->control();
