@@ -29,6 +29,9 @@ def asset_names(version):
             'fpms-upstream.txt', 'fpms-patch.sha256', 'image-uncompressed.sha256'}
 
 
+UPDATE_ASSETS = {'cmprovision-update.json', 'cmprovision-update.json.minisig'}
+
+
 def asset_map(release):
     assets = {asset['name']: asset for asset in release['assets']}
     if len(assets) != len(release['assets']):
@@ -68,10 +71,10 @@ def parse_sums(text, version):
             raise ValueError('Invalid checksum row')
         digest, name = parts
         name = name.removeprefix('./')
-        if name not in asset_names(version) or name in checks:
+        if name not in asset_names(version) | UPDATE_ASSETS or name in checks:
             raise ValueError('Unexpected, unsafe or duplicate checksum filename: ' + name)
         checks[name] = digest
-    if set(checks) != asset_names(version):
+    if set(checks) not in (asset_names(version), asset_names(version) | UPDATE_ASSETS):
         raise ValueError('Incomplete image release checksum manifest')
     return checks
 
@@ -81,8 +84,10 @@ def sha256(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def verify_bundle(directory, version):
-    if {p.name for p in directory.iterdir()} != asset_names(version) | {'SHA256SUMS'}:
+def verify_bundle(directory, version, require_updates=False):
+    actual = {p.name for p in directory.iterdir()}
+    expected = asset_names(version) | {'SHA256SUMS'}
+    if actual not in ((expected | UPDATE_ASSETS,) if require_updates else (expected, expected | UPDATE_ASSETS)):
         raise ValueError('The artifact directory must contain exactly the release bundle')
     checks = parse_sums((directory / 'SHA256SUMS').read_text(), version)
     for name, expected in checks.items():

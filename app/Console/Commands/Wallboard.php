@@ -20,6 +20,11 @@ class Wallboard extends Command
             return 1;
         }
         do {
+            if (app(\App\Services\StationUpdatesControl::class)->pending()) {
+                if (!$this->option('watch')) return 1;
+                sleep(2);
+                continue;
+            }
             try {
                 $json = json_encode($snapshots->current(), JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
                 $output === null ? $this->line($json) : $this->store($output, $json);

@@ -5,6 +5,7 @@ and NetworkManager operations. Its state writes must be durable before returning
 operations occur while the same guard used by NetworkChangeGate prevents a new module starting.
 """
 import secrets
+import os
 import time
 
 
@@ -19,6 +20,8 @@ class NetworkTransaction:
     def begin(self, request):
         b = self.backend
         with b.guard():
+            if os.path.lexists('/run/cmprovision-updates/pending.json'):
+                raise TransactionError('A station update is in maintenance; wait for it to finish.')
             if b.load() is not None or b.pending():
                 raise TransactionError('A network change is already pending.')
             if b.active_runs():

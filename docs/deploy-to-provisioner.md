@@ -7,6 +7,11 @@ features, bug fixes) — before or instead of pushing to GitHub. This is a manua
 for validating on real hardware: we only push to the remote repository after the package
 has built and installed successfully on the provisioner.
 
+For published stable releases, stations with the updater installed can use
+[Settings → Updates](updates.md) instead. It verifies signatures, requires an idle stand and a recovery
+snapshot, and automatically restores the previous application if health checks fail. Use this manual
+workflow for initial installation, development builds and recovery over SSH.
+
 The `cmprovision4` package is `Architecture: all` (pure PHP plus a precompiled
 ARM binary `ledpattern`, included as-is), and `vendor/` is installed from
 `composer.lock`, so it can be built anywhere on Debian 13. **Do not build on the

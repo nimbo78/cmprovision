@@ -22,6 +22,7 @@ class UtilityOsSettings extends Component
             'link' => $os->link(),
             'follows' => $os->tftpRootFollowsLink(),
             'tftpRoot' => $os->tftpRoot(),
+            'updatesAvailable' => app(\App\Services\StationUpdatesControl::class)->available(),
         ]);
     }
 
@@ -33,7 +34,16 @@ class UtilityOsSettings extends Component
         $before = $os->current();
         try
         {
-            $os->switchTo($dir);
+            if (app(\App\Services\StationUpdatesControl::class)->available())
+                throw new \RuntimeException('Review and confirm Utility OS activation in Settings → Updates.');
+            $result = app(\App\Services\NetworkChangeGate::class)->start(function () use ($os, $dir) {
+                if (\App\Models\Cm::whereIn('phase', \App\Models\Cm::ACTIVE_PHASES)->exists()
+                    || \Illuminate\Support\Facades\DB::table('jobs')->whereNotNull('reserved_at')->exists())
+                    throw new \RuntimeException('Wait for active or unfinished provisioning/image work to finish.');
+                $os->switchTo($dir);
+                return true;
+            });
+            if ($result !== true) throw new \RuntimeException('A station operation is pending; try after it finishes.');
         }
         catch (\Throwable $e)
         {

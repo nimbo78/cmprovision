@@ -1,0 +1,1 @@
+<livewire:station-updates-panel />

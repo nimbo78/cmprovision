@@ -4,6 +4,9 @@
         The package has two: ours, built from current versions (64-bit), and the legacy one from 2022 (32-bit). A switch
         takes effect for the next file a module asks for.
     </x-slot>
+    @if ($updatesAvailable)
+        <p class="text-sm mb-4">Activate a version with the confirmed idle-only workflow in <a class="text-link hover:underline" href="{{ route('settings', ['tab' => 'updates']) }}">Settings → Updates</a>.</p>
+    @endif
     @if ($notice)
         <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $notice }}</div>
     @endif
@@ -26,7 +29,7 @@
                     <td class="whitespace-nowrap text-right">
                         @if ($current === $dir)
                             <span class="text-pos font-semibold">modules get this one</span>
-                        @else
+                        @elseif (!$updatesAvailable)
                             <button type="button" wire:click="serve('{{ $dir }}')"
                                     wire:confirm="Serve the {{ $s['version'] }} utility OS to modules? Switch when no module is booting: a module that is booting now may get the files of both."
                                     class="cmp-btn cmp-btn-secondary cmp-btn-small">Serve this one</button>

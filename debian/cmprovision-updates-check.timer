@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule optional daily cmprovision update checks
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+RandomizedDelaySec=10min
+Persistent=true
+Unit=cmprovision-updates-check.service
+
+[Install]
+WantedBy=timers.target

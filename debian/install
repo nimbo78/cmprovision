@@ -38,3 +38,8 @@ debian/cmprovision-network-init.service lib/systemd/system
 debian/cmprovision-network-recover.service lib/systemd/system
 debian/cmprovision-fpms.service lib/systemd/system
 debian/cmprovision-fpms-data.service lib/systemd/system
+debian/016_cmprovision-updates etc/sudoers.d
+debian/updates/* etc/cmprovision-updates
+debian/cmprovision-updates-recover.service lib/systemd/system
+debian/cmprovision-updates-check.service lib/systemd/system
+debian/cmprovision-updates-check.timer lib/systemd/system

@@ -22,6 +22,7 @@ class NetworkChangeGate
     /** A module retries HTTP 503 while a change is in progress; no run has started yet. */
     public function start(callable $begin)
     {
+        if (app(StationUpdatesControl::class)->pending()) return $this->updateRetry();
         if (app(StationPowerControl::class)->pending()) return $this->powerRetry();
         if (!$this->enabled) {
             return $begin();
@@ -44,6 +45,7 @@ class NetworkChangeGate
             }
             try {
                 if (file_exists($this->directory.'/pending')) return $this->retry();
+                if (app(StationUpdatesControl::class)->pending()) return $this->updateRetry();
                 return app(StationPowerControl::class)->pending() ? $this->powerRetry() : $begin();
             } finally {
                 flock($file, LOCK_UN);
@@ -62,6 +64,12 @@ class NetworkChangeGate
     private function powerRetry()
     {
         return response('The provisioner is restarting or shutting down; retry after it is online.', 503)
+            ->header('Content-Type', 'text/plain')->header('Retry-After', '10');
+    }
+
+    private function updateRetry()
+    {
+        return response('The station is being updated; retry after maintenance.', 503)
             ->header('Content-Type', 'text/plain')->header('Retry-After', '10');
     }
 }

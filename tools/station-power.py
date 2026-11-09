@@ -83,6 +83,8 @@ class Controller:
             try: fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error: raise PowerError('Another power action is being scheduled.') from error
             if self.pending(): raise PowerError('A power action is already pending.')
+            if os.path.lexists('/run/cmprovision-updates/pending.json'):
+                raise PowerError('A station update is in maintenance; wait for it to finish.')
             state = dict(action=action, boot_id=self.boot(), scheduled_at=int(self.clock()), delay=5, confirmed=False)
             self.write(state)  # Publish before scheduling; an uncertain result must never allow another write to start.
             command = ['/usr/bin/systemd-run', '--quiet', '--collect', '--unit=cmprovision-station-power',

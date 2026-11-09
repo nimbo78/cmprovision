@@ -46,6 +46,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/firmware', Firmwares::class)->name('firmware');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/settings', Settings::class)->name('settings');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
+    ->get('/settings/updates/status', \App\Http\Controllers\StationUpdatesStatusController::class)->name('settings.updates.status');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
     ->get('/settings/power/status', \App\Http\Controllers\StationPowerStatusController::class)->name('settings.power.status');
 // the copy of the data holds the application key and every password of the server: the password is asked again
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])->group(function () {
