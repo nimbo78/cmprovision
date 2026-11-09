@@ -1,0 +1,4 @@
+#!/bin/sh
+# No arguments, no inherited Python search path or privileged environment overrides.
+[ "$#" -eq 0 ] || exit 2
+exec /usr/bin/python3 -I /usr/lib/cmprovision/station-updates.py

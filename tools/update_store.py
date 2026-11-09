@@ -42,7 +42,7 @@ def validate_request(request):
     fields = {
         'check': {'action', 'nonce', 'components'},
         'download': {'action', 'nonce', 'component', 'tag'},
-        'apply': {'action', 'nonce', 'candidate'},
+        'apply': {'action', 'nonce', 'candidate', 'receipt'},
         'activate': {'action', 'nonce', 'selector'},
         'rollback': {'action', 'nonce', 'operation'},
     }
@@ -58,7 +58,7 @@ def validate_request(request):
             raise UpdateError('Invalid update release selection.')
         if request['tag'].startswith('v') != (request['component'] == 'application'):
             raise UpdateError('Update component and tag do not match.')
-    if action == 'apply' and not matches(SHA_RE, request['candidate']):
+    if action == 'apply' and (not matches(SHA_RE, request['candidate']) or not matches(SHA_RE, request['receipt'])):
         raise UpdateError('Invalid prepared update identifier.')
     if action == 'rollback' and not matches(ID_RE, request['operation']):
         raise UpdateError('Invalid recovery operation identifier.')
@@ -187,6 +187,7 @@ class UpdateStore:
             envelope = state['catalogues'].get(identity)
             if envelope:
                 ready.append({'id': identity, 'release': envelope['manifest'],
+                              'receipt': receipt['fingerprint'],
                               'plan': receipt.get('plan', []), 'prepared_at': receipt.get('prepared_at')})
         context = state['context']
         return {'schema': 1, 'installed': {'application': context.get('cmprovision'),
@@ -341,10 +342,28 @@ class UpdateStore:
                 'error': safe_text(error) if error else None, 'incompatible': envelope.get('incompatible') if envelope else None}
         return self._mutate(action)
 
+    def cache_catalogue(self, envelope):
+        try:
+            raw = base64.b64decode(envelope['raw'], validate=True)
+            valid = matches(SHA_RE, envelope['id']) and hashlib.sha256(raw).hexdigest() == envelope['id']
+        except (KeyError, ValueError, TypeError) as error:
+            raise UpdateError('Invalid verified update envelope.') from error
+        if not valid: raise UpdateError('Verified catalogue identifier does not match.')
+        return self._mutate(lambda state: state['catalogues'].update({envelope['id']: envelope}))
+
+    def payload_dir(self, identity):
+        if not matches(SHA_RE, identity): raise UpdateError('Invalid download directory identifier.')
+        path = self.payloads/identity
+        self._directory(path, 0o700)
+        return path
+
     def save_receipt(self, identity, receipt):
         def action(state):
             if identity not in state['catalogues']: raise UpdateError('Prepared update has no verified catalogue.')
-            state['ready'][identity] = dict(receipt, prepared_at=int(self.clock()))
+            value = {key: copy.deepcopy(value) for key, value in receipt.items() if key != 'fingerprint'}
+            value.update(prepared_at=int(self.clock()), manifest_id=identity)
+            value['fingerprint'] = hashlib.sha256(canonical_bytes(value)).hexdigest()
+            state['ready'][identity] = value
         return self._mutate(action)
 
     def receipt(self, identity):

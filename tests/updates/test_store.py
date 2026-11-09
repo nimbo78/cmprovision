@@ -41,7 +41,7 @@ class StoreTest(unittest.TestCase):
         self.assertNotEqual(first['id'], second['id'])
 
     def test_pending_is_durable_and_unknown_recovery_cannot_clear_it(self):
-        operation, _ = self.store.begin({'action': 'apply', 'candidate': 'f'*64, 'nonce': 'c'*64})
+        operation, _ = self.store.begin({'action': 'apply', 'candidate': 'f'*64, 'receipt': 'b'*64, 'nonce': 'c'*64})
         self.store.mark_pending(operation['id'])
         self.assertEqual(operation['id'], self.store.snapshot()['pending']['id'])
         self.store.update(operation['id'], state='recovery-required')
