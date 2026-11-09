@@ -11,6 +11,10 @@ They are published automatically after successful main checks and the complete b
 development versions remain unpublished. See [release automation](../image/README.md#automatic-complete-releases).
 Publication does not install the update on a running station or replace hardware acceptance.
 
+Once the updater package is installed, [Settings → Updates](updates.md) can download and install
+signed stable releases on an idle station, with a required recovery snapshot and automatic rollback.
+Application and Utility OS updates are independent. The manual package workflow below also remains available.
+
 Version 2.6.4 adds Identify after the first-boot OS check, until the module's next reboot. It needs no database migration. Already provisioned sensors keep their existing first-boot script: upgrading the server alone does not add polling to them. Provision them again with the updated server to get the new behaviour. See [first-boot OS check](operations.md#first-boot-os-check).
 
 The 2.6.3 migration adds a per-run destination-disk snapshot. Resume marks from older versions have no such snapshot and are cleared once during the upgrade: an interrupted old run writes from the beginning at its next start. New runs keep their normal split-image resume behavior. The re-provision project option starts disabled. Upgrading from 2.6.3 development builds that already applied this migration does not clear the marks again.

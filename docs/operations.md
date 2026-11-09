@@ -113,7 +113,7 @@ its requests after the first, so nothing on the module side or in the utility OS
 
 ## The Settings page
 
-Settings has four tabs, each at its own address (`/settings?tab=network`), so a link or a bookmark opens the part you mean:
+Settings has five tabs, each at its own address (`/settings?tab=network`), so a link or a bookmark opens the part you mean:
 
 | Tab | Holds |
 | --- | --- |
@@ -121,6 +121,7 @@ Settings has four tabs, each at its own address (`/settings?tab=network`), so a 
 | **Network** | Wi-Fi networks, Ethernet switches, DHCP static addresses. |
 | **Provisioning** | Utility OS, Re-provision (the provisioner key and the saved sensor accounts), the HDMI display. |
 | **Notifications** | Notification channels and the current batch. |
+| **Updates** | Independent signed application and Utility OS checks, optional daily checks, verified downloads, confirmed installation and recovery. See [station updates](updates.md). |
 
 On every tab except Status a strip at the top shows the same services in one line (a word beside each colour, "N of 7 running") and the **Logs** menu with the journal of each. It refreshes by itself every 30 seconds, so a stopped queue worker is seen whichever tab you are on. Each section has one line of what it is, its actions at the right, and a longer explanation behind **How it works**. Only the open tab is read: Wi-Fi and switches are asked about on Network only.
 
