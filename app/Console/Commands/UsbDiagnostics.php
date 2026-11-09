@@ -13,6 +13,10 @@ class UsbDiagnostics extends Command
 
     public function handle(Receiver $receiver): int
     {
+        if (app(\App\Services\StationUpdatesControl::class)->pending()) {
+            $this->line('{"action":"error","reason":"Station update maintenance; retry after it finishes."}');
+            return 1;
+        }
         try {
             $data = json_decode(stream_get_contents(STDIN, 70001), true, 20, JSON_THROW_ON_ERROR);
             if (!is_array($data) || !in_array($data['operation'] ?? '', ['status', 'accept'], true))

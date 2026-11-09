@@ -1,10 +1,15 @@
 import json
 import unittest
+import tempfile
+import os
+from pathlib import Path
+import subprocess
 from unittest.mock import Mock
 
 from support import *
 from update_manifest import UpdateError
-from update_broker import Broker, decode_request
+from update_broker import Broker, decode_request, reconcile
+from update_store import UpdateStore
 
 
 class BrokerTest(unittest.TestCase):
@@ -25,6 +30,18 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual('a'*32, broker.request(request)['id'])
         self.assertEqual('a'*32, broker.request(request)['id'])
         launcher.assert_called_once_with('a'*32)
+
+    def test_dead_noncritical_worker_becomes_failed_without_launching_recovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            store = UpdateStore(Path(temporary)/'state', Path(temporary)/'run', owner=os.getuid(), clock=lambda: 1)
+            operation, _ = store.begin({'action': 'check', 'nonce': 'e'*64, 'components': ['application']})
+            calls = []
+            def run(argv, **kwargs):
+                calls.append(argv)
+                return subprocess.CompletedProcess(argv, 3, stdout='inactive\n', stderr='')
+            reconcile(store, run=run, clock=lambda: 100)
+            self.assertEqual('failed', store.operation(operation['id'])['state'])
+            self.assertEqual(1, len(calls))
 
 
 if __name__ == '__main__': unittest.main()

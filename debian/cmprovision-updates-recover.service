@@ -6,7 +6,7 @@ Before=nginx.service cmprovision-queue.service cmprovision-queue-images.service 
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 -I /usr/lib/cmprovision/station-updates.py --recover-boot
+ExecStart=/usr/bin/python3 -B -I /var/lib/cmprovision-updates/recover.py
 RemainAfterExit=yes
 
 [Install]

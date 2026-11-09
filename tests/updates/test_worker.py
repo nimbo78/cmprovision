@@ -45,6 +45,7 @@ class System:
         self.active, self.reserved, self.conflict = [], 0, False
         self.fail_backup = self.fail_install = self.fail_health = self.fail_recovery = False
         self.extra_dependency = False
+        self.fail_space = False
         self.services = {'cmprovision-dnsmasq': {'enabled': 'masked', 'active': False},
                          'cmprovision-rpiboot': {'enabled': 'masked', 'active': False},
                          'cmprovision-queue': {'enabled': 'enabled', 'active': True}}
@@ -53,9 +54,13 @@ class System:
     def admission(self): return {'active': self.active, 'reserved_jobs': self.reserved}
     def conflicts(self):
         if self.conflict: raise UpdateError('A network or power operation is pending.')
+    def download_space(self, size):
+        if self.fail_space: raise UpdateError('Not enough free space for the download and reserve.')
     @contextmanager
     def admission_lock(self): yield
     def capture_services(self): return copy.deepcopy(self.services)
+    def prune(self): pass
+    def retain_runner(self, identity): return {'directory': str(self.root/'runner'/identity), 'hashes': {}}
     def pause(self, services): self.calls.append(('pause', copy.deepcopy(services)))
     def resume(self, services, boot=True):
         self.calls.append(('resume', copy.deepcopy(services), boot))
@@ -128,6 +133,12 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual('failed', result['state'])
         self.assertIsNone(self.store.snapshot()['pending'])
         self.assertFalse(any(item[0] == 'install' for item in self.system.calls))
+
+    def test_insufficient_download_space_is_rejected_before_fetching_assets(self):
+        self.system.fail_space = True
+        result = self.run_operation('download', component='application', tag='v2.28.0')
+        self.assertEqual('failed', result['state'])
+        self.assertFalse(any(item[0] == 'fetch' for item in self.source.calls))
 
     def test_successful_install_is_durable_and_replay_never_installs_twice(self):
         ready = self.download()

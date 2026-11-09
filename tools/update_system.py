@@ -77,6 +77,10 @@ class LinuxSystem:
 
     def admission(self): return self.www('updates:inspect')['admission']
 
+    def download_space(self, size):
+        if shutil.disk_usage(self.store.payloads).free < size+64*1024**2:
+            raise UpdateError('Not enough free space for the signed download plus the 64 MiB safety reserve.')
+
     def conflicts(self):
         if any(os.path.lexists(path) for path in ('/run/cmprovision-network/pending',
                 '/var/lib/cmprovision-network/transactions/pending.json')):
@@ -110,6 +114,8 @@ class LinuxSystem:
             if values.get('ActiveState') not in ('active', 'inactive', 'failed'):
                 raise UpdateError('Wait for station services to finish starting/stopping before applying updates.')
             enabled = values.get('UnitFileState', '')
+            if enabled.startswith('masked') and values['ActiveState'] == 'active':
+                raise UpdateError('A masked service is still running. Stop or unmask it before updating: '+name)
             if enabled not in ('enabled', 'enabled-runtime', 'disabled', 'static', 'indirect', 'masked', 'masked-runtime'):
                 raise UpdateError('Unsupported service state for '+name)
             states[name] = {'enabled': enabled, 'active': values['ActiveState'] == 'active'}
@@ -170,13 +176,13 @@ class LinuxSystem:
         self.store._directory(directory, 0o700)
         # Refuse installation unless a full, reinstallable snapshot can be kept independently
         # of the application's ordinary five-snapshot retention policy.
-        size = int(self.command(['/usr/bin/du', '-sx', '--block-size=1', '--exclude='+str(APP/'public/uploads'), APP]).split()[0])
+        size = int(self.command(['/usr/bin/du', '-sx', '--block-size=1', APP]).split()[0])
         if shutil.disk_usage(directory).free < size*2+128*1024**2:
             raise UpdateError('Not enough free space for a required recovery snapshot.')
         restore = directory/'restore.sh'
         shutil.copyfile('/usr/sbin/cmprovision-restore', restore)
         restore.chmod(0o700)
-        self.command(['/usr/sbin/cmprovision-backup', '--keep', 'all', directory], timeout=1800)
+        self.command(['/usr/sbin/cmprovision-backup', '--with-uploads', '--keep', 'all', directory], timeout=1800)
         snapshots = [path for path in directory.iterdir() if path.is_dir() and not path.is_symlink()]
         if len(snapshots) != 1: raise UpdateError('Could not identify the completed recovery snapshot.')
         snapshot = snapshots[0]
@@ -210,6 +216,8 @@ class LinuxSystem:
             if name not in backup['hashes']: raise UpdateError('The recovery snapshot is incomplete.')
             if not (data/name).exists(): os.link(snapshot/name, data/name)
         self.command(['/bin/sh', restore, '--force', data], timeout=1800)
+        from update_recovery import restore_trust
+        restore_trust(self.store, backup['identity'])
         self.activate_utility(self.store.operation(backup['identity']).get('previous', {}).get('utility_selector', 'bundled-modern'))
 
     def health(self, expected, services):
@@ -237,19 +245,43 @@ class LinuxSystem:
                     minimum = expected.get('compatibility', {}).get('php', {}).get('.'.join(php.split('.')[:2]))
                     if expected.get('compatibility') and (not minimum or self.command(['/usr/bin/dpkg', '--compare-versions', php, 'ge', minimum], check=False).returncode):
                         raise UpdateError('The running PHP-FPM version does not meet release security requirements.')
-                    return
+                    login = http.client.HTTPConnection('127.0.0.1', 80, timeout=3)
+                    try:
+                        login.request('GET', '/login')
+                        page = login.getresponse()
+                        body = page.read(1024*1024)
+                        if page.status == 200 and b'name="email"' in body and b'name="password"' in body:
+                            return
+                    finally: login.close()
             except (OSError, ValueError, http.client.HTTPException): pass
             finally: connection.close()
             if attempt < 14: time.sleep(2)
         raise UpdateError('The updated nginx/PHP web interface failed its loopback health check.')
+
+    def retain_runner(self, identity):
+        from update_recovery import retain_runner, install_dispatcher
+        install_dispatcher(self.store)
+        return retain_runner(self.store, identity)
+
+    def prune(self):
+        from update_retention import prune
+        try: active = self.www('updates:inspect').get('utility_selector')
+        except Exception: active = None
+        prune(self.store, active_selector=active)
 
     def prepare_utility(self, envelope, archive, store):
         from update_utility import ManagedUtility
         selector = ManagedUtility(store).prepare(envelope, archive)
         return {'selector': selector, 'files': [archive.name]}
 
-    def validate_utility(self, selector): return self.www('updates:utility', '--validate='+selector)
-    def activate_utility(self, selector): return self.www('updates:utility', '--activate='+selector)
+    def validate_utility(self, selector):
+        if selector.startswith('managed:'):
+            from update_utility import ManagedUtility
+            ManagedUtility(self.store).validate(selector, self.context())
+        return self.www('updates:utility', '--validate='+selector)
+    def activate_utility(self, selector):
+        self.validate_utility(selector)
+        return self.www('updates:utility', '--activate='+selector)
     def utility_health(self, selector):
         result = self.validate_utility(selector)
         if result.get('current') != selector: raise UpdateError('Utility OS activation could not be verified.')

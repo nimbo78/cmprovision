@@ -7,6 +7,7 @@ import re
 import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 
 # -I intentionally omits the script directory: only this root-owned package directory is added.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -40,6 +41,8 @@ def main():
             if request['action'] == 'status': reconcile(store)
             result = Broker(store).request(request)
         elif args == ['--initialize']:
+            from update_recovery import install_dispatcher
+            install_dispatcher(store)
             publisher = source()
             system = LinuxSystem(store)
             if not store.snapshot()['pending']:
@@ -66,7 +69,10 @@ def main():
                     store.update(operation['id'], state='failed', message='The previous noncritical operation was interrupted; check or download again.')
             result = store.snapshot()
         elif args == ['--recover']:
-            worker = Worker(store, source(), LinuxSystem(store))
+            # Recovery uses the retained code/state, even if dpkg interrupted replacement
+            # of the live trust configuration or publisher modules.
+            publisher = SimpleNamespace(repository=store.snapshot()['source'].get('repository', 'nimbo78/cmprovision'))
+            worker = Worker(store, publisher, LinuxSystem(store))
             worker.recover_pending()
             operation = store.snapshot()['operation']
             if operation and operation['state'] not in ('ready', 'succeeded', 'rolled-back', 'failed', 'canceled', 'recovery-required'):

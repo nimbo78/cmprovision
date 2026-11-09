@@ -37,6 +37,8 @@ The two **Automatically check once a day** switches are independent and initiall
 
 Checks and downloads can run during provisioning. Critical installation pauses new board starts, conflicting configuration changes and queue processing. The application update requires a consistent snapshot and reinstallable previous packages; insufficient free space or missing recovery material prevents installation. Additional Debian dependency changes are pinned to the reviewed plan and installed from the prepared cache. This is an application recovery mechanism, not a full host-OS downgrade.
 
+Recovery snapshots include uploaded images, so large image libraries need enough additional free space for their copy. Downloads preserve a 64 MiB safety reserve. Five successful recovery points are retained; cleanup removes only the updater's inactive, unreferenced files and leaves unrelated backups untouched.
+
 ## Utility OS and recovery
 
 Downloaded Utility OS releases live outside application package directories in `/var/lib/cmprovision-utility-os/releases`. Preparation validates the complete inventory, checksums and required Ethernet/USB files. Checking or downloading never changes the boot selection. Applying changes the boot link as the web user; a package upgrade preserves a valid managed selection. Legacy and bundled modern boot files remain selectable.
@@ -44,6 +46,8 @@ Downloaded Utility OS releases live outside application package directories in `
 **Recovery history → Review rollback** can restore a retained prior version. An application rollback also restores that snapshot's application data: later changes are discarded. Immediate automatic recovery runs while maintenance blocks intervening work.
 
 If installation or its health checks fail, the updater restores the immediate snapshot automatically. Interrupted critical operations are recovered without repeating installation; boot recovery recreates the maintenance gate. If recovery fails, the page reports **recovery-required** and the gate stays closed. Use SSH/local console, inspect `journalctl -u 'cmprovision-update-*'` and `/var/lib/cmprovision-updates/private`, and resolve the recorded operation before reopening the stand. Do not delete pending files to bypass recovery.
+
+The protocol-1 boot dispatcher is retained at `/var/lib/cmprovision-updates/recover.py`, outside files replaced by dpkg. It verifies and launches the previous operation's saved Python runner, so a partly replaced updater or trust configuration does not prevent its own recovery.
 
 ## Publisher and release administration
 

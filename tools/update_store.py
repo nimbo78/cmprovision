@@ -173,7 +173,12 @@ class UpdateStore:
         keys = {'id', 'action', 'component', 'components', 'version', 'state', 'created_at', 'updated_at',
                 'downloaded', 'total', 'message', 'cancel_requested'}
         if not history: keys |= {'log'}
-        return {key: copy.deepcopy(value) for key, value in operation.items() if key in keys}
+        result = {key: copy.deepcopy(value) for key, value in operation.items() if key in keys}
+        previous = operation.get('previous', {})
+        if previous:
+            result['previous_version'] = safe_text(previous.get('cmprovision') if operation.get('component') == 'application'
+                else previous.get('utility_os_label', previous.get('utility_os_version', 'previous')))
+        return result
 
     def _projection(self, state):
         operations = state['operations']
@@ -243,6 +248,9 @@ class UpdateStore:
             if (state['critical'] or self.pending_file.exists() or self.pending_file.is_symlink()
                     or current and current['state'] not in TERMINAL):
                 raise UpdateError('Another update operation is running or needs recovery.')
+            # A terminal result is published before its worker releases cleanup resources.
+            # New nonces must not launch a child that would immediately lose that worker lock.
+            with self.lock('worker', blocking=False): pass
             state['sequence'] += 1
             identity = uuid.uuid4().hex
             operation = {'id': identity, 'request': request, 'action': request['action'], 'state': 'queued',
@@ -369,8 +377,13 @@ class UpdateStore:
             value = {key: copy.deepcopy(value) for key, value in receipt.items() if key != 'fingerprint'}
             value.update(prepared_at=int(self.clock()), manifest_id=identity)
             value['fingerprint'] = hashlib.sha256(canonical_bytes(value)).hexdigest()
+            state['ready'] = {key: item for key, item in state['ready'].items()
+                              if item.get('component') != value['component'] or key == identity}
             state['ready'][identity] = value
         return self._mutate(action)
+
+    def consume_receipt(self, identity):
+        return self._mutate(lambda state: state['ready'].pop(identity, None))
 
     def receipt(self, identity):
         if not matches(SHA_RE, identity): raise UpdateError('Invalid prepared update identifier.')

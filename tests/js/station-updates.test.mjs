@@ -27,3 +27,13 @@ test('lost connection never resubmits an installation', async () => {
     assert.equal(calls[0][1].method, undefined);
     assert.match(state.message(), /do not apply again/);
 });
+
+test('expired authentication shows sign-in guidance without another installation request', async () => {
+    const state = api.create('/status', { operation: { state: 'applying' } });
+    state.destroyed = true;
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: false, status: 401 });
+    try { await state.poll(); } finally { globalThis.fetch = original; }
+    assert.equal(state.signin, true);
+    assert.match(state.message(), /Sign in again/);
+});

@@ -64,7 +64,18 @@ class StationUpdatesPanel extends Component
             return $result;
         });
     }
-    public function back(): void { $this->actor(); $this->open = false; $this->confirmation = null; $this->error = null; }
+    public function back(): void
+    {
+        $actor = $this->actor();
+        if ($this->confirmation !== null) {
+            try { app(StationUpdates::class)->abandon($this->confirmation['token'], $actor); }
+            catch (\RuntimeException $expired) { /* An expired ticket is already inert. */ }
+        }
+        $this->open = false;
+        $this->confirmation = null;
+        $this->error = null;
+    }
+    public function updatedOpen(bool $value): void { if (!$value) $this->back(); }
     public function cancel(string $id): void { $this->execute(fn () => app(StationUpdates::class)->cancel($id)); }
     public function render()
     {

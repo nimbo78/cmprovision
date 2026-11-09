@@ -61,7 +61,8 @@ class StationUpdates
             $previous = collect($status['recoveries'] ?? [])->firstWhere('id', $target);
             if (!$previous) throw new \RuntimeException('No retained recovery snapshot is available for this operation.');
             $request += ['operation' => $target];
-            $description = 'Restore the previous version and its recorded data. Changes after that snapshot will be lost.';
+            $description = 'Restore '.$previous['component'].' '.($previous['previous_version'] ?? 'the recorded previous version').
+                ' and its recorded data. Changes after that snapshot will be lost.';
         } elseif ($action === 'activate') {
             if (!preg_match('/\A(?:legacy|bundled-modern|managed:[0-9]{4}\.[0-9]{2}(?:\.[0-9]+)?)\z/D', $target)) throw new \InvalidArgumentException('Invalid Utility OS selection.');
             $request += ['selector' => $target];
@@ -82,6 +83,15 @@ class StationUpdates
             $result = $this->control->request($ticket['request']);
             Log::notice('Station update requested', ['action' => $ticket['request']['action'], 'operation' => $result['id'] ?? null]);
             return $result;
+        });
+    }
+    public function abandon(string $token, string $actor): void
+    {
+        Cache::lock('station-update-confirm', 20)->block(1, function () use ($token, $actor) {
+            $ticket = preg_match('/\A[0-9a-f]{64}\z/D', $token) ? Cache::get('station-update-ticket:'.$token) : null;
+            if (!is_array($ticket) || !hash_equals($ticket['actor'], $actor))
+                throw new \RuntimeException('The confirmation expired or belongs to another session.');
+            Cache::forget('station-update-ticket:'.$token);
         });
     }
     public function cancel(string $id): array { return $this->control->request(['action' => 'cancel', 'id' => $id]); }

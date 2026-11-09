@@ -83,7 +83,14 @@ class Worker:
             except Exception as error:
                 self._failed(identity, error)
         finally:
+            self._prune()
             lock.__exit__(None, None, None)
+
+    def _prune(self):
+        try:
+            if not self.store.snapshot()['pending']: self.system.prune()
+        except Exception:
+            pass # Cleanup cannot undo a verified install; never guess at unsafe/unowned artifacts.
 
     def _check(self, identity, request):
         self._phase(identity, 'checking', 'Checking signed stable component releases.')
@@ -114,6 +121,9 @@ class Worker:
         self.store.cache_catalogue(envelope)
         assets = self._assets(value, context)
         total = sum(asset['size'] for asset in assets)
+        directory = self.store.payload_dir(envelope['id'])
+        missing = sum(asset['size'] for asset in assets if not (directory/asset['name']).exists())
+        self.system.download_space(missing)
         self._phase(identity, 'downloading', 'Downloading verified release files.', version=value['version'], total=total)
         completed, paths = 0, []
         for asset in assets:
@@ -151,8 +161,9 @@ class Worker:
         self.system.conflicts()
         services = self.system.capture_services()
         previous = self.system.context()
+        runner = self.system.retain_runner(identity)
         self._phase(identity, 'preparing', 'Pausing new boots and preparing a recovery snapshot.',
-                    services=services, previous=previous)
+                    services=services, previous=previous, runner=runner)
         with self.system.admission_lock():
             self.system.conflicts()
             self._idle()
@@ -198,6 +209,9 @@ class Worker:
         self.store.clear_pending(identity)
         try:
             self.store.metadata(self.system.context(), {'repository': self.source.repository, 'configured': True})
+            operation = self.store.operation(identity)
+            if state == 'succeeded' and operation['action'] == 'apply':
+                self.store.consume_receipt(operation['request']['candidate'])
         except Exception:
             pass # A committed healthy install is not undone by a stale display projection.
 
@@ -241,6 +255,7 @@ class Worker:
                              operation.get('outcome', operation['state'] if operation['state'] in TERMINAL else 'succeeded'))
             else:
                 self._failed(identity, UpdateError('Update was interrupted before its final health result.'))
+            self._prune()
 
     def _activate(self, identity, request):
         self.system.validate_utility(request['selector'])
@@ -252,6 +267,8 @@ class Worker:
         self._finish(identity, services, 'Selected Utility OS activated for subsequent boots.')
 
     def _rollback(self, identity, request):
+        if request['operation'] not in {operation['id'] for operation in self.store.snapshot()['recoveries']}:
+            raise UpdateError('The selected recovery snapshot is no longer retained.')
         previous_operation = self.store.operation(request['operation'])
         if previous_operation['state'] != 'succeeded' or not previous_operation.get('previous'):
             raise UpdateError('This operation has no recoverable previous version.')

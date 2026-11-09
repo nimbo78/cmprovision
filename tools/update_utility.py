@@ -14,7 +14,7 @@ import tarfile
 import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from update_manifest import UOS_VERSION_RE, UpdateError, canonical_bytes, verify_manifest
+from update_manifest import UOS_VERSION_RE, UpdateError, canonical_bytes, verify_manifest, compatibility_error
 
 ROOT = Path('/var/lib/cmprovision-utility-os')
 KEY = Path('/etc/cmprovision-updates/publisher.pub')
@@ -102,7 +102,7 @@ class ManagedUtility:
             raise UpdateError('Utility OS receipt does not match its signed release.')
         return value
 
-    def validate(self, selector):
+    def validate(self, selector, context=None):
         if type(selector) is not str or not re.fullmatch('managed:'+UOS_VERSION_RE, selector):
             raise UpdateError('Invalid managed Utility OS selection.')
         version = selector.split(':', 1)[1]
@@ -112,6 +112,9 @@ class ManagedUtility:
         if protected(receipt, self.owner).st_size > 128*1024: raise UpdateError('Utility OS receipt is too large.')
         envelope = json.loads(receipt.read_bytes())
         value = self._value(envelope)
+        if context:
+            error = compatibility_error(value, context)
+            if error: raise UpdateError(error)
         if version != value['version']: raise UpdateError('Utility OS directory and version do not match.')
         return verify_tree(directory/'boot', value, self.owner)
 
@@ -181,7 +184,13 @@ class ManagedUtility:
 if __name__ == '__main__':
     try:
         if len(sys.argv) != 3 or sys.argv[1] != '--validate': raise UpdateError('Expected a managed Utility OS selection.')
-        print(json.dumps(ManagedUtility().validate(sys.argv[2])))
+        import subprocess
+        def command(*args): return subprocess.check_output(args, text=True).strip()
+        context = {'debian': Path('/etc/debian_version').read_text().split('.')[0].strip(),
+            'architecture': command('/usr/bin/dpkg', '--print-architecture'),
+            'php': command('/usr/bin/php', '-r', 'echo PHP_VERSION;'),
+            'cmprovision': command('/usr/bin/dpkg-query', '-W', '-f=${Version}', 'cmprovision4'), 'updater_protocol': 1}
+        print(json.dumps(ManagedUtility().validate(sys.argv[2], context)))
     except Exception:
         print('{"error":"Managed Utility OS verification failed"}')
         raise SystemExit(1)

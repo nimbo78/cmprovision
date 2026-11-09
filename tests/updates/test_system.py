@@ -38,5 +38,17 @@ class SystemTest(unittest.TestCase):
         self.assertFalse(any('start' in c and 'cmprovision-dnsmasq.service' in c for c in calls))
         self.assertTrue(any('start' in c and 'cmprovision-queue.service' in c for c in calls))
 
+    def test_masked_but_running_service_is_rejected_before_changing_anything(self):
+        system = LinuxSystem.__new__(LinuxSystem)
+        calls = []
+        def command(argv, **kwargs):
+            calls.append(argv)
+            if 'list-unit-files' in argv: return ''
+            import subprocess
+            return subprocess.CompletedProcess(argv, 0, stdout='LoadState=loaded\nUnitFileState=masked\nActiveState=active\n')
+        system.command = command
+        with self.assertRaisesRegex(UpdateError, 'masked service is still running'): system.capture_services()
+        self.assertTrue(all('stop' not in argv and 'mask' not in argv for argv in calls))
+
 
 if __name__ == '__main__': unittest.main()

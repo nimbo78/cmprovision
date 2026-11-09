@@ -40,6 +40,15 @@ class StoreTest(unittest.TestCase):
         self.assertTrue(created)
         self.assertNotEqual(first['id'], second['id'])
 
+    def test_terminal_worker_cleanup_blocks_a_new_nonce_but_allows_replay(self):
+        operation, _ = self.store.begin(self.request)
+        self.store.update(operation['id'], state='succeeded')
+        with self.store.lock('worker', blocking=False):
+            repeated, created = self.store.begin(self.request)
+            self.assertFalse(created)
+            self.assertEqual(operation['id'], repeated['id'])
+            with self.assertRaises(UpdateError): self.store.begin(dict(self.request, nonce='b'*64))
+
     def test_pending_is_durable_and_unknown_recovery_cannot_clear_it(self):
         operation, _ = self.store.begin({'action': 'apply', 'candidate': 'f'*64, 'receipt': 'b'*64, 'nonce': 'c'*64})
         self.store.mark_pending(operation['id'])

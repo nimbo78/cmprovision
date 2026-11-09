@@ -38,6 +38,7 @@ def launch(identity):
 
 
 def reconcile(store, run=subprocess.run, clock=time.time):
+    recover = False
     status = store.snapshot()
     operation = status['operation']
     if not operation or operation['state'] in ('ready', 'succeeded', 'rolled-back', 'failed', 'canceled', 'recovery-required'):
@@ -52,12 +53,13 @@ def reconcile(store, run=subprocess.run, clock=time.time):
             if current['state'] != operation['state']: return
             if status['pending']:
                 store.update(operation['id'], state='unknown', message='The interrupted worker is being recovered; no installation will be repeated.')
-                # A fixed separate recovery unit owns rollback. Never re-launch apply.
-                run(['/usr/bin/systemd-run', '--quiet', '--collect', '--unit=cmprovision-update-recovery', '--',
-                     '/usr/bin/python3', '-I', '/usr/lib/cmprovision/station-updates.py', '--recover'],
-                    capture_output=True, timeout=5, check=False)
+                recover = True
             else:
                 store.update(operation['id'], state='failed', message='The noncritical worker was interrupted. Check or download again.')
+        if recover:
+            # Release the worker lock before starting its retained replacement.
+            run(['/usr/bin/python3', '-B', '-I', str(store.root/'recover.py')],
+                capture_output=True, timeout=10, check=False)
     except (UpdateError, OSError, subprocess.TimeoutExpired):
         pass # Failure to observe a worker is not permission to repeat an installation.
 

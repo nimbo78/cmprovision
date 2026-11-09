@@ -12,6 +12,7 @@ use Tests\TestCase;
 class StationUpdatesTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Support\UtilityOsTree;
 
     private function control(array $status = []): StationUpdatesControl
     {
@@ -67,11 +68,45 @@ class StationUpdatesTest extends TestCase
         $updates->confirm($intent['token'], 'web:1:session');
     }
 
+    public function test_abandoned_confirmation_cannot_authorize_a_replayed_request(): void
+    {
+        $control = $this->control(['ready' => [['id' => str_repeat('b', 64), 'receipt' => str_repeat('c', 64),
+            'release' => ['component' => 'application', 'version' => '2.28.0'], 'plan' => []]]]);
+        $updates = app(StationUpdates::class);
+        $intent = $updates->prepare('apply', str_repeat('b', 64), 'web:1:session');
+        $updates->abandon($intent['token'], 'web:1:session');
+        $this->assertSame([], $control->calls);
+        $this->expectException(\RuntimeException::class);
+        $updates->confirm($intent['token'], 'web:1:session');
+    }
+
     public function test_status_requires_authentication(): void
     {
         $this->control();
         $this->getJson('/settings/updates/status')->assertUnauthorized();
         $this->actingAs(User::factory()->create())->getJson('/settings/updates/status')->assertOk();
+    }
+
+    public function test_old_utility_os_selector_cannot_bypass_the_packaged_update_confirmation(): void
+    {
+        $this->makeTree();
+        $this->control();
+        $this->actingAs(User::factory()->create());
+        \Livewire\Livewire::test(\App\Http\Livewire\UtilityOsSettings::class)
+            ->assertDontSeeHtml('wire:click="serve(')
+            ->call('serve', 'scriptexecute64')->assertSet('noticeIsError', true);
+        $this->assertSame('scriptexecute', app(\App\Services\UtilityOs::class)->current());
+    }
+
+    public function test_installed_versions_and_prepared_release_render_with_escaped_notes(): void
+    {
+        $release = ['component' => 'application', 'version' => '2.28.0', 'tag' => 'v2.28.0', 'notes' => '<script>alert(1)</script>'];
+        $this->control(['installed' => ['application' => '2.27.0~dev2', 'fpms' => null, 'utility-os' => '2026.11'],
+            'checks' => ['application' => ['id' => str_repeat('b', 64), 'checked_at' => time(), 'release' => $release]],
+            'ready' => [['id' => str_repeat('b', 64), 'receipt' => str_repeat('c', 64), 'release' => $release, 'plan' => []]]]);
+        $this->actingAs(User::factory()->create())->get('/settings?tab=updates')->assertOk()
+            ->assertSee('2.27.0~dev2')->assertSee('2.28.0')->assertSee('Review and apply')
+            ->assertDontSee('<script>alert(1)</script>', false)->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false);
     }
 
     public function test_fpm_health_is_loopback_only_and_does_not_need_a_session(): void
@@ -91,6 +126,7 @@ class StationUpdatesTest extends TestCase
         });
         $this->get('/scriptexecute?serial=test')->assertStatus(503)->assertHeader('Retry-After', '10');
         $this->post('/livewire/update')->assertStatus(503);
+        $this->artisan('diagnostics:usb')->expectsOutput('{"action":"error","reason":"Station update maintenance; retry after it finishes."}')->assertExitCode(1);
         $this->actingAs(User::factory()->create())->getJson('/settings/updates/status')->assertOk()->assertJsonPath('schema', 1);
     }
 }

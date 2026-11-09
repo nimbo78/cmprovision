@@ -7,7 +7,7 @@ import tarfile
 import tempfile
 import unittest
 
-from support import manifest, signed
+from support import manifest, signed, CONTEXT
 from update_manifest import UpdateError
 from update_store import UpdateStore
 from update_utility import ManagedUtility, verify_tree
@@ -51,6 +51,7 @@ class UtilityTest(unittest.TestCase):
         selector = utility.prepare(envelope, archive)
         self.assertEqual('managed:2026.11.1', selector)
         self.assertEqual('2026.11.1', utility.validate(selector)['version'])
+        with self.assertRaises(UpdateError): utility.validate(selector, dict(CONTEXT, cmprovision='2.0.0'))
         self.assertFalse((self.root/'managed/current').exists())
         self.assertEqual(0o755, (self.root/'managed/releases/2026.11.1/boot').stat().st_mode & 0o777)
 

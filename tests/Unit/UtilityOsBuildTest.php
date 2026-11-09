@@ -16,10 +16,12 @@ class UtilityOsBuildTest extends TestCase
         if (!is_executable('/bin/sh') || !is_executable('/usr/bin/rsync'))
             $this->markTestSkipped('needs a Linux build host');
         $this->dir = sys_get_temp_dir().'/uos-build-'.bin2hex(random_bytes(6));
-        foreach (['repo/tools/utility-os', 'repo/utility-os', 'bin', 'work/buildroot-2025.02.18/utils', 'cache'] as $path)
+        $root = dirname(__DIR__, 2);
+        preg_match('/^UOS_BUILDROOT_VERSION=([0-9.]+)$/m', file_get_contents($root.'/utility-os/versions.env'), $pin);
+        $buildroot = 'work/buildroot-'.$pin[1];
+        foreach (['repo/tools/utility-os', 'repo/utility-os', 'bin', $buildroot.'/utils', 'cache'] as $path)
             mkdir($this->dir.'/'.$path, 0755, true);
         mkdir($this->dir.'/repo/utility-os/configs');
-        $root = dirname(__DIR__, 2);
         foreach (['build.sh', 'hashes.sh', 'legal_info.py', 'manifest.sh', 'usb_image.py'] as $file)
             copy($root.'/tools/utility-os/'.$file, $this->dir.'/repo/tools/utility-os/'.$file);
         mkdir($this->dir.'/repo/utility-os/package/cmp-rpi-utils', 0755, true);
@@ -29,7 +31,7 @@ class UtilityOsBuildTest extends TestCase
         copy($root.'/utility-os/configs/cmprovision_defconfig', $this->dir.'/repo/utility-os/configs/cmprovision_defconfig');
         mkdir($this->dir.'/repo/resources/shell', 0755, true);
         copy($root.'/resources/shell/module-diagnostics.sh', $this->dir.'/repo/resources/shell/module-diagnostics.sh');
-        $config = $this->dir.'/work/buildroot-2025.02.18/utils/config';
+        $config = $this->dir.'/'.$buildroot.'/utils/config';
         // The pinned Buildroot helper uses ':' as the sed delimiter when replacing existing strings.
         file_put_contents($config, <<<'SH'
 #!/bin/sh
@@ -80,6 +82,8 @@ case "$*" in *" collect "*) [ ! -f "$UOS_WORK/fail-collection" ] || exit 1 ;; es
 exit 0
 SH);
         chmod($this->dir.'/bin/python3', 0755);
+        file_put_contents($this->dir.'/bin/wget', "#!/bin/sh\necho 'Unexpected network download in the isolated build fixture' >&2\nexit 97\n");
+        chmod($this->dir.'/bin/wget', 0755);
         file_put_contents($this->dir.'/cache/keep', 'cached downloads');
     }
 

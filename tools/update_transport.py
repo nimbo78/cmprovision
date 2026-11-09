@@ -3,6 +3,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import re
 import ssl
@@ -186,6 +187,8 @@ class ReleaseSource:
                             if not chunk: break
                             done += len(chunk)
                             if done > asset['size']: raise UpdateError('Download exceeds its signed size.')
+                            if shutil.disk_usage(destination.parent).free < len(chunk)+64*1024**2:
+                                raise UpdateError('Download stopped to preserve the 64 MiB free-space reserve.')
                             digest.update(chunk)
                             stream.write(chunk)
                             if progress(done, asset['size']) is False: raise UpdateError('Update download canceled.')

@@ -15,6 +15,20 @@ def publish(directory, repository, source, version, public):
     checks = {path.name: descriptor(path) for path in directory.iterdir()}
     target = release.release_for_tag(repository, tag, missing_ok=True)
     if target and not target['draft']: raise ValueError('This immutable Utility OS version is already published; bump UOS_VERSION.')
+    refs = release.api(f'repos/{repository}/git/matching-refs/tags/{tag}')
+    if not isinstance(refs, list): raise ValueError('Could not verify existing Utility OS tags.')
+    exact = [item for item in refs if item.get('ref') == 'refs/tags/'+tag]
+    if len(exact) > 1: raise ValueError('Ambiguous Utility OS tag.')
+    if exact:
+        if release.tag_commit(repository, tag) != source: raise ValueError('Utility OS tag selects a different source.')
+    else:
+        try:
+            created = release.api_write(f'repos/{repository}/git/refs', {'ref': 'refs/tags/'+tag, 'sha': source})
+            if created.get('ref') != 'refs/tags/'+tag or created.get('object', {}).get('sha') != source:
+                raise ValueError('Created Utility OS tag does not match the checked source.')
+        except subprocess.CalledProcessError:
+            if release.tag_commit(repository, tag) != source:
+                raise ValueError('Concurrent Utility OS tag creation selected a different source; no tag was moved.')
     if not target:
         body = (f'# 🇬🇧 English\n\nTemporary provisioning OS {version}. Includes signed boot files and matching complete legal-info sources. '
                 f'Source: `{source}`. Update it independently in Settings → Updates.\n\n---\n\n'
