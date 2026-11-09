@@ -31,6 +31,7 @@ use Tests\TestCase;
 class OsCheckReportTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Support\SendsModuleReports;
 
     const SERIAL = '10000000e611110c';
     const START = '/scriptexecute?serial='.self::SERIAL.'&model=CM4&storagesize=62500000&mac=e4:5f:01:62:9f:d3';
@@ -77,12 +78,12 @@ class OsCheckReportTest extends TestCase
     protected function written()
     {
         $this->get(self::START)->assertOk();
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50.0&verify=0')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50.0&verify=0')->assertOk();
     }
 
     protected function osReport($retcode = 0, array $fields = [], $log = "=== first boot script 'services'\nactive\n")
     {
-        return $this->post('/scriptexecute?serial='.self::SERIAL.'&firstboot=1&retcode='.$retcode, array_merge([
+        return $this->modulePost('/scriptexecute?serial='.self::SERIAL.'&firstboot=1&retcode='.$retcode, array_merge([
             'log' => UploadedFile::fake()->createWithContent('firstboot.log', $log),
             'hostname' => 'wlanpi-a1b', 'state' => 'degraded', 'failed_units' => 'firefox-setup.service ', 'reason' => '',
         ], $fields))->assertOk();
@@ -296,7 +297,7 @@ class OsCheckReportTest extends TestCase
         $this->written();
 
         // report() sends it again when the first answer takes long (a slow label printer)
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50.0&verify=0')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50.0&verify=0')->assertOk();
 
         $cm = $this->cm();
         $this->assertSame(['firstboot', 'waiting', null], [$cm->phase, $cm->os_check, $cm->provisioning_complete_at]);
@@ -365,7 +366,7 @@ class OsCheckReportTest extends TestCase
         $this->project();
         $this->written();
 
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&progress=postinstall&detail=late')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&progress=postinstall&detail=late')->assertOk();
 
         $this->assertSame('firstboot', $this->cm()->phase);
     }

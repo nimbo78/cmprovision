@@ -25,6 +25,7 @@ use Tests\TestCase;
 class EepromTransparencyTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Support\SendsModuleReports;
 
     const SERIAL = '10000000e611110c';
     const START = '/scriptexecute?serial='.self::SERIAL.'&model=CM4&storagesize=62500000&mac=e4:5f:01:62:9f:d3';
@@ -62,7 +63,7 @@ class EepromTransparencyTest extends TestCase
 
     protected function reportBootloader($version = self::VERSION_2021, $config = self::CONFIG_2021)
     {
-        return $this->post('/scriptexecute?serial='.self::SERIAL, [
+        return $this->modulePost('/scriptexecute?serial='.self::SERIAL, [
             'eeprom_version' => UploadedFile::fake()->createWithContent('eeprom_version', $version),
             'eeprom_config' => UploadedFile::fake()->createWithContent('eeprom_config', $config),
         ])->assertOk();
@@ -71,7 +72,7 @@ class EepromTransparencyTest extends TestCase
     protected function preinstallLog($log, $retcode = 0)
     {
         $file = UploadedFile::fake()->createWithContent('pre.log', $log);
-        return $this->post('/scriptexecute?serial='.self::SERIAL.'&retcode='.$retcode.'&phase=preinstall', ['log' => $file])->assertOk();
+        return $this->modulePost('/scriptexecute?serial='.self::SERIAL.'&retcode='.$retcode.'&phase=preinstall', ['log' => $file])->assertOk();
     }
 
     /** Runs the generated flash script the way the module does (sh -v, output into the log) with
@@ -234,7 +235,7 @@ class EepromTransparencyTest extends TestCase
         $this->get(self::START);
         $this->reportBootloader();
         $this->preinstallLog("EEPROM_RESULT=written\n");
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50C&verify=0')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50C&verify=0')->assertOk();
 
         Http::assertSent(function (Request $r) {
             return Str::contains($r['text'], 'EEPROM 2021-02-16 → 2026-09-23')
@@ -252,7 +253,7 @@ class EepromTransparencyTest extends TestCase
         $this->get(self::START);
         $this->reportBootloader(self::VERSION_2026, "[all]\nBOOT_UART=0\nBOOT_ORDER=0xf21\n");
         $this->preinstallLog("EEPROM_RESULT=identical\n");
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50C&verify=0')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50C&verify=0')->assertOk();
 
         Http::assertSent(function (Request $r) {
             return Str::contains($r['text'], 'EEPROM 2026-09-23 (unchanged)');

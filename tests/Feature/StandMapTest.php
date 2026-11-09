@@ -604,6 +604,38 @@ class StandMapTest extends TestCase
         $this->assertNull($map['tiles']['s1p11']['station'], 'the utility OS of a module is no station');
     }
 
+    public function test_stale_station_advertisements_cannot_hide_current_foreign_macs()
+    {
+        $old = ['description' => 'cmprovision 2.26.0 station; Debian'] + $this->neighbour('old-station', '2c:cf:67:00:00:02');
+        $map = $this->build([$this->port(3, 'Gi0/3', true, ['e4:5f:01:00:00:a1']) + ['neighbors' => [$old]]]);
+        $tile = $map['tiles']['s1p3'];
+        $this->assertSame('foreign', $tile['state']);
+        $this->assertSame('foreign', $tile['filter']);
+        $this->assertNull($tile['station']);
+
+        $own = $this->build([$this->port(3, 'Gi0/3', true, ['e4:5f:01:00:00:a1'])
+            + ['neighbors' => [$this->neighbour('old-local-station', self::SERVER)]]]);
+        $this->assertSame('foreign', $own['tiles']['s1p3']['state']);
+        $this->assertFalse($own['tiles']['s1p3']['server']);
+
+        $known = $this->module('10000000feedface', 'e4:5f:01:00:00:a1');
+        $map = $this->build([$this->port(3, 'Gi0/3', true, [$known->mac]) + ['neighbors' => [$old]]], [$known]);
+        $this->assertSame('module', $map['tiles']['s1p3']['state']);
+        $this->assertCount(1, $map['tiles']['s1p3']['modules']);
+    }
+
+    public function test_station_lldp_uses_port_mac_and_preserves_empty_fdb_discovery()
+    {
+        $says = ['description' => 'cmprovision 2.26.0 station; Debian', 'port_mac' => '2c:cf:67:00:00:03']
+            + $this->neighbour('station', '2c:cf:67:00:00:02');
+        $map = $this->build([
+            $this->port(3, 'Gi0/3', true, ['2c:cf:67:00:00:03']) + ['neighbors' => [$says]],
+            $this->port(4, 'Gi0/4', true, []) + ['neighbors' => [$says]],
+        ]);
+        $this->assertSame('station', $map['tiles']['s1p3']['station']['name']);
+        $this->assertSame('station', $map['tiles']['s1p4']['station']['name']);
+    }
+
     /* A module flashed with the provisioner's mark (ModuleMark) says it in its port description: the tile carries what the
        mark says and whether this station's mark key confirms it */
     public function test_a_marked_module_carries_its_mark_checked_with_the_key()

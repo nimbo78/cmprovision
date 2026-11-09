@@ -5,6 +5,7 @@
 set -o pipefail
 
 export SERIAL="{{ $cm->serial }}"
+REPORT_TOKEN={!! escapeshellarg($cm->report_token ?? '') !!}
 export SERVER="{{ $server }}"
 
 echo "USB prep: the bootloader only, no image is written"
@@ -14,7 +15,12 @@ cmp_diag_report startup
 # Deliver a report to the provisioning server, retrying for up to 10 minutes (see scriptexecute.blade.php)
 report() {
     for attempt in $(seq 1 60); do
-        curl --silent --show-error -g --connect-timeout 10 --max-time 120 --retry 2 --retry-connrefused "$@" && return 0
+        status=$(curl --fail --silent --show-error -g --connect-timeout 10 --max-time 120 --retry 2 --retry-connrefused \
+            --header "X-Cmprovision-Run: $REPORT_TOKEN" --output /dev/null --write-out '%{http_code}' "$@")
+        rc=$?
+        [ "$rc" -eq 0 ] && return 0
+        # A rejected/stale run will never become current by retrying. 408/429 remain transient.
+        case "$status" in 408|429) ;; 4??) return 1 ;; esac
         echo "Report to server failed (attempt $attempt of 60), retrying in 10 seconds"
         sleep 10
     done
@@ -24,6 +30,7 @@ report() {
 # Live status for the web interface; best effort
 progress_mark() {
     curl --silent --output /dev/null --connect-timeout 2 --max-time 4 -G "http://{{ $server }}/scriptexecute" \
+        --header "X-Cmprovision-Run: $REPORT_TOKEN" \
         --data-urlencode "serial={{ $cm->serial }}" --data-urlencode "progress=$1" \
         --data-urlencode "detail=$2" --data-urlencode "sectors=$3" --data-urlencode "durable_mb=$4" || true
 }

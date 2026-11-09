@@ -22,6 +22,7 @@ use Tests\TestCase;
 class UsbPrepTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Support\SendsModuleReports;
 
     const SERIAL = '10000000e611110c';
     const MAC = 'e4:5f:01:62:9f:d3';
@@ -161,6 +162,7 @@ class UsbPrepTest extends TestCase
         }
 
         $cm = Cm::sole();
+        $this->assertStringContainsString("REPORT_TOKEN='".$cm->report_token."'", $script);
         $this->assertNotNull($cm->usb_prep_at);
         $this->assertSame(['preinstall', null, null, null], [$cm->phase, $cm->project_id, $cm->image_filename, $cm->notification_batch_id]);
         $this->assertSame($this->prep()->settings(), $cm->eeprom_config_after);
@@ -265,7 +267,7 @@ class UsbPrepTest extends TestCase
         $this->prep()->start();
         $this->get(self::USB)->assertOk();
 
-        $this->get('/scriptexecute?serial=' . self::SERIAL . '&alldone=1&temp=45.0')->assertOk();
+        $this->moduleGet('/scriptexecute?serial=' . self::SERIAL . '&alldone=1&temp=45.0')->assertOk();
 
         $cm = Cm::sole()->fresh();
         $this->assertSame('done', $cm->phase);
@@ -282,7 +284,7 @@ class UsbPrepTest extends TestCase
         $this->get(self::USB)->assertOk();
 
         $log = UploadedFile::fake()->createWithContent('pre.log', "flashrom: Error: Could not open the device\n");
-        $this->post('/scriptexecute?serial=' . self::SERIAL . '&retcode=1&phase=preinstall', ['log' => $log])->assertOk();
+        $this->modulePost('/scriptexecute?serial=' . self::SERIAL . '&retcode=1&phase=preinstall', ['log' => $log])->assertOk();
 
         $cm = Cm::sole()->fresh();
         $this->assertSame(['failed', 'failed'], [$cm->phase, $cm->eeprom_result]);

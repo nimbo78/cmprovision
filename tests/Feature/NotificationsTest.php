@@ -26,6 +26,7 @@ use Tests\TestCase;
 class NotificationsTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Support\SendsModuleReports;
 
     protected function setUp(): void
     {
@@ -65,18 +66,18 @@ class NotificationsTest extends TestCase
 
     protected function start($serial)
     {
-        return $this->get("/scriptexecute?serial=$serial&model=CM4&storagesize=62500000&mac=e4:5f:01:00:00:".substr($serial, -2))->assertOk();
+        return $this->moduleGet("/scriptexecute?serial=$serial&model=CM4&storagesize=62500000&mac=e4:5f:01:00:00:".substr($serial, -2))->assertOk();
     }
 
     protected function complete($serial)
     {
-        return $this->get("/scriptexecute?serial=$serial&alldone=1&temp=50C&verify=0")->assertOk();
+        return $this->moduleGet("/scriptexecute?serial=$serial&alldone=1&temp=50C&verify=0")->assertOk();
     }
 
     protected function failWrite($serial)
     {
         $log = UploadedFile::fake()->createWithContent('dd.log', "curl exit code 18\n");
-        return $this->post("/scriptexecute?serial=$serial&retcode=1&phase=dd", ['log' => $log])->assertOk();
+        return $this->modulePost("/scriptexecute?serial=$serial&retcode=1&phase=dd", ['log' => $log])->assertOk();
     }
 
     protected function mattermostFake()

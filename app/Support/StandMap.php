@@ -111,20 +111,24 @@ class StandMap
             return false;
         if (in_array($this->serverMac, $p['macs'], true))
             return true;
+        if ($p['macs'])
+            return false; // A current, different device takes precedence over an old LLDP record.
         foreach ($p['port']['neighbors'] ?? [] as $neighbour)
             if (($neighbour['mac'] ?? null) === $this->serverMac || ($neighbour['port_mac'] ?? null) === $this->serverMac)
                 return true;
         return false;
     }
 
-    /* Another cmprovision station is on this port: its lldpd says so (tools/lldp-station, STATION). ['name', 'address',
+    /* Another cmprovision station is on this port: its lldpd says so (tools/lldp-station, STATION), corroborated by the
+       current forwarding table when it is populated. ['name', 'address',
        'version', 'provisioner' => its address is 172.20.0.1, the one the modules talk to] or null; never this server's port */
     protected function station(array $p): ?array
     {
         if ($this->hasServer($p))
             return null;
         foreach ($p['port']['neighbors'] ?? [] as $neighbour)
-            if (preg_match(self::STATION, (string) ($neighbour['description'] ?? ''), $m))
+            if ((!$p['macs'] || array_intersect($p['macs'], array_filter([$neighbour['mac'] ?? null, $neighbour['port_mac'] ?? null])))
+                && preg_match(self::STATION, (string) ($neighbour['description'] ?? ''), $m))
                 return ['name' => (string) ($neighbour['name'] ?? ''), 'address' => $neighbour['address'] ?? null, 'version' => $m[1],
                         'provisioner' => ($neighbour['address'] ?? null) === NetworkStatus::SERVER_ADDRESS];
         return null;

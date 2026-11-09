@@ -154,7 +154,8 @@ SH);
     {
         @mkdir($this->dir.'/lib/scripts', 0755, true);   // a run before removed it
         file_put_contents($this->dir.'/lib/run', view('scriptexecute.firstboot', ['server' => '172.20.0.1', 'serial' => self::SERIAL,
-            'scripts' => collect($scripts), 'packages' => collect($packages), 'identify_run' => '1791327300'])->render());
+            'scripts' => collect($scripts), 'packages' => collect($packages), 'identify_run' => '1791327300',
+            'reportToken' => str_repeat('b', 40)])->render());
         foreach ($scripts as $script)
             file_put_contents($this->dir.'/lib/scripts/'.$script->id.'.sh', $script->script);
         if ($helper)
@@ -203,6 +204,7 @@ SH);
         $this->assertSame(0, $this->firstBoot());
 
         $report = $this->reportFields();
+        $this->assertStringContainsString('X-Cmprovision-Run: '.str_repeat('b', 40), file_get_contents($this->dir.'/report'));
         $this->assertSame('http://172.20.0.1/scriptexecute?serial='.self::SERIAL.'&firstboot=1&retcode=0', $report['url']);
         $this->assertSame(['wlanpi-a1b', 'degraded', 'firefox-setup.service', ''],
             [$report['hostname'], $report['state'], trim($report['failed_units']), $report['reason']]);
