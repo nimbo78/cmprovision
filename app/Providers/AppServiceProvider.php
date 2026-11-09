@@ -16,6 +16,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register()
     {
+        $this->app->singleton(\App\Services\StationUpdateQueueGate::class);
         $this->app->bind(\App\Services\Sensor\SensorShell::class, \App\Services\Sensor\OpenSshSensorShell::class);
         /* SNMP access to the switch; tests bind a fake one */
         $this->app->bind(\App\Services\Snmp\SnmpClient::class, function ($app, $params) {
@@ -30,7 +31,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        \Illuminate\Support\Facades\Queue::looping(fn () => !app(\App\Services\StationUpdatesControl::class)->pending());
+        \Illuminate\Support\Facades\Queue::looping(fn () => app(\App\Services\StationUpdateQueueGate::class)->reserve());
+        \Illuminate\Support\Facades\Queue::before(fn () => app(\App\Services\StationUpdateQueueGate::class)->release());
         /* $date->local(): the same instant in the display time zone (storage stays UTC) */
         Carbon::macro('local', function () {
             return $this->copy()->timezone(config('app.display_timezone'));

@@ -74,6 +74,13 @@ class StationUpdatesTest extends TestCase
         $this->actingAs(User::factory()->create())->getJson('/settings/updates/status')->assertOk();
     }
 
+    public function test_fpm_health_is_loopback_only_and_does_not_need_a_session(): void
+    {
+        $this->control();
+        $this->getJson('/updates/health')->assertOk()->assertJsonPath('protocol', 1)->assertHeaderMissing('Set-Cookie');
+        $this->withServerVariables(['REMOTE_ADDR' => '172.20.10.10'])->getJson('/updates/health')->assertForbidden();
+    }
+
     public function test_maintenance_blocks_module_starts_and_mutations_but_keeps_status_readable(): void
     {
         $control = $this->control();
