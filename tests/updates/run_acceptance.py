@@ -29,6 +29,12 @@ def run():
         raise RuntimeError('Refusing to run outside the dedicated disposable container.')
     fixture = Path(tempfile.mkdtemp(prefix='run-', dir='/fixture'))
     system = LinuxSystem(UpdateStore())
+    broker = subprocess.run(['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/sudo', '-n',
+        '/usr/lib/cmprovision/station-updates'], input='{"action":"status"}', text=True, capture_output=True, check=True)
+    assert json.loads(broker.stdout)['result']['schema'] == 1
+    refused = subprocess.run(['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/sudo', '-n',
+        '/usr/lib/cmprovision/station-updates', '--recover'], capture_output=True)
+    assert refused.returncode != 0
     original = system.package('cmprovision4')
     system.command(['/usr/bin/systemctl', 'start', 'nginx', 'php8.4-fpm', 'cmprovision-network-init'])
     system.http_health({})

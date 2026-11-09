@@ -46,7 +46,11 @@ jobs:
           PY
       - name: Host dependencies
         if: steps.version.outputs.build == 'true'
+        env:
+          SIGNING_CONFIGURED: ${{ secrets.CMPROVISION_UPDATE_SIGNING_KEY != '' }}
         run: |
+          test "$SIGNING_CONFIGURED" = true || { echo 'Configure the publisher signing key before building a release.' >&2; exit 1; }
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential bc cpio rsync unzip file wget git python3 perl patch xz-utils bzip2 qemu-system-arm busybox dosfstools mtools minisign
           echo "UOS_WORK=$RUNNER_TEMP/uos-work" >> "$GITHUB_ENV"
