@@ -17,7 +17,7 @@
                 if (id) { try { sessionStorage.setItem('cmprovision-update:' + url, id); } catch (_) {} }
                 this.poll();
             },
-            start: function () { this.poll(); },
+            init: function () { return this.poll(); },
             destroy: function () { this.destroyed = true; clearTimeout(this.timer); },
             poll: async function () {
                 clearTimeout(this.timer);

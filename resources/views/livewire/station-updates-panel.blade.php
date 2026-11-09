@@ -1,8 +1,10 @@
 <div class="space-y-6" id="updates">
     <script src="{{ asset('js/station-updates.js') }}?v={{ @filemtime(public_path('js/station-updates.js')) }}"></script>
     <x-settings-card title="Updates" description="Verified stable releases from the configured publisher. Installation is always manual.">
-        <div class="space-y-4" x-data="StationUpdatesStatus.create(@js(route('settings.updates.status')), @js($status))"
-             x-init="start()" x-on:station-update-started.window="track($event.detail.id)">
+        {{-- Keep the Alpine binding stable so Livewire preserves its timer and nested log scopes. --}}
+        <div class="space-y-4" x-data="StationUpdatesStatus.create(@js(route('settings.updates.status')), JSON.parse($el.dataset.initialStatus))"
+             data-initial-status="{{ json_encode($status, JSON_THROW_ON_ERROR) }}"
+             x-on:station-update-started.window="track($event.detail.id)">
             @if ($error)<p class="cmp-flash text-neg" role="alert">{{ $error }}</p>@endif
             @if (!$available)
                 <p class="text-fg-muted">Install the updated cmprovision4 package to enable the update controller.</p>
