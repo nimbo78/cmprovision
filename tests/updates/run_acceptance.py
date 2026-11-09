@@ -43,6 +43,11 @@ def run():
     package = next(Path('/fixture').glob('cmprovision4_*.deb'))
     target = fixture/'candidate'
     subprocess.run(['dpkg-deb', '-R', str(package), str(target)], check=True)
+    key, public = fixture/'key.sec', fixture/'key.pub'
+    subprocess.run(['minisign', '-G', '-W', '-s', str(key), '-p', str(public)], check=True, stdout=subprocess.DEVNULL)
+    # Keep one fixture issuer across installs and dpkg-repacked recovery packages.
+    # Otherwise a later install may legitimately replace the repacked conffile default.
+    shutil.copyfile(public, target/'etc/cmprovision-updates/publisher.pub')
     control = target/'DEBIAN/control'
     text = control.read_text().replace('Version: '+original+'\n', 'Version: 2.28.0\n')
     assert text != control.read_text()
@@ -50,8 +55,6 @@ def run():
     (target/'var/lib/cmprovision/update-acceptance-version').write_text('2.28.0\n')
     candidate = fixture/'cmprovision4_2.28.0_all.deb'
     subprocess.run(['dpkg-deb', '--build', str(target), str(candidate)], check=True)
-    key, public = fixture/'key.sec', fixture/'key.pub'
-    subprocess.run(['minisign', '-G', '-W', '-s', str(key), '-p', str(public)], check=True, stdout=subprocess.DEVNULL)
     # Only this disposable station trusts the ephemeral fixture publisher.
     shutil.copyfile(public, '/etc/cmprovision-updates/publisher.pub')
     os.chmod('/etc/cmprovision-updates/publisher.pub', 0o644)
@@ -108,6 +111,7 @@ def run():
     entry = operation('apply', candidate=ready['id'], receipt=ready['receipt'])
     assert entry['state'] == 'succeeded', entry
     assert system.package('cmprovision4') == '2.28.0'
+    assert Path('/etc/cmprovision-updates/publisher.pub').read_bytes() == public.read_bytes()
     assert Path('/var/lib/cmprovision/update-acceptance-version').read_text().strip() == '2.28.0'
     application_result = entry
     worker.run(entry['id']) # Lost-reply replay cannot repeat dpkg.
