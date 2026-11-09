@@ -35,3 +35,6 @@ yarn-error.log
 !/likec4/icons/**/catalog.json
 !/likec4/icons/**/manifest.json
 
+# Python helper/test bytecode
+__pycache__/
+
