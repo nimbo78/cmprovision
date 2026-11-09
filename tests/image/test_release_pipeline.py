@@ -129,6 +129,17 @@ class ReleasePipelineTest(unittest.TestCase):
                 pipeline.resolve(args, '2.26.0')
             self.assertFalse(args.directory.exists())
 
+    def test_automatic_candidate_source_cannot_change_before_package_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = SimpleNamespace(repository='test/repo', tag=TAG, directory=Path(tmp)/'output',
+                attach_to_draft='false', expected_source_sha=SOURCE)
+            with patch.object(pipeline.release,'tag_commit',return_value='b'*40), \
+                    patch.object(pipeline.release,'api') as read, \
+                    self.assertRaisesRegex(ValueError,'checked release candidate'):
+                pipeline.resolve(args,'2.26.0')
+            read.assert_not_called()
+            self.assertFalse(args.directory.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

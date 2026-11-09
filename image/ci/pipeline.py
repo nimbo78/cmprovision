@@ -47,6 +47,9 @@ def empty_directory(path):
 
 def resolve(args, version):
     source = release.tag_commit(args.repository, args.tag)
+    expected = getattr(args, 'expected_source_sha', '')
+    if expected and source != expected:
+        raise ValueError('Tag no longer matches the checked release candidate')
     content = release.api(f'repos/{args.repository}/contents/debian/changelog?ref={source}')
     if content.get('encoding') != 'base64':
         raise ValueError('Cannot verify the tagged source changelog')
@@ -161,6 +164,7 @@ def main():
     parser.add_argument('--tag', required=True)
     parser.add_argument('--directory', type=Path, required=True)
     parser.add_argument('--source-sha')
+    parser.add_argument('--expected-source-sha', default='')
     parser.add_argument('--source-directory', type=Path)
     parser.add_argument('--source-tar', type=Path)
     parser.add_argument('--incoming', type=Path)

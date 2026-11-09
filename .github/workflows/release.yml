@@ -12,6 +12,10 @@ on:
         description: 'Create/update a draft after all checks (never publish or replace files)'
         type: boolean
         default: false
+      publish_release:
+        description: 'Publish only after all packages, image, hashes and release notes pass verification'
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       release_tag:
@@ -20,6 +24,12 @@ on:
       attach_to_draft:
         type: boolean
         default: false
+      publish_release:
+        type: boolean
+        default: false
+      expected_source_sha:
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -54,9 +64,11 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           ATTACH_TO_DRAFT: ${{ inputs.attach_to_draft }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
         run: |
           python3 control/image/ci/pipeline.py resolve --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
-            --directory "$RUNNER_TEMP/release-packages" --attach-to-draft "$ATTACH_TO_DRAFT"
+            --directory "$RUNNER_TEMP/release-packages" --attach-to-draft "$ATTACH_TO_DRAFT" \
+            --expected-source-sha "$EXPECTED_SOURCE_SHA"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.resolve.outputs.source_sha }}
@@ -73,6 +85,15 @@ jobs:
           python3 control/image/ci/pipeline.py archive --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
             --source-sha "$SOURCE_SHA" --source-directory "$GITHUB_WORKSPACE/source" \
             --source-tar "$RUNNER_TEMP/package-input/source.tar" --directory "$RUNNER_TEMP/release-packages"
+      - name: Validate versioned release notes before publication build
+        if: inputs.publish_release
+        env:
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_SHA: ${{ steps.resolve.outputs.source_sha }}
+        run: |
+          python3 control/image/ci/automatic-release.py notes --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
+            --source-sha "$SOURCE_SHA" --source-directory "$GITHUB_WORKSPACE/source"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
@@ -143,16 +164,18 @@ jobs:
       attach_to_draft: false
 
   attach:
-    name: Create or update audited draft / no publication
-    if: inputs.attach_to_draft
+    name: Attach verified bundle and optionally publish
+    if: inputs.attach_to_draft || inputs.publish_release
     needs: [packages, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
     concurrency:
-      group: release-assets-${{ inputs.release_tag }}
+      # Serialize finalization across versions so a slower older build cannot replace Latest.
+      group: release-finalize-${{ github.repository }}
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -169,7 +192,30 @@ jobs:
           PACKAGE_SHA: ${{ needs.packages.outputs.package_sha256 }}
           FPMS_SHA: ${{ needs.packages.outputs.fpms_sha256 }}
           SOURCE_SHA: ${{ needs.packages.outputs.source_sha }}
+          VERIFY_PUBLISHED: ${{ inputs.publish_release }}
         run: |
+          retry=()
+          if [ "$VERIFY_PUBLISHED" = true ]; then retry+=(--verify-published); fi
           python3 image/ci/release.py upload --create-draft --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
             --package-sha256 "$PACKAGE_SHA" --fpms-sha256 "$FPMS_SHA" --source-sha "$SOURCE_SHA" \
-            --directory "$RUNNER_TEMP/station-release"
+            --directory "$RUNNER_TEMP/station-release" "${retry[@]}"
+      - name: Check out the exact source for bilingual release notes
+        if: inputs.publish_release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.packages.outputs.source_sha }}
+          path: release-source
+          persist-credentials: false
+      - name: Publish only the complete verified release
+        if: inputs.publish_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PACKAGE_SHA: ${{ needs.packages.outputs.package_sha256 }}
+          FPMS_SHA: ${{ needs.packages.outputs.fpms_sha256 }}
+          SOURCE_SHA: ${{ needs.packages.outputs.source_sha }}
+        run: |
+          python3 image/ci/automatic-release.py publish --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
+            --source-sha "$SOURCE_SHA" --package-sha256 "$PACKAGE_SHA" --fpms-sha256 "$FPMS_SHA" \
+            --source-directory "$GITHUB_WORKSPACE/release-source" --directory "$RUNNER_TEMP/station-release"
