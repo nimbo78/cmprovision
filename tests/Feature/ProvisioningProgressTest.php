@@ -21,6 +21,7 @@ use Tests\TestCase;
 class ProvisioningProgressTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Support\SendsModuleReports;
 
     const SERIAL = '10000000feedf00d';
     const START = '/scriptexecute?serial='.self::SERIAL.'&model=CM4&storagesize=62500000&mac=e4:5f:01:00:00:03';
@@ -56,7 +57,7 @@ class ProvisioningProgressTest extends TestCase
 
     protected function progress($query)
     {
-        return $this->get('/scriptexecute?serial='.self::SERIAL.'&'.$query);
+        return $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&'.$query);
     }
 
     public function test_start_records_the_first_phase_and_the_amount_to_write()
@@ -125,7 +126,7 @@ class ProvisioningProgressTest extends TestCase
         $this->progress('progress=rm-rf&sectors=1')->assertOk();
         $this->assertSame('preinstall', $this->cm()->phase);
 
-        $this->get('/scriptexecute?serial=1000000000000bad&progress=write&sectors=1')->assertOk();
+        $this->moduleGet('/scriptexecute?serial=1000000000000bad&progress=write&sectors=1')->assertNotFound();
         $this->assertSame(0, Cm::where('serial', '1000000000000bad')->count());
     }
 
@@ -136,7 +137,7 @@ class ProvisioningProgressTest extends TestCase
         $this->progress('progress=write&sectors=2048');
 
         $log = UploadedFile::fake()->createWithContent('dd.log', "curl: (18) transfer closed\ncurl exit code 18\n");
-        $this->post('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => $log])->assertOk();
+        $this->modulePost('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => $log])->assertOk();
 
         $cm = $this->cm();
         $this->assertSame('failed', $cm->phase);
@@ -153,10 +154,10 @@ class ProvisioningProgressTest extends TestCase
         $this->get(self::START);
 
         $log = UploadedFile::fake()->createWithContent('pre.log', "ok\n");
-        $this->post('/scriptexecute?serial='.self::SERIAL.'&retcode=0&phase=preinstall', ['log' => $log]);
+        $this->modulePost('/scriptexecute?serial='.self::SERIAL.'&retcode=0&phase=preinstall', ['log' => $log]);
         $this->assertSame('write', $this->cm()->phase);
 
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50.0C&verify=0')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=50.0C&verify=0')->assertOk();
         $cm = $this->cm();
         $this->assertSame('done', $cm->phase);
         $this->assertEquals($cm->progress_total, $cm->progress_bytes);
@@ -165,7 +166,7 @@ class ProvisioningProgressTest extends TestCase
     public function test_refusing_to_provision_marks_the_module_failed()
     {
         $this->activeProject();
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&model=CM4&mac=e4:5f:01:00:00:03')->assertOk();   // no eMMC
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&model=CM4&mac=e4:5f:01:00:00:03')->assertOk();   // no eMMC
 
         $cm = $this->cm();
         $this->assertSame('failed', $cm->phase);

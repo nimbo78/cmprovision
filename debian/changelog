@@ -1,5 +1,9 @@
 cmprovision4 (2.27.0~dev1) unstable; urgency=medium
 
+  * Bind module reports to the current executor, retry HTTP server failures,
+    and make completion idempotent without holding SQLite during printing.
+  * Corroborate station LLDP with current forwarding MACs so stale entries
+    cannot hide newly connected sensors.
   * Add confirmed provisioner restart and shutdown in Settings and FPMS Lite,
     including a separate warning before interrupting active provisioning.
   * Recheck live runs, prevent new starts after scheduling and verify boot

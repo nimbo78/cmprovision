@@ -37,6 +37,12 @@ The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connector
 
 *End-to-end batch lifecycle from power-on and PXE boot to eMMC flashing, verification, and integrations. [Open standalone interactive diagram](diagrams/provisioning-flow.html) with pan, zoom, dark/light theme switching, and step animation.*
 
+### Reports belong to one run
+
+New provisioning scripts, USB prep and the installed first-boot check send a run identifier with their reports. Starting again or resuming a write replaces that identifier: delayed reports from the previous executor cannot change progress, overwrite logs or finish the current run. A rejected report receives HTTP 409; temporary server errors receive HTTP 503 and are retried. Repeated completion reports do not print another label or send another completion notification.
+
+Scripts already running when the server is upgraded can finish using the old protocol. This compatibility ends when that module next starts or resumes. The stand-only network restriction still applies; the identifier prevents stale reports and does not authenticate the hardware.
+
 ## The order of the lists
 
 The table of the **Dashboard** and the list on the **CMs** page put what runs now first, then the modules by the date and time they

@@ -17,6 +17,7 @@ use Tests\TestCase;
 class ImageWriteServerTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Support\SendsModuleReports;
 
     const SERIAL = '10000000e611110c';
     const START = '/scriptexecute?serial='.self::SERIAL.'&model=CM4&storagesize=62500000&mac=e4:5f:01:62:9f:d3';
@@ -64,10 +65,10 @@ class ImageWriteServerTest extends TestCase
     {
         $this->project();
         $this->get(self::START)->assertOk();
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&progress=write&detail=&sectors=2048')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&progress=write&detail=&sectors=2048')->assertOk();
         $timeline = Cm::where('serial', self::SERIAL)->first()->timeline;
 
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&progress=write&resumed=1200000000&of=1600000000&curl=56')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&progress=write&resumed=1200000000&of=1600000000&curl=56')->assertOk();
 
         $cm = Cm::where('serial', self::SERIAL)->first();
         $this->assertSame($timeline, $cm->timeline);
@@ -107,7 +108,7 @@ class ImageWriteServerTest extends TestCase
         $this->project();
         $this->get(self::START)->assertOk();
         $log = \Illuminate\Http\UploadedFile::fake()->createWithContent('dd.log', "curl: (18) transfer closed\ncurl exit code 18\n");
-        $this->post('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => $log])->assertOk();
+        $this->modulePost('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => $log])->assertOk();
 
         $cm = Cm::where('serial', self::SERIAL)->first();
         $this->assertStringEndsWith('Codes: curl 18.', $cm->phase_detail);

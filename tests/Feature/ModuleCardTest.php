@@ -30,6 +30,7 @@ use Tests\TestCase;
 class ModuleCardTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Support\SendsModuleReports;
 
     const SERIAL = '10000000e611110c';
     const START = '/scriptexecute?serial='.self::SERIAL.'&model=CM4&storagesize=62500000&mac=e4:5f:01:62:9f:d3';
@@ -88,13 +89,13 @@ class ModuleCardTest extends TestCase
 
     protected function progress($phase, $detail = '', $sectors = '')
     {
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&progress='.$phase.'&detail='.urlencode($detail).'&sectors='.$sectors)->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&progress='.$phase.'&detail='.urlencode($detail).'&sectors='.$sectors)->assertOk();
     }
 
     protected function postLog($phase, $log, $retcode = 0)
     {
         $file = UploadedFile::fake()->createWithContent('x.log', $log);
-        $this->post('/scriptexecute?serial='.self::SERIAL.'&retcode='.$retcode.'&phase='.$phase, ['log' => $file])->assertOk();
+        $this->modulePost('/scriptexecute?serial='.self::SERIAL.'&retcode='.$retcode.'&phase='.$phase, ['log' => $file])->assertOk();
     }
 
     /* The run sensor0 made on 2026-10-09 (times in UTC), the way the module script reports it */
@@ -103,7 +104,7 @@ class ModuleCardTest extends TestCase
         $this->activeProject();
         $this->clock('13:01:19');
         $this->get(self::START)->assertOk();
-        $this->post('/scriptexecute?serial='.self::SERIAL, [
+        $this->modulePost('/scriptexecute?serial='.self::SERIAL, [
             'eeprom_version' => UploadedFile::fake()->createWithContent('v', "2021/02/16 13:19:00\nversion d6e4b6b7 (release)\n"),
             'eeprom_config' => UploadedFile::fake()->createWithContent('c', "[all]\nBOOT_UART=0\nPOWER_OFF_ON_HALT=0\nBOOT_ORDER=0xf2541\n"),
         ])->assertOk();
@@ -121,7 +122,7 @@ class ModuleCardTest extends TestCase
         $this->clock('13:05:16');
         $this->progress('postinstall', 'Bench: SSH key');
         $this->postLog('postinstall', "Computed SHA256: bbbb\nkey installed\n");
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=47.7C&verify=1')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&alldone=1&temp=47.7C&verify=1')->assertOk();
     }
 
     protected function failedModule(array $attributes, array $timeline)

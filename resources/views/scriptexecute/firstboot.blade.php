@@ -6,6 +6,7 @@
 # Tests point it elsewhere with the FIRSTBOOT_* variables and LEDS.
 SERVER={!! escapeshellarg($server) !!}
 SERIAL={!! escapeshellarg($serial) !!}
+REPORT_TOKEN={!! escapeshellarg($reportToken ?? '') !!}
 DIR=${FIRSTBOOT_DIR:-/usr/local/lib/cmprovision-firstboot}
 UNIT=${FIRSTBOOT_UNIT:-/etc/systemd/system/cmprovision-firstboot.service}
 WANTS=${FIRSTBOOT_WANTS:-/etc/systemd/system/multi-user.target.wants/cmprovision-firstboot.service}
@@ -107,7 +108,7 @@ log "host name: ${HOST:-unknown}; failed units: ${FAILED:-none}"
 sent=no
 i=0
 while [ "$i" -lt "$TRIES" ]; do
-    if curl -fsS --connect-timeout 10 --max-time 120 -F "log=@$LOG" --form-string "hostname=$HOST" \
+    if curl -fsS --connect-timeout 10 --max-time 120 --header "X-Cmprovision-Run: $REPORT_TOKEN" -F "log=@$LOG" --form-string "hostname=$HOST" \
             --form-string "state=$STATE" --form-string "failed_units=$FAILED" --form-string "reason=$REASON" \
             "http://$SERVER/scriptexecute?serial=$SERIAL&firstboot=1&retcode=$RESULT" > /dev/null 2>> "$LOG"; then
         sent=yes

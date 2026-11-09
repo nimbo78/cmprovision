@@ -23,6 +23,7 @@ use Tests\TestCase;
 class ImageResumeStartTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Support\SendsModuleReports;
 
     const SERIAL = '10000000e611110c';
     const START = '/scriptexecute?serial='.self::SERIAL.'&model=CM4&storagesize=62500000&mac=e4:5f:01:62:9f:d3';
@@ -87,7 +88,7 @@ class ImageResumeStartTest extends TestCase
     /** The module reports it wrote the image durably up to $mib MiB */
     protected function durable(int $mib)
     {
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&progress=write&detail=&sectors=&durable_mb='.$mib)->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&progress=write&detail=&sectors=&durable_mb='.$mib)->assertOk();
     }
 
     public function test_a_fresh_run_of_the_project_writes_its_pieces_copy()
@@ -132,10 +133,14 @@ class ImageResumeStartTest extends TestCase
         $this->durable(3);   // pieces 0 and 1: the image from 1 to 3 MiB
         $this->cm()->update(['eeprom_before' => 'BUILD_TIMESTAMP=1700000000', 'pre_script_output' => 'flashed']);
         $steps = count($this->cm()->timeline);
+        $oldReportToken = $this->cm()->report_token;
 
         $script = $this->get(self::START)->assertOk()->getContent();
 
         $cm = $this->cm();
+        $this->assertNotSame($oldReportToken, $cm->report_token, 'a resumed executor rejects delayed reports from the previous one');
+        $this->withHeader('X-Cmprovision-Run', $oldReportToken)
+            ->get('/scriptexecute?serial='.self::SERIAL.'&alldone=1')->assertStatus(409);
         $this->assertSame(['write', 'Resumed after a restart at 0.0 GB of 0.0 GB'], [$cm->phase, $cm->phase_detail]);
         $this->assertCount($steps + 1, $cm->timeline);
         $timeline = $cm->timeline;
@@ -162,7 +167,7 @@ class ImageResumeStartTest extends TestCase
         $this->project();
         $this->get(self::START)->assertOk();
         $this->durable(3);
-        $this->post('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => UploadedFile::fake()
+        $this->modulePost('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => UploadedFile::fake()
             ->createWithContent('dd.log', "no data from the provisioning server for 10 minutes (curl exit code 7)\n")])->assertOk();
         $this->assertSame(['failed', null], [$this->cm()->phase, $this->cm()->image_filename]);
 
@@ -261,7 +266,7 @@ class ImageResumeStartTest extends TestCase
                 break;
             case 'written':
                 $this->get($start)->assertOk();   // the run goes on and finds a partition table on the storage
-                $this->post('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => UploadedFile::fake()
+                $this->modulePost('/scriptexecute?serial='.self::SERIAL.'&retcode=1&phase=dd', ['log' => UploadedFile::fake()
                     ->createWithContent('dd.log', "1+0 records in\n1+0 records out\nthe storage was written after the write stopped\n")])->assertOk();
                 break;
             case 'past':
@@ -344,7 +349,7 @@ class ImageResumeStartTest extends TestCase
 
         $this->durable(5);   // the image is 4.5 MiB: no piece starts that far
         $this->assertSame(3 * self::MIB, $this->cm()->durable_bytes);
-        $this->get('/scriptexecute?serial='.self::SERIAL.'&progress=verify&detail=&sectors=&durable_mb=4')->assertOk();
+        $this->moduleGet('/scriptexecute?serial='.self::SERIAL.'&progress=verify&detail=&sectors=&durable_mb=4')->assertOk();
         $this->assertSame(3 * self::MIB, $this->cm()->durable_bytes, 'only the write marks pieces');
     }
 

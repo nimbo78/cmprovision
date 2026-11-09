@@ -80,6 +80,18 @@ class ScriptExecuteController extends Controller
         if ($req->query('diagnostics') === '1')
             return $this->registerModuleDiagnostics($req);
 
+        // Report rejections and temporary server errors must not enter the start-script failure handler.
+        $report = match (true) {
+            (bool) $req->query('alldone') => 'provisioningComplete',
+            (bool) $req->query('firstboot') => 'registerFirstBoot',
+            $req->hasFile('log') => 'registerLogFile',
+            $req->hasFile('eeprom_version') => 'registerFirmware',
+            (bool) $req->query('progress') => 'registerProgress',
+            default => null,
+        };
+        if ($report !== null)
+            return $this->registerRunReport($req, $report);
+
         try
         {
             if ($req->query("markkey"))
@@ -89,26 +101,6 @@ class ScriptExecuteController extends Controller
             else if ($req->query("identify"))
             {
                 return $this->identifyPoll($req);
-            }
-            else if ($req->query("alldone"))
-            {
-                return $this->provisioningComplete($req);
-            }
-            else if ($req->query("firstboot"))
-            {
-                return $this->registerFirstBoot($req);
-            }
-            else if ($req->hasFile("log"))
-            {
-                return $this->registerLogFile($req);
-            }
-            else if ($req->hasFile("eeprom_version"))
-            {
-                return $this->registerFirmware($req);
-            }
-            else if ($req->query("progress"))
-            {
-                return $this->registerProgress($req);
             }
             else
             {
@@ -147,6 +139,33 @@ exit 1
 ", 200)
                     ->header('Content-Type', 'text/plain');
             }
+        }
+    }
+
+    protected function registerRunReport(Request $req, string $method)
+    {
+        try
+        {
+            // SQLite IMMEDIATE serializes this check and every report write with start/reset writes.
+            // A check outside the transaction could accept an old token just before a new run starts.
+            return \Illuminate\Support\Facades\DB::transaction(function () use ($req, $method) {
+                $cm = Cm::where('serial', $this->serial)->first();
+                if (!$cm)
+                    return response('Unknown provisioning run.', 404);
+                $token = $req->header('X-Cmprovision-Run');
+                if ($cm->report_token !== null && (!is_string($token) || !hash_equals($cm->report_token, $token)))
+                    return response('This report belongs to another provisioning run.', 409);
+                // Also reject an explicitly stale diagnostics token from earlier clients.
+                if ($req->has('diagnostics_token') && (!is_string($req->input('diagnostics_token'))
+                    || !$cm->diagnostics_token || !hash_equals($cm->diagnostics_token, $req->input('diagnostics_token'))))
+                    return response('This report belongs to another provisioning run.', 409);
+                return $this->{$method}($req);
+            });
+        }
+        catch (\Throwable $e)
+        {
+            report($e);
+            return response('Report temporarily unavailable; retry delivery.', 503);
         }
     }
 
@@ -304,6 +323,7 @@ exit 1
         $this->cm = $this->placeModule($previous, array_merge($this->moduleFields($req, $lookUp), [
             'firmware' => $project ? $project->eeprom_firmware : null,
             'diagnostics_token' => Str::random(40),
+            'report_token' => Str::random(40),
             'storage_diagnostics' => null,
             'storage_diagnostics_at' => null,
             'diagnostics_requested_at' => null,
@@ -512,6 +532,7 @@ exit 1
         $this->cm = $previous;
         $this->adoptMac($previous, $this->macOf($req));
         $this->cm->fill(array_merge($this->moduleFields($req, $lookUp), [
+            'report_token' => Str::random(40),
             'temp2' => null,
             'script_return_code' => null,
             'post_script_output' => null,
@@ -710,6 +731,7 @@ exit 1
             'os_check' => $osCheck,
             'firstboot_scripts' => $firstboot_scripts,
             'firstboot_run' => $osCheck ? view('scriptexecute.firstboot', ['server' => $server, 'serial' => $this->cm->serial,
+                'reportToken' => $this->cm->report_token,
                 'scripts' => $firstboot_scripts, 'packages' => $packages,
                 'identify_run' => (string) $this->cm->provisioning_started_at->getTimestamp()])->render() : null,
             'oscheck_install' => $osCheck ? view('scriptexecute.oscheck-install')->render() : null,
@@ -721,6 +743,8 @@ exit 1
     public function provisioningComplete(Request $req)
     {
         $this->cm = Cm::where('serial', $this->serial)->firstOrFail();
+        if ($this->cm->phase === 'done' || $this->cm->phase === 'failed')
+            return ''; // report() may retry after the response was lost; emit completion and labels once.
         if ($this->cm->usb_prep_at !== null)
             return $this->prepComplete($req);
         $project = $this->cm->project;
@@ -825,7 +849,7 @@ exit 1
             {
                 try
                 {
-                    PrintLabel::dispatch($this->cm->id);   // the report does not wait for the printer
+                    PrintLabel::dispatch($this->cm->id)->afterCommit();   // the report does not wait for the printer
                 }
                 catch (\Throwable $e)
                 {
@@ -1150,7 +1174,11 @@ exit 1
 
     public function printLabel()
     {
-        LabelPrinter::print($this->cm, request()->ip());
+        // Keep the accepted run's label data, but release SQLite's writer before FTP or a print command.
+        $cm = clone $this->cm;
+        $cm->loadMissing('project.label');
+        $ip = request()->ip();
+        \Illuminate\Support\Facades\DB::afterCommit(fn () => LabelPrinter::print($cm, $ip));
     }
 
     /* The module's board, when its start waits for one: queued once the start is decided, refused or not, so the job
