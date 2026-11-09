@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 import fcntl
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -9,9 +10,11 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import time
 
 from update_manifest import DEB_VERSION_RE, UpdateError
+from update_store import safe_text
 
 APP = Path('/var/lib/cmprovision')
 HELPERS = Path('/usr/lib/cmprovision')
@@ -50,6 +53,7 @@ class LinuxSystem:
         except (OSError, subprocess.TimeoutExpired) as error:
             raise UpdateError('A required system operation timed out or could not start: '+Path(argv[0]).name) from error
         if check and result.returncode:
+            print(safe_text((result.stderr+' '+result.stdout)[-2000:], 2000), file=sys.stderr)
             raise UpdateError('A required system operation failed: '+Path(argv[0]).name+'. Inspect the updater service journal.')
         return result.stdout.strip() if check else result
 
@@ -166,7 +170,7 @@ class LinuxSystem:
         self.store._directory(directory, 0o700)
         # Refuse installation unless a full, reinstallable snapshot can be kept independently
         # of the application's ordinary five-snapshot retention policy.
-        size = int(self.command(['/usr/bin/du', '-sx', '--block-size=1', '--exclude=public/uploads', APP]).split()[0])
+        size = int(self.command(['/usr/bin/du', '-sx', '--block-size=1', '--exclude='+str(APP/'public/uploads'), APP]).split()[0])
         if shutil.disk_usage(directory).free < size*2+128*1024**2:
             raise UpdateError('Not enough free space for a required recovery snapshot.')
         restore = directory/'restore.sh'
@@ -215,10 +219,29 @@ class LinuxSystem:
             raise UpdateError('FPMS package version does not match the application.')
         result = self.www('updates:health')
         if result.get('ok') is not True: raise UpdateError('Application database/schema health check failed.')
+        self.http_health(expected)
         for name, state in services.items():
             if name not in BOOT_SERVICES and state['active']:
                 if self.command(['/usr/bin/systemctl', 'is-active', name]) != 'active':
                     raise UpdateError('Updated service is not healthy: '+name)
+
+    def http_health(self, expected):
+        for attempt in range(15):
+            connection = http.client.HTTPConnection('127.0.0.1', 80, timeout=3)
+            try:
+                connection.request('GET', '/updates/health', headers={'Accept': 'application/json'})
+                response = connection.getresponse()
+                value = json.loads(response.read(4097))
+                if response.status == 200 and value.get('ok') is True and value.get('protocol') == 1:
+                    php = value.get('php', '')
+                    minimum = expected.get('compatibility', {}).get('php', {}).get('.'.join(php.split('.')[:2]))
+                    if expected.get('compatibility') and (not minimum or self.command(['/usr/bin/dpkg', '--compare-versions', php, 'ge', minimum], check=False).returncode):
+                        raise UpdateError('The running PHP-FPM version does not meet release security requirements.')
+                    return
+            except (OSError, ValueError, http.client.HTTPException): pass
+            finally: connection.close()
+            if attempt < 14: time.sleep(2)
+        raise UpdateError('The updated nginx/PHP web interface failed its loopback health check.')
 
     def prepare_utility(self, envelope, archive, store):
         from update_utility import ManagedUtility

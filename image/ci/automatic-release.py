@@ -164,6 +164,13 @@ def publish(args):
         raise ValueError('Artifact state does not match the publication request')
     report = json.loads((args.directory / 'release-report.json').read_text())
     checks = release.verify_bundle(args.directory / 'assets', version)
+    if getattr(args, 'require_updates', False):
+        release.verify_bundle(args.directory / 'assets', version, require_updates=True)
+        update_spec = importlib.util.spec_from_file_location('signed_update_release', Path(__file__).with_name('update_release.py'))
+        updater = importlib.util.module_from_spec(update_spec)
+        update_spec.loader.exec_module(updater)
+        updater.verify(args.directory/'assets', args.repository, args.tag, args.source_sha,
+                       args.source_directory/'debian/updates/publisher.pub')
     if not isinstance(report, dict) or any(report.get(key) != expected[key] for key in ('repository', 'tag', 'source_sha')) \
             or report.get('checks') != checks or type(report.get('release_id')) is not int:
         raise ValueError('Verified attachment report does not match this release')
@@ -207,6 +214,7 @@ def main():
     parser.add_argument('--package-sha256')
     parser.add_argument('--fpms-sha256')
     parser.add_argument('--directory', type=Path)
+    parser.add_argument('--require-updates', action='store_true')
     args = parser.parse_args()
     if args.operation == 'prepare':
         prepare(args)

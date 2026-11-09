@@ -201,6 +201,7 @@ class SettingsTabsTest extends TestCase
             'network' => ['network', ['Add network']],
             'provisioning' => ['provisioning', ['Save display settings']],
             'notifications' => ['notifications', ['Add channel']],
+            'updates' => ['updates', ['Check for updates']],
         ];
     }
 

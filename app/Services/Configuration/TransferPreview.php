@@ -243,6 +243,7 @@ class TransferPreview
         } elseif ($type === 'settings') {
             $group = $object['data']['group'];
             $keys = match ($group) {
+                'updates' => ['updates_check_application', 'updates_check_utility-os'],
                 'netbox' => array_map(fn ($key) => 'netbox_'.$key, array_keys(\App\Services\NetBoxExport::DEFAULTS)),
                 'display' => ['fpms_theme', 'fpms_ports_map', 'fpms_color_mode', 'hdmi_color_mode'],
                 'usb_prep' => ['usb_prep_firmware', 'usb_prep_settings'], 'sensor_accounts' => ['reprovision_accounts'], 'mark_key' => ['module_mark_key'],

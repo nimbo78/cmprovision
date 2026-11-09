@@ -31,6 +31,16 @@ case "$CMD" in
         target=$(readlink "$LINK" 2>/dev/null || true)
         case "$target" in
             ../scriptexecute|../scriptexecute64) [ -d "$APP/${target#../}" ] || point scriptexecute ;;
+            /var/lib/cmprovision-utility-os/releases/*/boot)
+                version=${target#/var/lib/cmprovision-utility-os/releases/}
+                version=${version%/boot}
+                if ! /usr/bin/python3 -I /usr/lib/cmprovision/update_utility.py --validate "managed:$version" >/dev/null 2>&1; then
+                    echo "boot-link: managed Utility OS is unavailable; verifying a bundled fallback" >&2
+                    /usr/bin/php "$APP/artisan" updates:utility --activate=bundled-modern >/dev/null 2>&1 \
+                        || /usr/bin/php "$APP/artisan" updates:utility --activate=legacy >/dev/null 2>&1 \
+                        || { echo "boot-link: no verified bundled fallback is available" >&2; exit 1; }
+                fi
+                ;;
             *) point scriptexecute ;;
         esac
         CONF=$APP/etc/dnsmasq.conf

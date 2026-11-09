@@ -30,6 +30,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
+        \Illuminate\Support\Facades\Queue::looping(fn () => !app(\App\Services\StationUpdatesControl::class)->pending());
         /* $date->local(): the same instant in the display time zone (storage stays UTC) */
         Carbon::macro('local', function () {
             return $this->copy()->timezone(config('app.display_timezone'));

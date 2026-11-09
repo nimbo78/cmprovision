@@ -1,6 +1,7 @@
 """Bounded root broker. No caller-supplied commands, environment, repository or paths."""
 import json
 import subprocess
+import time
 
 from update_manifest import UpdateError
 from update_store import ID_RE, matches, validate_request
@@ -34,6 +35,31 @@ def launch(identity):
     except (OSError, subprocess.TimeoutExpired) as error:
         raise UpdateError('Worker start is uncertain. Reload status; do not submit another installation.') from error
     if result.returncode: raise UpdateError('Worker start was not confirmed. Inspect the updater service journal.')
+
+
+def reconcile(store, run=subprocess.run, clock=time.time):
+    status = store.snapshot()
+    operation = status['operation']
+    if not operation or operation['state'] in ('ready', 'succeeded', 'rolled-back', 'failed', 'canceled', 'recovery-required'):
+        return
+    if clock()-operation['updated_at'] < 30: return
+    try:
+        unit = run(['/usr/bin/systemctl', 'is-active', 'cmprovision-update-'+operation['id']],
+                   capture_output=True, text=True, timeout=3, check=False)
+        if unit.stdout.strip() in ('active', 'activating', 'deactivating'): return
+        with store.lock('worker', blocking=False):
+            current = store.operation(operation['id'])
+            if current['state'] != operation['state']: return
+            if status['pending']:
+                store.update(operation['id'], state='unknown', message='The interrupted worker is being recovered; no installation will be repeated.')
+                # A fixed separate recovery unit owns rollback. Never re-launch apply.
+                run(['/usr/bin/systemd-run', '--quiet', '--collect', '--unit=cmprovision-update-recovery', '--',
+                     '/usr/bin/python3', '-I', '/usr/lib/cmprovision/station-updates.py', '--recover'],
+                    capture_output=True, timeout=5, check=False)
+            else:
+                store.update(operation['id'], state='failed', message='The noncritical worker was interrupted. Check or download again.')
+    except (UpdateError, OSError, subprocess.TimeoutExpired):
+        pass # Failure to observe a worker is not permission to repeat an installation.
 
 
 class Broker:

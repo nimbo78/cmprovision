@@ -194,7 +194,7 @@ class Worker:
 
     def _finish(self, identity, services, message, state='succeeded'):
         self.system.resume(services, boot=True)
-        self._phase(identity, state, message, committed=True)
+        self._phase(identity, state, message, committed=True, outcome=state)
         self.store.clear_pending(identity)
         try:
             self.store.metadata(self.system.context(), {'repository': self.source.repository, 'configured': True})
@@ -235,10 +235,10 @@ class Worker:
         with self.store.lock('worker', blocking=False):
             operation = self.store.operation(identity)
             self.store.mark_pending(identity) # Recreate the runtime marker after a host reboot.
-            if operation['state'] == 'recovery-required': return
+            if operation['state'] == 'recovery-required' and not operation.get('committed'): return
             if operation.get('committed'):
                 self._finish(identity, operation['services'], 'Committed update maintenance cleanup completed.',
-                             operation['state'] if operation['state'] in TERMINAL else 'succeeded')
+                             operation.get('outcome', operation['state'] if operation['state'] in TERMINAL else 'succeeded'))
             else:
                 self._failed(identity, UpdateError('Update was interrupted before its final health result.'))
 

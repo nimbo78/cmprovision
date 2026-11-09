@@ -38,6 +38,7 @@ class TransferCatalog
     public const MAX_OBJECTS = 2048;
     public const GROUPS = [
         'netbox' => 'NetBox export defaults', 'display' => 'HDMI and front-panel preferences',
+        'updates' => 'Automatic update check preferences',
         'usb_prep' => 'USB network-boot preparation', 'sensor_accounts' => 'Saved re-provision accounts',
         'mark_key' => 'Shared sensor recognition key', 'notifications' => 'Notification channels',
         'switches' => 'Stand switches', 'hosts' => 'DHCP reservations', 'network' => 'Ethernet and VLAN drafts',
@@ -122,7 +123,7 @@ class TransferCatalog
                 if (!is_string($path) || !in_array($path, self::secretPaths($type, $object['data']), true)
                     || Arr::has($object['data'], $path)) $this->invalid();
             }
-            if ($type === 'settings' && !in_array($object['data']['group'] ?? '', ['netbox', 'display', 'usb_prep', 'sensor_accounts', 'mark_key'], true)) $this->invalid();
+            if ($type === 'settings' && !in_array($object['data']['group'] ?? '', ['netbox', 'display', 'updates', 'usb_prep', 'sensor_accounts', 'mark_key'], true)) $this->invalid();
             if (in_array($type, ['image', 'package', 'firmware'], true)) {
                 $file = $object['file'] ?? null;
                 if (!is_array($file)) $this->invalid();
@@ -286,6 +287,7 @@ class TransferCatalog
             return $refs;
         }
         $values = match ($group) {
+            'updates' => app(\App\Services\StationUpdates::class)->preferences(),
             'netbox' => NetBoxExport::settings(),
             'display' => ['fpms' => FpmsPanelSettings::get(), 'wallboard' => app(Wallboard::class)->settings(),
                 'fpms_service' => app(Fpms::class)->settings(), 'hdmi_auto' => Setting::find('hdmi_color_mode')?->value === 'auto'],

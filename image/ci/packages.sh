@@ -24,6 +24,9 @@ if [ -d tests/power ]; then
     python3 -m unittest discover -s tests/power -p 'test_*.py' -v \
         2>&1 | tee /output/audit/station-power-tests.log
 fi
+if [ -d tests/updates ]; then
+    python3 -B -m unittest discover -s tests/updates -v 2>&1 | tee /output/audit/station-updates-tests.log
+fi
 
 # The pinned upstream + the tagged portable patch are tested before packaging.
 sh /work/production/packaging/fpms/prepare.sh /work/fpms-tests

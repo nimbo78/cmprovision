@@ -23,6 +23,7 @@
 
     /* the section (its id) => the tab that holds it; the same table as Settings::TABS and the views */
     var TAB_OF = {
+        'updates': 'updates',
         'services': 'status',
         'backup': 'status',
         'station-power': 'status',

@@ -1,0 +1,14 @@
+[Unit]
+Description=Check enabled cmprovision update components when due
+After=network-online.target cmprovision-updates-recover.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/var/lib/cmprovision
+ExecStart=/usr/bin/php /var/lib/cmprovision/artisan updates:check
+Nice=10
+TimeoutStartSec=60
+# This fixed command needs the narrow sudo broker; NoNewPrivileges would prevent it.

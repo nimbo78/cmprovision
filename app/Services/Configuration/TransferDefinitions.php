@@ -54,6 +54,7 @@ class TransferDefinitions
     {
         $values = $data['values'];
         $rules = match ($data['group']) {
+            'updates' => ['application' => 'required|boolean', 'utility-os' => 'required|boolean'],
             'netbox' => array_fill_keys(array_keys(NetBoxExport::DEFAULTS), 'required|string|max:100|not_regex:/[\x00-\x1f]/'),
             'display' => [
                 'fpms' => 'required|array:theme,ports_map,color_mode', 'fpms.theme' => ['required', Rule::in(FpmsPanelSettings::THEMES)],

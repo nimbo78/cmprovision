@@ -17,6 +17,9 @@ on:
         type: boolean
         default: false
   workflow_call:
+    secrets:
+      CMPROVISION_UPDATE_SIGNING_KEY:
+        required: false
     inputs:
       release_tag:
         required: true
@@ -184,6 +187,34 @@ jobs:
         with:
           name: ${{ needs.image.outputs.artifact }}
           path: ${{ runner.temp }}/station-release
+      - name: Check out the immutable source for signed release metadata
+        if: inputs.publish_release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.packages.outputs.source_sha }}
+          path: release-source
+          persist-credentials: false
+      - name: Sign stable component metadata before attachment
+        if: inputs.publish_release
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.CMPROVISION_UPDATE_SIGNING_KEY }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_SHA: ${{ needs.packages.outputs.source_sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          test -n "$UPDATE_SIGNING_KEY" || { echo 'Publisher signing key is required for publication.' >&2; exit 1; }
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+          umask 077
+          key="$RUNNER_TEMP/publisher.key"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key"
+          unset UPDATE_SIGNING_KEY
+          python3 image/ci/update_release.py application --directory "$RUNNER_TEMP/station-release/assets" \
+            --version "${RELEASE_TAG#v}" --repository "$REPOSITORY" --source "$SOURCE_SHA" \
+            --timestamp "$(git -C release-source show -s --format=%ct HEAD)" \
+            --notes-file "release-source/docs/releases/${RELEASE_TAG#v}.md" \
+            --private-key "$key" --public-key release-source/debian/updates/publisher.pub
       - name: Verify audited bundle and attach without replacing files
         env:
           GH_TOKEN: ${{ github.token }}
@@ -216,6 +247,6 @@ jobs:
           FPMS_SHA: ${{ needs.packages.outputs.fpms_sha256 }}
           SOURCE_SHA: ${{ needs.packages.outputs.source_sha }}
         run: |
-          python3 image/ci/automatic-release.py publish --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
+          python3 image/ci/automatic-release.py publish --require-updates --repository "$REPOSITORY" --tag "$RELEASE_TAG" \
             --source-sha "$SOURCE_SHA" --package-sha256 "$PACKAGE_SHA" --fpms-sha256 "$FPMS_SHA" \
             --source-directory "$GITHUB_WORKSPACE/release-source" --directory "$RUNNER_TEMP/station-release"

@@ -191,7 +191,7 @@ class UpdateStore:
                               'plan': receipt.get('plan', []), 'prepared_at': receipt.get('prepared_at')})
         context = state['context']
         return {'schema': 1, 'installed': {'application': context.get('cmprovision'),
-                 'fpms': context.get('fpms_version'), 'utility-os': context.get('utility_os_version'),
+                 'fpms': context.get('fpms_version'), 'utility-os': context.get('utility_os_label', context.get('utility_os_version')),
                  'utility_selector': context.get('utility_selector')}, 'source': state['source'], 'checks': checks,
                 'ready': ready, 'pending': copy.deepcopy(state['critical']),
                 'recoveries': [self._public_operation(op, history=True) for op in sorted(state['recoveries'].values(),
@@ -303,17 +303,23 @@ class UpdateStore:
         self._atomic(self.pending_file, pending, 0o644)
 
     def clear_pending(self, identity):
-        def action(state):
+        with self.lock('control'):
+            state = self._load()
             operation = state['operations'].get(identity)
             if not operation or operation['state'] not in TERMINAL:
                 raise UpdateError('An unresolved update cannot leave maintenance.')
             if state['critical'] and state['critical']['id'] != identity:
                 raise UpdateError('Another update owns maintenance.')
+            if self.pending_file.exists() or self.pending_file.is_symlink():
+                self._file(self.pending_file, 0o644)
+                self.pending_file.unlink()
+                fd = os.open(self.runtime, os.O_RDONLY | os.O_DIRECTORY)
+                try: os.fsync(fd)
+                finally: os.close(fd)
+            # A crash before this private commit still has durable maintenance state,
+            # so boot recovery can recreate the runtime gate and finish committed cleanup.
             state['critical'] = None
-        self._mutate(action)
-        if self.pending_file.exists() or self.pending_file.is_symlink():
-            self._file(self.pending_file, 0o644)
-            self.pending_file.unlink()
+            self._persist(state)
 
     def metadata(self, context, source):
         return self._mutate(lambda state: state.update(context=context, source=source))

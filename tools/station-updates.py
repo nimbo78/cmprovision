@@ -5,11 +5,12 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 
 # -I intentionally omits the script directory: only this root-owned package directory is added.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from update_broker import Broker, decode_request
+from update_broker import Broker, decode_request, reconcile
 from update_manifest import UpdateError
 from update_store import UpdateStore
 from update_system import LinuxSystem
@@ -35,10 +36,34 @@ def main():
         store = UpdateStore()
         args = sys.argv[1:]
         if not args:
-            result = Broker(store).request(decode_request(sys.stdin.buffer.read(8193)))
+            request = decode_request(sys.stdin.buffer.read(8193))
+            if request['action'] == 'status': reconcile(store)
+            result = Broker(store).request(request)
         elif args == ['--initialize']:
             publisher = source()
-            store.metadata(LinuxSystem(store).context(), {'repository': publisher.repository, 'configured': True})
+            system = LinuxSystem(store)
+            if not store.snapshot()['pending']:
+                try: context = system.context()
+                except UpdateError:
+                    # dpkg marks the package installed only after postinst returns.
+                    context = dict(system.www('updates:inspect'), cmprovision=system.command(
+                        ['/usr/bin/dpkg-query', '-W', '-f=${Version}', 'cmprovision4']), fpms_version=system.package('fpms-lite'))
+                store.metadata(context, {'repository': publisher.repository, 'configured': True})
+            result = store.snapshot()
+        elif args == ['--recover-boot']:
+            pending = store.snapshot()['pending']
+            if pending:
+                store.mark_pending(pending['id'])
+                # The transient recovery starts after this ordering barrier can finish;
+                # starting nginx/queues from inside their Before= unit would deadlock systemd.
+                result = subprocess.run(['/usr/bin/systemd-run', '--quiet', '--collect',
+                    '--unit=cmprovision-update-recovery', '--', '/usr/bin/python3', '-I',
+                    '/usr/lib/cmprovision/station-updates.py', '--recover'], capture_output=True, timeout=8)
+                if result.returncode: raise UpdateError('Could not schedule interrupted update recovery. Maintenance remains enabled.')
+            else:
+                operation = store.snapshot()['operation']
+                if operation and operation['state'] not in ('ready', 'succeeded', 'rolled-back', 'failed', 'canceled'):
+                    store.update(operation['id'], state='failed', message='The previous noncritical operation was interrupted; check or download again.')
             result = store.snapshot()
         elif args == ['--recover']:
             worker = Worker(store, source(), LinuxSystem(store))

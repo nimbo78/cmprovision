@@ -108,6 +108,9 @@ class TransferWriter
         $values = $data['values'];
         $set = fn ($key, $value) => Setting::updateOrCreate(['key' => $key], ['value' => $value]);
         switch ($data['group']) {
+            case 'updates':
+                app(\App\Services\StationUpdates::class)->savePreferences((bool) $values['application'], (bool) $values['utility-os']);
+                break;
             case 'netbox':
                 foreach ($values as $key => $value) $set('netbox_'.$key, $value);
                 break;

@@ -1,0 +1,2 @@
+# Fixed JSON protocol on stdin only; no arguments or privileged environment overrides.
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/station-updates ""

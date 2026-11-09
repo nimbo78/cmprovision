@@ -83,7 +83,7 @@ jobs:
   prepare-auto-release:
     name: Prepare stable release candidate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == (vars.CMPROVISION_RELEASE_REPOSITORY || 'nimbo78/cmprovision')
-    needs: [php, javascript, image-release-checks, station-power]
+    needs: [php, javascript, image-release-checks, station-power, station-updates]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -113,10 +113,21 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml
+    secrets:
+      CMPROVISION_UPDATE_SIGNING_KEY: ${{ secrets.CMPROVISION_UPDATE_SIGNING_KEY }}
     with:
       release_tag: ${{ needs.prepare-auto-release.outputs.release_tag }}
       expected_source_sha: ${{ needs.prepare-auto-release.outputs.source_sha }}
       publish_release: true
+
+  station-updates:
+    name: Signed station updates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
+      - run: python3 -B -m unittest discover -s tests/updates -v
 
   release:
     if: github.event_name == 'workflow_dispatch' && inputs.station_image_tag != '' && inputs.station_image_package_sha256 == '' && inputs.station_image_fpms_sha256 == ''

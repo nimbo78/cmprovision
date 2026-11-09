@@ -30,6 +30,12 @@ Route::get('/', function () {
     return redirect()->route('login');
 });
 
+// Loopback-only FPM health proof; no session/authentication or operation is initiated here.
+Route::get('/updates/health', function (\Illuminate\Http\Request $request) {
+    abort_unless(in_array($request->server('REMOTE_ADDR'), ['127.0.0.1', '::1'], true), 403);
+    return response()->json(['ok' => true, 'protocol' => 1, 'php' => PHP_VERSION])->header('Cache-Control', 'no-store');
+})->withoutMiddleware(\Illuminate\Session\Middleware\StartSession::class);
+
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/dashboard', function () {
     return view('dashboard');   // progress panel and log are Livewire components that refresh themselves
 })->name('dashboard');
@@ -45,6 +51,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/labels', Labels::class)->name('labels');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/firmware', Firmwares::class)->name('firmware');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/settings', Settings::class)->name('settings');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
+    ->get('/settings/updates/status', \App\Http\Controllers\StationUpdatesStatusController::class)->name('settings.updates.status');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
     ->get('/settings/power/status', \App\Http\Controllers\StationPowerStatusController::class)->name('settings.power.status');
 // the copy of the data holds the application key and every password of the server: the password is asked again

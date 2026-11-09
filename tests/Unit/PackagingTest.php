@@ -264,7 +264,7 @@ class PackagingTest extends TestCase
             $this->assertStringContainsString("debian/$unit.service lib/systemd/system\n", $install);
         $this->assertStringContainsString("debian/011_cmprovision-wallboard etc/sudoers.d\n", $install);
         $rules = $this->file('debian/rules');
-        $this->assertStringContainsString("\tdh_installsystemd -Xcmprovision-wallboard-display.service -Xcmprovision-wallboard-data.service -Xcmprovision-fpms-data.service\n", $rules);
+        $this->assertStringContainsString("\tdh_installsystemd -Xcmprovision-wallboard-display.service -Xcmprovision-wallboard-data.service -Xcmprovision-fpms-data.service -Xcmprovision-updates-recover.service\n", $rules);
         $this->assertStringContainsString("\tdh_installsystemd --no-enable --no-start cmprovision-wallboard-display.service cmprovision-wallboard-data.service cmprovision-fpms-data.service\n", $rules);
         $this->assertStringContainsString("\tinstall -D -m 755 tools/hdmi-wallboard.py debian/cmprovision4/usr/lib/cmprovision/hdmi-wallboard.py\n", $rules);
         $this->assertStringContainsString("\tinstall -D -m 755 tools/wallboard-control debian/cmprovision4/usr/lib/cmprovision/wallboard-control\n", $rules);

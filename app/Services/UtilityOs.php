@@ -14,6 +14,7 @@ class UtilityOs
 {
     /** the directories an OS of the package lives in, in the order the page lists them */
     const DIRS = ['scriptexecute64', 'scriptexecute'];
+    const MANAGED = '/var/lib/cmprovision-utility-os/releases';
 
     /** How long a verified directory is taken as it was while no file of it changes size, time or inode. Hashing the files
         (tens of megabytes) on every page load and every Livewire render took seconds; switching always hashes afresh. */
@@ -29,11 +30,40 @@ class UtilityOs
         return rtrim(config('cmprovision.boot_root'), '/');
     }
 
+    protected function path(string $dir): ?string
+    {
+        if (in_array($dir, self::DIRS, true)) return $this->root().'/'.$dir;
+        if (!preg_match('/\Amanaged:([0-9]{4}\.[0-9]{2}(?:\.[0-9]+)?)\z/D', $dir, $m)) return null;
+        $base = self::MANAGED.'/'.$m[1];
+        foreach (['/var/lib/cmprovision-utility-os', self::MANAGED, $base, $base.'/boot', $base.'/receipt.json'] as $path) {
+            $info = @lstat($path);
+            if (!$info || $info['uid'] !== 0 || ($info['mode'] & 0022) || is_link($path)) return null;
+        }
+        $receipt = json_decode((string) @file_get_contents($base.'/receipt.json', false, null, 0, 131073), true);
+        if (($receipt['manifest']['component'] ?? '') !== 'utility-os' || ($receipt['manifest']['version'] ?? '') !== $m[1]) return null;
+        return $base.'/boot';
+    }
+
+    public function selector(): ?string
+    {
+        return match ($current = $this->current()) {
+            'scriptexecute' => 'legacy', 'scriptexecute64' => 'bundled-modern', default => $current,
+        };
+    }
+
+    public function select(string $selector): void
+    {
+        $dir = match ($selector) { 'legacy' => 'scriptexecute', 'bundled-modern' => 'scriptexecute64', default => $selector };
+        $this->switchTo($dir);
+    }
+
     /** Every OS of the package with a good MANIFEST: dir => what it says */
     public function systems(): array
     {
         $systems = [];
-        foreach (self::DIRS as $dir)
+        $dirs = self::DIRS;
+        foreach (glob(self::MANAGED.'/*', GLOB_ONLYDIR) ?: [] as $path) $dirs[] = 'managed:'.basename($path);
+        foreach ($dirs as $dir)
             if (($manifest = $this->manifest($dir)) !== null)
                 $systems[$dir] = $manifest;
         return $systems;
@@ -42,9 +72,9 @@ class UtilityOs
     /** The MANIFEST of one directory: its key=value lines, the file= lines as files; null when it is no OS of the package */
     public function manifest(string $dir, bool $fresh = false): ?array
     {
-        if (!in_array($dir, self::DIRS, true))
+        if (($base = $this->path($dir)) === null)
             return null;
-        $text = @file_get_contents($this->root().'/'.$dir.'/MANIFEST');
+        $text = @file_get_contents($base.'/MANIFEST');
         if ($text === false)
             return null;
         $values = ['dir' => $dir, 'files' => []];
@@ -70,8 +100,9 @@ class UtilityOs
     /** A readable inventory is not enough: an incomplete or damaged directory must never be offered for boot. */
     protected function filesMatch(string $dir, array $files, bool $fresh = false): bool
     {
-        $base = realpath($this->root().'/'.$dir);
-        if ($base === false || is_link($this->root().'/'.$dir))
+        $path = $this->path($dir);
+        $base = $path ? realpath($path) : false;
+        if ($base === false || is_link($path))
             return false;
         $stats = [];
         foreach ($files as $path => $expected)
@@ -122,7 +153,7 @@ class UtilityOs
         $key = 'utility-os-verified:'.$dir.':'.sha1(json_encode([$files, $stats]));
         if (!$fresh && Cache::get($key) === true)
             return true;
-        $base = realpath($this->root().'/'.$dir);
+        $base = realpath($this->path($dir));
         foreach ($files as $path => $expected)
             if ($this->hash($base.'/'.$path) !== $expected['sha256'])
                 return false;
@@ -145,6 +176,8 @@ class UtilityOs
         foreach (self::DIRS as $dir)
             if ($target === '../'.$dir && $this->manifest($dir) !== null)
                 return $dir;
+        if (preg_match('#\A'.preg_quote(self::MANAGED, '#').'/([0-9]{4}\.[0-9]{2}(?:\.[0-9]+)?)/boot\z#D', $target, $m)
+            && $this->manifest('managed:'.$m[1]) !== null) return 'managed:'.$m[1];
         return null;
     }
 
@@ -156,7 +189,8 @@ class UtilityOs
             throw new InvalidArgumentException(($dir === '' ? 'nothing' : $dir).' is not a utility OS of the package');
         $link = $this->link();
         $new = dirname($link).'/.boot-'.bin2hex(random_bytes(4));
-        if (!@symlink('../'.$dir, $new))
+        $target = str_starts_with($dir, 'managed:') ? $this->path($dir) : '../'.$dir;
+        if (!@symlink($target, $new))
             throw new RuntimeException('cannot create '.$new);
         if (!@rename($new, $link))
         {

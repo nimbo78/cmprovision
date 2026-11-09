@@ -21,6 +21,7 @@ class Settings extends Component
         'network' => 'Network',
         'provisioning' => 'Provisioning',
         'notifications' => 'Notifications',
+        'updates' => 'Updates',
     ];
 
     /** log source (ServiceLogs) => [what the list calls it, systemd unit, the short name for the strip]; the web interface has no unit: it answers this request */

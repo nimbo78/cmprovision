@@ -160,6 +160,18 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(1, sum(item[0] == 'recover' for item in self.system.calls))
         self.assertFalse(any(item[0] == 'install' for item in self.system.calls))
 
+    def test_committed_cleanup_failure_never_reinstalls_or_rolls_back(self):
+        ready = self.download()
+        with patch.object(self.store, 'clear_pending', side_effect=UpdateError('cleanup failed')):
+            result = self.apply(ready)
+        self.assertEqual('recovery-required', result['state'])
+        self.assertTrue(self.store.snapshot()['pending'])
+        self.assertFalse(any(item[0] == 'recover' for item in self.system.calls))
+        self.worker.recover_pending()
+        self.assertEqual('succeeded', self.store.operation(result['id'])['state'])
+        self.assertIsNone(self.store.snapshot()['pending'])
+        self.assertEqual(1, sum(item[0] == 'install' for item in self.system.calls))
+
     def test_changed_receipt_or_dependency_plan_requires_new_confirmation(self):
         ready = self.download()
         receipt = self.store.receipt(ready['id'])
