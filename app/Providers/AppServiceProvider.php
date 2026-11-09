@@ -31,8 +31,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        \Illuminate\Support\Facades\Queue::looping(fn () => app(\App\Services\StationUpdateQueueGate::class)->reserve());
-        \Illuminate\Support\Facades\Queue::before(fn () => app(\App\Services\StationUpdateQueueGate::class)->release());
+        \Illuminate\Support\Facades\Queue::extend('database', fn () => new \App\Services\StationUpdateDatabaseConnector($this->app['db']));
+        \Illuminate\Support\Facades\Queue::looping(fn () => !app(\App\Services\StationUpdatesControl::class)->pending());
         /* $date->local(): the same instant in the display time zone (storage stays UTC) */
         Carbon::macro('local', function () {
             return $this->copy()->timezone(config('app.display_timezone'));

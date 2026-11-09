@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-/** Cover the reservation gap between Queue::looping and JobProcessing with the shared start lock. */
+/** Coordinate DatabaseQueue::pop with the updater's idle check and maintenance publication. */
 class StationUpdateQueueGate
 {
     private $handle = null;
@@ -23,7 +23,7 @@ class StationUpdateQueueGate
         }
         $this->handle = $handle;
         if ($this->control->pending()) { $this->release(); return false; }
-        // A reserved database job is visible before JobProcessing releases this lock.
+        // The caller releases only after DatabaseQueue::pop has committed its reservation.
         return true;
     }
     public function release(): void
