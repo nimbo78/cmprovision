@@ -4,7 +4,7 @@
 
 [Operations](operations.md) · [Backup and restore](upgrading.md) · [Station image setup](station-project-setup.md)
 
-Open **Settings → Status → Backup → Selective import / export**. This is the shared entry point; choose projects, scripts and labels on the transfer page.
+Open **Settings → System → Backup → Selective import / export**. This is the shared entry point; choose projects, scripts and labels on the transfer page.
 
 Configuration transfer copies selected definitions into an installed cmprovision station. A full backup and `cmprovision-restore --data-only` remain the recovery tools for a station's database and application key.
 

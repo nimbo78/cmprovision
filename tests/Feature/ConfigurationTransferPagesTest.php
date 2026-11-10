@@ -49,7 +49,7 @@ class ConfigurationTransferPagesTest extends TestCase
         $this->app->instance(\App\Services\ServiceState::class, new \Tests\Support\FakeServiceState(['cmprovision-queue']));
         $this->actingAs(User::factory()->create());
         $this->get('/settings/transfer')->assertOk()->assertSee('Configuration transfer')->assertSee('Master password');
-        $this->get('/settings?tab=status')->assertOk()->assertSee('Selective import / export')
+        $this->get('/settings?tab=system')->assertOk()->assertSee('Selective import / export')
             ->assertSeeHtml('href="'.route('settings.transfer').'"');
         $this->script();
         \App\Models\Label::create(['name' => 'Portable label', 'printer_type' => 'command', 'print_command' => 'cat $file',

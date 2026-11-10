@@ -23,7 +23,7 @@ The package recipes and current acceptance status are in
 ## Enable the panel
 
 1. Install the matching FPMS package and cmprovision package on the station.
-2. Open **Settings → Provisioning → FPMS display**.
+2. Open **Settings → System → FPMS display**.
 3. Check **Enable cmprovision in FPMS**, then **Save FPMS settings**.
 4. Check the displayed status. `running` means the FPMS display process is alive, an SPI device
    for the display exists and the shared snapshot is fresh. The panel itself is write-only: nothing can
@@ -53,7 +53,7 @@ snapshot at all: it judges the data by the age of the file.
 
 ## Look
 
-**Settings → Provisioning → FPMS display** has two choices that reach the panel with its data (no restart, no
+**Settings → System → FPMS display** has two choices that reach the panel with its data (no restart, no
 root helper):
 
 - **Layout.** *New* (the default) is drawn for this 1.44" screen, whose backlight washes out the dark: bitmap fonts one

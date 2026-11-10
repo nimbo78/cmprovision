@@ -9,13 +9,19 @@ namespace App\Support;
  */
 class SystemTimezone
 {
+    /** Re-resolve in long-lived display publishers after an operator changes the system zone. */
+    public function current(): string
+    {
+        return self::detect(config('app.display_timezone_override'));
+    }
     /**
      * @param string|null $preferred an explicit choice (APP_DISPLAY_TIMEZONE), used when it is valid
      * @param string      $etc       directory holding timezone and localtime
      */
     public static function detect(?string $preferred = null, string $etc = '/etc'): string
     {
-        $candidates = [$preferred, self::fromFile($etc.'/timezone'), self::fromLink($etc.'/localtime')];
+        clearstatcache(true, $etc.'/localtime');
+        $candidates = [$preferred, self::fromLink($etc.'/localtime'), self::fromFile($etc.'/timezone')];
         foreach ($candidates as $zone) {
             if ($zone !== null && $zone !== '' && self::isValid($zone)) {
                 return $zone;
@@ -50,7 +56,7 @@ class SystemTimezone
         return $m[1];
     }
 
-    private static function isValid(string $zone): bool
+    public static function isValid(string $zone): bool
     {
         try {
             new \DateTimeZone($zone);

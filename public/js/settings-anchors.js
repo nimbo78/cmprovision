@@ -25,8 +25,9 @@
     var TAB_OF = {
         'updates': 'updates',
         'services': 'status',
-        'backup': 'status',
-        'station-power': 'status',
+        'backup': 'system',
+        'station-power': 'system',
+        'time': 'system',
         'wifi': 'network',
         'switches': 'network',
         'dhcp': 'network',
@@ -36,8 +37,8 @@
         'reprovision': 'provisioning',
         'reprovision-key': 'provisioning',
         'reprovision-accounts': 'provisioning',
-        'hdmi-display': 'provisioning',
-        'fpms-display': 'provisioning',
+        'hdmi-display': 'system',
+        'fpms-display': 'system',
         'notifications': 'notifications'
     };
 

@@ -12,6 +12,9 @@
 # only the data: the database, .env (APP_KEY), the firmware store, the uploaded images (when the
 # snapshot was made --with-uploads) and the dnsmasq config. Install cmprovision4 first.
 set -e
+TIME_BACKUP=/usr/lib/cmprovision/time-backup.sh
+[ -r "$TIME_BACKUP" ] || TIME_BACKUP=$(dirname "$0")/time-backup.sh
+if [ -r "$TIME_BACKUP" ]; then . "$TIME_BACKUP"; fi
 DATA_ONLY=0
 FORCE=0
 while :; do
@@ -133,6 +136,7 @@ else
     fi
     tar xzf "$SRC/system-config.tar.gz" -C / 2>/dev/null || true
     systemctl daemon-reload
+    if command -v cmprovision_time_restore >/dev/null 2>&1; then cmprovision_time_restore "$SRC" "$DATA_ONLY"; fi
 fi
 
 runuser -u www-data -- "$APP/artisan" config:clear >/dev/null

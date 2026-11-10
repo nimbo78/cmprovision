@@ -1,0 +1,2 @@
+# Only the fixed bounded JSON parser, never timedatectl/systemctl with arbitrary arguments.
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/station-time ""

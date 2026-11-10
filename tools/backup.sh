@@ -13,6 +13,9 @@
 # default destination the older <date>-<time>-<version> directories are removed. A destination given by hand is trimmed only
 # by --prune; other files and directories in it are never touched.
 set -e
+TIME_BACKUP=/usr/lib/cmprovision/time-backup.sh
+[ -r "$TIME_BACKUP" ] || TIME_BACKUP=$(dirname "$0")/time-backup.sh
+if [ -r "$TIME_BACKUP" ]; then . "$TIME_BACKUP"; fi
 APP=/var/lib/cmprovision
 DEFAULT_DEST=/var/backups/cmprovision
 WITH_UPLOADS=0
@@ -114,6 +117,7 @@ fi
 if [ -e /run/cmprovision-network/pending ] || [ -e /var/lib/cmprovision-network/transactions/pending.json ]; then
     echo "Confirm or recover the pending network change before making a backup." >&2; exit 1
 fi
+if command -v cmprovision_time_snapshot >/dev/null 2>&1; then cmprovision_time_snapshot "$OUT"; fi
 tar czf "$OUT/system-config.tar.gz" --ignore-failed-read \
     /etc/nginx/sites-available/cmprovision /etc/php/*/fpm/php.ini \
     /etc/sudoers.d/010_cmprovision /etc/dhcpcd.conf /etc/NetworkManager/system-connections \
@@ -123,6 +127,7 @@ tar czf "$OUT/system-config.tar.gz" --ignore-failed-read \
     /etc/systemd/system/multi-user.target.wants/cmprovision-rpiboot.service \
     /lib/systemd/system/cmprovision-*.service /lib/systemd/system/cmprovision-*.timer \
     /etc/default/cmprovision-uplink /etc/default/cmprovision-wallboard.json /etc/default/cmprovision-fpms.json \
+    /etc/localtime /etc/timezone /etc/systemd/timesyncd.conf.d/90-cmprovision.conf \
     /etc/default/cmprovision-stand-interface 2>/dev/null || true
 # The absence of a mask or WantedBy link is part of the saved role too.
 printf '%s\n' 1 > "$OUT/boot-services.saved"

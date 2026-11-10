@@ -1,7 +1,7 @@
 <div class="cmp-page" x-data x-on:transfer-opened.window="const url = new URL(window.location.href); if ($event.detail.id) url.searchParams.set('operation', $event.detail.id); else url.searchParams.delete('operation'); history.replaceState({}, '', url); if ($event.detail.id) $nextTick(() => document.getElementById('current-transfer')?.focus())">
     <div class="cmp-title flex-wrap gap-3">
         <h1>Configuration transfer</h1>
-        <a href="{{ route('settings', ['tab' => 'status']) }}#backup" class="cmp-btn cmp-btn-secondary ml-auto">Back to Backup</a>
+        <a href="{{ route('settings', ['tab' => 'system']) }}#backup" class="cmp-btn cmp-btn-secondary ml-auto">Back to Backup</a>
     </div>
     <p class="text-fg-muted mb-4">Move selected projects, scripts, labels and settings to another station. Review dependencies and conflicts before importing.</p>
     @if ($notice)<div class="cmp-flash mb-4" role="status">{{ $notice }}</div>@endif

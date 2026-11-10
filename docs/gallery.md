@@ -88,6 +88,8 @@ Review the available Raspberry Pi bootloader EEPROM releases by channel. Choose 
 
 ## Settings
 
+The historical Settings screenshots below predate the System tab. Station time, power, HDMI/FPMS and Backup now live in **Settings → System**; service status/logs remain on Status. See [station time](system-time.md).
+
 Settings has five tabs: **Status** (server services and their logs), **Network** (Wi-Fi, SNMP switches and DHCP assignments), **Provisioning** (utility OS, re-provisioning and displays), **Notifications** (channels and batches) and **Updates** (signed application and Utility OS updates). Service status and journal controls belong to Status. The historical screenshot below was captured on 23 October 2026, before Updates was added. The demo runs without provisioning hardware, so DHCP and USB boot services are shown as stopped.
 
 <a href="../assets/readme/screenshots/settings.png"><img src="../assets/readme/screenshots/settings.png" width="100%" alt="Settings page, Status tab, with the services of the server, running or stopped, a View log button for each and the utility OS in use"></a>

@@ -33,6 +33,7 @@ class SettingsTabsTest extends TestCase
         parent::setUp();
         $this->services(self::ALL_UNITS);
         $this->app->instance(WifiNetworks::class, new FakeWifiNetworks);   // NetworkManager is there, with no networks yet
+        $this->app->instance(\App\Services\StationTimeControl::class, new \Tests\Support\FakeStationTimeControl);
     }
 
     protected function services(array $active): void
@@ -42,6 +43,7 @@ class SettingsTabsTest extends TestCase
 
     protected function tab(?string $tab)
     {
+        if ($tab === 'system') $this->actingAs(User::factory()->create());
         return Livewire::withQueryParams($tab === null ? [] : ['tab' => $tab])->test(Settings::class);
     }
 
@@ -89,7 +91,7 @@ class SettingsTabsTest extends TestCase
     public static function otherTabs(): array
     {
         return ['network' => ['network'], 'provisioning' => ['provisioning'],
-            'notifications' => ['notifications'], 'updates' => ['updates']];
+            'notifications' => ['notifications'], 'updates' => ['updates'], 'system' => ['system']];
     }
 
     public function test_the_network_tab_holds_wifi_switches_and_static_addresses()
@@ -104,15 +106,15 @@ class SettingsTabsTest extends TestCase
             ->assertDontSeeHtml('id="services"');
     }
 
-    public function test_the_provisioning_tab_holds_the_utility_os_reprovisioning_and_the_display()
+    public function test_the_provisioning_tab_holds_utility_os_and_sensor_reprovisioning()
     {
         $this->tab('provisioning')
             ->assertSeeLivewire(UtilityOsSettings::class)
             ->assertSeeLivewire(\App\Http\Livewire\UsbPrepSettings::class)
             ->assertSeeLivewire(ReprovisionKey::class)
             ->assertSeeLivewire(ReprovisionAccounts::class)
-            ->assertSeeLivewire(WallboardSettings::class)
-            ->assertSeeLivewire(\App\Http\Livewire\FpmsSettings::class)
+            ->assertDontSeeLivewire(WallboardSettings::class)
+            ->assertDontSeeLivewire(\App\Http\Livewire\FpmsSettings::class)
             ->assertDontSeeLivewire(WifiSettings::class)
             ->assertDontSeeLivewire(NotificationSettings::class);
     }
@@ -141,7 +143,7 @@ class SettingsTabsTest extends TestCase
     public function test_the_tab_bar_links_to_every_tab_and_marks_the_current_one()
     {
         $page = $this->tab('network');
-        foreach (['status', 'network', 'provisioning', 'notifications', 'updates'] as $tab) {
+        foreach (['status', 'system', 'network', 'provisioning', 'notifications', 'updates'] as $tab) {
             $page->assertSeeHtml('href="'.route('settings', ['tab' => $tab]).'"');
         }
         $html = $page->html();
@@ -181,7 +183,8 @@ class SettingsTabsTest extends TestCase
         return [
             'status' => ['status', []],
             'network' => ['network', ['Add network']],
-            'provisioning' => ['provisioning', ['Save display settings']],
+            'system' => ['system', ['Save display settings']],
+            'provisioning' => ['provisioning', []],
             'notifications' => ['notifications', ['Add channel']],
             'updates' => ['updates', ['Check for updates']],
         ];

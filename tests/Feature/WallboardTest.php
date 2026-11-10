@@ -139,6 +139,7 @@ class WallboardTest extends TestCase
 
     public function test_switches_that_never_answered_do_not_empty_the_board()
     {
+        $this->freezeTime(); // The snapshot and assertion describe the same event, even across a wall-clock second.
         $cm = $this->stand();
         $cm->update(['polled_at' => now()]);
         \Illuminate\Support\Facades\Cache::flush();
@@ -238,6 +239,23 @@ class WallboardTest extends TestCase
         $this->assertSame('dark', app(WallboardSnapshot::class)->current()['display_auto_mode']);
         config(['app.display_timezone' => 'UTC']);
         $this->assertSame('dark', app(WallboardSnapshot::class)->current()['display_auto_mode']);
+    }
+
+    public function test_running_publisher_reads_a_changed_zone_and_updates_both_clock_and_auto_mode()
+    {
+        $this->travelTo(\Carbon\Carbon::parse('2026-11-10T06:00:00Z'));
+        $zone = $this->mock(\App\Support\SystemTimezone::class);
+        $zone->shouldReceive('current')->twice()->andReturn('Pacific/Honolulu', 'Asia/Tokyo');
+        $publisher = app(\App\Console\Commands\Wallboard::class);
+        $snapshots = app(WallboardSnapshot::class);
+        $first = $publisher->sample($snapshots);
+        $second = $publisher->sample($snapshots);
+        $this->assertSame('dark', $first['display_auto_mode']);
+        $this->assertSame('light', $second['display_auto_mode']);
+        $this->assertSame('2026-11-09 20:00:00 HST', $first['clock']);
+        $this->assertSame('2026-11-10 15:00:00 JST', $second['clock']);
+        $this->assertSame($first['generated_at'], $second['generated_at']);
+        $this->assertSame('UTC', config('app.timezone'));
     }
 
     public function test_existing_hdmi_palette_is_split_without_changing_its_meaning()

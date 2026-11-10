@@ -68,6 +68,13 @@ class SystemTimezoneTest extends TestCase
         $this->assertSame('Asia/Tokyo', SystemTimezone::detect('Asia/Tokyo', $this->etc));
     }
 
+    public function test_localtime_wins_over_a_stale_etc_timezone_after_timedatectl_changes_the_zone()
+    {
+        file_put_contents($this->etc.'/timezone', "Europe/Moscow\n");
+        $this->link('/usr/share/zoneinfo/Asia/Jerusalem');
+        $this->assertSame('Asia/Jerusalem', SystemTimezone::detect(null, $this->etc));
+    }
+
     public function test_php_ini_is_not_consulted()
     {
         // PHP 8.4 reports date.timezone = "UTC" when php.ini does not set it, so its value cannot

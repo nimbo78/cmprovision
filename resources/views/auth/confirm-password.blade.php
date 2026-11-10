@@ -21,7 +21,7 @@
             <p x-show="confirming" x-cloak role="status" class="text-sm text-fg-muted mt-4">Confirming password…</p>
             <div class="flex justify-end items-center gap-3 mt-4">
                 @if (parse_url(session('url.intended', ''), PHP_URL_PATH) === parse_url(route('settings.backup'), PHP_URL_PATH))
-                    <a href="{{ route('settings', ['tab' => 'status']) }}#backup" class="cmp-btn cmp-btn-secondary">Back to Backup</a>
+                    <a href="{{ route('settings', ['tab' => 'system']) }}#backup" class="cmp-btn cmp-btn-secondary">Back to Backup</a>
                 @endif
                 <x-button x-bind:disabled="confirming">
                     {{ __('Confirm') }}

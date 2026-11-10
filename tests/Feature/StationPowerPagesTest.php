@@ -43,10 +43,11 @@ class StationPowerPagesTest extends TestCase
         Livewire::test(StationPower::class)->call('begin', 'reboot')->assertForbidden();
         $this->assertSame([], $this->control->calls);
     }
-    public function test_status_has_controls_and_other_settings_tabs_do_not_duplicate_them(): void
+    public function test_system_has_controls_and_other_settings_tabs_do_not_duplicate_them(): void
     {
         $this->login();
-        $this->get('/settings?tab=status')->assertOk()->assertSee('Station power')->assertSee('Restart station')->assertSee('Shut down station');
+        $this->get('/settings?tab=system')->assertOk()->assertSee('Station power')->assertSee('Restart station')->assertSee('Shut down station');
+        $this->get('/settings?tab=status')->assertOk()->assertDontSee('Restart station');
         $this->get('/settings?tab=network')->assertOk()->assertDontSee('Restart station');
     }
     public function test_idle_action_requires_confirmation_and_emits_reconnect_state(): void

@@ -7,7 +7,3 @@
     <div class="cmp-section-part" id="reprovision-key"><livewire:reprovision-key /></div>
     <div class="cmp-section-part" id="reprovision-accounts"><livewire:reprovision-accounts /></div>
 </x-settings-card>
-
-<livewire:wallboard-settings />
-
-<livewire:fpms-settings />

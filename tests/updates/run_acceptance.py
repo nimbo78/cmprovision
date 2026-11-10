@@ -13,6 +13,8 @@ import tarfile
 import time
 import uuid
 
+from acceptance_version import candidate_version
+
 sys.path.insert(0, '/usr/lib/cmprovision')
 from update_manifest import UpdateError, canonical_bytes
 from update_store import UpdateStore
@@ -36,6 +38,7 @@ def run():
         '/usr/lib/cmprovision/station-updates', '--recover'], capture_output=True)
     assert refused.returncode != 0
     original = system.package('cmprovision4')
+    version = candidate_version(original)
     system.command(['/usr/bin/systemctl', 'start', 'nginx', 'php8.4-fpm', 'cmprovision-network-init'])
     system.http_health({})
     for name in ('cmprovision-dnsmasq', 'cmprovision-rpiboot'):
@@ -49,23 +52,23 @@ def run():
     # Otherwise a later install may legitimately replace the repacked conffile default.
     shutil.copyfile(public, target/'etc/cmprovision-updates/publisher.pub')
     control = target/'DEBIAN/control'
-    text = control.read_text().replace('Version: '+original+'\n', 'Version: 2.28.0\n')
+    text = control.read_text().replace('Version: '+original+'\n', 'Version: '+version+'\n')
     assert text != control.read_text()
     control.write_text(text)
-    (target/'var/lib/cmprovision/update-acceptance-version').write_text('2.28.0\n')
-    candidate = fixture/'cmprovision4_2.28.0_all.deb'
+    (target/'var/lib/cmprovision/update-acceptance-version').write_text(version+'\n')
+    candidate = fixture/f'cmprovision4_{version}_all.deb'
     subprocess.run(['dpkg-deb', '--build', str(target), str(candidate)], check=True)
     # Only this disposable station trusts the ephemeral fixture publisher.
     shutil.copyfile(public, '/etc/cmprovision-updates/publisher.pub')
     os.chmod('/etc/cmprovision-updates/publisher.pub', 0o644)
     asset = {'name': candidate.name, 'size': candidate.stat().st_size,
              'sha256': hashlib.sha256(candidate.read_bytes()).hexdigest()}
-    value = {'schema': 1, 'component': 'application', 'version': '2.28.0', 'tag': 'v2.28.0',
+    value = {'schema': 1, 'component': 'application', 'version': version, 'tag': 'v'+version,
         'repository': 'nimbo78/cmprovision', 'source_sha': 'f'*40, 'published_at': '2026-11-09T00:00:00Z',
         'notes': 'Disposable package acceptance fixture, never published.',
         'compatibility': {'debian': ['13'], 'architectures': ['amd64'], 'php': {'8.4': '8.4.27'},
             'min_cmprovision': original, 'updater_protocol': 1},
-        'assets': [asset, {'name': 'fpms-lite_2.28.0_all.deb', 'size': 1, 'sha256': 'a'*64}]}
+        'assets': [asset, {'name': f'fpms-lite_{version}_all.deb', 'size': 1, 'sha256': 'a'*64}]}
     raw = canonical_bytes(value)
     metadata = fixture/'manifest.json'
     metadata.write_bytes(raw)
@@ -92,14 +95,14 @@ def run():
         worker.run(entry['id'])
         return store.operation(entry['id'])
     def download():
-        entry = operation('download', component='application', tag='v2.28.0')
+        entry = operation('download', component='application', tag='v'+version)
         assert entry['state'] == 'ready', entry
         return store.snapshot()['ready'][-1]
     ready = download()
     health = system.health
     def reject_target(expected, services):
         health(expected, services)
-        if expected.get('version') == '2.28.0': raise UpdateError('Injected post-install health failure for rollback acceptance.')
+        if expected.get('version') == version: raise UpdateError('Injected post-install health failure for rollback acceptance.')
     system.health = reject_target
     entry = operation('apply', candidate=ready['id'], receipt=ready['receipt'])
     assert entry['state'] == 'rolled-back', entry
@@ -110,9 +113,9 @@ def run():
     ready = download()
     entry = operation('apply', candidate=ready['id'], receipt=ready['receipt'])
     assert entry['state'] == 'succeeded', entry
-    assert system.package('cmprovision4') == '2.28.0'
+    assert system.package('cmprovision4') == version
     assert Path('/etc/cmprovision-updates/publisher.pub').read_bytes() == public.read_bytes()
-    assert Path('/var/lib/cmprovision/update-acceptance-version').read_text().strip() == '2.28.0'
+    assert Path('/var/lib/cmprovision/update-acceptance-version').read_text().strip() == version
     application_result = entry
     worker.run(entry['id']) # Lost-reply replay cannot repeat dpkg.
     for name in ('cmprovision-dnsmasq', 'cmprovision-rpiboot'):
@@ -131,7 +134,7 @@ def run():
     archive = fixture/'utility-os-2026.11.1.tar.gz'
     with tarfile.open(archive, 'w:gz') as output: output.add(boot, arcname='boot')
     uos = dict(value, component='utility-os', version='2026.11.1', tag='utility-os-2026.11.1',
-        compatibility=dict(value['compatibility'], min_cmprovision='2.28.0'),
+        compatibility=dict(value['compatibility'], min_cmprovision=version),
         assets=[{'name': archive.name, 'size': archive.stat().st_size, 'sha256': hashlib.sha256(archive.read_bytes()).hexdigest()}],
         sources={'name': 'utility-os-2026.11.1-legal-info.tar.gz', 'size': 1, 'sha256': 'a'*64},
         utility={'architecture': 'aarch64', 'bits': 64, 'kernel': '6.18.50'})

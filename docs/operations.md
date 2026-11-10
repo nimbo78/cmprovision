@@ -113,13 +113,14 @@ its requests after the first, so nothing on the module side or in the utility OS
 
 ## The Settings page
 
-Settings has five tabs, each at its own address (`/settings?tab=network`), so a link or a bookmark opens the part you mean:
+Settings has six tabs, each at its own address (`/settings?tab=network`), so a link or a bookmark opens the part you mean:
 
 | Tab | Holds |
 | --- | --- |
-| **Status** | The services of the server (dnsmasq, rpiboot, the USB diagnostics receiver, both queue workers, the cold spare, the web interface) with a running or stopped chip and **View log** for each, and the utility OS modules get now. **Backup**: a file with the data of the server to keep elsewhere, after the password is asked again ([what is in it and how to put it back](upgrading.md#a-copy-to-keep-away-from-this-server)). |
+| **Status** | Server services and their **View log** buttons, plus the active Utility OS. |
+| **System** | [Time zone and NTP](system-time.md), station power, HDMI and FPMS, and **Backup** with data download and selective configuration transfer. |
 | **Network** | Wi-Fi networks, Ethernet switches, DHCP static addresses. |
-| **Provisioning** | Utility OS, Re-provision (the provisioner key and the saved sensor accounts), the HDMI display. |
+| **Provisioning** | Utility OS, USB preparation, NetBox export and Re-provision (the provisioner key and saved sensor accounts). |
 | **Notifications** | Notification channels and the current batch. |
 | **Updates** | Independent signed application and Utility OS checks, optional daily checks, verified downloads, confirmed installation and recovery. See [station updates](updates.md). |
 
@@ -129,7 +130,7 @@ Links from before the tabs (`/settings#wifi`, `#reprovision-key`, `#utility-os`,
 
 ## Restart and shut down the provisioner
 
-Open **Settings → Status → Station power**. Check the station name, select **Restart station** or
+Open **Settings → System → Station power**. Check the station name, select **Restart station** or
 **Shut down station**, confirm your account password when asked, then confirm the action.
 This controls the provisioner itself, including its web interface and boot services.
 

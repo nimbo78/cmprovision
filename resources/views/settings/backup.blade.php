@@ -3,7 +3,7 @@
     <div class="cmp-page">
         <div class="cmp-title">
             <h1>Download backup</h1>
-            <a href="{{ route('settings', ['tab' => 'status']) }}#backup" class="cmp-btn cmp-btn-secondary ml-auto">Back to Backup</a>
+            <a href="{{ route('settings', ['tab' => 'system']) }}#backup" class="cmp-btn cmp-btn-secondary ml-auto">Back to Backup</a>
         </div>
         <section class="cmp-card p-6 max-w-2xl" x-data="DownloadStatus.create('{{ $downloadId }}')"
                  x-init="$nextTick(() => $refs.downloadForm.requestSubmit())" :aria-busy="state === 'preparing'">

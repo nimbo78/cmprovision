@@ -263,7 +263,7 @@ class DataBackupTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()])->post('/settings/backup')
-            ->assertRedirect(route('settings', ['tab' => 'status']).'#backup')
+            ->assertRedirect(route('settings', ['tab' => 'system']).'#backup')
             ->assertSessionHas('backupError', 'The database of this server is not a file that can be copied.');
     }
 
@@ -286,7 +286,7 @@ class DataBackupTest extends TestCase
         $this->app->instance(ServiceState::class, new FakeServiceState(['cmprovision-queue']));
         $this->actingAs(User::factory()->create());
 
-        $this->get('/settings?tab=status')->assertOk()
+        $this->get('/settings?tab=system')->assertOk()
             ->assertSee('Backup')
             ->assertSeeHtml('href="'.route('settings.backup').'"')
             ->assertSee('Download backup')
