@@ -29,7 +29,7 @@ class BackupDownloadController extends Controller
         catch (BackupFailed $e)
         {
             session()->flash('backupError', $e->getMessage());
-            return redirect()->route('settings', ['tab' => 'status'])->withFragment('backup');
+            return redirect()->route('settings', ['tab' => 'system'])->withFragment('backup');
         }
         Log::notice('Backup of the data downloaded', ['by' => auth()->user()?->email, 'file' => $copy['name'], 'bytes' => $copy['bytes']]);
         register_shutdown_function(function () use ($backup, $copy) { $backup->forget($copy['folder']); });

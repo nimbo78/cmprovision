@@ -82,6 +82,8 @@ return [
     */
 
     'display_timezone' => \App\Support\SystemTimezone::detect(env('APP_DISPLAY_TIMEZONE')),
+    // Keep the explicit choice separate from a resolved (and potentially cached) system zone.
+    'display_timezone_override' => env('APP_DISPLAY_TIMEZONE'),
 
     /*
     |--------------------------------------------------------------------------

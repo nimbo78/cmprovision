@@ -32,6 +32,21 @@ class LocalTimeDisplayTest extends TestCase
         $this->assertSame('UTC', config('app.timezone'), 'storage stays in UTC');
     }
 
+    public function test_a_cached_resolved_timezone_is_refreshed_from_the_system_at_boot()
+    {
+        config(['app.display_timezone' => 'Pacific/Honolulu', 'app.display_timezone_override' => null]);
+        (new \App\Providers\AppServiceProvider($this->app))->boot();
+        $this->assertSame(\App\Support\SystemTimezone::detect(), config('app.display_timezone'));
+        $this->assertSame('UTC', config('app.timezone'));
+    }
+
+    public function test_a_deliberate_display_override_survives_boot_refresh()
+    {
+        config(['app.display_timezone' => 'UTC', 'app.display_timezone_override' => 'Asia/Tokyo']);
+        (new \App\Providers\AppServiceProvider($this->app))->boot();
+        $this->assertSame('Asia/Tokyo', config('app.display_timezone'));
+    }
+
     public function test_cm_list_shows_completion_time_in_local_time()
     {
         Cm::create(['serial' => '1000000000000001', 'mac' => 'e4:5f:01:00:00:01',

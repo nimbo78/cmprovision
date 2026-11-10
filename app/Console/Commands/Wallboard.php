@@ -26,7 +26,7 @@ class Wallboard extends Command
                 continue;
             }
             try {
-                $json = json_encode($snapshots->current(), JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+                $json = json_encode($this->sample($snapshots), JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
                 $output === null ? $this->line($json) : $this->store($output, $json);
             } catch (\Throwable $e) {
                 report($e);   // laravel.log; the screen only shows that the data is stale
@@ -38,6 +38,13 @@ class Wallboard extends Command
             if ($this->option('watch')) sleep(2);
         } while ($this->option('watch'));
         return 0;
+    }
+
+    /** The same publisher keeps running across station time-zone changes. */
+    public function sample(WallboardSnapshot $snapshots): array
+    {
+        config(['app.display_timezone' => app(\App\Support\SystemTimezone::class)->current()]);
+        return $snapshots->current();
     }
 
     /* The reader never sees a half-written file: write beside it, then rename over it. */

@@ -18,6 +18,7 @@ class Settings extends Component
     /** tab => name; each has its own address (/settings?tab=network) and reads only its own sections */
     const TABS = [
         'status' => 'Status',
+        'system' => 'System',
         'network' => 'Network',
         'provisioning' => 'Provisioning',
         'notifications' => 'Notifications',

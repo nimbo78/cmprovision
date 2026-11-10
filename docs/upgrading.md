@@ -51,7 +51,7 @@ Snapshots take 100–150 MB each, so only the newest five stay: after a snapshot
 
 ### A copy to keep away from this server
 
-The snapshots stay on the server they were made on, so they do not help when its card or disk is lost. **Settings → Status → Backup → Download backup** (since 2.20.0) gives one file to keep somewhere else; the web password is asked again before it. It holds the database, the settings, the firmware store, the SSH key of Re-provision, `.env` and the DHCP config. The images and the packages of the OS check are not in it (they are gigabytes), nor is the system config (the nginx site, php.ini, the network).
+The snapshots stay on the server they were made on, so they do not help when its card or disk is lost. **Settings → System → Backup → Download backup** (since 2.20.0) gives one file to keep somewhere else; the web password is asked again before it. It holds the database, the settings, the firmware store, the SSH key of Re-provision, `.env` and the DHCP config. The images and the packages of the OS check are not in it (they are gigabytes), nor is the system config (the nginx site, php.ini, the network).
 
 The password screen and preparation page both offer **Back to Backup**. Preparation starts automatically and shows a waiting indicator. **Download started** means the file was handed to your browser; use its downloads list for transfer progress and completion. The file is downloaded directly, without buffering the archive in page memory.
 

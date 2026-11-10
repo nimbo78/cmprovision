@@ -12,7 +12,7 @@ test('an old link to a section opens the tab that holds it', () => {
     assert.equal(SettingsAnchors.redirect('/settings', '', '#reprovision-accounts'), '/settings?tab=provisioning#reprovision-accounts');
     assert.equal(SettingsAnchors.redirect('/settings', '', '#utility-os'), '/settings?tab=provisioning#utility-os');
     assert.equal(SettingsAnchors.redirect('/settings', '', '#usb-prep'), '/settings?tab=provisioning#usb-prep');
-    assert.equal(SettingsAnchors.redirect('/settings', '', '#hdmi-display'), '/settings?tab=provisioning#hdmi-display');
+    assert.equal(SettingsAnchors.redirect('/settings', '', '#hdmi-display'), '/settings?tab=system#hdmi-display');
 });
 
 test('a section on the open tab stays where it is', () => {
@@ -23,7 +23,16 @@ test('a section on the open tab stays where it is', () => {
 
 test('a section of another tab than the open one sends to its own', () => {
     assert.equal(SettingsAnchors.redirect('/settings', '?tab=status', '#switches'), '/settings?tab=network#switches');
-    assert.equal(SettingsAnchors.redirect('/settings', '?tab=network', '#hdmi-display'), '/settings?tab=provisioning#hdmi-display');
+    assert.equal(SettingsAnchors.redirect('/settings', '?tab=network', '#hdmi-display'), '/settings?tab=system#hdmi-display');
+});
+
+test('existing station-specific section links reach System from their previous tabs', () => {
+    for (const id of ['backup', 'station-power', 'hdmi-display', 'fpms-display', 'time']) {
+        for (const tab of ['status', 'provisioning']) {
+            assert.equal(SettingsAnchors.redirect('/settings', '?tab='+tab, '#'+id), '/settings?tab=system#'+id);
+        }
+        assert.equal(SettingsAnchors.redirect('/settings', '?tab=system', '#'+id), null);
+    }
 });
 
 test('an anchor that is none of ours is left alone', () => {
@@ -41,9 +50,9 @@ test('every section id of the tab views is in the table', async () => {
     const { readFileSync, readdirSync } = await import('node:fs');
     const dir = new URL('../../resources/views/livewire/', import.meta.url);
     const ids = new Set();
-    const files = ['wifi-settings', 'switch-settings', 'notification-settings', 'utility-os-settings', 'usb-prep-settings', 'wallboard-settings']
+    const files = ['wifi-settings', 'switch-settings', 'notification-settings', 'utility-os-settings', 'usb-prep-settings', 'wallboard-settings', 'station-time-settings']
         .map((f) => `${f}.blade.php`)
-        .concat(['settings/status.blade.php', 'settings/network.blade.php', 'settings/provisioning.blade.php']);
+        .concat(['settings/status.blade.php', 'settings/system.blade.php', 'settings/network.blade.php', 'settings/provisioning.blade.php']);
     for (const f of files) {
         const text = readFileSync(new URL(f, dir), 'utf8');
         for (const m of text.matchAll(/<x-settings-card[^>]*?\sid="([a-z-]+)"|<div[^>]*\sid="(reprovision[a-z-]*)"/g)) ids.add(m[1] || m[2]);

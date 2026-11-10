@@ -87,12 +87,12 @@ class WallboardSnapshot
         foreach ($modules as $module)
             $counts[['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'stale'][$module['state']] ?? 'unknown']++;
         $project = Project::getActive();
-        return ['version' => 1, 'generated_at' => now()->getTimestamp(), 'clock' => now()->format('Y-m-d H:i:s T'),
+        return ['version' => 1, 'generated_at' => now()->getTimestamp(), 'clock' => now()->local()->format('Y-m-d H:i:s T'),
             'host' => gethostname(), 'app_version' => AppVersion::text(), 'project' => $project?->name,
             'batch' => $batch ? ['title' => $batch->title(), 'open' => $batch->open, 'counts' => $batch->counts,
                 'left_seconds' => $batch->leftSeconds] : null,
             'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown, 'recognized' => $recognized,
-            // how the FPMS panel looks (Settings → Provisioning → FPMS display); an older panel does not read it
+            // how the FPMS panel looks (Settings → System → FPMS display); an older panel does not read it
             'panel' => FpmsPanelSettings::get(),
             // Both local displays use the same station-wide sunrise calculation as the web UI.
             'display_auto_mode' => DisplaySunMode::auto(now()->toDateTimeImmutable(), SunPlace::forZone(config('app.display_timezone'))),

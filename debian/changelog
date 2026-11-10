@@ -1,3 +1,14 @@
+cmprovision4 (2.28.0~dev1) unstable; urgency=medium
+
+  * Add a dedicated System settings tab for station time, power, displays
+    and backup, preserving existing section links.
+  * Configure the station time zone and systemd-timesyncd servers through
+    a fixed privileged controller, with status, validation and recovery.
+  * Keep UTC storage and refresh the display zone after system changes,
+    including installations with cached Laravel configuration.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Tue, 10 Nov 2026 17:00:00 +0300
+
 cmprovision4 (2.27.1) unstable; urgency=medium
 
   * Handle expected station-update maintenance replies without leaving a

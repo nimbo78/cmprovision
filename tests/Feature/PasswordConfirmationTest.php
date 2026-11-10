@@ -35,7 +35,7 @@ class PasswordConfirmationTest extends TestCase
     {
         $this->actingAs(User::factory()->create())->withSession(['url.intended' => route('settings.backup')])
             ->get('/user/confirm-password')->assertOk()->assertSee('Back to Backup')
-            ->assertSeeHtml('href="'.route('settings', ['tab' => 'status']).'#backup"')
+            ->assertSeeHtml('href="'.route('settings', ['tab' => 'system']).'#backup"')
             ->assertSee('Confirming password');
     }
 
