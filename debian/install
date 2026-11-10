@@ -44,3 +44,7 @@ debian/updates/* etc/cmprovision-updates
 debian/cmprovision-updates-recover.service lib/systemd/system
 debian/cmprovision-updates-check.service lib/systemd/system
 debian/cmprovision-updates-check.timer lib/systemd/system
+debian/018_cmprovision-backups etc/sudoers.d
+debian/cmprovision-backups-recover.service lib/systemd/system
+debian/cmprovision-backups-check.service lib/systemd/system
+debian/cmprovision-backups-check.timer lib/systemd/system

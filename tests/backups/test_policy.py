@@ -65,5 +65,10 @@ class PolicyTest(unittest.TestCase):
         entries, _ = self.module.inventory(self.root)
         self.assertFalse(any('upload-tmp' in entry.name for entry in entries))
 
+    def test_external_ssh_key_or_authorization_sources_cannot_be_silently_omitted(self):
+        for text in (b'HostKey /opt/keys/host\n', b'AuthorizedKeysFile /opt/keys/%u\n', b'AuthorizedKeysCommand /opt/auth\n'):
+            self.put('etc/ssh/sshd_config', text)
+            with self.assertRaises(UpdateError): self.module.inventory(self.root)
+
 
 if __name__ == '__main__': unittest.main()

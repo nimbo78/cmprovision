@@ -8,7 +8,7 @@
     function create(url, initial) {
         return {
             status: initial, operation: initial.operation || null, screen: 'overview', master: '', profile: {}, schedule: {},
-            target: 'download', images: false, packages: false, reconnecting: false, signin: false, timer: null, destroyed: false,
+            target: 'download', images: false, packages: false, reconnecting: false, signin: false, timer: null, destroyed: false, submitting: false,
             busy() { return !!this.operation && !terminal.includes(this.operation.state); },
             percent() { return this.operation?.total > 0 && ['archiving', 'uploading', 'verifying'].includes(this.operation.state)
                 ? Math.min(100, Math.floor(this.operation.bytes * 100 / this.operation.total)) : null; },
@@ -16,6 +16,14 @@
             destroy() { this.destroyed = true; clearTimeout(this.timer); this.master = ''; this.profile = {}; },
             accept(value) { if (value?.schema === 1) { this.status = value; this.operation = value.operation || null; } },
             back() { this.master = ''; this.profile = {}; this.screen = 'overview'; if (this.$wire) this.$wire.back(); },
+            async startBackup() {
+                if (this.submitting || this.busy()) return;
+                this.submitting = true;
+                try {
+                    if (this.operation && terminal.includes(this.operation.state)) await this.$wire.back();
+                    await this.$wire.create(this.target, { images: this.images, packages: this.packages });
+                } finally { this.submitting = false; }
+            },
             edit(saved = null) {
                 this.profile = { type: 'sftp', name: '', host: '', port: 22, user: '', path: '/backups', keep: 7,
                     auth: 'password', host_key: '', mode: 'explicit', plain_ack: false, bucket: '', region: 'us-east-1',

@@ -57,6 +57,9 @@ class Worker:
         try:
             job = self.store.operation(identity)
             if job['state'] not in ('queued', 'waiting'): return
+            if job['action'] == 'restore':
+                self.store.update(identity, state='recovery-required', message='Administrator restore was interrupted. Inspect it over SSH; no backup or restore was repeated.')
+                return
             if job['cancel_requested']:
                 self.store.update(identity, state='canceled', message='Backup canceled before starting.'); return
             try:
@@ -151,6 +154,9 @@ class Worker:
             identity = pending['id']
             self.store._atomic(self.store.pending_file, {'schema': 1, 'id': identity, 'at': pending['at']}, 0o644)
             job = self.store.operation(identity)
+            if job['action'] == 'restore':
+                self.store.update(identity, state='recovery-required', message='An administrator restore was interrupted. Keep provisioning stopped and run cmprovision-full-restore --recover over SSH.')
+                return
             if job.get('committed'):
                 try: self._finish(identity, job['outcome'], 'Committed backup retained; interrupted station cleanup recovered.')
                 except Exception as error: self._failed(identity, error)

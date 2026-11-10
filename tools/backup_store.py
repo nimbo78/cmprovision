@@ -108,7 +108,7 @@ class BackupStore(UpdateStore):
             raise UpdateError('Invalid backup request identity or destination.')
         if type(options) is not dict or set(options) != {'images', 'packages'} or any(type(v) is not bool for v in options.values()):
             raise UpdateError('Invalid backup contents selection.')
-        if action not in ('backup', 'test', 'host-key'): raise UpdateError('Invalid backup worker action.')
+        if action not in ('backup', 'test', 'host-key', 'restore'): raise UpdateError('Invalid backup worker action.')
         digest = hashlib.sha256(canonical_bytes({'action': action, 'target': target, 'options': options, 'arguments': arguments})).hexdigest()
         with self.lock('control'):
             existing = self._load()

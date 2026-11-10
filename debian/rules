@@ -40,13 +40,20 @@ override_dh_install:
 	install -D -m 755 tools/station-updates debian/cmprovision4/usr/lib/cmprovision/station-updates
 	install -D -m 644 tools/station-updates.py debian/cmprovision4/usr/lib/cmprovision/station-updates.py
 	for f in tools/update_*.py; do install -D -m 644 $$f debian/cmprovision4/usr/lib/cmprovision/$$(basename $$f); done
+	install -D -m 755 tools/station-backups debian/cmprovision4/usr/lib/cmprovision/station-backups
+	install -D -m 644 tools/station-backups.py debian/cmprovision4/usr/lib/cmprovision/station-backups.py
+	for f in tools/backup_*.py; do install -D -m 644 $$f debian/cmprovision4/usr/lib/cmprovision/$$(basename $$f); done
+	install -D -m 644 tools/backup-crypto.php debian/cmprovision4/usr/lib/cmprovision/backup-crypto.php
+	install -D -m 644 app/Services/Configuration/TransferCipher.php debian/cmprovision4/usr/lib/cmprovision/TransferCipher.php
+	install -D -m 755 tools/cmprovision-full-restore debian/cmprovision4/usr/sbin/cmprovision-full-restore
 
 # The watcher alone decides whether there is a display (it starts the display, which wants the data unit). A static unit
 # would otherwise be started by dh as well.
 override_dh_installsystemd:
-	dh_installsystemd -Xcmprovision-wallboard-display.service -Xcmprovision-wallboard-data.service -Xcmprovision-fpms-data.service -Xcmprovision-updates-recover.service
+	dh_installsystemd -Xcmprovision-wallboard-display.service -Xcmprovision-wallboard-data.service -Xcmprovision-fpms-data.service -Xcmprovision-updates-recover.service -Xcmprovision-backups-recover.service
 	dh_installsystemd --no-enable --no-start cmprovision-wallboard-display.service cmprovision-wallboard-data.service cmprovision-fpms-data.service
 	dh_installsystemd --no-start cmprovision-updates-recover.service
+	dh_installsystemd --no-start cmprovision-backups-recover.service
 
 override_dh_strip:
 	dh_strip --exclude=.elf --exclude=ledpattern

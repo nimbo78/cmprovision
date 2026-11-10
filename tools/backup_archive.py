@@ -175,7 +175,14 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
                     raise UpdateError('Backup contains duplicate, non-regular or misplaced members.')
                 if item.name == 'manifest.json':
                     if item.size > MAX_MANIFEST: raise UpdateError('Backup manifest exceeds its size limit.')
-                    manifest = json.loads(archive.extractfile(item).read(MAX_MANIFEST+1))
+                    def unique(items):
+                        result = {}
+                        for key, value in items:
+                            if key in result: raise UpdateError('Duplicate backup manifest JSON fields.')
+                            result[key] = value
+                        return result
+                    manifest = json.loads(archive.extractfile(item).read(MAX_MANIFEST+1), object_pairs_hook=unique,
+                        parse_constant=lambda _: (_ for _ in ()).throw(UpdateError('Invalid manifest number.')))
                     continue
                 if not valid_member(item.name) or len(observed) >= MAX_MEMBERS or item.size > MAX_TOTAL:
                     raise UpdateError('Backup contains unsafe or oversized members.')
@@ -194,6 +201,7 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
         named = set()
         for member in manifest['members']:
             if (type(member) is not dict or member.get('name') in named or member.get('name') not in observed
+                    or type(member.get('size')) is not int or type(member.get('mode')) is not int
                     or any(member.get(key) != observed[member['name']][key] for key in ('size', 'sha256', 'mode'))):
                 raise UpdateError('Backup contents do not match the manifest.')
             named.add(member['name'])

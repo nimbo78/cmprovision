@@ -23,3 +23,14 @@ test('opening a saved profile leaves credentials blank and keeps original fields
     panel.back();
     assert.equal(panel.screen, 'overview');
 });
+
+test('a deliberate new copy rotates the nonce only after a known terminal job', async () => {
+    const panel = ui.create('/status', { operation: { state: 'ready' } });
+    const calls = [];
+    panel.$wire = { back: async () => calls.push('new-intent'), create: async () => calls.push('create') };
+    await panel.startBackup();
+    assert.deepEqual(calls, ['new-intent', 'create']);
+    panel.operation = { state: 'queued' };
+    await panel.startBackup();
+    assert.equal(calls.length, 2);
+});

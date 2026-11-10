@@ -60,7 +60,7 @@ class ArchiveTest(unittest.TestCase):
             self.module.create([self.module.Entry('application/.env', data=b'x')]*2, self.root/'unsafe.cmpbackup', 'sufficient master password', self.metadata)
 
     def test_authenticated_but_invalid_tar_members_and_inventory_are_rejected(self):
-        for kind in ('link', 'device', 'duplicate', 'traversal', 'hash', 'manifest-duplicate'):
+        for kind in ('link', 'device', 'duplicate', 'traversal', 'hash', 'manifest-duplicate', 'json-duplicate', 'boolean-size'):
             with self.subTest(kind=kind):
                 plain = io.BytesIO()
                 with tarfile.open(fileobj=plain, mode='w:gz') as archive:
@@ -72,7 +72,9 @@ class ArchiveTest(unittest.TestCase):
                     if kind == 'duplicate': archive.addfile(info, io.BytesIO(b'x'))
                     member = {'name': info.name, 'size': 1, 'mode': 0o600, 'sha256': 'a'*64 if kind == 'hash' else hashlib.sha256(b'x').hexdigest(), 'group': 'application'}
                     manifest = dict(self.metadata, format='cmprovision-full-backup', schema=2, members=[member, member] if kind == 'manifest-duplicate' else [member])
+                    if kind == 'boolean-size': member['size'] = True
                     raw = json.dumps(manifest).encode()
+                    if kind == 'json-duplicate': raw = b'{"schema":999,'+raw[1:]
                     metadata = tarfile.TarInfo('manifest.json'); metadata.size = len(raw)
                     archive.addfile(metadata, io.BytesIO(raw))
                 with tempfile.TemporaryFile() as secret:

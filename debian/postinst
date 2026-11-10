@@ -213,6 +213,7 @@ EOF
     # Read the dedicated diagnostic-device rule on the next hotplug; do not retrigger other USB devices.
     # Initialize metadata only; never run boot recovery in the middle of the updater's own dpkg process.
     /usr/bin/python3 -I /usr/lib/cmprovision/station-updates.py --initialize >/dev/null || echo "Update metadata could not be initialized; inspect the updater before applying updates."
+    /usr/bin/python3 -I /usr/lib/cmprovision/station-backups.py --initialize >/dev/null || echo "Full backup metadata could not be initialized; inspect backups over SSH."
 
     if command -v udevadm >/dev/null 2>&1; then
         udevadm control --reload-rules >/dev/null 2>&1 || true

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shlex
 import stat
 
 from update_manifest import UpdateError, canonical_bytes
@@ -172,4 +173,15 @@ def inventory(root, images=False, packages=False):
             if 'system/'+path.lstrip('/') not in {item.name for item in entries}:
                 raise UpdateError('A referenced Wi-Fi certificate/key is missing from the backup inventory.')
     add('system/accounts.json', data=canonical_bytes(accounts(root)), group='accounts')
+    for entry in entries:
+        if entry.name != 'system/etc/ssh/sshd_config' and not entry.name.startswith('system/etc/ssh/sshd_config.d/'): continue
+        for line in read(root, entry.source).decode().splitlines():
+            parts = shlex.split(line, comments=True)
+            if not parts: continue
+            key, values = parts[0].lower(), parts[1:]
+            if (key == 'hostkey' and (len(values) != 1 or not re.fullmatch(r'/etc/ssh/ssh_host_(?:rsa|ecdsa|ed25519)_key', values[0]))
+                    or key == 'include' and any(not value.startswith('/etc/ssh/sshd_config.d/') or '..' in value.split('/') for value in values)
+                    or key == 'authorizedkeysfile' and values != ['.ssh/authorized_keys']
+                    or key in ('authorizedkeyscommand', 'authorizedprincipalscommand', 'authorizedprincipalsfile', 'hostcertificate', 'trustedusercakeys') and values != ['none']):
+                raise UpdateError('SSH uses an external key or authorization source outside the supported backup inventory. Review it over SSH before backing up.')
     return entries, absent

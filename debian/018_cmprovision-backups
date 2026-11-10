@@ -1,0 +1,2 @@
+# Fixed JSON protocol on stdin only. Full restore is an administrator-only SSH command.
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/station-backups ""

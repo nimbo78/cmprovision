@@ -1,0 +1,80 @@
+#!/usr/bin/python3 -I
+"""Administrator-only full archive preview/apply. Passwords never appear in argv or environment."""
+import argparse
+import getpass
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+
+sys.path.insert(0, '/usr/lib/cmprovision')
+if not Path('/usr/lib/cmprovision/backup_restore.py').is_file(): sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backup_restore import DEFAULT_GROUPS, Restorer
+from backup_restore_system import LinuxRestoreSystem
+from backup_store import BackupStore
+from update_diagnostics import journal
+from update_manifest import UpdateError
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Preview a full encrypted station archive; --apply --yes performs the restore.')
+    parser.add_argument('archive', nargs='?')
+    parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--yes', action='store_true')
+    parser.add_argument('--recover', action='store_true', help='Restore the station-recorded pre-restore recovery archive; also needs --apply --yes.')
+    parser.add_argument('--mode', choices=('migrate', 'same-station'), default='migrate')
+    parser.add_argument('--groups', default=','.join(DEFAULT_GROUPS), help='Selected OS groups: network,ssh,host,time,display,web,role,publisher,sudo')
+    parser.add_argument('--account', action='append', default=[])
+    parser.add_argument('--emergency-user', default=os.environ.get('SUDO_USER', 'root'))
+    parser.add_argument('--map-interface', action='append', default=[], metavar='SOURCE=DESTINATION')
+    parser.add_argument('--allow-snapshot-software', action='store_true')
+    parser.add_argument('--password-fd', type=int, help='Protected readable descriptor; otherwise prompt on the terminal.')
+    args = parser.parse_args()
+    if os.geteuid() != 0: parser.error('Run as an administrator with sudo.')
+    if args.apply and not args.yes: parser.error('Preview first, then use --apply --yes to confirm the displayed changes.')
+    os.umask(0o077)
+    store = BackupStore()
+    try:
+        source = args.archive
+        if args.recover:
+            pending = store.configuration()['pending']
+            if not pending: raise UpdateError('No interrupted administrator restore exists.')
+            source = store.operation(pending['id']).get('recovery_file')
+            if not source: raise UpdateError('No usable recovery archive was committed. Inspect the original services and release maintenance manually over SSH.')
+        if not source: parser.error('Choose an archive or --recover.')
+        source = Path(source).absolute()
+        from backup_policy import safe_open
+        with safe_open(source.parent, source.name) as stream: digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if args.password_fd is None: password = getpass.getpass('Archive master password: ')
+        else:
+            if args.password_fd < 3: raise UpdateError('Use a protected inherited descriptor numbered 3 or higher.')
+            with os.fdopen(os.dup(args.password_fd), 'rb') as secret: raw = secret.read(4097)
+            if len(raw) > 4096: raise UpdateError('The archive password exceeds its size limit.')
+            password = raw.decode('utf-8').removesuffix('\n')
+        interfaces = {}
+        for item in args.map_interface:
+            pair = item.split('=')
+            if len(pair) != 2 or pair[0] in interfaces: raise UpdateError('Use a unique source=destination interface mapping.')
+            interfaces[pair[0]] = pair[1]
+        publisher = Path('/etc/cmprovision-updates/publisher.pub')
+        repository = json.loads(Path('/etc/cmprovision-updates/publisher.json').read_bytes())['repository']
+        options = {'mode': args.mode, 'groups': [item for item in args.groups.split(',') if item],
+            'selected_accounts': args.account, 'interfaces': interfaces, 'allow_snapshot': args.allow_snapshot_software,
+            'publisher': publisher, 'repository': repository, 'emergency': args.emergency_user}
+        if args.recover:
+            options.update(mode='same-station', groups=['network', 'ssh', 'host', 'time', 'display', 'web', 'role', 'sudo'],
+                selected_accounts=[], allow_snapshot=args.allow_snapshot_software)
+        system = LinuxRestoreSystem(store)
+        result = Restorer(store, system).run(source, password, apply=args.apply, recover=args.recover, **options)
+        print(json.dumps(dict(result, archive_sha256=digest, applied=args.apply), indent=2))
+        return 0
+    except Exception as error:
+        import uuid
+        reference = uuid.uuid4().hex
+        journal(error, reference, 'administrator-restore', event='cmprovision-backup-failure')
+        print(str(error) if isinstance(error, UpdateError) else 'Administrator restore failed. Reference: '+reference, file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__': raise SystemExit(main())

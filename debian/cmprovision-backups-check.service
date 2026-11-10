@@ -1,0 +1,10 @@
+[Unit]
+Description=Reconcile pending full backups, expiry and opt-in schedules
+After=cmprovision-backups-recover.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B -I /usr/lib/cmprovision/station-backups.py --tick
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=30
