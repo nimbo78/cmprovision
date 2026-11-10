@@ -139,6 +139,7 @@ class WallboardTest extends TestCase
 
     public function test_switches_that_never_answered_do_not_empty_the_board()
     {
+        $this->freezeTime(); // The snapshot and assertion describe the same event, even across a wall-clock second.
         $cm = $this->stand();
         $cm->update(['polled_at' => now()]);
         \Illuminate\Support\Facades\Cache::flush();
