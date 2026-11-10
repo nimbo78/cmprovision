@@ -25,6 +25,7 @@ def prepare(package):
     fixture.mkdir(exist_ok=True)
     shutil.copyfile(package, fixture/package.name)
     shutil.copyfile(Path(__file__).with_name('run_acceptance.py'), fixture/'run_acceptance.py')
+    shutil.copyfile(Path(__file__).with_name('acceptance_version.py'), fixture/'acceptance_version.py')
     shim = fixture/'usbboot-shim'
     (shim/'DEBIAN').mkdir(parents=True, exist_ok=True)
     (shim/'DEBIAN/control').write_text('Package: cmprovision-acceptance-usbboot\nVersion: 1\nArchitecture: all\nProvides: rpiboot (= 20261002)\nMaintainer: Test <test@example.test>\nDescription: No hardware USB boot in the isolated updater acceptance container\n')
