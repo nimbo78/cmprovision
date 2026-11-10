@@ -15,6 +15,7 @@
         <link rel="stylesheet" href="{{ asset('css/app.css') }}?v={{ @filemtime(public_path('css/app.css')) }}">
         <script src="{{ asset('js/appearance.js') }}?v={{ @filemtime(public_path('js/appearance.js')) }}"></script>
         <script src="{{ asset('js/tab-status.js') }}?v={{ @filemtime(public_path('js/tab-status.js')) }}" defer></script>
+        <script src="{{ asset('js/station-updates.js') }}?v={{ @filemtime(public_path('js/station-updates.js')) }}" defer></script>
 
         @livewireStyles
     </head>

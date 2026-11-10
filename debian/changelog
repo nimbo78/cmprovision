@@ -1,3 +1,13 @@
+cmprovision4 (2.27.1) unstable; urgency=medium
+
+  * Handle expected station-update maintenance replies without leaving a
+    Livewire failure overlay after the application recovers; preserve normal
+    handling of authentication failures and unexpected server errors.
+  * Keep service status and journal controls on Settings > Status only,
+    and avoid polling system services on unrelated settings tabs.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Tue, 10 Nov 2026 14:35:25 +0300
+
 cmprovision4 (2.27.0) unstable; urgency=medium
 
   * Release independently signed application and Utility OS updates with

@@ -20,7 +20,7 @@ use Tests\Support\FakeServiceState;
 use Tests\Support\FakeWifiNetworks;
 use Tests\TestCase;
 
-/** Settings (2.9): four tabs by purpose, each at its own address, and a strip with the state of the services on all but the first */
+/** Settings tabs have their own purpose; service status and logs belong to Status. */
 class SettingsTabsTest extends TestCase
 {
     use RefreshDatabase;
@@ -63,42 +63,33 @@ class SettingsTabsTest extends TestCase
         $this->tab('status')->assertDontSeeHtml('id="settings-health"');
     }
 
-    public function test_disabled_boot_services_are_neutral_on_status_and_in_the_strip()
+    public function test_disabled_boot_services_are_neutral_on_status()
     {
         $this->app->instance(ServiceState::class, new FakeServiceState(
             array_values(array_diff(self::ALL_UNITS, ['cmprovision-dnsmasq', 'cmprovision-rpiboot'])),
             ['cmprovision-dnsmasq', 'cmprovision-rpiboot']
         ));
 
-        foreach (['status', 'network'] as $tab)
-            $this->tab($tab)->assertSee('disabled')->assertSeeHtml('cmp-chip-idle')->assertDontSee('stopped');
-        $this->tab('network')->assertSee('5 of 7 running')->assertSee('2 disabled')
-            ->assertDontSee('@if')->assertDontSee('@endif');
+        $this->tab('status')->assertSee('disabled')->assertSeeHtml('cmp-chip-idle')->assertDontSee('stopped');
     }
 
     #[DataProvider('otherTabs')]
-    public function test_every_other_tab_has_the_strip_with_a_count_in_words(string $tab)
+    public function test_other_tabs_do_not_show_service_status_or_log_controls(string $tab)
     {
         $this->services(['cmprovision-dnsmasq', 'cmprovision-queue']);
 
         $this->tab($tab)
-            ->assertSeeHtml('id="settings-health"')
-            ->assertSeeHtml('wire:poll.30s')
-            ->assertSee('3 of 7 running')   // the web interface answers, so it always runs
-            ->assertDontSee('0 disabled')
-            ->assertDontSee('@if')->assertDontSee('@endif')
-            ->assertSee('stopped');
+            ->assertDontSeeHtml('id="settings-health"')
+            ->assertDontSeeHtml('id="services"')
+            ->assertDontSeeHtml('id="settings-logs-list"')
+            ->assertDontSeeHtml('wire:click="viewLogRpiboot()"')
+            ->assertDontSee('3 of 7 running');
     }
 
     public static function otherTabs(): array
     {
-        return ['network' => ['network'], 'provisioning' => ['provisioning'], 'notifications' => ['notifications']];
-    }
-
-    public function test_the_strip_says_all_running_when_they_are()
-    {
-        $this->tab('network')->assertSee('7 of 7 running')->assertDontSee('stopped')
-            ->assertDontSee('0 disabled')->assertDontSee('@if')->assertDontSee('@endif');
+        return ['network' => ['network'], 'provisioning' => ['provisioning'],
+            'notifications' => ['notifications'], 'updates' => ['updates']];
     }
 
     public function test_the_network_tab_holds_wifi_switches_and_static_addresses()
@@ -110,7 +101,7 @@ class SettingsTabsTest extends TestCase
             ->assertSee('Add new assignment')
             ->assertDontSeeLivewire(NotificationSettings::class)
             ->assertDontSeeLivewire(UtilityOsSettings::class)
-            ->assertDontSeeHtml('id="services"');   // the Services card is the Status tab's; the strip only has the short names
+            ->assertDontSeeHtml('id="services"');
     }
 
     public function test_the_provisioning_tab_holds_the_utility_os_reprovisioning_and_the_display()
@@ -147,19 +138,10 @@ class SettingsTabsTest extends TestCase
         $this->get('/settings?tab[]=x')->assertOk()->assertSee('dnsmasq (DHCP server)');
     }
 
-    public function test_the_logs_menu_is_a_disclosure_that_gives_the_focus_back()
-    {
-        $html = $this->tab('network')->html();
-        $this->assertStringNotContainsString('role="menu"', $html, 'no arrow-key menu is promised');
-        $this->assertStringContainsString('aria-expanded', $html);
-        $this->assertStringContainsString('aria-controls="settings-logs-list"', $html);
-        $this->assertStringContainsString('id="settings-logs-list"', $html);
-    }
-
     public function test_the_tab_bar_links_to_every_tab_and_marks_the_current_one()
     {
         $page = $this->tab('network');
-        foreach (['status', 'network', 'provisioning', 'notifications'] as $tab) {
+        foreach (['status', 'network', 'provisioning', 'notifications', 'updates'] as $tab) {
             $page->assertSeeHtml('href="'.route('settings', ['tab' => $tab]).'"');
         }
         $html = $page->html();
@@ -184,9 +166,9 @@ class SettingsTabsTest extends TestCase
         $this->assertStringContainsString('running', $html);
     }
 
-    public function test_the_logs_menu_of_the_strip_opens_every_log_from_any_tab()
+    public function test_status_keeps_a_log_button_for_every_service()
     {
-        $page = $this->tab('provisioning');
+        $page = $this->tab('status');
         foreach (['Dnsmasq', 'Rpiboot', 'UsbDiagnostics', 'Queue', 'QueueImages', 'UplinkSpare', 'Laravel'] as $log) {
             $page->assertSeeHtml('wire:click="viewLog'.$log.'()"');
         }

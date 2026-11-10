@@ -24,7 +24,7 @@ class Settings extends Component
         'updates' => 'Updates',
     ];
 
-    /** log source (ServiceLogs) => [what the list calls it, systemd unit, the short name for the strip]; the web interface has no unit: it answers this request */
+    /** Log source => [service label, systemd unit, FPMS short name]; the web interface answers this request. */
     const SERVICES = [
         'dnsmasq' => ['dnsmasq (DHCP server)', 'cmprovision-dnsmasq', 'dnsmasq'],
         'rpiboot' => ['rpiboot (USB file server)', 'cmprovision-rpiboot', 'rpiboot'],
@@ -47,26 +47,19 @@ class Settings extends Component
         // the property comes from the address and from the browser: ?tab[]=x makes it an array
         $this->tab = is_string($this->tab) && array_key_exists($this->tab, self::TABS) ? $this->tab : 'status';
 
-        $state = app(ServiceState::class);
-        $services = [];
-        foreach (self::SERVICES as $source => [$label, $unit, $short]) {
-            $status = $unit === null ? 'running' : $state->status($unit);
-            $services[$source] = [
-                'label' => $label,
-                'short' => $short,
-                'running' => $status === 'running',
-                'status' => $status,
-                'chip' => ['running' => 'cmp-chip-ok', 'disabled' => 'cmp-chip-idle', 'stopped' => 'cmp-chip-fail'][$status],
-                'method' => 'viewLog'.str_replace(' ', '', ucwords(str_replace('-', ' ', $source))),
-            ];
-        }
-        $data = [
-            'tabs' => self::TABS,
-            'services' => $services,
-            'runningCount' => count(array_filter(array_column($services, 'running'))),
-            'disabledCount' => count(array_filter($services, fn ($service) => $service['status'] === 'disabled')),
-        ];
+        $data = ['tabs' => self::TABS];
         if ($this->tab === 'status') {
+            $state = app(ServiceState::class);
+            $data['services'] = [];
+            foreach (self::SERVICES as $source => [$label, $unit]) {
+                $status = $unit === null ? 'running' : $state->status($unit);
+                $data['services'][$source] = [
+                    'label' => $label,
+                    'status' => $status,
+                    'chip' => ['running' => 'cmp-chip-ok', 'disabled' => 'cmp-chip-idle', 'stopped' => 'cmp-chip-fail'][$status],
+                    'method' => 'viewLog'.str_replace(' ', '', ucwords(str_replace('-', ' ', $source))),
+                ];
+            }
             $os = app(UtilityOs::class);
             $current = $os->current();
             $data['utilityOs'] = UtilityOs::label($current ? $os->manifest($current) : null);

@@ -3,6 +3,50 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 const api = createRequire(import.meta.url)('../../public/js/station-updates.js');
 
+function livewireRequests() {
+    const hooks = [];
+    const livewire = { hook: (name, callback) => { assert.equal(name, 'request'); hooks.push(callback); } };
+    const window = { Livewire: livewire, document: { addEventListener() {} } };
+    api.start(window);
+    return {
+        hooks,
+        response(status, marker) {
+            let respond, fail;
+            hooks[0]({ respond: callback => { respond = callback; }, fail: callback => { fail = callback; } });
+            respond({ response: { status, headers: new Headers(marker ? { 'X-Cmprovision-Maintenance': marker } : {}) } });
+            let suppressed = false;
+            fail({ status, preventDefault: () => { suppressed = true; } });
+            return suppressed;
+        },
+    };
+}
+
+test('planned update maintenance does not leave the Livewire failure overlay', () => {
+    assert.equal(livewireRequests().response(503, 'station-update'), true);
+});
+
+test('real errors and session expiry keep Livewire default handling', () => {
+    const requests = livewireRequests();
+    for (const [status, marker] of [[503, null], [500, 'station-update'], [419, null], [403, null], [503, 'other-maintenance']]) {
+        assert.equal(requests.response(status, marker), false, `${status}: ${marker}`);
+    }
+    assert.equal(requests.response(503, 'station-update'), true);
+    assert.equal(requests.response(503, null), false, 'maintenance detection belongs to one request only');
+});
+
+test('maintenance handling registers before Livewire init and only once', () => {
+    const hooks = [];
+    let initialized;
+    const window = { document: { addEventListener: (name, callback) => {
+        assert.equal(name, 'livewire:init'); initialized = callback;
+    } } };
+    api.start(window);
+    window.Livewire = { hook: (name, callback) => { hooks.push(callback); } };
+    initialized();
+    api.start(window);
+    assert.equal(hooks.length, 1);
+});
+
 test('download percentage uses actual received bytes; verification is indeterminate', () => {
     const state = api.create('/status', { operation: { state: 'downloading', downloaded: 25, total: 100 } });
     assert.equal(state.percent(), 25);

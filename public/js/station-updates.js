@@ -1,9 +1,33 @@
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) module.exports = factory();
-    else root.StationUpdatesStatus = factory();
+    else {
+        root.StationUpdatesStatus = factory();
+        root.StationUpdatesStatus.start(root);
+    }
 }(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
     var terminal = ['ready', 'succeeded', 'rolled-back', 'failed', 'canceled'];
+    var hooked = new WeakSet();
+    function start(win) {
+        function install() {
+            var livewire = win.Livewire;
+            if (!livewire || hooked.has(livewire)) return;
+            hooked.add(livewire);
+            livewire.hook('request', function ({ respond, fail }) {
+                var maintenance = false;
+                respond(function ({ response }) {
+                    maintenance = response.status === 503 && response.headers.get('X-Cmprovision-Maintenance') === 'station-update';
+                });
+                fail(function ({ status, preventDefault }) {
+                    // Keep authentication and unexpected server errors visible. Never
+                    // retry the interrupted request: it may have contained a mutation.
+                    if (status === 503 && maintenance) preventDefault();
+                });
+            });
+        }
+        if (win.Livewire) install();
+        else win.document.addEventListener('livewire:init', install, { once: true });
+    }
     function create(url, initial) {
         return {
             operation: initial.operation || null, reconnecting: false, signin: false, timer: null, destroyed: false,
@@ -40,5 +64,5 @@
             }
         };
     }
-    return { create: create };
+    return { create: create, start: start };
 }));

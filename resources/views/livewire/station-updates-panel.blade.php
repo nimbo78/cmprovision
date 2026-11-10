@@ -1,5 +1,4 @@
 <div class="space-y-6" id="updates">
-    <script src="{{ asset('js/station-updates.js') }}?v={{ @filemtime(public_path('js/station-updates.js')) }}"></script>
     <x-settings-card title="Updates" description="Verified stable releases from the configured publisher. Installation is always manual.">
         {{-- Keep the Alpine binding stable so Livewire preserves its timer and nested log scopes. --}}
         <div class="space-y-4" x-data="StationUpdatesStatus.create(@js(route('settings.updates.status')), JSON.parse($el.dataset.initialStatus))"
