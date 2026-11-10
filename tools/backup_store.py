@@ -14,7 +14,7 @@ from update_store import UpdateStore, ID_RE, NONCE_RE, matches, safe_text
 
 TERMINAL = frozenset(('ready', 'succeeded', 'failed', 'canceled'))
 STATES = TERMINAL | {'queued', 'waiting', 'collecting', 'archiving', 'uploading', 'verifying', 'recovery-required'}
-SECRETS = ('password', 'key_pem', 'secret_key', 'access_key', 'session_token', 'ca_pem')
+SECRETS = ('password', 'key_pem', 'key_password', 'secret_key', 'access_key', 'session_token', 'ca_pem')
 
 
 class BackupStore(UpdateStore):
