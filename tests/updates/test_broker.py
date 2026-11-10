@@ -13,6 +13,16 @@ from update_store import UpdateStore
 
 
 class BrokerTest(unittest.TestCase):
+    def test_backup_gate_rejects_new_checks_but_keeps_status_available(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            store = UpdateStore(Path(temporary)/'state', Path(temporary)/'run', owner=os.getuid())
+            marker = store.runtime.with_name('cmprovision-backups')/'pending.json'
+            marker.parent.mkdir(); marker.write_text('{}')
+            broker = Broker(store, launcher=Mock())
+            self.assertEqual(1, broker.request({'action': 'status'})['schema'])
+            with self.assertRaises(UpdateError):
+                broker.request({'action': 'check', 'nonce': 'a'*64, 'components': ['application']})
+
     def test_bounded_json_has_no_ambiguous_or_unknown_protocol(self):
         for raw in (b'{}', b'{"action":"status","action":"check"}', b'[]', b'x'*8193,
                     b'{"action":"status","path":"/etc/shadow"}', b'{"action":"cancel","id":"../../x"}'):
@@ -25,6 +35,7 @@ class BrokerTest(unittest.TestCase):
 
     def test_reply_loss_cannot_launch_a_second_worker(self):
         store = Mock()
+        store.runtime = Path('/nonexistent/cmprovision-update-test')
         store.begin.side_effect = [({'id': 'a'*32}, True), ({'id': 'a'*32}, False)]
         store.snapshot.return_value = {'schema': 1}
         launcher = Mock()

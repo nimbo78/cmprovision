@@ -45,6 +45,7 @@ def valid_member(name):
     if name in GENERATED: return True
     if name.startswith('system/'): return system_member(name[7:])
     if re.fullmatch(r'software/(?:cmprovision4|fpms-lite)_[0-9][A-Za-z0-9.+~:-]{0,127}_(?:all|arm64|armhf|amd64)\.deb', name): return True
+    if re.fullmatch(r'software/utility-os-[0-9]{4}\.[0-9]{2}(?:\.[0-9]+)?\.tar\.gz', name): return True
     return bool(re.fullmatch(r'utility-os/(?:legacy|bundled-modern|managed-[0-9]{4}\.[0-9]{2}(?:\.[0-9]+)?)/.+', name))
 
 

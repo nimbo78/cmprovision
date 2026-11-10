@@ -1,5 +1,5 @@
 """Streaming encrypted archives and authenticated, read-only inspection before restore."""
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import hashlib
 import io
@@ -17,7 +17,7 @@ from backup_policy import safe_open, valid_member
 
 MAX_MEMBERS = 100000
 MAX_MANIFEST = 16*1024**2
-MAX_TOTAL = 2**44
+MAX_TOTAL = 2**40
 RESERVE = 256*1024**2
 CODEC = Path(__file__).with_name('backup-crypto.php')
 
@@ -147,20 +147,29 @@ class VerifiedArchive:
 
 
 @contextmanager
-def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private'):
+def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private', _stream=False):
     """Authenticate the complete stream before decompressing or allowing any destination mutation."""
     directory = Path(tempfile.mkdtemp(prefix='inspect-', dir=work))
     directory.chmod(0o700)
     path = directory/'archive.tar.gz'
     process = None
+    stack = ExitStack()
     try:
-        with safe_open(Path(source).parent, Path(source).name) as encrypted, path.open('xb') as output:
-            path.chmod(0o600)
-            process = _codec('decrypt', password, encrypted, output)
-            if process.wait(timeout=7200): raise UpdateError('Backup authentication failed: wrong password, damaged file or unsupported format.')
-            output.flush(); os.fsync(output.fileno())
+        encrypted = stack.enter_context(safe_open(Path(source).parent, Path(source).name))
+        if _stream:
+            process = _codec('decrypt', password, encrypted, subprocess.PIPE)
+            plain = process.stdout
+        else:
+            required = os.fstat(encrypted.fileno()).st_size+RESERVE
+            if shutil.disk_usage(directory).free < required: raise UpdateError('Not enough space to authenticate the backup before restore.')
+            with path.open('xb') as output:
+                path.chmod(0o600)
+                process = _codec('decrypt', password, encrypted, output)
+                if process.wait(timeout=7200): raise UpdateError('Backup authentication failed: wrong password, damaged file or unsupported format.')
+                output.flush(); os.fsync(output.fileno())
+            plain = stack.enter_context(path.open('rb'))
         observed, manifest, total = {}, None, 0
-        with tarfile.open(path, mode='r|gz') as archive:
+        with tarfile.open(fileobj=plain, mode='r|gz') as archive:
             for item in archive:
                 if manifest is not None or not item.isfile() or item.name in observed or item.size < 0:
                     raise UpdateError('Backup contains duplicate, non-regular or misplaced members.')
@@ -188,10 +197,20 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
                     or any(member.get(key) != observed[member['name']][key] for key in ('size', 'sha256', 'mode'))):
                 raise UpdateError('Backup contents do not match the manifest.')
             named.add(member['name'])
+        if _stream:
+            while process.stdout.read(1024**2): pass
+            if process.wait(timeout=60): raise UpdateError('Backup authentication failed: wrong password, damaged file or unsupported format.')
         yield VerifiedArchive(path, manifest)
     except (OSError, ValueError, TypeError, tarfile.TarError, subprocess.SubprocessError) as error:
         if isinstance(error, UpdateError): raise
         raise UpdateError('The full backup is unreadable or invalid.') from error
     finally:
         if process and process.poll() is None: process.kill(); process.wait(timeout=10)
+        if _stream and process and process.stdout: process.stdout.close()
+        stack.close()
         shutil.rmtree(directory)
+
+
+def verify_stream(source, password, work):
+    """Validate a newly created download by read-back without a second plaintext archive on disk."""
+    with inspect_archive(source, password, work, _stream=True) as verified: return verified.manifest

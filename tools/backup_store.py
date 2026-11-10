@@ -17,6 +17,10 @@ STATES = TERMINAL | {'queued', 'waiting', 'collecting', 'archiving', 'uploading'
 SECRETS = ('password', 'key_pem', 'key_password', 'secret_key', 'access_key', 'session_token', 'ca_pem')
 
 
+class BackupBusy(UpdateError):
+    """Admission is busy; retry later without pausing services."""
+
+
 class BackupStore(UpdateStore):
     # Reuse the established no-follow/ownership/atomic-write primitives only. Backup schema is independent.
     def __init__(self, root='/var/lib/cmprovision-backups', runtime='/run/cmprovision-backups', owner=0, clock=time.time):
@@ -32,7 +36,8 @@ class BackupStore(UpdateStore):
                 self._persist({'schema': 1, 'station_id': uuid.uuid4().hex, 'master_password': None,
                     'profiles': {}, 'schedule': {'enabled': False, 'frequency': 'daily', 'time': '03:00', 'weekday': 0,
                         'profile': None, 'keep': 7, 'images': False, 'packages': False},
-                    'slots': [], 'operations': {}, 'requests': {}, 'current': None, 'pending': None})
+                    'slots': [], 'operations': {}, 'requests': {}, 'current': None, 'pending': None,
+                    'sequence': 0, 'remote_copies': [], 'last_success_at': None})
 
     def _load(self):
         self._file(self.state_file, 0o600)
@@ -48,7 +53,7 @@ class BackupStore(UpdateStore):
     @staticmethod
     def _job_public(job):
         allowed = {'id', 'target', 'state', 'message', 'created_at', 'updated_at', 'options', 'bytes', 'total',
-                   'name', 'sha256', 'expires_at', 'cancel_requested', 'scheduled', 'warning', 'slot'}
+                   'name', 'sha256', 'expires_at', 'cancel_requested', 'scheduled', 'warning', 'slot', 'action', 'host_keys'}
         return {key: copy.deepcopy(value) for key, value in job.items() if key in allowed}
 
     def _projection(self, state):
@@ -57,12 +62,12 @@ class BackupStore(UpdateStore):
             public = {key: copy.deepcopy(item) for key, item in value.items() if key not in SECRETS}
             public.update({'has_'+key: bool(value.get(key)) for key in SECRETS})
             profiles.append(public)
-        jobs = sorted(state['operations'].values(), key=lambda item: item['created_at'], reverse=True)
+        jobs = sorted(state['operations'].values(), key=lambda item: item.get('sequence', item['created_at']), reverse=True)
         return {'schema': 1, 'station_id': state['station_id'], 'password_configured': bool(state['master_password']),
-            'profiles': profiles, 'schedule': copy.deepcopy(state['schedule']), 'pending': copy.deepcopy(state['pending']),
+            'profiles': profiles, 'schedule': copy.deepcopy(state['schedule']),
+            'pending': {'id': state['pending']['id'], 'at': state['pending']['at']} if state['pending'] else None,
             'operation': self._job_public(state['operations'][state['current']]) if state['current'] else None,
-            'history': [self._job_public(job) for job in jobs[:50]], 'last_success_at': max(
-                (job['updated_at'] for job in jobs if job['state'] == 'succeeded'), default=None)}
+            'history': [self._job_public(job) for job in jobs[:50]], 'last_success_at': state.get('last_success_at')}
 
     def _persist(self, state):
         self._atomic(self.state_file, state, 0o600)
@@ -98,12 +103,20 @@ class BackupStore(UpdateStore):
         self.mutate(change)
         return self.status()
 
-    def begin(self, nonce, target, options, scheduled=False, slot=None):
+    def begin(self, nonce, target, options, scheduled=False, slot=None, action='backup', arguments=None):
         if not matches(NONCE_RE, nonce) or not (target == 'download' or matches(ID_RE, target)):
             raise UpdateError('Invalid backup request identity or destination.')
         if type(options) is not dict or set(options) != {'images', 'packages'} or any(type(v) is not bool for v in options.values()):
             raise UpdateError('Invalid backup contents selection.')
-        digest = hashlib.sha256(canonical_bytes({'target': target, 'options': options})).hexdigest()
+        if action not in ('backup', 'test', 'host-key'): raise UpdateError('Invalid backup worker action.')
+        digest = hashlib.sha256(canonical_bytes({'action': action, 'target': target, 'options': options, 'arguments': arguments})).hexdigest()
+        with self.lock('control'):
+            existing = self._load()
+            if nonce in existing['requests']:
+                previous = existing['requests'][nonce]
+                if previous['digest'] != digest: raise UpdateError('Backup request was replayed with changed choices.')
+                if previous['id'] not in existing['operations']: raise UpdateError('The replayed backup has expired.')
+                return copy.deepcopy(existing['operations'][previous['id']]), False
         def change(state):
             if nonce in state['requests']:
                 previous = state['requests'][nonce]
@@ -111,24 +124,26 @@ class BackupStore(UpdateStore):
                 if previous['id'] not in state['operations']: raise UpdateError('The replayed backup has expired.')
                 return state['operations'][previous['id']], False
             self.idle(state)
-            if not state['master_password']: raise UpdateError('Set the master password before creating a full backup.')
+            if action == 'backup' and not state['master_password']: raise UpdateError('Set the master password before creating a full backup.')
             if target != 'download' and target not in state['profiles']: raise UpdateError('Choose a saved backup destination.')
             identity = uuid.uuid4().hex
-            job = {'id': identity, 'target': target, 'options': options, 'state': 'queued', 'bytes': 0, 'total': 0,
+            state['sequence'] = state.get('sequence', 0)+1
+            job = {'id': identity, 'action': action, 'sequence': state['sequence'], 'target': target, 'options': options, 'state': 'queued', 'bytes': 0, 'total': 0,
                 'created_at': int(self.clock()), 'updated_at': int(self.clock()), 'message': 'Backup queued.',
                 'cancel_requested': False, 'scheduled': bool(scheduled), 'slot': slot,
                 'snapshot': {'master_password': state['master_password'], 'station_id': state['station_id'],
-                    'profile': copy.deepcopy(state['profiles'].get(target)), 'config': self._configuration_export(state)}}
+                    'profile': copy.deepcopy(state['profiles'].get(target)), 'config': self._configuration_export(state), 'arguments': arguments}}
             state['operations'][identity] = job
             state['requests'][nonce] = {'digest': digest, 'id': identity}
             state['current'] = identity
             if slot:
                 state['slots'] = (state['slots']+[slot])[-400:]
-            for old in list(state['operations'])[:-50]:
-                if state['operations'][old]['state'] in TERMINAL: state['operations'].pop(old)
+            ordered = sorted(state['operations'].values(), key=lambda item: item.get('sequence', 0))
+            for old in ordered[:-50]:
+                if old['state'] in TERMINAL: state['operations'].pop(old['id'])
             state['requests'] = dict(list(state['requests'].items())[-4096:])
             return job, True
-        return self.mutate(change)
+        with self.lock('worker', blocking=False): return self.mutate(change)
 
     @staticmethod
     def _configuration_export(state):
@@ -151,14 +166,93 @@ class BackupStore(UpdateStore):
             job = state['operations'].get(identity)
             if not job: raise UpdateError('Backup operation was not found.')
             job.update(fields, updated_at=int(self.clock()))
+            if job['state'] == 'succeeded' and job['action'] == 'backup': state['last_success_at'] = job.get('committed_at', int(self.clock()))
             if job['state'] in TERMINAL: job.pop('snapshot', None)
             return job
         return self.mutate(change)
 
-    def job_dir(self, identity):
+    def save_profile(self, value):
+        from backup_remote import validate_profile
+        def change(state):
+            self.idle(state)
+            previous = state['profiles'].get(value.get('id')) if type(value.get('id')) is str else None
+            profile = validate_profile(value, previous)
+            if not previous and len(state['profiles']) >= 8: raise UpdateError('At most eight backup destinations are supported.')
+            state['profiles'][profile['id']] = profile
+            if state['schedule']['profile'] == profile['id']: state['schedule']['keep'] = profile['keep']
+        self.mutate(change)
+        return self.status()
+
+    def delete_profile(self, identity):
+        if not matches(ID_RE, identity): raise UpdateError('Invalid backup destination identifier.')
+        def change(state):
+            self.idle(state)
+            if identity not in state['profiles']: raise UpdateError('Backup destination was not found.')
+            state['profiles'].pop(identity)
+            if state['schedule']['profile'] == identity: state['schedule'].update(enabled=False, profile=None)
+        self.mutate(change)
+        return self.status()
+
+    def save_schedule(self, value, timezone=None):
+        from backup_schedule import validate_schedule
+        def change(state):
+            self.idle(state)
+            if value.get('enabled') and not state['master_password']: raise UpdateError('Set a master password before enabling scheduled backups.')
+            schedule = validate_schedule(value, state['profiles'], self.clock())
+            state['schedule'] = schedule
+            if timezone is not None: state['schedule_timezone'] = timezone
+            if schedule['profile'] in state['profiles']: state['profiles'][schedule['profile']]['keep'] = schedule['keep']
+        self.mutate(change)
+        return self.status()
+
+    def cancel(self, identity):
         self.operation(identity)
+        def change(state):
+            job = state['operations'][identity]
+            if job['state'] in TERMINAL: return
+            if job.get('committed'): raise UpdateError('This backup is already complete; station cleanup is finishing.')
+            job['cancel_requested'] = True
+            job['message'] = 'Cancellation requested. A network operation can take up to 60 seconds to stop.'
+        self.mutate(change)
+        return self.status()
+
+    def mark_pending(self, identity, services):
+        def change(state):
+            if identity != state['current'] or state['pending']: raise UpdateError('Another backup already holds maintenance.')
+            state['pending'] = {'schema': 1, 'id': identity, 'at': int(self.clock()), 'services': copy.deepcopy(services)}
+            return state['pending']
+        pending = self.mutate(change)
+        self._atomic(self.pending_file, {'schema': 1, 'id': identity, 'at': pending['at']}, 0o644)
+
+    def clear_pending(self, identity):
+        with self.lock('control'):
+            state = self._load()
+            if state['pending'] and state['pending']['id'] != identity: raise UpdateError('A different backup owns maintenance.')
+            if self.pending_file.exists() or self.pending_file.is_symlink():
+                self._file(self.pending_file, 0o644); self.pending_file.unlink()
+            state['pending'] = None
+            self._persist(state)
+
+    def record_remote(self, identity, receipt):
+        def change(state):
+            job = state['operations'][identity]
+            value = {key: receipt[key] for key in ('name', 'size', 'sha256', 'station_id', 'namespace')}
+            value.update(id=identity, created_at=job['created_at'], sequence=job['sequence'])
+            if not any(item['id'] == identity for item in state['remote_copies']): state['remote_copies'].append(value)
+        self.mutate(change)
+
+    def forget_remote(self, identities):
+        def change(state): state['remote_copies'] = [item for item in state['remote_copies'] if item['id'] not in identities]
+        self.mutate(change)
+
+    def job_dir(self, identity):
+        job = self.operation(identity)
         directory = self.private/'jobs'/identity
         self._directory(directory, 0o700)
+        marker = directory/'owner.json'
+        if not marker.exists() and not marker.is_symlink():
+            self._atomic(marker, {'schema': 1, 'id': identity, 'station_id': self._load()['station_id'], 'created_at': job['created_at']}, 0o600)
+        else: self._file(marker, 0o600)
         return directory
 
     def download_file(self, identity):

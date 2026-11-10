@@ -1,5 +1,6 @@
 """Bounded root broker. No caller-supplied commands, environment, repository or paths."""
 import json
+import os
 import subprocess
 import time
 
@@ -76,6 +77,8 @@ class Broker:
         if action == 'cancel':
             self.store.cancel(request['id'])
             return self.store.snapshot()
+        if os.path.lexists(self.store.runtime.with_name('cmprovision-backups')/'pending.json'):
+            raise UpdateError('A station backup is being created. Wait for it to finish before checking or changing updates.')
         operation, created = self.store.begin(request)
         if created:
             try: self.launcher(operation['id'])

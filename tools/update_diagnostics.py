@@ -46,8 +46,8 @@ def _error(error, seen=None):
     return value
 
 
-def journal(error, reference, phase):
-    value = {'event': 'cmprovision-update-failure', 'reference': _name(reference),
+def journal(error, reference, phase, event='cmprovision-update-failure'):
+    value = {'event': _name(event), 'reference': _name(reference),
              'phase': _name(phase), 'error': _error(error)}
     try: print(json.dumps(value, separators=(',', ':')), file=sys.stderr, flush=True)
     except Exception: pass # Broken stderr cannot change an update/rollback outcome.

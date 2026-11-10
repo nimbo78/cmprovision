@@ -83,6 +83,8 @@ class Controller:
             try: fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error: raise PowerError('Another power action is being scheduled.') from error
             if self.pending(): raise PowerError('A power action is already pending.')
+            if os.path.lexists('/run/cmprovision-backups/pending.json'):
+                raise PowerError('A station backup is being created; wait for it to finish.')
             if os.path.lexists('/run/cmprovision-updates/pending.json'):
                 raise PowerError('A station update is in maintenance; wait for it to finish.')
             state = dict(action=action, boot_id=self.boot(), scheduled_at=int(self.clock()), delay=5, confirmed=False)

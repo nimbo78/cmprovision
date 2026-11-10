@@ -303,7 +303,8 @@ class Remote:
         """Only the caller's immutable success ledger is eligible; no remote listing/globs."""
         removed = []
         eligible = [item for item in records if item.get('station_id') == self.station and item.get('namespace') == self.namespace()]
-        for record in sorted(eligible, key=lambda item: item['created_at'], reverse=True)[keep:]:
+        ordered = sorted(enumerate(eligible), key=lambda item: (item[1].get('sequence', item[1]['created_at']), item[0]), reverse=True)
+        for _, record in ordered[keep:]:
             name = record['name']
             if not re.fullmatch(r'[0-9]{8}T[0-9]{6}Z-[0-9a-f]{32}\.cmpbackup', name): continue
             if record.get('station_id') != self.station or record.get('namespace') != self.namespace(): continue

@@ -23,6 +23,7 @@ class NetworkChangeGate
     public function start(callable $begin)
     {
         if (app(StationUpdatesControl::class)->pending()) return $this->updateRetry();
+        if (app(StationBackupsControl::class)->pending()) return $this->backupRetry();
         if (app(StationPowerControl::class)->pending()) return $this->powerRetry();
         if (!$this->enabled) {
             return $begin();
@@ -46,6 +47,7 @@ class NetworkChangeGate
             try {
                 if (file_exists($this->directory.'/pending')) return $this->retry();
                 if (app(StationUpdatesControl::class)->pending()) return $this->updateRetry();
+                if (app(StationBackupsControl::class)->pending()) return $this->backupRetry();
                 return app(StationPowerControl::class)->pending() ? $this->powerRetry() : $begin();
             } finally {
                 flock($file, LOCK_UN);
@@ -59,6 +61,12 @@ class NetworkChangeGate
     {
         return response('The provisioner network is being changed; retry shortly.', 503)
             ->header('Content-Type', 'text/plain')->header('Retry-After', '10');
+    }
+
+    private function backupRetry()
+    {
+        return response('A station backup is being created; retry shortly.', 503)
+            ->header('Content-Type', 'text/plain')->header('Retry-After', '5');
     }
 
     private function powerRetry()

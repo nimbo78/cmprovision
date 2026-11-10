@@ -20,6 +20,8 @@ class NetworkTransaction:
     def begin(self, request):
         b = self.backend
         with b.guard():
+            if os.path.lexists('/run/cmprovision-backups/pending.json'):
+                raise TransactionError('A station backup is being created; wait for it to finish.')
             if os.path.lexists('/run/cmprovision-updates/pending.json'):
                 raise TransactionError('A station update is in maintenance; wait for it to finish.')
             if b.load() is not None or b.pending():

@@ -1,6 +1,7 @@
 """One durable update operation; filesystem trust and system effects are separate boundaries."""
 import base64
 import hashlib
+import os
 import stat
 
 from update_diagnostics import record
@@ -68,6 +69,9 @@ class Worker:
             lock.__enter__()
         except UpdateError:
             return # A duplicate worker must not overwrite the real worker's result.
+        if os.path.lexists(self.store.runtime.with_name('cmprovision-backups')/'pending.json'):
+            lock.__exit__(None, None, None)
+            return # The backup may be streaming signed payloads that prune() would remove.
         try:
             operation = self.store.operation(identity)
             if operation['state'] != 'queued': return

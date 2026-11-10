@@ -34,7 +34,8 @@ class AppServiceProvider extends ServiceProvider
         // A cached configuration must not freeze the station's previous system time zone.
         config(['app.display_timezone' => \App\Support\SystemTimezone::detect(config('app.display_timezone_override'))]);
         \Illuminate\Support\Facades\Queue::extend('database', fn () => new \App\Services\StationUpdateDatabaseConnector($this->app['db']));
-        \Illuminate\Support\Facades\Queue::looping(fn () => !app(\App\Services\StationUpdatesControl::class)->pending());
+        \Illuminate\Support\Facades\Queue::looping(fn () => !app(\App\Services\StationUpdatesControl::class)->pending()
+            && !app(\App\Services\StationBackupsControl::class)->pending());
         /* $date->local(): the same instant in the display time zone (storage stays UTC) */
         Carbon::macro('local', function () {
             return $this->copy()->timezone(config('app.display_timezone'));

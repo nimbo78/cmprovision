@@ -123,6 +123,15 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual('ready', operation['state'], operation.get('message'))
         return self.store.snapshot()['ready'][0]
 
+    def test_backup_gate_defers_check_without_pruning_its_source_assets(self):
+        marker = self.store.runtime.with_name('cmprovision-backups')/'pending.json'
+        marker.parent.mkdir(); marker.write_text('{}')
+        with patch.object(self.system, 'prune') as prune:
+            operation = self.run_operation('check', components=['application'])
+        self.assertEqual('queued', operation['state'])
+        self.assertEqual([], self.source.calls)
+        prune.assert_not_called()
+
     def test_unexpected_check_failure_has_safe_correlated_diagnostics(self):
         with patch.object(self.source, 'check', side_effect=RuntimeError('secret=private-check-value')):
             result = self.run_operation('check', components=['application'])
