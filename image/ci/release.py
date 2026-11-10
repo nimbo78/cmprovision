@@ -121,7 +121,14 @@ def api_write(path, payload):
     return json.loads(result.stdout)
 
 
-def release_for_tag(repository, tag, missing_ok=False):
+def release_for_tag(repository, tag, missing_ok=False, *, release_id=None):
+    if release_id is not None:
+        if type(release_id) is not int or release_id <= 0:
+            raise ValueError('Invalid release identity')
+        target = api(f'repos/{repository}/releases/{release_id}')
+        if not isinstance(target, dict) or target.get('id') != release_id or target.get('tag_name') != tag:
+            raise ValueError('Release identity or tag changed')
+        return target
     # GitHub's tag endpoint does not return every authenticated draft.
     pages = json.loads(gh('api', '--paginate', '--slurp', f'repos/{repository}/releases?per_page=100'))
     matches = [item for page in pages for item in page if item['tag_name'] == tag]
@@ -243,7 +250,9 @@ def upload(args, version):
     if state.get('release_id') is not None and state['release_id'] != target_id:
         raise ValueError('Release changed after the build')
     for name, digest in sorted(checks.items()):
-        release = release_for_tag(args.repository, args.tag)
+        # The release list can lag immediately after draft creation. Re-read the
+        # exact destination returned by GitHub, still checking its tag and state.
+        release = release_for_tag(args.repository, args.tag, release_id=target_id)
         assets = require_draft_target(release, args.tag)
         if release['id'] != target_id or tag_commit(args.repository, args.tag) != args.source_sha:
             raise ValueError('Release or source tag changed after the image build')
@@ -258,7 +267,7 @@ def upload(args, version):
             continue
         subprocess.run(['gh', 'release', 'upload', args.tag, str(bundle / name),
                         '--repo', args.repository], check=True)
-    release = release_for_tag(args.repository, args.tag)
+    release = release_for_tag(args.repository, args.tag, release_id=target_id)
     require_draft_target(release, args.tag)
     attachment_report(args, release, checks)
     print('All release files verified on GitHub. Release remains a draft:', release['html_url'])

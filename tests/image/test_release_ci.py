@@ -51,6 +51,25 @@ def upload_fixture(directory):
 
 
 class ReleaseCiTest(unittest.TestCase):
+    def test_known_release_is_read_by_id_without_relisting_new_draft(self):
+        value = release()
+        with patch.object(ci, 'gh', return_value=json.dumps(value).encode()) as gh:
+            self.assertEqual(value, ci.release_for_tag('test/repo', TAG, release_id=42))
+        gh.assert_called_once_with('api', 'repos/test/repo/releases/42')
+
+    def test_known_release_rejects_changed_identity_or_tag(self):
+        for changed in ({'id': 43}, {'tag_name': 'v2.25.0'}):
+            with self.subTest(changed=changed), patch.object(ci, 'api', return_value=release() | changed):
+                with self.assertRaises(ValueError):
+                    ci.release_for_tag('test/repo', TAG, release_id=42)
+
+    def test_known_release_rejects_invalid_id_before_request(self):
+        for identity in (True, 0, -1, '../42', '42'):
+            with self.subTest(identity=identity), patch.object(ci, 'api') as api:
+                with self.assertRaises(ValueError):
+                    ci.release_for_tag('test/repo', TAG, release_id=identity)
+                api.assert_not_called()
+
     def test_valid_request(self):
         self.assertEqual(VERSION, ci.validate_request(TAG, APP, FPMS))
 
@@ -252,13 +271,19 @@ class ReleaseCiTest(unittest.TestCase):
             def created(*_):
                 target[0] = value
                 return value
+            def lookup(*args, **kwargs):
+                if target[0] is None:
+                    return None
+                if kwargs.get('release_id') != value['id']:
+                    raise ValueError('The new draft is not yet visible in the release list.')
+                return target[0]
             def uploaded(command, **kwargs):
                 self.assertNotIn('--clobber', command)
                 name = Path(command[4]).name
                 value['assets'].append({'name': name, 'state': 'uploaded',
                     'digest': 'sha256:' + checks[name],
                     'size': (args.directory / 'assets' / name).stat().st_size})
-            with patch.object(ci, 'release_for_tag', side_effect=lambda *a, **kw: target[0]), \
+            with patch.object(ci, 'release_for_tag', side_effect=lookup), \
                     patch.object(ci, 'tag_commit', return_value=args.source_sha), \
                     patch.object(ci, 'api_write', side_effect=created) as create, \
                     patch.object(ci.subprocess, 'run', side_effect=uploaded) as write:

@@ -127,7 +127,7 @@ def update_release(path, payload):
 
 
 def verified_target(args, report, checks):
-    target = release.release_for_tag(args.repository, args.tag)
+    target = release.release_for_tag(args.repository, args.tag, release_id=report['release_id'])
     if not target or target.get('id') != report.get('release_id') or target.get('tag_name') != args.tag \
             or type(target.get('draft')) is not bool or target.get('prerelease') is not False:
         raise ValueError('Release destination changed after verified attachment')
