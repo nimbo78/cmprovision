@@ -34,6 +34,7 @@ The two **Automatically check once a day** switches are independent and initiall
 2. Review the required package changes, choose **Review and apply**, confirm your account password and approve the exact prepared version. **Back** leaves the confirmation without installing.
 3. Keep station power connected. The worker continues independently of the browser, PHP-FPM and queue workers. A lost connection shows **Reconnecting**; do not submit another installation.
    Expected maintenance responses are handled within the update status area. When the station returns, the operation result and installed version refresh automatically.
+   When upgrading from 2.27.0, refresh the page once after completion to load this browser fix; do not apply again.
 4. After a successful health check, the station restores its prior service states. Previously masked DHCP/TFTP or USB boot services remain masked.
 
 Checks and downloads can run during provisioning. Critical installation pauses new board starts, conflicting configuration changes and queue processing. The application update requires a consistent snapshot and reinstallable previous packages; insufficient free space or missing recovery material prevents installation. Additional Debian dependency changes are pinned to the reviewed plan and installed from the prepared cache. This is an application recovery mechanism, not a full host-OS downgrade.
