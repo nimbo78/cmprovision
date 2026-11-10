@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -45,6 +46,49 @@ def incoming(root):
 
 
 class ReleasePipelineTest(unittest.TestCase):
+    def test_archive_stamps_selected_lightweight_tag_and_exact_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            source.mkdir()
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(source), *args], stderr=subprocess.DEVNULL).decode().strip()
+            git('init')
+            git('config', 'user.name', 'Release fixture')
+            git('config', 'user.email', 'release@example.test')
+            (source/'config').mkdir()
+            (source/'config/version.php').write_bytes((ROOT/'config/version.php').read_bytes())
+            (source/'.gitattributes').write_text('config/version.php export-subst\n')
+            (source/'debian').mkdir()
+            (source/'debian/changelog').write_text('cmprovision4 (2.25.0) unstable; urgency=medium\n')
+            for name in ('tools/build-deb.sh', 'packaging/fpms/build.sh', 'image/build.sh'):
+                path=source/name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('#!/bin/sh\n')
+            git('add', '.')
+            git('commit', '-m', 'Previous release')
+            git('tag', '-a', 'v2.25.0', '-m', 'Previous annotated release')
+            (source/'debian/changelog').write_text('cmprovision4 (2.26.0) unstable; urgency=medium\n')
+            git('add', '.')
+            git('commit', '-m', 'Selected source')
+            git('tag', TAG)
+            sha=git('rev-parse', 'HEAD')
+            directory=root/'output'
+            directory.mkdir()
+            (directory/'state.json').write_text(json.dumps({'repository':'test/repo','tag':TAG,'source_sha':sha}))
+            args=SimpleNamespace(directory=directory,repository='test/repo',tag=TAG,source_sha=sha,
+                source_directory=source,source_tar=root/'source.tar')
+            pipeline.archive(args, TAG[1:])
+            with tarfile.open(args.source_tar) as archive:
+                self.assertEqual(1, archive.getnames().count('config/version.php'))
+                version=archive.extractfile('config/version.php').read().decode()
+                self.assertIn("'describe' => '"+TAG+"'",version)
+                self.assertIn("'commit' => '"+sha[:7]+"'",version)
+                self.assertEqual((source/'debian/changelog').read_bytes(),archive.extractfile('debian/changelog').read())
+            self.assertEqual(sha,git('rev-parse', 'refs/tags/'+TAG))
+            self.assertEqual('',git('status', '--porcelain'))
+            self.assertEqual(pipeline.release.sha256(args.source_tar),json.loads((directory/'state.json').read_text())['source_archive_sha256'])
+
     @unittest.skipUnless(shutil.which('php'), 'PHP CLI is required for the relocated payload audit')
     def test_payload_audit_supports_container_test_mount_outside_repository(self):
         with tempfile.TemporaryDirectory() as directory:

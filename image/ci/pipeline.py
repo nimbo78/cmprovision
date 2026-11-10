@@ -79,8 +79,15 @@ def archive(args, version):
     for name in ('tools/build-deb.sh', 'packaging/fpms/build.sh', 'image/build.sh'):
         if not (args.source_directory / name).is_file():
             raise ValueError('Selected tag lacks supported release build tools: ' + name)
+    # %(describe) ignores lightweight tags and can select an older annotated
+    # version. Stamp only the generated metadata from the exact verified ref.
+    metadata = ("<?php\n\n// Generated from the verified release tag and source commit.\nreturn [\n"
+                f"    'describe' => '{args.tag}',\n"
+                f"    'commit' => '{git('rev-parse', '--short', args.source_sha)}',\n];\n")
     with args.source_tar.open('xb') as stream:
-        subprocess.run(['git', '-C', str(args.source_directory), 'archive', '--format=tar', args.source_sha],
+        subprocess.run(['git', '-C', str(args.source_directory), 'archive', '--format=tar',
+                        '--add-virtual-file=config/version.php:' + metadata,
+                        args.source_sha, '.', ':(exclude)config/version.php'],
                        stdout=stream, check=True)
     state['source_archive_sha256'] = release.sha256(args.source_tar)
     (args.directory / 'state.json').write_text(json.dumps(state, indent=2) + '\n')
