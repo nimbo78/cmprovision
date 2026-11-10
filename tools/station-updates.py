@@ -17,6 +17,7 @@ from update_store import UpdateStore
 from update_system import LinuxSystem
 from update_transport import ReleaseSource
 from update_worker import Worker
+from update_diagnostics import journal
 
 
 def source():
@@ -80,11 +81,15 @@ def main():
             result = store.snapshot()
         elif len(args) == 2 and args[0] == '--worker' and re.fullmatch('[0-9a-f]{32}', args[1]):
             Worker(store, source(), LinuxSystem(store)).run(args[1])
-            result = store.snapshot()
+            operation = store.operation(args[1])
+            result = {key: operation[key] for key in ('id', 'action', 'state', 'message')}
         else: raise UpdateError('Unexpected update controller arguments.')
         print(json.dumps({'ok': True, 'result': result}))
         return 0
     except Exception as error:
+        # Stdout remains RPC JSON; stderr is a bounded secret-free diagnostic for sudo/systemd.
+        import uuid
+        journal(error, uuid.uuid4().hex, 'controller')
         message = str(error) if isinstance(error, UpdateError) else 'The updater is unavailable. Inspect the updater service journal.'
         print(json.dumps({'ok': False, 'error': message}))
         return 1

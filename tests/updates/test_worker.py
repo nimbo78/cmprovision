@@ -123,6 +123,27 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual('ready', operation['state'], operation.get('message'))
         return self.store.snapshot()['ready'][0]
 
+    def test_unexpected_check_failure_has_safe_correlated_diagnostics(self):
+        with patch.object(self.source, 'check', side_effect=RuntimeError('secret=private-check-value')):
+            result = self.run_operation('check', components=['application'])
+        self.assertEqual('failed', result['state'])
+        self.assertIn('diagnostic', result)
+        self.assertEqual(result['id'], result['diagnostic']['reference'])
+        self.assertEqual('checking', result['diagnostic']['phase'])
+        self.assertNotIn('private-check-value', str(self.store.snapshot()))
+
+    def test_unexpected_install_and_failed_recovery_keep_distinct_diagnostics(self):
+        ready = self.download()
+        with patch.object(self.system, 'install', side_effect=RuntimeError('private install output')):
+            with patch.object(self.system, 'recover', side_effect=RuntimeError('private restore output')):
+                result = self.apply(ready)
+        self.assertEqual('recovery-required', result['state'])
+        self.assertIn('diagnostic', result)
+        import update_diagnostics
+        report = update_diagnostics.read(self.store, result['id'])
+        self.assertEqual('recovery', report['failures'][-1]['phase'])
+        self.assertEqual(2, len(report['failures']))
+
     def apply(self, ready): return self.run_operation('apply', candidate=ready['id'], receipt=ready['receipt'])
 
     def test_download_can_run_while_flashing_but_apply_cannot_interrupt_it(self):

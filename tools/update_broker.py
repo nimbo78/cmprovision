@@ -19,7 +19,7 @@ def decode_request(raw):
     except (ValueError, RecursionError) as error: raise UpdateError('Invalid update request JSON.') from error
     if type(value) is not dict: raise UpdateError('Expected a bounded update request object.')
     if value.get('action') == 'status' and set(value) == {'action'}: return value
-    if value.get('action') == 'cancel':
+    if value.get('action') in ('cancel', 'diagnostics'):
         if set(value) != {'action', 'id'} or not matches(ID_RE, value.get('id')):
             raise UpdateError('Invalid canceled operation identifier.')
         return value
@@ -70,6 +70,9 @@ class Broker:
     def request(self, request):
         action = request['action']
         if action == 'status': return self.store.snapshot()
+        if action == 'diagnostics':
+            from update_diagnostics import read
+            return read(self.store, request['id'])
         if action == 'cancel':
             self.store.cancel(request['id'])
             return self.store.snapshot()

@@ -171,7 +171,7 @@ class UpdateStore:
 
     def _public_operation(self, operation, history=False):
         keys = {'id', 'action', 'component', 'components', 'version', 'state', 'created_at', 'updated_at',
-                'downloaded', 'total', 'message', 'cancel_requested'}
+                'downloaded', 'total', 'message', 'cancel_requested', 'diagnostic', 'recovery_diagnostic'}
         if not history: keys |= {'log'}
         result = {key: copy.deepcopy(value) for key, value in operation.items() if key in keys}
         previous = operation.get('previous', {})

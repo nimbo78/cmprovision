@@ -19,6 +19,9 @@ class BrokerTest(unittest.TestCase):
             with self.subTest(raw=raw[:50]):
                 with self.assertRaises(UpdateError): decode_request(raw)
         self.assertEqual({'action': 'status'}, decode_request(b'{"action":"status"}'))
+        self.assertEqual({'action': 'diagnostics', 'id': 'a'*32}, decode_request(json.dumps({'action': 'diagnostics', 'id': 'a'*32})))
+        for value in ({'action': 'diagnostics', 'id': '../../shadow'}, {'action': 'diagnostics', 'id': 'a'*32, 'path': '/etc/shadow'}):
+            with self.assertRaises(UpdateError): decode_request(json.dumps(value))
 
     def test_reply_loss_cannot_launch_a_second_worker(self):
         store = Mock()

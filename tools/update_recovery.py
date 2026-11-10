@@ -11,7 +11,7 @@ import tempfile
 
 NAMES = ('station-updates.py', 'update_manifest.py', 'update_store.py', 'update_transport.py',
          'update_worker.py', 'update_system.py', 'update_utility.py', 'update_broker.py',
-         'update_recovery.py', 'update_retention.py', 'publisher.json', 'publisher.pub')
+         'update_recovery.py', 'update_retention.py', 'update_diagnostics.py', 'publisher.json', 'publisher.pub')
 TRUST = ('publisher.json', 'publisher.pub')
 
 
