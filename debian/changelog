@@ -1,4 +1,4 @@
-cmprovision4 (2.28.0~dev1) unstable; urgency=medium
+cmprovision4 (2.28.0) unstable; urgency=medium
 
   * Add a dedicated System settings tab for station time, power, displays
     and backup, preserving existing section links.
@@ -7,7 +7,7 @@ cmprovision4 (2.28.0~dev1) unstable; urgency=medium
   * Keep UTC storage and refresh the display zone after system changes,
     including installations with cached Laravel configuration.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Tue, 10 Nov 2026 17:00:00 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Tue, 10 Nov 2026 18:51:12 +0300
 
 cmprovision4 (2.27.1) unstable; urgency=medium
 
