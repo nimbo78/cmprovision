@@ -9,7 +9,7 @@ use RuntimeException;
 class TransferCipher
 {
     private const MAGIC = "CMPROVISION\x01";
-    private const KINDS = ['json' => "\x01", 'archive' => "\x02"];
+    private const KINDS = ['json' => "\x01", 'archive' => "\x02", 'backup' => "\x03"];
     private const CHUNK_BYTES = 1048576;
     private const MANIFEST_BYTES = 16777216;
     private const TEXT_BYTES = 33554432;
@@ -132,7 +132,7 @@ class TransferCipher
         }
     }
 
-    private function encryptStream($input, $output, #[\SensitiveParameter] string $password, string $kind): void
+    public function encryptStream($input, $output, #[\SensitiveParameter] string $password, string $kind): void
     {
         if (!isset(self::KINDS[$kind])) {
             throw new RuntimeException('Unsupported export payload kind.');
@@ -167,7 +167,7 @@ class TransferCipher
         }
     }
 
-    private function decryptStream($input, $output, #[\SensitiveParameter] string $password, int $limit = PHP_INT_MAX): string
+    public function decryptStream($input, $output, #[\SensitiveParameter] string $password, int $limit = PHP_INT_MAX): string
     {
         $header = $this->readExact($input, 53);
         if (substr($header, 0, 12) !== self::MAGIC || !in_array($header[12], self::KINDS, true)) {
