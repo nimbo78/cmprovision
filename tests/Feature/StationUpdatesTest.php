@@ -154,8 +154,20 @@ class StationUpdatesTest extends TestCase
             public function request(array $request): array { return ['schema' => 1, 'pending' => ['id' => str_repeat('a', 32)]]; }
         });
         $this->get('/scriptexecute?serial=test')->assertStatus(503)->assertHeader('Retry-After', '10');
-        $this->post('/livewire/update')->assertStatus(503);
+        $this->post('/livewire/update')->assertStatus(503)
+            ->assertHeader('X-Cmprovision-Maintenance', 'station-update');
         $this->artisan('diagnostics:usb')->expectsOutput('{"action":"error","reason":"Station update maintenance; retry after it finishes."}')->assertExitCode(1);
         $this->actingAs(User::factory()->create())->getJson('/settings/updates/status')->assertOk()->assertJsonPath('schema', 1);
+    }
+
+    public function test_maintenance_handler_is_loaded_once_in_the_authenticated_shell(): void
+    {
+        $this->control();
+        $this->actingAs(User::factory()->create());
+        foreach (['status', 'updates'] as $tab) {
+            $html = $this->get(route('settings', ['tab' => $tab]))->assertOk()->getContent();
+            $this->assertSame(1, substr_count($html, '/js/station-updates.js?v='));
+            $this->assertLessThan(strpos($html, 'data-csrf='), strpos($html, '/js/station-updates.js?v='));
+        }
     }
 }
