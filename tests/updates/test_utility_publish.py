@@ -34,6 +34,12 @@ class UtilityPublishTest(unittest.TestCase):
             def commit(*args):
                 if tag is None: raise ValueError('The Git tag does not exist.')
                 return tag
+            def lookup(*args, **kwargs):
+                # Listing a just-created draft may still return no match.
+                if target is None: return None
+                if kwargs.get('release_id') != target['id']:
+                    raise ValueError('The draft is not yet visible in the release list.')
+                return target
             def run(argv, **kwargs):
                 if argv[1:3] == ['release', 'upload']:
                     path = Path(argv[4])
@@ -44,7 +50,7 @@ class UtilityPublishTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0)
             with patch.object(publisher, 'verify', return_value={}), patch.object(publisher.release, 'api', side_effect=api), \
                  patch.object(publisher.release, 'api_write', side_effect=create), patch.object(publisher.release, 'tag_commit', side_effect=commit), \
-                 patch.object(publisher.release, 'release_for_tag', side_effect=lambda *a, **kw: target), patch.object(publisher.subprocess, 'run', side_effect=run):
+                 patch.object(publisher.release, 'release_for_tag', side_effect=lookup), patch.object(publisher.subprocess, 'run', side_effect=run):
                 publisher.publish(directory, REPOSITORY, 'f'*40, '2026.11.1', directory/'public')
             self.assertTrue(writes[0].endswith('/git/refs'))
             self.assertFalse(target['draft'])

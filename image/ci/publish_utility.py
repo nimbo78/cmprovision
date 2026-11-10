@@ -40,7 +40,7 @@ def publish(directory, repository, source, version, public):
     identity = target['id']
     if release.tag_commit(repository, tag) != source: raise ValueError('Utility OS tag selects a different source.')
     for name, item in checks.items():
-        target = release.release_for_tag(repository, tag)
+        target = release.release_for_tag(repository, tag, release_id=identity)
         if target['id'] != identity or not target['draft']: raise ValueError('Utility OS publication destination changed.')
         existing = release.asset_map(target)
         for previous, asset in existing.items():
@@ -48,13 +48,13 @@ def publish(directory, repository, source, version, public):
                 raise ValueError('Existing Utility OS assets differ; no files were replaced.')
         if name not in existing:
             subprocess.run(['gh', 'release', 'upload', tag, str(directory/name), '--repo', repository], check=True)
-    target = release.release_for_tag(repository, tag)
+    target = release.release_for_tag(repository, tag, release_id=identity)
     release.verify_uploaded(target, {name: item['sha256'] for name, item in checks.items()})
     if target['id'] != identity or not target['draft'] or release.tag_commit(repository, tag) != source:
         raise ValueError('Utility OS release changed before publication.')
     subprocess.run(['gh', 'api', '--method', 'PATCH', f'repos/{repository}/releases/{identity}', '--input', '-'],
         input=json.dumps({'draft': False, 'make_latest': 'false'}).encode(), check=True, stdout=subprocess.DEVNULL)
-    target = release.release_for_tag(repository, tag)
+    target = release.release_for_tag(repository, tag, release_id=identity)
     release.verify_uploaded(target, {name: item['sha256'] for name, item in checks.items()})
     if target['draft']: raise ValueError('Utility OS publication was not confirmed.')
     print('Published verified Utility OS:', tag)
