@@ -28,6 +28,16 @@
                 <button x-show="canCancel()" type="button" class="cmp-btn cmp-btn-secondary" x-on:click="$wire.cancel(operation.id)">Cancel operation</button>
                 <a x-show="!busy() && !reconnecting" href="{{ route('settings', ['tab' => 'updates']) }}" class="text-link hover:underline text-sm">Refresh details</a>
                 <template x-for="(line, index) in (operation?.log || [])" :key="index"><p class="text-xs mono break-words" x-text="line"></p></template>
+                <template x-if="operation?.diagnostic">
+                    <details class="text-sm space-y-2">
+                        <summary class="cursor-pointer">Failure details</summary>
+                        <p>Phase: <span class="mono" x-text="operation.diagnostic.phase"></span> · Error: <span class="mono" x-text="operation.diagnostic.type"></span></p>
+                        <p class="break-all">Reference: <span class="mono" x-text="operation.diagnostic.reference"></span></p>
+                        <template x-if="operation.recovery_diagnostic"><p class="text-neg">Automatic recovery also failed: <span x-text="operation.recovery_diagnostic.type"></span>. Keep this diagnostic reference when requesting help.</p></template>
+                        <a class="cmp-btn cmp-btn-secondary" :href="@js(url('/settings/updates')) + '/' + operation.id + '/diagnostics'">Download diagnostics</a>
+                        <p class="text-xs text-fg-muted">The report contains failure types and code locations. It excludes passwords, response bodies and private command output. Your account password may be requested again.</p>
+                    </details>
+                </template>
             </div>
         </div>
     </x-settings-card>
