@@ -201,6 +201,35 @@ class RestoreTest(unittest.TestCase):
         self.assertLess(calls.index('unpack'), calls.index('database'))
         self.assertLess(calls.index('database'), calls.index('configure'))
 
+    def test_restored_public_display_and_ntp_settings_are_readable_but_secrets_stay_private(self):
+        import subprocess
+        from types import SimpleNamespace
+        from backup_store import BackupStore
+        from backup_restore_system import LinuxRestoreSystem
+        public = ['etc/default/cmprovision-fpms.json', 'etc/default/cmprovision-wallboard.json',
+                  'etc/systemd/timesyncd.conf', 'etc/systemd/timesyncd.conf.d/90-cmprovision.conf']
+        private = ['etc/NetworkManager/system-connections/stand.nmconnection', 'etc/ssh/ssh_host_ed25519_key']
+        stage = self.root/'stage'
+        for name in public + private:
+            path = stage/'system'/name; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'fixture'); path.chmod(0o777)
+        store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid())
+        job, _ = store.begin('e'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        store.mark_pending(job['id'], {})
+        class Effects(LinuxRestoreSystem):
+            def stage_restore(inner, archive, plan, directory): return stage
+            def _application(inner, stage, archive): pass
+            def restore_accounts(inner, rows): pass
+            def www(inner, *args): return {'ok': True}
+            def _restore_utility(inner, archive, plan, stage): pass
+        system = Effects(store, root=self.root, runner=lambda argv, **options: subprocess.CompletedProcess(argv, 0, stdout='', stderr=''))
+        plan = {'install': [], 'system': public + private, 'remove': [], 'accounts': [], 'groups': []}
+        system.apply_restore(SimpleNamespace(manifest={'options': {'images': False, 'packages': False}}), plan, stage)
+        for name in public:
+            self.assertEqual(0o644, (self.root/name).stat().st_mode & 0o777, name)
+        for name in private:
+            self.assertEqual(0o600, (self.root/name).stat().st_mode & 0o777, name)
+
     def test_recovery_repairs_only_its_interrupted_station_packages(self):
         import subprocess
         from types import SimpleNamespace

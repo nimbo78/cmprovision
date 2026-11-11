@@ -9,6 +9,8 @@ cmprovision4 (2.29.0) unstable; urgency=medium
     including portable fpms-lite packages.
   * Preserve diagnostics for controlled release-check failures while checking
     the remaining independent component.
+  * Restore readable public display/NTP settings while keeping network and
+    SSH credentials private.
 
  -- nimbo78 <igor.sin.78@gmail.com>  Wed, 11 Nov 2026 12:58:00 +0300
 

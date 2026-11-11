@@ -223,6 +223,9 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             if name in ('etc/localtime', 'etc/timezone'): continue
             with safe_open(stage, 'system/'+name) as source:
                 mode = 0o440 if name.startswith('etc/sudoers') else 0o600
+                if name in ('etc/default/cmprovision-fpms.json', 'etc/default/cmprovision-wallboard.json',
+                            'etc/systemd/timesyncd.conf') or name.startswith('etc/systemd/timesyncd.conf.d/'):
+                    mode = 0o644 # Web/display publishers and the unprivileged time service read these public settings.
                 target = name
                 if name == 'etc/default/locale' and (self.root/name).is_symlink():
                     if os.readlink(self.root/name) not in ('../locale.conf', '/etc/locale.conf'): raise UpdateError('The destination locale alias is unsafe.')

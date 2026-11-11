@@ -51,6 +51,8 @@ def run():
     store = BackupStore(); system = LinuxRestoreSystem(store)
     store.configure_password('disposable full archive master password')
     original_id = store.configuration()['station_id']
+    display = Path('/etc/default/cmprovision-fpms.json')
+    display.write_text('{"enabled":true,"open_on_start":true}\n'); display.chmod(0o644)
     job, _ = store.begin(uuid.uuid4().hex*2, 'download', {'images': False, 'packages': False})
     Worker(store, system).run(job['id'])
     result = store.operation(job['id'])
@@ -93,6 +95,7 @@ def run():
     assert store.configuration()['schedule']['enabled'] is False and store.configuration()['pending'] is None
     assert command('runuser', '-u', 'www-data', '--', 'sqlite3', '/var/lib/cmprovision/database/database.sqlite', 'PRAGMA quick_check;') == 'ok'
     assert command('sshd', '-t') == ''
+    assert json.loads(command('runuser', '-u', 'www-data', '--', 'cat', str(display))) == {'enabled': True, 'open_on_start': True}
     for name in ('cmprovision-dnsmasq', 'cmprovision-rpiboot'):
         assert subprocess.run(['systemctl', 'is-enabled', name], capture_output=True, text=True).stdout.strip() == 'masked'
     assert system.platform.package('cmprovision4') != candidate_version
