@@ -24,6 +24,11 @@
             <summary class="cursor-pointer text-sm font-semibold">Device facts and kernel output</summary>
             <div class="cmp-card-scroll mt-2">
                 <table class="cmp-table text-sm">
+                    <tr><th colspan="2" class="text-left">Hardware identity</th></tr>
+                    @php($hardwareFacts = \App\Support\ModuleHardware::fromFacts($facts))
+                    @foreach (['model' => 'Model', 'revision' => 'PCB revision', 'ram' => 'RAM', 'emmc' => 'eMMC', 'wifi' => 'Built-in Wi-Fi', 'sku' => 'Inferred SKU'] as $key => $label)
+                        <tr><td class="text-fg-muted">{{ $label }}</td><td class="break-words">{{ $hardwareFacts[$key] }}</td></tr>
+                    @endforeach
                     @foreach ([
                         'Storage' => ['target' => 'Storage path', 'block' => 'Block device', 'controller' => 'MMC controller', 'host' => 'MMC host',
                             'sectors' => 'Size (512-byte sectors)', 'card_type' => 'Card type', 'card_name' => 'Card name', 'manfid' => 'Manufacturer ID',
@@ -34,7 +39,9 @@
                         'Ethernet · eth0' => ['ethernet' => 'Interface', 'eth_carrier' => 'Carrier (1 = up)', 'eth_operstate' => 'Operational state',
                             'eth_speed_mbps' => 'Speed (Mbps)', 'eth_duplex' => 'Duplex', 'eth_rx_errors' => 'RX errors', 'eth_tx_errors' => 'TX errors',
                             'eth_rx_dropped' => 'RX dropped', 'eth_tx_dropped' => 'TX dropped'],
-                        'Boot & system' => ['kernel' => 'Kernel', 'architecture' => 'Architecture', 'model' => 'Model', 'utility_os' => 'Utility OS',
+                        'Boot & system' => ['kernel' => 'Kernel', 'architecture' => 'Architecture', 'model' => 'Model',
+                            'revision_code' => 'Raw revision code', 'board_revision_ext' => 'Raw extended attributes',
+                            'emmc' => 'MMC inventory', 'emmc_sectors' => 'Detected MMC size (512-byte sectors)', 'utility_os' => 'Utility OS',
                             'bootloader_version' => 'Running bootloader Git version', 'uptime_seconds' => 'Uptime (seconds)',
                             'boot_id' => 'Boot ID', 'event_id' => 'Snapshot ID', 'mac' => 'Ethernet MAC', 'network_stage' => 'Last network boot stage',
                             'last_http_code' => 'Last script HTTP status', 'last_curl_exit' => 'Last script curl exit'],

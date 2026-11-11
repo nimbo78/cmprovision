@@ -483,7 +483,19 @@ def ports(c, x, y, width, height, switches, modules, tick):
                (tick % len(switches) + 1, len(switches), page_no + 1, len(pages)), 'dim', width - 4)
 
 
-def detail(c, x, y, width, module, now):
+def hardware_lines(module):
+    """Display the server's interpretation, including unknowns; never infer a SKU in a renderer."""
+    hw = module.get('hardware')
+    if not isinstance(hw, dict) or not hw:
+        return []
+    value = lambda key: safe(hw.get(key)) or 'Unknown'
+    model = value('model').removeprefix('Raspberry Pi ')
+    return [model + ' / Rev ' + value('revision'),
+            'RAM ' + value('ram') + ' / eMMC ' + value('emmc'),
+            'Wi-Fi ' + value('wifi'), 'SKU ' + value('sku')]
+
+
+def detail(c, x, y, width, module, now, height=15):
     if module is None:
         c.wrap(x, y, 'Waiting for a connected module. Plug Ethernet into the provisioning switch.', width, 4, 'dim')
         return
@@ -494,6 +506,20 @@ def detail(c, x, y, width, module, now):
         c.marquee(x, y + 2, module['port'], width, 'dim')
         c.text(x, y + 4, 'OUR SENSOR', 'accent', width)
         c.wrap(x, y + 6, module.get('detail') or 'Verified sensor', width, 3, 'fg')
+        return
+    hardware = hardware_lines(module)
+    if hardware and height < 15:
+        # Short card / narrow terminal: keep state and all hardware inside the available rows.
+        c.marquee(x, y, module['name'], width, 'accent')
+        c.text(x, y + 1, identity(module), 'dim', width)
+        c.marquee(x, y + 2, module['port'], width, 'dim')
+        c.text(x, y + 3, phase(module), ink, width)
+        result = module.get('detail') if module.get('state') in ('fail', 'stale') else progress_text(module)
+        c.marquee(x, y + 4, result or 'CYCLE ' + duration(module.get('cycle')), width, ink)
+        for offset, line in enumerate(hardware):
+            c.marquee(x, y + 5 + offset, line, width, 'fg')
+        if height > 10 and module.get('advice'):
+            c.wrap(x, y + 10, 'NEXT: ' + module['advice'], width, height - 10, 'warn')
         return
     c.marquee(x, y, module['name'], width, 'accent')
     c.text(x, y + 1, identity(module), 'dim', width)
@@ -511,7 +537,9 @@ def detail(c, x, y, width, module, now):
     diag = module.get('diagnostics')
     c.text(x, y + 9, ('DIAG: ' + diag['source'] + ' / ' + age(diag['received_at'], now)) if diag else 'DIAG: no snapshot', 'dim', width)
     if module.get('detail'):
-        c.wrap(x, y + 10, module['detail'], width, 2, ink)
+        c.wrap(x, y + 10, module['detail'], width, 1 if module.get('hardware') else 2, ink)
+    for offset, line in enumerate(hardware):
+        c.marquee(x, y + 11 + offset, line, width, 'fg')
 
 
 def desk(c, data, module, now, tick):
@@ -528,7 +556,7 @@ def desk(c, data, module, now, tick):
     else:
         ports(c, 0, y, width, height, data.get('switches', []), data.get('modules', []), tick)
         c.box(width + 2, y, c.cols - width - 2, height, 'DEVICE CARD')
-        detail(c, width + 4, y + 1, c.cols - width - 6, module, now)
+        detail(c, width + 4, y + 1, c.cols - width - 6, module, now, height=height - 2)
         table_y = y + height + 1
     table(c, table_y, data.get('modules', []) + data.get('recognized', []), tick, data.get('unknown', []))
 
@@ -603,10 +631,23 @@ def engineer(c, data, module, now, tick):
     if module.get('state') == 'recognized':
         detail(c, 0, y, c.cols, module, now)
         return
+    hardware = hardware_lines(module)
+    if hardware and c.cols < 80:
+        detail(c, 0, y, c.cols, module, now, height=min(14, c.rows - y - 5))
+        return
     ink = INK.get(module['state'], 'dim')
     c.text(0, y, module['port'] + ' / ' + module['name'], 'accent')
-    for i, line in enumerate(CHIP):
-        c.text(0, y + 2 + i, line, 'board')
+    if hardware:
+        # Reuse the illustration column so hardware never pushes error evidence or NEXT below the footer.
+        hw = module['hardware']
+        c.text(0, y + 2, '[ HARDWARE ]', 'board', 33)
+        for offset, (key, label) in enumerate((('model', 'Model'), ('revision', 'Rev'), ('ram', 'RAM'),
+                                               ('emmc', 'eMMC'), ('wifi', 'Wi-Fi'), ('sku', 'SKU'))):
+            value = (safe(hw.get(key)) or 'Unknown').removeprefix('Raspberry Pi ')
+            c.marquee(0, y + 4 + offset, label + ' ' + value, 33, 'fg')
+    else:
+        for i, line in enumerate(CHIP):
+            c.text(0, y + 2 + i, line, 'board')
     x = 35 if c.cols >= 80 else 0
     dy = y + 2 if x else y + 15
     word = {'fail': 'FAIL', 'stale': 'WAIT', 'ok': 'DONE'}.get(module['state'],

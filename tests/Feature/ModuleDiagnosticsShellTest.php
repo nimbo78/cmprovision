@@ -88,6 +88,38 @@ class ModuleDiagnosticsShellTest extends TestCase
         $this->assertSame('mmc_busy', ModuleDiagnostics::summary($report)['issues'][0]['code']);
     }
 
+    public function test_hardware_attributes_are_read_as_big_endian_hex_and_emmc_inventory_is_independent_of_target(): void
+    {
+        mkdir($this->dir.'/proc/device-tree/system', 0755, true);
+        file_put_contents($this->dir.'/proc/device-tree/system/linux,revision', hex2bin('00c03141'));
+        file_put_contents($this->dir.'/proc/device-tree/chosen/rpi-boardrev-ext', hex2bin('00000000'));
+        file_put_contents($this->dir.'/sys/class/block/mmcblk0/device/type', 'MMC');
+        $this->execute('DIAG_TARGET=/dev/nvme0n1; cmp_diag_report startup');
+        $report = ModuleDiagnostics::parse(file_get_contents($this->dir.'/uploaded.txt'));
+        $this->assertSame('00c03141', $report['facts']['revision_code']);
+        $this->assertSame('00000000', $report['facts']['board_revision_ext']);
+        $this->assertSame('61071360', $report['facts']['emmc_sectors']);
+        $this->assertSame('detected', $report['facts']['emmc']);
+    }
+
+    public function test_short_binary_attributes_and_an_sd_card_do_not_invent_emmc_or_zero_flags(): void
+    {
+        file_put_contents($this->dir.'/proc/device-tree/chosen/rpi-boardrev-ext', "\0\0");
+        file_put_contents($this->dir.'/sys/class/block/mmcblk0/device/type', 'SD');
+        $this->execute('cmp_diag_report startup');
+        $text = file_get_contents($this->dir.'/uploaded.txt');
+        $this->assertStringContainsString("board_revision_ext=\n", $text);
+        $this->assertStringContainsString("emmc=not_detected\n", $text);
+        $this->assertStringContainsString("emmc_sectors=\n", $text);
+    }
+
+    public function test_cpuinfo_is_the_fallback_when_device_tree_revision_is_absent(): void
+    {
+        file_put_contents($this->dir.'/proc/cpuinfo', "Revision\t: b03140\n");
+        $this->execute('cmp_diag_report startup');
+        $this->assertStringContainsString("revision_code=b03140\n", file_get_contents($this->dir.'/uploaded.txt'));
+    }
+
     public function test_an_empty_or_unreadable_dmesg_does_not_suppress_the_snapshot_under_pipefail()
     {
         $this->binary('dmesg', 'exit 1');

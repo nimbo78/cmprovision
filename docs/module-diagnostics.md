@@ -29,6 +29,52 @@ settings, run a RAM test, or stress the CPU/network. It reads selected sysfs/pro
 values, firmware flags and kernel messages. The firmware query and upload are
 bounded; a failed diagnostic upload does not stop provisioning.
 
+## Module identity
+
+The module card in the web UI and the device details on HDMI and FPMS (Classic and
+New) share six fields: **Model**, **PCB revision**, **RAM**, **eMMC**, **Built-in
+Wi-Fi** and **Inferred SKU**. FPMS details scroll with the joystick; status and
+failure advice remain ahead of the hardware facts. USB-only observations expose
+the same summary in their diagnostic details and local-display cards.
+
+FPMS uses a compact five-line block, with the existing Silkscreen details font
+in New and the existing Classic font in Classic:
+
+```text
+CM4 rev 1.1
+~CM4104032
+RAM: 4 GB
+eMMC: 32 GB
+Wi-Fi: yes
+```
+
+`~` means the SKU is inferred. The display keeps `Lite`, `missing` (fitted but
+not detected) and `unknown` distinct; `yes`/`no` describes fitted Wi-Fi hardware,
+not the current connection. RAM uses the catalogue-style GB label on this small
+display; the web details retain GiB.
+
+CM4 identity uses the revision code and extended device-tree attributes, rather
+than guessing from the presence of a Linux Wi-Fi interface or a storage device.
+**Not fitted (Lite)** differs from **Fitted; not detected**. The eMMC inventory is
+independent of the project's write target, so an SD or NVMe target is not treated
+as the module's eMMC. Unsupported or missing evidence displays **Unknown**.
+
+For standard CM4 configurations, complete compatible evidence produces an
+explicitly **inferred** catalogue number, for example `CM4104032`: built-in
+wireless, 4 GiB RAM and nominal 32 GB eMMC. This is not a factory-label read or
+proof of authenticity. Reduced-capacity modes such as pSLC can make the original
+storage variant ambiguous. No SKU is inferred if required evidence is missing,
+contradictory or the observed capacity does not match a standard size.
+
+Older records retain their known model and RAM. New attributes arrive after the
+module fetches an updated provisioning script and sends its diagnostic snapshot;
+upgrading the server does not retroactively identify disconnected modules.
+USB discovery before an Ethernet script runs requires a Utility OS build that
+includes the updated collector.
+
+The decoding follows the [official revision-code and OTP reference](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html)
+and the [CM4 catalogue](https://pip-assets.raspberrypi.com/categories/634-raspberry-pi-compute-module-4/documents/RP-008168-DS/cm4-datasheet).
+
 ## Findings and next checks
 
 | Finding | Meaning and next checks |

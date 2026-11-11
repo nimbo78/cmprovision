@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..71be078
+index 0000000..1fc12f4
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,416 @@
+@@ -0,0 +1,435 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10066,6 +10066,25 @@ index 0000000..71be078
 +SNAPSHOT = Path("/run/cmprovision-wallboard-data/snapshot.json")
 +HEARTBEAT = Path("/run/fpms/cmprovision.json")
 +LIMIT = 2097152
++
++
++def hardware_lines(row):
++    """Five compact lines; ~ marks the server's inferred SKU, not a label read."""
++    hardware = row.get("hardware")
++    if not isinstance(hardware, dict) or not hardware:
++        return []
++    value = lambda key: text(hardware.get(key)) or "Unknown"
++    model = value("model").replace("Raspberry Pi Compute Module ", "CM").removeprefix("Raspberry Pi ")
++    sku = value("sku")
++    sku = "SKU: unknown" if sku == "Unknown" else "~" + sku.removesuffix(" (inferred)")
++    ram = value("ram").replace("GiB", "GB").replace("Unknown", "unknown")
++    emmc = value("emmc")
++    emmc = {"Not fitted (Lite)": "Lite", "Fitted; not detected": "missing", "Fitted; capacity unknown": "size unknown",
++            "Conflict: Lite / eMMC detected": "conflict", "Unknown": "unknown"}.get(emmc, emmc.removesuffix(" (detected)"))
++    wifi = {"Built-in": "yes", "Not fitted": "no"}.get(value("wifi"), "unknown")
++    return [model + " rev " + value("revision"), sku, "RAM: " + ram, "eMMC: " + emmc, "Wi-Fi: " + wifi]
++
++
 +# cmprovision resources/css/app.css, Warm / Dark; alpha text composited on black.
 +COLORS = {
 +    "bg": "#000000",
@@ -10462,10 +10481,10 @@ index 0000000..71be078
 +                COLORS.update(old)
 diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
 new file mode 100644
-index 0000000..2d70173
+index 0000000..6e332de
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_classic.py
-@@ -0,0 +1,361 @@
+@@ -0,0 +1,362 @@
 +"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
 +the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
@@ -10475,7 +10494,7 @@ index 0000000..2d70173
 +
 +from . import cmprovision_fonts as fonts
 +from .cmprovision import (BLOCK_GAP, COLORS, CUBE, GAP, MAP_COLUMNS, MAP_TOP, PAGES, number, objects, rate, remaining,
-+                          slow, text)
++                          slow, text, hardware_lines)
 +
 +DARK = dict(COLORS)
 +LIGHT = {
@@ -10692,6 +10711,7 @@ index 0000000..2d70173
 +                ]
 +                for issue in issues:
 +                    lines += [issue.get("title"), issue.get("advice")]
++                lines += hardware_lines(row)
 +                wrapped = [line for value in filter(None, map(text, lines)) for line in wrap(value)]
 +                panel.scroll = min(panel.scroll, max(0, len(wrapped) - 5))
 +                for i, line in enumerate(wrapped[panel.scroll : panel.scroll + 5]):
@@ -10829,7 +10849,7 @@ index 0000000..2d70173
 +    return f"Link {value / 1000:g}G" if value >= 1000 else f"Link {int(value)}M"
 diff --git a/fpms/integrations/cmprovision_fonts.py b/fpms/integrations/cmprovision_fonts.py
 new file mode 100644
-index 0000000..6cec5a4
+index 0000000..fc7899e
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_fonts.py
 @@ -0,0 +1,246 @@
@@ -10850,7 +10870,7 @@ index 0000000..6cec5a4
 +
 +FONT_DIR = Path(__file__).resolve().parent.parent / "fonts" / "cmprovision"
 +# Silkscreen's brackets and bars reach above its capitals: its lines are measured by what the panel writes with it
-+TEXT = string.ascii_letters + string.digits + ":-/.()%>"
++TEXT = string.ascii_letters + string.digits + ":-/.()%>~"
 +ROLES = {
 +    "title": ("helvB10.bdf", None),      # page titles, the port in lists and cards
 +    "body": ("helvB08.bdf", None),       # lists, lines, tags
@@ -11206,10 +11226,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..b1028a6
+index 0000000..bf5badd
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,999 @@
+@@ -0,0 +1,1001 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11946,7 +11966,7 @@ index 0000000..b1028a6
 +
 +def module_lines(row, body, code, error):
 +    """The scrolling part of a module card: (colour, font, text) per line."""
-+    from .cmprovision import objects, text
++    from .cmprovision import hardware_lines, objects, text
 +
 +    lines = []
 +
@@ -11976,6 +11996,8 @@ index 0000000..b1028a6
 +            if text(issue.get("title")) != text(diag.get("title")):
 +                para("fg", error, text(issue.get("title")))
 +            para("muted", error, text(issue.get("advice")))
++    for line in hardware_lines(row):
++        para("muted", error, line)
 +    para("muted", error, text(row.get("mac")))              # the details of the card in Silkscreen, as the spec has them
 +    para("muted", error, "S/N " + text(row.get("serial")) if row.get("serial") else "")
 +    para("muted", error, text(row.get("port")))
@@ -13399,10 +13421,10 @@ index 0000000..b458119
 +    assert not fonts.off_centre(centred)
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..d862537
+index 0000000..d1d97f6
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1361 @@
+@@ -0,0 +1,1411 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -14030,6 +14052,56 @@ index 0000000..d862537
 +    p = card_of(panel_with(tmp_path, snap), 2, 0)
 +    _, ink, _ = drawn(p)
 +    assert "No recognized warnings" not in strings(ink)
++
++
++@pytest.mark.parametrize("theme", ["new", "classic"])
++@pytest.mark.parametrize("mode", ["light", "dark"])
++def test_hardware_identity_is_readable_by_scrolling_in_both_card_looks(tmp_path, theme, mode):
++    snap = demo_snapshot()
++    snap["panel"] = {"theme": theme, "ports_map": "pages", "color_mode": mode}
++    snap["modules"][0]["hardware"] = dict(model="Raspberry Pi Compute Module 4", revision="1.1", ram="4 GiB",
++                                          emmc="32 GB (detected)", wifi="Built-in", sku="CM4104032 (inferred)")
++    p = card_of(panel_with(tmp_path, snap), 2, 0)
++    seen = []
++    for _ in range(40):
++        _, ink, _ = drawn(p)
++        seen.extend(strings(ink))
++        assert fonts.overlaps(ink) == []
++        p.key("DOWN")
++    text = " ".join(seen)
++    for expected in ("CM4 rev 1.1", "~CM4104032", "RAM: 4 GB", "eMMC: 32 GB", "Wi-Fi: yes"):
++        assert expected in text
++
++
++def test_hardware_is_five_short_lines_in_the_cards_existing_details_font(tmp_path):
++    from fpms.integrations.cmprovision import hardware_lines
++    from fpms.integrations.cmprovision_new import module_lines
++    row = demo_snapshot()["modules"][0]
++    row["hardware"] = dict(model="Raspberry Pi Compute Module 4", revision="1.1", ram="4 GiB",
++                           emmc="32 GB (detected)", wifi="Built-in", sku="CM4104032 (inferred)")
++    expected = ["CM4 rev 1.1", "~CM4104032", "RAM: 4 GB", "eMMC: 32 GB", "Wi-Fi: yes"]
++    assert hardware_lines(row) == expected
++    error = fonts.font("error")
++    lines = module_lines(row, fonts.font("body"), fonts.font("code"), error)
++    for value in expected:
++        assert any(f is error and line == value for _, f, line in lines)
++        assert error.width(value) <= 120
++    snap = demo_snapshot()
++    snap["modules"][0] = row
++    p = card_of(panel_with(tmp_path, snap), 2, 0)
++    _, ink, _ = drawn(p)
++    assert set(expected) <= set(strings(ink)), "all hardware fits before scrolling on New"
++
++
++@pytest.mark.parametrize("emmc, expected", [("Not fitted (Lite)", "Lite"), ("Fitted; not detected", "missing"),
++                                          ("Fitted; capacity unknown", "size unknown"),
++                                          ("Conflict: Lite / eMMC detected", "conflict"), ("Unknown", "unknown")])
++def test_short_hardware_labels_keep_lite_missing_and_unknown_distinct(emmc, expected):
++    from fpms.integrations.cmprovision import hardware_lines
++    lines = hardware_lines({"hardware": dict(emmc=emmc)})
++    assert "eMMC: " + expected in lines
++    assert "Wi-Fi: unknown" in lines
++    assert "SKU: unknown" in lines
 +
 +
 +def test_a_usb_observation_card(tmp_path):

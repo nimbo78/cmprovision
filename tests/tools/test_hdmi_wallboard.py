@@ -234,6 +234,40 @@ class ScalingTest(unittest.TestCase):
 
 
 class RenderingTest(unittest.TestCase):
+    def test_device_cards_share_the_hardware_identity_without_decoding_it_again(self):
+        data = snapshot()
+        data['modules'][0]['hardware'] = dict(model='Raspberry Pi Compute Module 4', revision='1.1',
+                                            ram='4 GiB', emmc='32 GB (detected)', wifi='Built-in', sku='CM4104032 (inferred)')
+        for view in ('desk', 'engineer'):
+            rendered = w.frame(data, 160, 45, view=view, now=1001).plain()
+            for expected in ('Compute Module 4', 'Rev 1.1', '4 GiB', '32 GB', 'Wi-Fi Built-in', 'CM4104032', 'inferred'):
+                self.assertIn(expected, rendered, view)
+
+    def test_hardware_does_not_overwrite_status_in_a_narrow_engineer_view_or_escape_a_short_card(self):
+        data = snapshot()
+        data['modules'][0]['hardware'] = dict(model='Compute Module 4', revision='1.1', ram='4 GiB',
+                                            emmc='32 GB', wifi='Built-in', sku='CM4104032 (inferred)')
+        for cols, rows in ((60, 24), (79, 38), (112, 27), (112, 30), (112, 33)):
+            view = 'engineer' if cols < 80 else 'desk'
+            lines = w.frame(data, cols, rows, view=view, now=1001).plain().splitlines()
+            text = '\n'.join(lines)
+            self.assertIn('WRITE', text)
+            self.assertIn('CM4104032', text)
+            self.assertIn('1000000000000001', text)
+            if view == 'desk':
+                border = max(n for n, line in enumerate(lines) if line.count('+') >= 4)
+                sku = next(n for n, line in enumerate(lines) if 'CM4104032' in line)
+                self.assertLess(sku, border, (cols, rows))
+
+    def test_full_hd_hardware_keeps_failure_evidence_and_next_action_visible(self):
+        data = snapshot()
+        data['modules'][0].update(state='fail', phase='failed', detail='MMC timeout', advice='Check power and module seating',
+                                  hardware=dict(model='Compute Module 4', revision='1.0', ram='4 GiB',
+                                                emmc='Fitted; not detected', wifi='Built-in', sku='Unknown'))
+        rendered = w.frame(data, 137, 38, view='engineer', now=1001).plain()
+        for expected in ('EVIDENCE: MMC timeout', 'NEXT: Check power and module seating', 'Fitted; not detected'):
+            self.assertIn(expected, rendered)
+
     def test_web_css_is_the_palette_source_and_alpha_text_is_composited(self):
         path = Path(__file__).resolve().parents[2] / 'resources/css/app.css'
         expected = {'warm': ((255, 138, 61), (0, 0, 0)), 'warm-light': ((226, 104, 28), (255, 255, 255)),
