@@ -17,6 +17,8 @@ use App\Http\Controllers\BackupDownloadController;
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
     ->get('/settings/backups/status', [\App\Http\Controllers\StationBackupsController::class, 'status'])->name('settings.backups.status');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])
+    ->get('/settings/backups/confirm', fn () => redirect()->route('settings', ['tab' => 'system', '#backup']))->name('settings.backups.confirm');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])
     ->get('/settings/backups/{id}/download', [\App\Http\Controllers\StationBackupsController::class, 'download'])
     ->where('id', '[0-9a-f]{32}')->name('settings.backups.download');
 

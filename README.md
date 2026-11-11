@@ -170,6 +170,7 @@ The [upgrade and restore guide](docs/upgrading.md) covers snapshots, rollback, P
 | Read the module's LEDs | [LED signals](docs/leds.md) |
 | Restrict access to the stand | [Network access](docs/operations.md#network-access) |
 | Back up or roll back a server | [Upgrade and restore](docs/upgrading.md) |
+| Download or schedule an encrypted station copy | [Full station backups](docs/backups.md) |
 | Automate projects, images and scripts | [HTTP API](docs/api.md) |
 | Architecture diagrams and workflows | [LikeC4 Architecture](likec4/README.md) |
 

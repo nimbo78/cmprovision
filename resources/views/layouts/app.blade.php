@@ -27,6 +27,10 @@
             @livewire('navigation-menu')
 
             <main>
+                <div x-data="{ visible: false }" x-on:cmprovision-backup-maintenance.document="visible = true" x-show="visible" x-cloak class="cmp-flash m-4" role="status">
+                    A station backup is running. Changes are temporarily paused.
+                    <a href="{{ route('settings', ['tab' => 'system', '#backup']) }}" class="text-link">View progress or cancel</a>
+                </div>
                 {{ $slot }}
             </main>
         </div>

@@ -27,13 +27,15 @@ class RestoreTest(unittest.TestCase):
         self.account = {'name': 'operator', 'uid': 1000, 'gid': 1000, 'primary_group': 'operator', 'groups': ['sudo'],
             'home': '/home/operator', 'shell': '/bin/bash', 'gecos': 'Operator', 'password_hash': '$y$fixture',
             'aging': ['20000', '0', '99999', '7', '', '', ''], 'authorized_keys': ''}
+        self.time_settings = {'timezone': 'UTC', 'enabled': 'enabled', 'active': 'active'}
 
     def archive(self):
         entries = [Entry('application/.env', data=b'APP_KEY=fixture'), Entry('application/database.sqlite', data=b'database fixture'),
             Entry('application/etc/dnsmasq.conf', data=b'fixture'), Entry('software/cmprovision4_2.28.0_all.deb', data=b'package fixture'),
             Entry('system/accounts.json', data=canonical_bytes([self.account])),
-            Entry('system/backup-config.json', data=b'{"schema":1,"profiles":{},"schedule":{"enabled":false}}'),
-            Entry('system/service-state.json', data=b'{}'), Entry('system/time.json', data=b'{"timezone":"UTC","enabled":"enabled","active":"active"}'),
+            Entry('system/backup-config.json', data=canonical_bytes({'schema': 1, 'profiles': {}, 'schedule': {'enabled': False,
+                'frequency': 'daily', 'time': '03:00', 'weekday': 0, 'profile': None, 'keep': 7, 'images': False, 'packages': False}})),
+            Entry('system/service-state.json', data=b'{}'), Entry('system/time.json', data=canonical_bytes(self.time_settings)),
             Entry('system/etc/hostname', data=b'source-station'), Entry('system/etc/ssh/sshd_config', data=b'PasswordAuthentication yes'),
             Entry('system/etc/default/cmprovision-stand-interface', data=b'eth0'),
             Entry('system/etc/NetworkManager/system-connections/stand.nmconnection',
@@ -88,7 +90,7 @@ class RestoreTest(unittest.TestCase):
         store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid())
         calls = []
         class Effects:
-            def restore_context(inner): return self.context
+            def restore_context(inner, recovery=False): return self.context
             def freeze_restore(inner, job): calls.append('freeze'); store.mark_pending(job['id'], {})
             def recovery_snapshot(inner, archive, job, password): calls.append('recovery'); raise UpdateError('No recovery space.')
             def release_restore(inner, job): calls.append('release'); store.clear_pending(job['id'])
@@ -134,6 +136,92 @@ class RestoreTest(unittest.TestCase):
         self.assertFalse((old/'old-secret').exists())
         self.assertEqual(b'new', (old/'restored').read_bytes())
         self.assertTrue(any(argv[:4] == ['/usr/sbin/runuser', '-u', 'www-data', '--'] and '/usr/bin/sqlite3' in argv for argv in calls))
+
+    def test_recovery_can_inspect_without_bootstrapping_a_broken_application(self):
+        import subprocess
+        from unittest.mock import patch
+        from backup_store import BackupStore
+        module = importlib.import_module('backup_restore_system')
+        store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid())
+        (self.root/'etc').mkdir(); (self.root/'etc/os-release').write_text('ID=debian\nVERSION_ID="13"\n')
+        (self.root/'etc/passwd').write_text('root:x:0:0:root:/root:/bin/bash\n'); (self.root/'etc/group').write_text('root:x:0:\n')
+        def run(argv, **options):
+            text = '[]' if 'link' in argv else '8.4.27' if argv[0].endswith('/php') else 'amd64' if '--print-architecture' in argv else 'installed\t2.29.0~dev1'
+            return subprocess.CompletedProcess(argv, 0, stdout=text, stderr='')
+        system = module.LinuxRestoreSystem(store, root=self.root, runner=run)
+        with patch.object(system, 'context', side_effect=UpdateError('Application cannot boot.')):
+            with self.assertRaises(UpdateError): system.restore_context()
+            context = system.restore_context(recovery=True)
+        self.assertEqual('0', context['cmprovision'])
+        self.assertEqual('13', context['os']['version'])
+        self.assertIsNone(context['utility_selector'])
+
+    def test_saved_schedule_runtime_boundary_does_not_break_repeated_backup_restore(self):
+        from backup_store import BackupStore
+        store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid(), clock=lambda: 100)
+        store.save_schedule({'enabled': False, 'frequency': 'daily', 'time': '03:00', 'weekday': 0,
+            'profile': None, 'keep': 7, 'images': False, 'packages': False})
+        restored = self.module.restore_backup_configuration(store.export_configuration(), now=200)
+        self.assertFalse(restored['schedule']['enabled'])
+        self.assertEqual(200, restored['schedule']['not_before'])
+
+    def test_absent_source_ntp_provider_preserves_destination_ntp_configuration(self):
+        self.time_settings = {'timezone': 'UTC', 'enabled': 'not-found', 'active': 'inactive'}
+        self.metadata['absent'] = ['etc/systemd/timesyncd.conf']
+        with inspect_archive(self.archive(), 'a sufficiently long password', self.root) as archive:
+            plan = self.module.plan_restore(archive, self.context)
+        self.assertFalse(plan['time']['restore_ntp'])
+        self.assertNotIn('etc/systemd/timesyncd.conf', plan['remove'])
+
+    def test_matching_snapshot_database_is_in_place_before_package_configuration(self):
+        import subprocess
+        from backup_store import BackupStore
+        module = importlib.import_module('backup_restore_system')
+        store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid())
+        job, _ = store.begin('c'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        store.mark_pending(job['id'], {'nginx.service': {'active': True, 'enabled': 'enabled'}})
+        calls = []
+        def runner(argv, **options):
+            calls.append('configure' if '--fix-broken' in argv else 'unpack' if '--unpack' in argv else 'command')
+            return subprocess.CompletedProcess(argv, 0, stdout='', stderr='')
+        class Effects(module.LinuxRestoreSystem):
+            def stage_restore(inner, archive, plan, directory): return self.root
+            def package_plan(inner, paths, archive): return [{'package': 'cmprovision4', 'version': '2.28.0'}]
+            def _application(inner, stage, archive): calls.append('database')
+            def restore_accounts(inner, rows): pass
+            def www(inner, *args): return {'ok': True}
+            def _restore_utility(inner, archive, plan, stage): pass
+        system = Effects(store, root=self.root, runner=runner)
+        self.context['cmprovision'] = '2.27.0'
+        with inspect_archive(self.archive(), 'a sufficiently long password', self.root) as archive:
+            plan = self.module.plan_restore(archive, self.context, groups=[], allow_snapshot=True)
+            system.apply_restore(archive, plan, self.root)
+        self.assertLess(calls.index('unpack'), calls.index('database'))
+        self.assertLess(calls.index('database'), calls.index('configure'))
+
+    def test_recovery_repairs_only_its_interrupted_station_packages(self):
+        import subprocess
+        from types import SimpleNamespace
+        from backup_store import BackupStore
+        module = importlib.import_module('backup_restore_system')
+        store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid())
+        broken = ['cmprovision4']
+        def runner(argv, **options):
+            if '--audit' in argv: text = 'An interrupted package exists.'
+            elif argv[0].endswith('/dpkg-deb'): text = 'Package: cmprovision4\nVersion: 2.28.0\nArchitecture: all'
+            elif argv[0].endswith('/dpkg-query'): text = '\n'.join(name+'\tiU ' for name in broken)
+            else: text = 'Inst cmprovision4 (2.28.0 local [all])'
+            return subprocess.CompletedProcess(argv, 0, stdout=text, stderr='')
+        system = module.LinuxRestoreSystem(store, root=self.root, runner=runner); system.recovering = True
+        result = system.package_plan([self.root/'fixture.deb'], SimpleNamespace(manifest={'version': '2.28.0'}))
+        self.assertEqual([{'package': 'cmprovision4', 'version': '2.28.0'}], result)
+        broken.append('unrelated-package')
+        with self.assertRaises(UpdateError): system.package_plan([self.root/'fixture.deb'], SimpleNamespace(manifest={'version': '2.28.0'}))
+
+    def test_cli_group_selection_remains_explicit_during_emergency_recovery(self):
+        self.assertEqual(['time', 'web'], self.module.selected_groups('time,web', recovery=True))
+        self.assertIn('role', self.module.selected_groups(None, recovery=True))
+        self.assertNotIn('role', self.module.selected_groups(None, recovery=False))
 
 
 if __name__ == '__main__': unittest.main()

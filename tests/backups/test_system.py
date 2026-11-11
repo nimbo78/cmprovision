@@ -88,7 +88,8 @@ class SystemTest(unittest.TestCase):
         def run(argv, **options):
             calls.append(argv)
             text, code = '', 0
-            if 'dpkg-query' in argv[0]: text, code = ('installed\t2.28.0', 0) if argv[-1] == 'cmprovision4' else ('', 1)
+            if 'dpkg-query' in argv[0]:
+                text, code = ('1024', 0) if any('Installed-Size' in item for item in argv) else (('installed\t2.28.0', 0) if argv[-1] == 'cmprovision4' else ('', 1))
             elif 'dpkg-repack' in argv[0]: (Path(options['cwd'])/'cmprovision4_2.28.0_all.deb').write_bytes(b'package fixture')
             elif 'dpkg-deb' in argv[0]: text = 'Package: cmprovision4\nVersion: 2.28.0\nArchitecture: all\n'
             elif argv[0].endswith('/dpkg'): text = 'arm64'
@@ -126,6 +127,18 @@ class SystemTest(unittest.TestCase):
             fcntl.flock(active, fcntl.LOCK_EX)
             with self.assertRaises(UpdateError):
                 with system.admission_lock(): self.fail('must defer while an updater can prune source assets')
+
+    def test_repacking_requires_space_before_creating_an_extra_package(self):
+        from unittest.mock import patch
+        calls = []
+        def run(argv, **options):
+            calls.append(argv)
+            text = '1024' if any('Installed-Size' in item for item in argv) else ''
+            return subprocess.CompletedProcess(argv, 0, stdout=text, stderr='')
+        system = self.module.LinuxBackupSystem(self.store, root=self.root, runner=run)
+        with patch('backup_system.shutil.disk_usage', return_value=shutil._ntuple_diskusage(10**9, 10**9-268435456, 268435456)):
+            with self.assertRaises(UpdateError): system._package('cmprovision4', '2.29.0~dev1', self.root, [])
+        self.assertFalse(any('dpkg-repack' in argv[0] for argv in calls))
 
 
 if __name__ == '__main__': unittest.main()

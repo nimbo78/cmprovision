@@ -11,7 +11,7 @@ import uuid
 
 from backup_archive import RESERVE, create, verify_stream
 from backup_policy import APP, read, safe_open
-from backup_restore import file_group, json_member, parent_fd, write_file
+from backup_restore import file_group, json_member, parent_fd, write_file, restore_backup_configuration
 from backup_system import LinuxBackupSystem, RUNTIME_TABLES
 from backup_worker import Worker
 from update_manifest import UpdateError, canonical_bytes
@@ -19,10 +19,20 @@ from update_system import BOOT_SERVICES, parse_plan
 
 
 class LinuxRestoreSystem(LinuxBackupSystem):
-    def restore_context(self):
-        value = self.context()
-        value.update(self.platform.context())
-        value['os'] = self.context()['os']
+    def restore_context(self, recovery=False):
+        try:
+            value = self.context()
+            value.update(self.platform.context())
+            value['os'] = self.context()['os']
+        except UpdateError:
+            if not recovery: raise
+            release = 'etc/os-release' if not (self.root/'etc/os-release').is_symlink() else 'usr/lib/os-release'
+            fields = dict(line.split('=', 1) for line in read(self.root, release).decode().splitlines() if '=' in line)
+            value = {'cmprovision': '0', 'fpms_version': '0' if self.platform.package('fpms-lite') else None,
+                'utility_selector': None, 'utility_os_version': '0', 'updater_protocol': 1,
+                'php': self.command(['/usr/bin/php', '-r', 'echo PHP_VERSION;']),
+                'os': {'id': fields.get('ID', '').strip('"'), 'version': fields.get('VERSION_ID', '').strip('"'),
+                    'architecture': self.command(['/usr/bin/dpkg', '--print-architecture'])}}
         value['accounts'] = []
         for line in read(self.root, 'etc/passwd').decode().splitlines():
             fields = line.split(':')
@@ -62,7 +72,7 @@ class LinuxRestoreSystem(LinuxBackupSystem):
         try:
             with parent_fd(self.root, name, create=False) as (parent, leaf):
                 info = os.stat(leaf, dir_fd=parent, follow_symlinks=False)
-                if not stat.S_ISREG(info.st_mode): raise UpdateError('An absent setting has an unsafe destination.')
+                if not (stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)): raise UpdateError('An absent setting has an unsafe destination.')
                 os.unlink(leaf, dir_fd=parent); os.fsync(parent)
         except FileNotFoundError: pass
 
@@ -74,10 +84,10 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             or member['name'].startswith('utility-os/')]
         if shutil.disk_usage(stage).free < sum(item['size'] for item in needed)+RESERVE:
             raise UpdateError('Not enough space to stage the selected restore with the 256 MiB reserve.')
-        for item in needed:
-            name = item['name']
+        for item, source in archive.selected({item['name'] for item in needed}):
+            name = item.name
             data = plan['rewritten'].get(name[7:]) if name.startswith('system/') else None
-            write_file(stage, name, data if data is not None else lambda output, key=name: archive.copy(key, output), item['mode'])
+            write_file(stage, name, data if data is not None else lambda output: shutil.copyfileobj(source, output, 1024**2), item.mode)
         self._validate_configs(stage, plan)
         return stage
 
@@ -96,7 +106,7 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             self.command(['/usr/sbin/visudo', '-cf', check])
 
     def restore_accounts(self, rows):
-        context = self.restore_context()
+        context = self.restore_context(recovery=True)
         names = {row['name'] for row in context['accounts']}
         for row in rows:
             name = row['name']
@@ -156,7 +166,15 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             if fields.get('Package') not in ('cmprovision4', 'fpms-lite') or fields.get('Version') != archive.manifest['version'] or fields.get('Architecture') != 'all':
                 raise UpdateError('A captured package has inconsistent identity or architecture.')
             expected[fields['Package']] = fields['Version']
-        if self.command(['/usr/bin/dpkg', '--audit']): raise UpdateError('Resolve the existing interrupted package operation first.')
+        if self.command(['/usr/bin/dpkg', '--audit']):
+            if not getattr(self, 'recovering', False): raise UpdateError('Resolve the existing interrupted package operation first.')
+            rows = self.command(['/usr/bin/dpkg-query', '-W', '-f=${Package}\t${db:Status-Abbrev}\n']).splitlines()
+            broken = set()
+            for row in rows:
+                parts = row.split('\t')
+                if len(parts) != 2 or len(parts[1]) < 2: raise UpdateError('Could not inspect interrupted package state safely.')
+                if parts[1][0] == 'i' and (parts[1][1] != 'i' or parts[1][2:].strip()): broken.add(parts[0])
+            if not broken or not broken <= expected.keys(): raise UpdateError('Unrelated packages need repair over SSH before station recovery.')
         result = parse_plan(self.command(['/usr/bin/apt-get', '--simulate', '--no-remove', 'install', *paths], timeout=120))
         if not all({'package': key, 'version': version} in result for key, version in expected.items()): raise UpdateError('The package restore plan has changed.')
         return result
@@ -166,36 +184,39 @@ class LinuxRestoreSystem(LinuxBackupSystem):
         paths = [stage/name for name in plan['install'] if name.endswith('.deb')]
         if paths:
             installation = self.package_plan(paths, archive)
-            self.platform.prefetch(paths, installation)
+            self.command(['/usr/bin/apt-get', '-y', '--download-only', '--no-remove', '--allow-downgrades', 'install', *paths], timeout=1800)
         pending = self.store.configuration()['pending']
         for name in pending['services']:
             if name not in BOOT_SERVICES: self.command(['/usr/bin/systemctl', 'stop', name])
         if paths:
             if self.package_plan(paths, archive) != installation: raise UpdateError('The package restore plan changed before installation.')
             self.command(['/usr/bin/dpkg', '--force-confold', '--unpack', *paths], timeout=600)
+            for name in pending['services']: self.command(['/usr/bin/systemctl', 'stop', name])
+        self._application(stage, archive)
+        if paths:
+            # postinst must see the matching snapshot schema, including during downgrade/recovery.
             self.command(['/usr/bin/apt-get', '-y', '--no-download', '--no-remove', '-o', 'Dpkg::Options::=--force-confold', '--fix-broken', 'install',
                 *(item['package']+'='+item['version'] for item in installation)], timeout=1800)
             for name in pending['services']: self.command(['/usr/bin/systemctl', 'stop', name])
-        self._application(stage, archive)
         for name in plan['remove']:
             if name not in ('etc/localtime', 'etc/timezone'): self._remove(name)
         for name in plan['system']:
             if name in ('etc/localtime', 'etc/timezone'): continue
             with safe_open(stage, 'system/'+name) as source:
                 mode = 0o440 if name.startswith('etc/sudoers') else 0o600
-                write_file(self.root, name, lambda output: shutil.copyfileobj(source, output, 1024**2), mode)
+                target = name
+                if name == 'etc/default/locale' and (self.root/name).is_symlink():
+                    if os.readlink(self.root/name) not in ('../locale.conf', '/etc/locale.conf'): raise UpdateError('The destination locale alias is unsafe.')
+                    target = 'etc/locale.conf'
+                write_file(self.root, target, lambda output: shutil.copyfileobj(source, output, 1024**2), mode)
         self.restore_accounts(plan['accounts'])
         if 'ssh' in plan['groups']: self.command(['/usr/sbin/sshd', '-t'])
         if 'sudo' in plan['groups']: self.command(['/usr/sbin/visudo', '-c'])
         if 'time' in plan['groups']:
-            from zoneinfo import ZoneInfo
-            settings = json_member(archive, 'system/time.json')
-            try: ZoneInfo(settings['timezone'])
-            except (KeyError, ValueError) as error: raise UpdateError('Invalid saved time zone.') from error
+            settings = plan['time']
             self.command(['/usr/bin/timedatectl', 'set-timezone', settings['timezone']])
-            if settings['enabled'] not in ('enabled', 'disabled', 'masked', 'masked-runtime', 'static') or settings['active'] not in ('active', 'inactive', 'failed'):
-                raise UpdateError('Invalid saved synchronization service state.')
-            self.platform.resume({'systemd-timesyncd.service': {'enabled': settings['enabled'], 'active': settings['active'] == 'active'}})
+            if settings['restore_ntp']:
+                self.platform.resume({'systemd-timesyncd.service': {'enabled': settings['enabled'], 'active': settings['active'] == 'active'}})
         self.command(['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/php', self.app/'artisan', 'migrate', '--force'], timeout=180)
         args = ['backups:restore-finalize']
         if not all(archive.manifest['options'].values()): args.append('--deactivate-project')
@@ -228,15 +249,9 @@ class LinuxRestoreSystem(LinuxBackupSystem):
         self.platform.activate_utility(selector)
 
     def finish_restore(self, archive, plan, job):
-        imported = json_member(archive, 'system/backup-config.json')
-        from backup_remote import validate_profile
-        from backup_schedule import validate_schedule
-        if imported.get('schema') != 1 or type(imported.get('profiles')) is not dict or len(imported['profiles']) > 8:
-            raise UpdateError('Invalid saved backup configuration.')
-        profiles = {key: validate_profile(value) for key, value in imported['profiles'].items()}
-        schedule = validate_schedule(dict(imported['schedule'], enabled=False), profiles, self.store.clock())
+        imported = restore_backup_configuration(json_member(archive, 'system/backup-config.json'), now=self.store.clock())
         def reset(state):
-            state.update(profiles=profiles, schedule=schedule, master_password=None, slots=[], remote_copies=[], last_success_at=None)
+            state.update(**imported, master_password=None, slots=[], remote_copies=[], last_success_at=None)
             if plan['mode'] == 'migrate': state['station_id'] = uuid.uuid4().hex
         self.store.mutate(reset)
         pending = self.store.configuration()['pending']

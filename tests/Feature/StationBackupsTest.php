@@ -67,6 +67,7 @@ class StationBackupsTest extends TestCase
         $this->actingAs(User::factory()->create());
         $this->get('/settings/backups/'.str_repeat('a', 32).'/download')->assertRedirect(route('password.confirm'));
         $this->get('/settings/backups/invalid/download')->assertNotFound();
+        $this->get('/settings/backups/confirm')->assertRedirect(route('password.confirm'));
     }
 
     public function test_download_stream_does_not_rewind_or_duplicate_primed_chunks(): void

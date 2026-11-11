@@ -36,6 +36,24 @@ class ArchiveTest(unittest.TestCase):
             self.assertEqual(0o600, verified.path.stat().st_mode & 0o777)
         self.assertEqual([archive], list(self.root.iterdir()))
 
+    def test_restore_reads_small_metadata_from_cache_and_stages_payloads_in_one_pass(self):
+        from unittest.mock import patch
+        entries = [self.module.Entry('application/.env', data=b'key'),
+            self.module.Entry('system/time.json', data=b'{"timezone":"UTC"}'),
+            self.module.Entry('application/storage/app/firmware-a', data=b'a'*4096),
+            self.module.Entry('application/storage/app/firmware-b', data=b'b'*4096)]
+        path = self.root/'copy.cmpbackup'
+        self.module.create(entries, path, 'sufficient master password', self.metadata)
+        with self.module.inspect_archive(path, 'sufficient master password', self.root) as verified:
+            with patch('backup_archive.tarfile.open', side_effect=AssertionError('metadata must not rescan payloads')):
+                self.assertEqual(b'{"timezone":"UTC"}', verified.read('system/time.json'))
+            wanted = {item.name for item in entries if 'firmware-' in item.name}
+            with patch('backup_archive.tarfile.open', wraps=tarfile.open) as opened:
+                output = {item.name: stream.read() for item, stream in verified.selected(wanted)}
+                self.assertEqual(1, opened.call_count)
+            self.assertEqual(b'a'*4096, output['application/storage/app/firmware-a'])
+            self.assertEqual(b'b'*4096, output['application/storage/app/firmware-b'])
+
     def test_wrong_password_and_tampering_leave_no_staging_or_destination_changes(self):
         archive = self.root/'backup.cmpbackup'
         self.module.create([self.module.Entry('application/.env', data=b'private')], archive, 'sufficient master password', self.metadata)

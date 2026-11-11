@@ -17,16 +17,40 @@ GROUPS = frozenset(('network', 'ssh', 'host', 'time', 'display', 'web', 'role', 
 DEFAULT_GROUPS = ('time', 'display', 'web')
 
 
+def selected_groups(text, recovery=False):
+    if text is None: return ['network', 'ssh', 'host', 'time', 'display', 'web', 'role', 'sudo'] if recovery else list(DEFAULT_GROUPS)
+    values = [item for item in text.split(',') if item]
+    if len(set(values)) != len(values) or not set(values) <= GROUPS: raise UpdateError('Choose supported, unique OS groups.')
+    return values
+
+
 def json_member(archive, name):
     try: return json.loads(archive.read(name))
     except (ValueError, TypeError) as error: raise UpdateError('A required restore metadata file is invalid.') from error
+
+
+def restore_backup_configuration(value, now):
+    from backup_remote import validate_profile
+    from backup_schedule import validate_schedule
+    if (type(value) is not dict or value.get('schema') != 1 or type(value.get('profiles')) is not dict
+            or len(value['profiles']) > 8 or type(value.get('schedule')) is not dict):
+        raise UpdateError('Invalid saved backup configuration.')
+    profiles = {}
+    for key, profile in value['profiles'].items():
+        if not re.fullmatch(r'[0-9a-f]{32}', key) or type(profile) is not dict or profile.get('id') != key:
+            raise UpdateError('Invalid saved backup destination identifier.')
+        profiles[key] = validate_profile(profile)
+    schedule = dict(value['schedule'], enabled=False)
+    schedule.pop('not_before', None) # Runtime boundary is always regenerated for the destination clock.
+    schedule = validate_schedule(schedule, profiles, now)
+    return {'profiles': profiles, 'schedule': schedule}
 
 
 def file_group(name):
     if name.startswith(('etc/NetworkManager/', 'var/lib/cmprovision-network/')) or name == 'etc/dhcpcd.conf': return 'network'
     if name.startswith('etc/ssh/'): return 'ssh'
     if name.startswith('etc/sudoers'): return 'sudo'
-    if name in ('etc/hostname', 'etc/hosts', 'etc/default/locale', 'etc/default/keyboard', 'etc/locale.gen'): return 'host'
+    if name in ('etc/hostname', 'etc/hosts', 'etc/default/locale', 'etc/locale.conf', 'etc/default/keyboard', 'etc/locale.gen'): return 'host'
     if name.startswith('etc/systemd/timesyncd') or name in ('etc/localtime', 'etc/timezone'): return 'time'
     if name in ('etc/default/cmprovision-wallboard.json', 'etc/default/cmprovision-fpms.json'): return 'display'
     if name in ('etc/default/cmprovision-stand-interface', 'etc/default/cmprovision-uplink'): return 'role'
@@ -85,6 +109,7 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
     required = {'application/.env', 'application/database.sqlite', 'application/etc/dnsmasq.conf', 'system/accounts.json',
         'system/service-state.json', 'system/backup-config.json', 'system/time.json'}
     if not required <= members.keys(): raise UpdateError('The full backup lacks required application/system metadata.')
+    restore_backup_configuration(json_member(archive, 'system/backup-config.json'), now=context.get('now', 0))
     software = value.get('software')
     if type(software) is not list or not 2 <= len(software) <= 3: raise UpdateError('The software inventory is incomplete.')
     install, evidence, packages = [], {}, set()
@@ -121,7 +146,7 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
             if (signed != envelope.get('manifest') or signed['version'] != expected_version
                     or any(asset[key] != members[member][key] for key in ('size', 'sha256'))):
                 raise UpdateError('The archived software differs from its signed release.')
-            error = compatibility_error(signed, dict(context, debian='13', architecture=context['os']['architecture']))
+            error = compatibility_error(signed, dict(context, cmprovision=value['version'], debian='13', architecture=context['os']['architecture']))
             if error: raise UpdateError(error)
             evidence[member] = envelope
         elif item.get('provenance') != 'local-snapshot' or not allow_snapshot:
@@ -133,6 +158,16 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
     absent = value.get('absent', [])
     if type(absent) is not list or any(type(path) is not str or path not in FIXED for path in absent): raise UpdateError('Invalid absent-settings inventory.')
     remove = [path for path in absent if file_group(path) in groups]
+    clock = json_member(archive, 'system/time.json')
+    from zoneinfo import ZoneInfo
+    try: ZoneInfo(clock['timezone'])
+    except (TypeError, KeyError, ValueError) as error: raise UpdateError('Invalid saved station time zone.') from error
+    if (clock.get('enabled') not in ('enabled', 'enabled-runtime', 'disabled', 'masked', 'masked-runtime', 'static', 'not-found')
+            or clock.get('active') not in ('active', 'inactive', 'failed')): raise UpdateError('Invalid saved synchronization service state.')
+    clock = dict(clock, restore_ntp=clock['enabled'] != 'not-found')
+    if not clock['restore_ntp']:
+        selected = [path for path in selected if not path.startswith('etc/systemd/timesyncd')]
+        remove = [path for path in remove if not path.startswith('etc/systemd/timesyncd')]
     rewritten = {}
     mappings = interfaces or {}
     if any(key not in context['interfaces'] for key in mappings.values()): raise UpdateError('An interface mapping names a missing destination interface.')
@@ -155,9 +190,9 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
         'preserved': [name for name in ('network', 'ssh', 'host', 'role') if name not in groups],
         'images_included': options['images'], 'packages_included': options['packages'],
         'projects_deactivated': not options['images'] or not options['packages'],
-        'snapshot_software_opt_in': bool(allow_snapshot), 'emergency_administrator': emergency}
+        'snapshot_software_opt_in': bool(allow_snapshot), 'emergency_administrator': emergency, 'preserve_ntp_provider': not clock['restore_ntp']}
     return {'preview': preview, 'system': selected, 'remove': remove, 'rewritten': rewritten, 'accounts': accounts,
-        'install': install, 'evidence': evidence, 'restore_role': 'role' in groups, 'mode': mode, 'groups': list(groups)}
+        'install': install, 'evidence': evidence, 'restore_role': 'role' in groups, 'mode': mode, 'groups': list(groups), 'time': clock}
 
 
 @contextmanager
@@ -205,8 +240,9 @@ class Restorer:
     def run(self, source, password, apply=False, recover=False, **options):
         from backup_archive import inspect_archive
         from update_manifest import canonical_bytes
+        self.system.recovering = recover
         with inspect_archive(source, password, self.store.private) as archive:
-            plan = plan_restore(archive, self.system.restore_context(), **options)
+            plan = plan_restore(archive, self.system.restore_context(recovery=recover), **options)
             if not apply: return plan['preview']
             job = None
             if not recover:
@@ -221,7 +257,7 @@ class Restorer:
                 changed = False
                 try:
                     if not recover: self.system.freeze_restore(job)
-                    plan = plan_restore(archive, self.system.restore_context(), **options)
+                    plan = plan_restore(archive, self.system.restore_context(recovery=recover), **options)
                     if not recover: self.system.recovery_snapshot(archive, job, password)
                     directory = self.store.job_dir(job['id'])
                     self.store.update(job['id'], state='collecting', message='Administrator restore in progress. Provisioning is stopped.')

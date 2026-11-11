@@ -10,7 +10,7 @@ import sys
 
 sys.path.insert(0, '/usr/lib/cmprovision')
 if not Path('/usr/lib/cmprovision/backup_restore.py').is_file(): sys.path.insert(0, str(Path(__file__).resolve().parent))
-from backup_restore import DEFAULT_GROUPS, Restorer
+from backup_restore import DEFAULT_GROUPS, Restorer, selected_groups
 from backup_restore_system import LinuxRestoreSystem
 from backup_store import BackupStore
 from update_diagnostics import journal
@@ -24,7 +24,7 @@ def main():
     parser.add_argument('--yes', action='store_true')
     parser.add_argument('--recover', action='store_true', help='Restore the station-recorded pre-restore recovery archive; also needs --apply --yes.')
     parser.add_argument('--mode', choices=('migrate', 'same-station'), default='migrate')
-    parser.add_argument('--groups', default=','.join(DEFAULT_GROUPS), help='Selected OS groups: network,ssh,host,time,display,web,role,publisher,sudo')
+    parser.add_argument('--groups', default=None, help='Selected OS groups: network,ssh,host,time,display,web,role,publisher,sudo')
     parser.add_argument('--account', action='append', default=[])
     parser.add_argument('--emergency-user', default=os.environ.get('SUDO_USER', 'root'))
     parser.add_argument('--map-interface', action='append', default=[], metavar='SOURCE=DESTINATION')
@@ -59,12 +59,11 @@ def main():
             interfaces[pair[0]] = pair[1]
         publisher = Path('/etc/cmprovision-updates/publisher.pub')
         repository = json.loads(Path('/etc/cmprovision-updates/publisher.json').read_bytes())['repository']
-        options = {'mode': args.mode, 'groups': [item for item in args.groups.split(',') if item],
+        options = {'mode': args.mode, 'groups': selected_groups(args.groups, recovery=args.recover),
             'selected_accounts': args.account, 'interfaces': interfaces, 'allow_snapshot': args.allow_snapshot_software,
             'publisher': publisher, 'repository': repository, 'emergency': args.emergency_user}
         if args.recover:
-            options.update(mode='same-station', groups=['network', 'ssh', 'host', 'time', 'display', 'web', 'role', 'sudo'],
-                selected_accounts=[], allow_snapshot=args.allow_snapshot_software)
+            options.update(mode='same-station', allow_snapshot=args.allow_snapshot_software)
         system = LinuxRestoreSystem(store)
         result = Restorer(store, system).run(source, password, apply=args.apply, recover=args.recover, **options)
         print(json.dumps(dict(result, archive_sha256=digest, applied=args.apply), indent=2))

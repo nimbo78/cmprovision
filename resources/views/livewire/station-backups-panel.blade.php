@@ -1,8 +1,10 @@
-<div class="border-t border-border pt-4 space-y-4" x-data="StationBackups.create(@js(route('settings.backups.status')), JSON.parse($el.dataset.initial))"
+<div class="border-t border-line pt-4 space-y-4" x-data="StationBackups.create(@js(route('settings.backups.status')), JSON.parse($el.dataset.initial))"
      data-initial="{{ json_encode($status, JSON_THROW_ON_ERROR) }}" x-on:station-backup-changed.window="accept($event.detail.status)">
     <div><h3 class="font-semibold">Full station backup</h3><p class="text-sm text-fg-muted">Encrypted application data, administrators, SSH, Wi-Fi, network and supported system settings. Images and sensor packages are optional.</p></div>
     @if ($error)<p class="cmp-flash text-neg" role="alert">{{ $error }}</p>@endif
     @if (!$available)<p class="text-fg-muted">Install the updated cmprovision4 package to enable full backups.</p>@else
+    @php($confirmed = time() - (int) session('auth.password_confirmed_at', 0) < config('auth.password_timeout', 10800))
+    @if (!$confirmed)<p class="cmp-flash">Confirm your account password before changing backup settings or starting a copy. <a class="text-link" href="{{ route('settings.backups.confirm') }}">Confirm account password</a></p>@endif
     <p x-show="reconnecting" x-cloak class="cmp-flash" role="status">Reconnecting… The job continues on the station. Do not start another copy.</p>
     <a x-show="signin" x-cloak href="{{ route('login') }}" class="text-link">Sign in again</a>
     <div x-show="operation" x-cloak class="cmp-flash space-y-2" role="status" aria-live="polite">
@@ -13,6 +15,7 @@
         <button type="button" x-show="busy() && operation?.state !== 'recovery-required'" x-on:click="$wire.cancel(operation.id)" class="cmp-btn cmp-btn-secondary">Cancel job</button>
         <template x-if="operation?.host_keys"><div class="space-y-2"><p>Compare the fingerprint with your SFTP server, then explicitly accept a key.</p><template x-for="key in operation.host_keys" :key="key.key"><div class="break-all text-xs mono"><span x-text="key.fingerprint"></span> <button type="button" class="text-link" x-on:click="profile.host_key = key.key">Use this key</button></div></template></div></template>
     </div>
+    <fieldset @disabled(!$confirmed) class="space-y-4">
     <div x-show="screen === 'overview'" class="space-y-4">
         <div class="flex flex-wrap gap-2"><button type="button" class="cmp-btn cmp-btn-secondary" x-on:click="screen = 'master'" :disabled="busy()">Master password</button><button type="button" class="cmp-btn cmp-btn-secondary" x-on:click="edit()" :disabled="busy()">Add destination</button><button type="button" class="cmp-btn cmp-btn-secondary" x-on:click="editSchedule()" :disabled="busy()">Schedule</button></div>
         <p class="text-sm" x-text="status.password_configured ? 'Master password saved. Keep it separately: it is never included in a backup.' : 'Set a master password before creating your first full backup.'"></p>
@@ -22,9 +25,9 @@
             <button class="cmp-btn" :disabled="busy() || submitting || !status.password_configured">Create encrypted backup</button>
         </form>
         <p class="text-sm text-fg-muted">Runs only on an idle station. Backup settings require your account password again. Downloads expire after one hour. Full restore is an administrator operation over SSH.</p>
-        <template x-for="item in (status.profiles || [])" :key="item.id"><div class="border border-border rounded-lg p-3 flex flex-wrap items-center gap-2"><strong class="mr-auto" x-text="item.name + ' · ' + item.type.toUpperCase()"></strong><button type="button" class="cmp-btn cmp-btn-secondary" :disabled="busy()" x-on:click="edit(item)">Edit</button><button type="button" class="cmp-btn cmp-btn-secondary" :disabled="busy()" x-on:click="$wire.testProfile(item.id)">Test</button><button type="button" class="cmp-btn cmp-btn-secondary" :disabled="busy()" x-on:click="confirm('Remove this backup destination? Existing copies will remain.') && $wire.deleteProfile(item.id)">Remove</button></div></template>
+        <template x-for="item in (status.profiles || [])" :key="item.id"><div class="border border-line rounded-lg p-3 flex flex-wrap items-center gap-2"><strong class="mr-auto" x-text="item.name + ' · ' + item.type.toUpperCase()"></strong><button type="button" class="cmp-btn cmp-btn-secondary" :disabled="busy()" x-on:click="edit(item)">Edit</button><button type="button" class="cmp-btn cmp-btn-secondary" :disabled="busy()" x-on:click="$wire.testProfile(item.id)">Test</button><button type="button" class="cmp-btn cmp-btn-secondary" :disabled="busy()" x-on:click="confirm('Remove this backup destination? Existing copies will remain.') && $wire.deleteProfile(item.id)">Remove</button></div></template>
         <p class="text-sm text-fg-muted" x-text="status.schedule?.enabled ? 'Schedule: ' + status.schedule.frequency + ' at ' + status.schedule.time + ' · ' + (status.timezone || 'system time') : 'Scheduled backups are off.'"></p>
-        <div class="space-y-2"><h4 class="font-semibold">Recent jobs</h4><template x-for="item in (status.history || [])" :key="item.id"><div class="border border-border rounded-lg p-3 text-sm space-y-1"><p><span class="mono" x-text="new Date(item.created_at * 1000).toLocaleString()"></span> · <strong x-text="item.state"></strong></p><p x-text="item.message"></p><template x-if="item.state === 'ready' && item.expires_at * 1000 > Date.now()"><a class="text-link" :href="@js(url('/settings/backups')) + '/' + item.id + '/download'">Download encrypted copy</a></template></div></template></div>
+        <div class="space-y-2"><h4 class="font-semibold">Recent jobs</h4><template x-for="item in (status.history || [])" :key="item.id"><div class="border border-line rounded-lg p-3 text-sm space-y-1"><p><span class="mono" x-text="new Date(item.created_at * 1000).toLocaleString()"></span> · <strong x-text="item.state"></strong></p><p x-text="item.message"></p><template x-if="item.state === 'ready' && item.expires_at * 1000 > Date.now()"><a class="text-link" :href="@js(url('/settings/backups')) + '/' + item.id + '/download'">Download encrypted copy</a></template></div></template></div>
     </div>
     <form x-show="screen === 'master'" x-cloak class="space-y-3" x-on:submit.prevent="await $wire.saveMasterPassword(master); master = ''">
         <label class="block text-sm">Master password<input type="password" autocomplete="new-password" minlength="12" required x-model="master" class="cmp-field w-full mt-1"></label>
@@ -65,5 +68,6 @@
         <p class="text-sm text-fg-muted">Uses the station time zone. Busy stations wait without interrupting provisioning; missed slots coalesce into one copy.</p>
         <div class="flex gap-2"><button class="cmp-btn" :disabled="busy()">Save schedule</button><button type="button" class="cmp-btn cmp-btn-secondary" x-on:click="back()">Back</button></div>
     </form>
+    </fieldset>
     @endif
 </div>

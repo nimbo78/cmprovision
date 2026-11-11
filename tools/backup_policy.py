@@ -10,7 +10,7 @@ import stat
 from update_manifest import UpdateError, canonical_bytes
 
 APP = 'var/lib/cmprovision'
-FIXED = ('etc/hostname', 'etc/hosts', 'etc/default/locale', 'etc/default/keyboard', 'etc/locale.gen',
+FIXED = ('etc/hostname', 'etc/hosts', 'etc/default/locale', 'etc/locale.conf', 'etc/default/keyboard', 'etc/locale.gen',
     'etc/timezone', 'etc/localtime', 'etc/systemd/timesyncd.conf', 'etc/dhcpcd.conf',
     'etc/NetworkManager/NetworkManager.conf', 'etc/ssh/sshd_config', 'etc/sudoers',
     'etc/nginx/sites-available/cmprovision', 'etc/default/cmprovision-stand-interface',
@@ -141,6 +141,12 @@ def inventory(root, images=False, packages=False):
         path = root/item
         if not path.exists() and not path.is_symlink(): absent.append(item); continue
         source = item
+        if item == 'etc/default/locale' and path.is_symlink():
+            if os.readlink(path) not in ('../locale.conf', '/etc/locale.conf'):
+                raise UpdateError('The locale alias points outside its supported canonical file.')
+            source = 'etc/locale.conf'
+            if not (root/source).exists() and not (root/source).is_symlink():
+                absent.append(item); continue # Trixie leaves this known alias dangling until locale is configured.
         if item == 'etc/localtime' and path.is_symlink():
             target = os.readlink(path)
             resolved = (path.parent/target).resolve() if not target.startswith('/') else root/target.lstrip('/')

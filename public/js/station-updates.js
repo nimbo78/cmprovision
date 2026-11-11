@@ -16,7 +16,9 @@
             livewire.hook('request', function ({ respond, fail }) {
                 var maintenance = false;
                 respond(function ({ response }) {
-                    maintenance = response.status === 503 && response.headers.get('X-Cmprovision-Maintenance') === 'station-update';
+                    var marker = response.headers.get('X-Cmprovision-Maintenance');
+                    maintenance = response.status === 503 && ['station-update', 'station-backup'].includes(marker);
+                    if (maintenance && marker === 'station-backup') win.document.dispatchEvent?.(new Event('cmprovision-backup-maintenance'));
                 });
                 fail(function ({ status, preventDefault }) {
                     // Keep authentication and unexpected server errors visible. Never

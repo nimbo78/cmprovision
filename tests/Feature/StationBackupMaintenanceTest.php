@@ -68,4 +68,17 @@ class StationBackupMaintenanceTest extends TestCase
         $gate = new \App\Services\StationUpdateQueueGate(new \App\Services\StationUpdatesControl);
         $this->assertFalse($gate->reserve());
     }
+
+    public function test_backup_cancel_can_share_a_batch_with_read_only_display_refresh_but_not_display_changes(): void
+    {
+        $this->control->busy = true;
+        $safe = ['snapshot' => json_encode(['memo' => ['name' => 'station-backups-panel']]), 'updates' => [], 'calls' => [['method' => 'cancel', 'params' => ['a']]]];
+        $poll = ['snapshot' => json_encode(['memo' => ['name' => 'fpms-settings']]), 'updates' => [], 'calls' => [['method' => '$refresh', 'params' => []]]];
+        $middleware = app(StationBackupMaintenance::class);
+        $request = \Illuminate\Http\Request::create('/livewire/update', 'POST', ['components' => [$safe, $poll]]);
+        $this->assertSame(200, $middleware->handle($request, fn () => response('allowed'))->getStatusCode());
+        $poll['updates'] = ['enabled' => true];
+        $request = \Illuminate\Http\Request::create('/livewire/update', 'POST', ['components' => [$safe, $poll]]);
+        $this->assertSame(503, $middleware->handle($request, fn () => response('unsafe'))->getStatusCode());
+    }
 }

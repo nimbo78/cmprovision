@@ -70,5 +70,18 @@ class PolicyTest(unittest.TestCase):
             self.put('etc/ssh/sshd_config', text)
             with self.assertRaises(UpdateError): self.module.inventory(self.root)
 
+    def test_trixie_locale_alias_captures_only_its_known_canonical_file(self):
+        self.put('etc/locale.conf', b'LANG=en_GB.UTF-8\n')
+        directory = self.root/'etc/default'; directory.mkdir()
+        (directory/'locale').symlink_to('../locale.conf')
+        entries, _ = self.module.inventory(self.root)
+        item = next(item for item in entries if item.name == 'system/etc/default/locale')
+        self.assertEqual('etc/locale.conf', item.source)
+        (self.root/'etc/locale.conf').unlink()
+        _, absent = self.module.inventory(self.root)
+        self.assertIn('etc/default/locale', absent)
+        (directory/'locale').unlink(); (directory/'locale').symlink_to('../shadow')
+        with self.assertRaises(UpdateError): self.module.inventory(self.root)
+
 
 if __name__ == '__main__': unittest.main()

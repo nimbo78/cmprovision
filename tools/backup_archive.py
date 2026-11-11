@@ -18,8 +18,13 @@ from backup_policy import safe_open, valid_member
 MAX_MEMBERS = 100000
 MAX_MANIFEST = 16*1024**2
 MAX_TOTAL = 2**40
+MAX_METADATA = 64*1024**2
 RESERVE = 256*1024**2
 CODEC = Path(__file__).with_name('backup-crypto.php')
+
+
+def metadata_member(name):
+    return name.startswith('system/') or name in ('application/.env', 'application/etc/dnsmasq.conf')
 
 
 @dataclass
@@ -73,6 +78,9 @@ def create(entries, destination, password, metadata, progress=None, canceled=Non
         raise UpdateError('Backup inventory contains unsafe or duplicate members.')
     total = sum(entry.size() for entry in entries)
     if total > MAX_TOTAL: raise UpdateError('Backup contents exceed the supported size.')
+    metadata_sizes = [entry.size() for entry in entries if metadata_member(entry.name)]
+    if sum(metadata_sizes) > MAX_METADATA or any(size > MAX_MANIFEST for size in metadata_sizes):
+        raise UpdateError('Station configuration metadata exceeds its supported size.')
     path = Path(destination) if isinstance(destination, (str, Path)) else None
     if path and reserve and shutil.disk_usage(path.parent).free < int(total*1.02)+len(entries)*2048+MAX_MANIFEST+RESERVE:
         raise UpdateError('Not enough space for the encrypted backup and the 256 MiB reserve.')
@@ -133,10 +141,11 @@ def create(entries, destination, password, metadata, progress=None, canceled=Non
 
 
 class VerifiedArchive:
-    def __init__(self, path, manifest): self.path, self.manifest = path, manifest
+    def __init__(self, path, manifest, metadata=None): self.path, self.manifest, self.metadata = path, manifest, metadata or {}
     def read(self, name, limit=MAX_MANIFEST):
         item = next((item for item in self.manifest['members'] if item['name'] == name), None)
         if item is None or item['size'] > limit: raise UpdateError('The requested backup metadata is absent or too large.')
+        if name in self.metadata: return self.metadata[name]
         with tarfile.open(self.path, mode='r:gz') as archive:
             return archive.extractfile(name).read(limit+1)
     def copy(self, name, output):
@@ -144,6 +153,19 @@ class VerifiedArchive:
             stream = archive.extractfile(name)
             if stream is None: raise UpdateError('The requested backup member is missing.')
             shutil.copyfileobj(stream, output, length=1024**2)
+
+    def selected(self, names):
+        """Consume selected payloads in one sequential pass; each yielded stream is valid until next()."""
+        wanted = set(names)
+        if not wanted <= {item['name'] for item in self.manifest['members']}: raise UpdateError('Unknown restore member selection.')
+        seen = set()
+        with tarfile.open(self.path, mode='r|gz') as archive:
+            for item in archive:
+                if item.name not in wanted: continue
+                if not item.isfile() or item.name in seen: raise UpdateError('Restore staging inventory changed.')
+                seen.add(item.name)
+                yield item, archive.extractfile(item)
+        if seen != wanted: raise UpdateError('A restore payload disappeared during staging.')
 
 
 @contextmanager
@@ -168,7 +190,7 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
                 if process.wait(timeout=7200): raise UpdateError('Backup authentication failed: wrong password, damaged file or unsupported format.')
                 output.flush(); os.fsync(output.fileno())
             plain = stack.enter_context(path.open('rb'))
-        observed, manifest, total = {}, None, 0
+        observed, manifest, total, metadata, metadata_bytes = {}, None, 0, {}, 0
         with tarfile.open(fileobj=plain, mode='r|gz') as archive:
             for item in archive:
                 if manifest is not None or not item.isfile() or item.name in observed or item.size < 0:
@@ -190,11 +212,18 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
                 if total > MAX_TOTAL: raise UpdateError('Backup exceeds its supported size.')
                 digest = hashlib.sha256()
                 stream = archive.extractfile(item)
+                cache = metadata_member(item.name)
+                if cache:
+                    metadata_bytes += item.size
+                    if item.size > MAX_MANIFEST or metadata_bytes > MAX_METADATA: raise UpdateError('Station configuration metadata exceeds its supported size.')
+                chunks = []
                 read = 0
                 while chunk := stream.read(1024**2):
                     read += len(chunk); digest.update(chunk)
+                    if cache: chunks.append(chunk)
                 if read != item.size: raise UpdateError('Backup member was truncated.')
                 observed[item.name] = {'size': item.size, 'sha256': digest.hexdigest(), 'mode': item.mode & 0o777}
+                if cache: metadata[item.name] = b''.join(chunks)
         if (type(manifest) is not dict or manifest.get('format') != 'cmprovision-full-backup' or manifest.get('schema') != 2
                 or type(manifest.get('members')) is not list or len(manifest['members']) != len(observed)):
             raise UpdateError('Backup manifest is missing or invalid.')
@@ -208,7 +237,7 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
         if _stream:
             while process.stdout.read(1024**2): pass
             if process.wait(timeout=60): raise UpdateError('Backup authentication failed: wrong password, damaged file or unsupported format.')
-        yield VerifiedArchive(path, manifest)
+        yield VerifiedArchive(path, manifest, metadata)
     except (OSError, ValueError, TypeError, tarfile.TarError, subprocess.SubprocessError) as error:
         if isinstance(error, UpdateError): raise
         raise UpdateError('The full backup is unreadable or invalid.') from error

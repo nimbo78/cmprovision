@@ -213,7 +213,11 @@ class LinuxBackupSystem:
                 'package': name, 'version': version, 'archive': member, 'provenance': 'signed-release', 'envelope': envelope}
         package_dir = directory/name
         package_dir.mkdir(mode=0o700)
-        self.command(['/usr/bin/dpkg-repack', name], cwd=package_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
+        size = self.command(['/usr/bin/dpkg-query', '-W', '-f=${Installed-Size}', name])
+        if not re.fullmatch(r'[0-9]{1,12}', size) or shutil.disk_usage(directory).free < int(size)*2048+RESERVE:
+            raise UpdateError('Not enough space to capture the required station package while preserving the free-space reserve.')
+        self.command(['/usr/bin/dpkg-repack', '--deb-option=-Zgzip', '--deb-option=-z1', '--deb-option=--threads-max=1', name],
+            cwd=package_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
         files = list(package_dir.glob(name+'_*.deb'))
         if len(files) != 1 or files[0].is_symlink(): raise UpdateError('A required installed station package could not be captured.')
         package = files[0]

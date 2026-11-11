@@ -100,6 +100,9 @@ def reconcile(store, system, launcher=launch):
     if unit.stdout.strip() in ('active', 'activating', 'deactivating'): return
     if state['pending']:
         try:
+            with store.lock('worker', blocking=False): pass
+        except UpdateError: return # A live administrator CLI has no transient backup-worker unit.
+        try:
             system.command(['/usr/bin/systemd-run', '--quiet', '--collect', '--unit=cmprovision-backup-recovery', '--',
                 '/usr/bin/python3', '-I', '/usr/lib/cmprovision/station-backups.py', '--recover'], timeout=8)
         except UpdateError: pass # An existing recovery unit or a lost reply never repeats a snapshot.

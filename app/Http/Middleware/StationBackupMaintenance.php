@@ -15,12 +15,18 @@ class StationBackupMaintenance
     {
         if (!$request->is('livewire/update') || !$request->isMethod('POST')) return false;
         $components = $request->input('components');
-        if (!is_array($components) || count($components) !== 1) return false;
-        $snapshot = $components[0]['snapshot'] ?? null;
-        if (!is_string($snapshot) || strlen($snapshot) > 65536) return false;
-        $value = json_decode($snapshot, true, 32);
-        // Livewire subsequently verifies the signed snapshot and the component checks authentication.
-        return ($value['memo']['name'] ?? null) === 'station-backups-panel';
+        if (!is_array($components) || !$components || count($components) > 8) return false;
+        foreach ($components as $component) {
+            $snapshot = $component['snapshot'] ?? null;
+            if (!is_string($snapshot) || strlen($snapshot) > 65536) return false;
+            $value = json_decode($snapshot, true, 32);
+            $name = $value['memo']['name'] ?? null;
+            // Livewire verifies each signed snapshot; only the guarded Backup component may mutate.
+            if ($name === 'station-backups-panel') continue;
+            if (!in_array($name, ['wallboard-settings', 'fpms-settings'], true) || !empty($component['updates'])) return false;
+            foreach ($component['calls'] ?? [] as $call) if (($call['method'] ?? null) !== '$refresh' || !empty($call['params'])) return false;
+        }
+        return true;
     }
 
     private function busy()
@@ -36,7 +42,7 @@ class StationBackupMaintenance
         $panel = $this->backupPanel($request);
         $auth = $request->is('login', 'logout', 'user/confirm-password', 'two-factor-challenge');
         $read = ($request->isMethod('GET') || $request->isMethod('HEAD'))
-            && $request->is('settings', 'settings/backups/status', 'settings/backups/*/download', 'up', 'updates/health');
+            && $request->is('settings', 'settings/backups/status', 'settings/backups/confirm', 'settings/backups/*/download', 'up', 'updates/health');
         if ($this->control->pending()) return ($panel || $auth || $read) ? $next($request) : $this->busy();
         if ($panel || $auth || in_array($request->method(), ['GET', 'HEAD', 'OPTIONS'], true)) return $next($request);
         if (is_link($this->path) || !($handle = @fopen($this->path, 'r'))) return $this->busy();

@@ -66,5 +66,15 @@ class BrokerTest(unittest.TestCase):
         second, _ = reconstructed.begin('b'*64, 'download', options)
         self.assertEqual(second['id'], reconstructed.status()['history'][0]['id'])
 
+    def test_live_cli_restore_lock_does_not_spawn_recovery_units_on_every_status_poll(self):
+        import subprocess
+        job, _ = self.store.begin('d'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        self.store.mark_pending(job['id'], {})
+        self.store.clock = lambda: 2000
+        system = Mock()
+        system.command.return_value = subprocess.CompletedProcess([], 3, stdout='inactive', stderr='')
+        with self.store.lock('worker', blocking=False): self.module.reconcile(self.store, system)
+        self.assertFalse(any('systemd-run' in call.args[0][0] for call in system.command.call_args_list))
+
 
 if __name__ == '__main__': unittest.main()

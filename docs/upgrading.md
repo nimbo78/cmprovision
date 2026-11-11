@@ -165,6 +165,8 @@ The package's post-installation step adjusts existing servers:
 
 ## Network roles in backups
 
+The encrypted **Full station backup** workflow has a separate [creation and restoration guide](backups.md). Its default migration mode preserves the destination's network, SSH access and stand role; the older snapshot commands below keep their existing semantics.
+
 Full snapshots from 2.24.0 save DHCP/TFTP and USB service masks and boot links with the network
 configuration. Full restore replaces the current role with those saved links. Older snapshots
 without this metadata keep the current boot-service role. `--data-only` also keeps the current

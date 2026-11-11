@@ -5,8 +5,10 @@ namespace App\Http\Livewire;
 use App\Services\StationBackupsControl;
 use Laravel\Jetstream\ConfirmsPasswords;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\Isolate;
 use Livewire\Component;
 
+#[Isolate]
 class StationBackupsPanel extends Component
 {
     use ConfirmsPasswords;
