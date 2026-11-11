@@ -141,6 +141,27 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual('checking', result['diagnostic']['phase'])
         self.assertNotIn('private-check-value', str(self.store.snapshot()))
 
+    def test_expected_check_failure_keeps_diagnostics_and_checks_other_component(self):
+        def check(component, context):
+            if component == 'application':
+                try:
+                    raise TimeoutError('secret=private-network-output')
+                except TimeoutError as cause:
+                    raise UpdateError('Release check timed out.') from cause
+            return None
+        with patch.object(self.source, 'check', side_effect=check) as source:
+            result = self.run_operation('check', components=['application', 'utility-os'])
+        self.assertEqual('failed', result['state'])
+        self.assertEqual('Release check timed out.', result['message'])
+        self.assertEqual(['application', 'utility-os'], [call.args[0] for call in source.call_args_list])
+        self.assertIn('diagnostic', result)
+        import update_diagnostics
+        report = update_diagnostics.read(self.store, result['id'])
+        self.assertEqual('TimeoutError', report['failures'][0]['error']['cause']['type'])
+        self.assertNotIn('private-network-output', str(report) + str(self.store.snapshot()))
+        self.assertIsNone(self.store.snapshot()['pending'])
+        self.assertEqual([], self.system.calls)
+
     def test_unexpected_install_and_failed_recovery_keep_distinct_diagnostics(self):
         ready = self.download()
         with patch.object(self.system, 'install', side_effect=RuntimeError('private install output')):

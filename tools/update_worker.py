@@ -114,6 +114,9 @@ class Worker:
             except UpdateError as error:
                 self.store.record_check(component, error=str(error))
                 errors.append(str(error))
+                diagnostic = record(self.store, identity, error, 'checking')
+                try: self.store.update(identity, diagnostic=diagnostic)
+                except Exception: pass # Optional diagnostics cannot interrupt checking the other component.
         self._phase(identity, 'failed' if errors else 'succeeded',
                     errors[0] if errors else 'Update check completed.')
 
