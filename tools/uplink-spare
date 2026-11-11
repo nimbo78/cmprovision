@@ -16,6 +16,18 @@ RUN=${UPLINK_SPARE_RUN:-/run/cmprovision}
 CONF=${UPLINK_SPARE_CONF:-/etc/default/cmprovision-uplink}
 STATE=$RUN/uplink-spare
 SELF=/usr/lib/cmprovision/uplink-spare
+RESCUE=${UPLINK_SPARE_RESCUE:-/usr/lib/cmprovision/rescue-wifi}
+
+# An enabled rescue controller owns the radio. Late legacy timers and package release hooks only enqueue it;
+# they never disconnect its AP. Disabled/uninstalled rescue retains the original cold-spare behavior.
+case "${1:-}" in
+    check|release)
+        if [ -x "$RESCUE" ] && "$RESCUE" owns >/dev/null 2>&1; then
+            "$RESCUE" wake >/dev/null 2>&1 || true
+            exit 0
+        fi
+        ;;
+esac
 
 now() {
     echo "${UPLINK_SPARE_NOW:-$(date +%s)}"
