@@ -84,7 +84,7 @@ jobs:
   prepare-auto-release:
     name: Prepare stable release candidate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == (vars.CMPROVISION_RELEASE_REPOSITORY || 'nimbo78/cmprovision')
-    needs: [php, javascript, image-release-checks, station-power, station-updates, station-updates-integration]
+    needs: [php, javascript, image-release-checks, station-power, station-updates, station-backups, station-updates-integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -130,11 +130,28 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
       - run: python3 -B -m unittest discover -s tests/updates -v
 
+  station-backups:
+    name: Full backups and loopback remote storage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -f docker/Dockerfile -t cmprovision-backup-tests .
+      - name: Exercise encryption, root boundaries and real SFTP/FTP/FTPS/S3 endpoints
+        run: |
+          docker run --rm --user root --entrypoint sh -v "$GITHUB_WORKSPACE:/source:ro" cmprovision-backup-tests -ec '
+            apt-get update
+            apt-get install -y --no-install-recommends openssh-server python3-pyftpdlib python3-moto python3-openssl python3-flask-cors python3-jsonpath-ng
+            cp -a /source /tmp/backup-tests
+            cd /tmp/backup-tests
+            CMPROVISION_REMOTE_ACCEPTANCE=1 CMPROVISION_LARGE_BACKUP_TEST=1 python3 -B -m unittest discover -s tests/backups -v
+          '
+
   station-updates-integration:
     name: Debian update and rollback acceptance
     needs: station-updates
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     defaults:
       run:
         shell: bash
@@ -175,6 +192,34 @@ jobs:
       - name: Stop the disposable station
         if: always()
         run: sudo machinectl terminate cmprovision-update-bench || true
+      - name: Prepare a separate disposable full-restore station
+        run: sudo python3 tests/backups/prepare_acceptance.py "$RUNNER_TEMP"/update-packages/cmprovision4_*_all.deb
+      - name: Exercise real full backup, accounts, SSH, network and SQLite restoration
+        run: |
+          sudo systemd-run --quiet --collect --unit=cmprovision-backups-bench-container \
+            /usr/bin/systemd-nspawn --directory=/var/tmp/cmprovision-backups-bench \
+            --machine=cmprovision-backups-bench --private-network --boot --console=passive
+          for attempt in $(seq 1 30); do
+            if sudo systemd-run --quiet --machine=cmprovision-backups-bench --pipe --wait --collect /usr/bin/true; then break; fi
+            sleep 2
+          done
+          sudo systemd-run --machine=cmprovision-backups-bench --pipe --wait --collect \
+            --unit=cmprovision-backups-acceptance /usr/bin/python3 /fixture/backups-acceptance.py \
+            2>&1 | tee "$RUNNER_TEMP/backup-acceptance.log"
+          sudo systemd-run --machine=cmprovision-backups-bench --pipe --wait --collect \
+            --unit=cmprovision-backups-failure-acceptance /usr/bin/python3 /fixture/backups-failure-acceptance.py \
+            2>&1 | tee -a "$RUNNER_TEMP/backup-acceptance.log"
+      - name: Preserve backup acceptance diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: station-backup-acceptance
+          path: ${{ runner.temp }}/backup-acceptance.log
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Stop the full-restore station
+        if: always()
+        run: sudo machinectl terminate cmprovision-backups-bench || true
 
   release:
     if: github.event_name == 'workflow_dispatch' && inputs.station_image_tag != '' && inputs.station_image_package_sha256 == '' && inputs.station_image_fpms_sha256 == ''

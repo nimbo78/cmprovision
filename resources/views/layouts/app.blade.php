@@ -16,6 +16,7 @@
         <script src="{{ asset('js/appearance.js') }}?v={{ @filemtime(public_path('js/appearance.js')) }}"></script>
         <script src="{{ asset('js/tab-status.js') }}?v={{ @filemtime(public_path('js/tab-status.js')) }}" defer></script>
         <script src="{{ asset('js/station-updates.js') }}?v={{ @filemtime(public_path('js/station-updates.js')) }}" defer></script>
+        <script src="{{ asset('js/station-backups.js') }}?v={{ @filemtime(public_path('js/station-backups.js')) }}" defer></script>
 
         @livewireStyles
     </head>
@@ -26,6 +27,10 @@
             @livewire('navigation-menu')
 
             <main>
+                <div x-data="{ visible: false }" x-on:cmprovision-backup-maintenance.document="visible = true" x-show="visible" x-cloak class="cmp-flash m-4" role="status">
+                    A station backup is running. Changes are temporarily paused.
+                    <a href="{{ route('settings', ['tab' => 'system', '#backup']) }}" class="text-link">View progress or cancel</a>
+                </div>
                 {{ $slot }}
             </main>
         </div>

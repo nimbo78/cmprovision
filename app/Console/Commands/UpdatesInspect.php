@@ -15,7 +15,8 @@ class UpdatesInspect extends Command
     public function handle(UtilityOs $utility): int
     {
         $current = $utility->current();
-        $this->line(json_encode(['utility_selector' => match ($current) {
+        $commit = (string) config('version.commit');
+        $this->line(json_encode(['source_commit' => preg_match('/\A[0-9a-f]{7,40}\z/D', $commit) ? $commit : 'unknown', 'utility_selector' => match ($current) {
             'scriptexecute' => 'legacy', 'scriptexecute64' => 'bundled-modern', default => $current,
         }, 'utility_os_version' => $current && $current !== 'scriptexecute' ? ($utility->manifest($current)['version'] ?? '0') : '0',
             'utility_os_label' => $current ? ($utility->manifest($current)['version'] ?? 'unknown') : 'none',

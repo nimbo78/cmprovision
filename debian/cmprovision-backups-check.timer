@@ -1,0 +1,10 @@
+[Unit]
+Description=Check full backup jobs and opt-in schedules once a minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

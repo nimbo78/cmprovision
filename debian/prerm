@@ -2,6 +2,13 @@
 
 set -e
 
+# Do not remove the only recovery implementation during a full snapshot/restore.
+# A root full-restore owns the gate while it installs its selected matching package.
+if [ "$1" = "remove" ] && [ -e /run/cmprovision-backups/pending.json ]; then
+    echo "A full backup or restore needs recovery. Resolve it before removing cmprovision." >&2
+    exit 1
+fi
+
 # Do not remove or replace the recovery helper while an unconfirmed network change depends on it.
 # Recovery is idempotent when no transaction is pending; a conflict stops package removal/upgrade.
 if [ "$1" = "upgrade" ] || [ "$1" = "remove" ]; then

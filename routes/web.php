@@ -14,6 +14,14 @@ use App\Http\Controllers\AddImageController;
 use App\Http\Controllers\AddPackageController;
 use App\Http\Controllers\BackupDownloadController;
 
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
+    ->get('/settings/backups/status', [\App\Http\Controllers\StationBackupsController::class, 'status'])->name('settings.backups.status');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])
+    ->get('/settings/backups/confirm', fn () => redirect()->route('settings', ['tab' => 'system', '#backup']))->name('settings.backups.confirm');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])
+    ->get('/settings/backups/{id}/download', [\App\Http\Controllers\StationBackupsController::class, 'download'])
+    ->where('id', '[0-9a-f]{32}')->name('settings.backups.download');
+
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -51,6 +59,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     ->get('/settings/power/status', \App\Http\Controllers\StationPowerStatusController::class)->name('settings.power.status');
 // the copy of the data holds the application key and every password of the server: the password is asked again
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])->group(function () {
+    Route::get('/settings/updates/{id}/diagnostics', \App\Http\Controllers\StationUpdatesDiagnosticsController::class)
+        ->where('id', '[0-9a-f]{32}')->name('settings.updates.diagnostics');
     Route::get('/settings/backup', [BackupDownloadController::class, 'show'])->name('settings.backup');
     Route::post('/settings/backup', BackupDownloadController::class)->name('settings.backup.download');
 });

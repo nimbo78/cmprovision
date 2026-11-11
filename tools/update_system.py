@@ -82,6 +82,8 @@ class LinuxSystem:
             raise UpdateError('Not enough free space for the signed download plus the 64 MiB safety reserve.')
 
     def conflicts(self):
+        if os.path.lexists('/run/cmprovision-backups/pending.json'):
+            raise UpdateError('A station backup is being created; wait for it to finish.')
         if any(os.path.lexists(path) for path in ('/run/cmprovision-network/pending',
                 '/var/lib/cmprovision-network/transactions/pending.json')):
             raise UpdateError('Confirm or recover the pending network change first.')

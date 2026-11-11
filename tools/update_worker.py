@@ -1,7 +1,10 @@
 """One durable update operation; filesystem trust and system effects are separate boundaries."""
 import base64
 import hashlib
+import os
 import stat
+
+from update_diagnostics import record
 
 from update_manifest import UpdateError, canonical_bytes, compatibility_error, newer, verify_manifest
 from update_store import TERMINAL
@@ -66,6 +69,9 @@ class Worker:
             lock.__enter__()
         except UpdateError:
             return # A duplicate worker must not overwrite the real worker's result.
+        if os.path.lexists(self.store.runtime.with_name('cmprovision-backups')/'pending.json'):
+            lock.__exit__(None, None, None)
+            return # The backup may be streaming signed payloads that prune() would remove.
         try:
             operation = self.store.operation(identity)
             if operation['state'] != 'queued': return
@@ -108,6 +114,9 @@ class Worker:
             except UpdateError as error:
                 self.store.record_check(component, error=str(error))
                 errors.append(str(error))
+                diagnostic = record(self.store, identity, error, 'checking')
+                try: self.store.update(identity, diagnostic=diagnostic)
+                except Exception: pass # Optional diagnostics cannot interrupt checking the other component.
         self._phase(identity, 'failed' if errors else 'succeeded',
                     errors[0] if errors else 'Update check completed.')
 
@@ -217,7 +226,10 @@ class Worker:
 
     def _failed(self, identity, error):
         operation = self.store.operation(identity)
-        message = str(error) if isinstance(error, UpdateError) else 'Update controller failed; inspect its private service log.'
+        diagnostic = record(self.store, identity, error, operation['state'])
+        try: self.store.update(identity, diagnostic=diagnostic)
+        except Exception: pass # Optional diagnostic metadata cannot interrupt automatic recovery.
+        message = str(error) if isinstance(error, UpdateError) else 'Unexpected '+diagnostic['type']+' during '+diagnostic['phase']+'. Diagnostic reference: '+identity+'.'
         pending = self.store.snapshot()['pending']
         if not pending or pending['id'] != identity:
             state = 'canceled' if operation['cancel_requested'] else 'failed'
@@ -239,7 +251,10 @@ class Worker:
                 self._finish(identity, operation['services'], 'Previous Utility OS restored after: '+message, 'rolled-back')
             else:
                 self._finish(identity, operation['services'], message, 'failed')
-        except Exception:
+        except Exception as recovery_error:
+            recovery = record(self.store, identity, recovery_error, 'recovery')
+            try: self.store.update(identity, recovery_diagnostic=recovery)
+            except Exception: pass
             self._phase(identity, 'recovery-required', message+' Automatic recovery/cleanup did not complete. Use SSH or the local console.')
 
     def recover_pending(self):

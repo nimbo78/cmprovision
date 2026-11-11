@@ -1,6 +1,7 @@
 """Bounded HTTPS acquisition from one pinned GitHub publisher; metadata URLs are never executable inputs."""
 import base64
 import hashlib
+import http.client
 import json
 import os
 import shutil
@@ -55,6 +56,9 @@ class ReleaseSource:
         return self.opener.open(request, timeout=20)
 
     def _retry(self, error, attempt):
+        cause = error.reason if isinstance(error, urllib.error.URLError) else error
+        if isinstance(cause, ssl.SSLCertVerificationError):
+            raise UpdateError('The trusted update server certificate could not be verified.') from error
         if isinstance(error, urllib.error.HTTPError):
             if error.code == 429 or error.code == 403 and error.headers.get('X-RateLimit-Remaining') == '0':
                 raise UpdateError('GitHub rate limit reached; wait before checking again.') from error
@@ -71,7 +75,7 @@ class ReleaseSource:
                     raw = response.read(limit+1)
                 if len(raw) > limit: raise UpdateError('Update metadata exceeds its size limit.')
                 return raw
-            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as error:
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, http.client.HTTPException) as error:
                 self._retry(error, attempt)
         raise UpdateError('Update metadata download did not complete.')
 
@@ -201,7 +205,7 @@ class ReleaseSource:
                 try: os.fsync(directory)
                 finally: os.close(directory)
                 return destination
-            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as error:
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, http.client.HTTPException) as error:
                 self._retry(error, attempt)
             finally:
                 if temporary.exists(): temporary.unlink()

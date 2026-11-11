@@ -123,6 +123,57 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual('ready', operation['state'], operation.get('message'))
         return self.store.snapshot()['ready'][0]
 
+    def test_backup_gate_defers_check_without_pruning_its_source_assets(self):
+        marker = self.store.runtime.with_name('cmprovision-backups')/'pending.json'
+        marker.parent.mkdir(); marker.write_text('{}')
+        with patch.object(self.system, 'prune') as prune:
+            operation = self.run_operation('check', components=['application'])
+        self.assertEqual('queued', operation['state'])
+        self.assertEqual([], self.source.calls)
+        prune.assert_not_called()
+
+    def test_unexpected_check_failure_has_safe_correlated_diagnostics(self):
+        with patch.object(self.source, 'check', side_effect=RuntimeError('secret=private-check-value')):
+            result = self.run_operation('check', components=['application'])
+        self.assertEqual('failed', result['state'])
+        self.assertIn('diagnostic', result)
+        self.assertEqual(result['id'], result['diagnostic']['reference'])
+        self.assertEqual('checking', result['diagnostic']['phase'])
+        self.assertNotIn('private-check-value', str(self.store.snapshot()))
+
+    def test_expected_check_failure_keeps_diagnostics_and_checks_other_component(self):
+        def check(component, context):
+            if component == 'application':
+                try:
+                    raise TimeoutError('secret=private-network-output')
+                except TimeoutError as cause:
+                    raise UpdateError('Release check timed out.') from cause
+            return None
+        with patch.object(self.source, 'check', side_effect=check) as source:
+            result = self.run_operation('check', components=['application', 'utility-os'])
+        self.assertEqual('failed', result['state'])
+        self.assertEqual('Release check timed out.', result['message'])
+        self.assertEqual(['application', 'utility-os'], [call.args[0] for call in source.call_args_list])
+        self.assertIn('diagnostic', result)
+        import update_diagnostics
+        report = update_diagnostics.read(self.store, result['id'])
+        self.assertEqual('TimeoutError', report['failures'][0]['error']['cause']['type'])
+        self.assertNotIn('private-network-output', str(report) + str(self.store.snapshot()))
+        self.assertIsNone(self.store.snapshot()['pending'])
+        self.assertEqual([], self.system.calls)
+
+    def test_unexpected_install_and_failed_recovery_keep_distinct_diagnostics(self):
+        ready = self.download()
+        with patch.object(self.system, 'install', side_effect=RuntimeError('private install output')):
+            with patch.object(self.system, 'recover', side_effect=RuntimeError('private restore output')):
+                result = self.apply(ready)
+        self.assertEqual('recovery-required', result['state'])
+        self.assertIn('diagnostic', result)
+        import update_diagnostics
+        report = update_diagnostics.read(self.store, result['id'])
+        self.assertEqual('recovery', report['failures'][-1]['phase'])
+        self.assertEqual(2, len(report['failures']))
+
     def apply(self, ready): return self.run_operation('apply', candidate=ready['id'], receipt=ready['receipt'])
 
     def test_download_can_run_while_flashing_but_apply_cannot_interrupt_it(self):

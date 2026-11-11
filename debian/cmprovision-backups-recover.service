@@ -1,0 +1,13 @@
+[Unit]
+Description=Reestablish the full backup gate and schedule interrupted service recovery
+Requires=cmprovision-network-init.service
+After=local-fs.target cmprovision-network-init.service
+Before=nginx.service cmprovision-queue.service cmprovision-queue-images.service cmprovision-wallboard-data.service cmprovision-fpms-data.service cmprovision-dnsmasq.service cmprovision-rpiboot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B -I /usr/lib/cmprovision/station-backups.py --recover-boot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

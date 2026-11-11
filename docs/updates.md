@@ -51,6 +51,14 @@ If installation or its health checks fail, the updater restores the immediate sn
 
 The protocol-1 boot dispatcher is retained at `/var/lib/cmprovision-updates/recover.py`, outside files replaced by dpkg. It verifies and launches the previous operation's saved Python runner, so a partly replaced updater or trust configuration does not prevent its own recovery.
 
+## Failure diagnostics
+
+Expand **Failure details** in Settings → Updates to see the failed phase, exception type and operation reference. **Download diagnostics** asks for your account password again and exports a bounded JSON report. Keep the reference with the report when requesting help. It distinguishes the original failure from any failure during automatic recovery, and records code locations and constrained HTTP status/OS error numbers. Passwords, response bodies, private command output and unexpected exception messages are excluded.
+
+Reports are retained privately on the station for the latest 20 diagnostic operations, with pending/recovery-required records protected from cleanup. For an unavailable web interface, use the reference over SSH: `sudo journalctl -u 'cmprovision-update-*' --no-pager`. A missing report does not mean an installation succeeded: use the recorded operation outcome and maintenance state. Do not remove pending markers to bypass recovery.
+
+Interrupted read-only HTTP transfers have at most three attempts. A payload retry starts with a fresh partial file; certificate, signature, checksum and size failures remain rejections. Installations are never repeated by this retry policy.
+
 ## Publisher and release administration
 
 `/etc/cmprovision-updates/publisher.json` and `publisher.pub` are root-owned trust configuration. The browser cannot change the repository, key or download URLs. Metadata uses a detached minisign signature and binds the exact stable tag, source commit, compatibility, filenames, sizes and SHA-256 digests. HTTPS and checksums complement signature verification.

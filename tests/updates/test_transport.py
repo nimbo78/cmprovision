@@ -1,12 +1,15 @@
 import hashlib
 import io
+import http.client
 import json
 from pathlib import Path
 import shutil
+import ssl
 import tempfile
 import unittest
 import urllib.error
 import urllib.request
+from unittest.mock import Mock
 
 from support import CONTEXT, REPOSITORY, encode, manifest, signed
 from update_manifest import MANIFEST_NAME, SIGNATURE_NAME, UpdateError
@@ -42,6 +45,42 @@ class TransportTest(unittest.TestCase):
         self.raw, self.signature, self.key = signed(self.base/'signing', self.value)
         self.list_url = 'https://api.github.com/repos/'+REPOSITORY+'/releases?per_page=50&page=1'
         self.asset_url = 'https://github.com/'+REPOSITORY+'/releases/download/'+self.value['tag']+'/'
+
+    def test_incomplete_metadata_read_retries_without_exporting_partial_response(self):
+        broken = Response(b'')
+        broken.read = Mock(side_effect=http.client.IncompleteRead(b'private partial body', 50))
+        opener = Mock()
+        opener.open.side_effect = [broken, Response(b'complete')]
+        source = ReleaseSource(REPOSITORY, self.key, opener, sleep=lambda _: None)
+        self.assertEqual(b'complete', source._read(self.list_url, 100))
+        self.assertEqual(2, opener.open.call_count)
+
+    def test_incomplete_payload_retry_discards_partial_file_and_exhaustion_is_bounded(self):
+        data = b'complete verified contents'
+        asset = {'name': 'cmprovision4_2.28.0_all.deb', 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+        broken = Response(b'')
+        broken.read = Mock(side_effect=[b'old', http.client.IncompleteRead(b'private body', 20)])
+        opener = Mock()
+        opener.open.side_effect = [broken, Response(data)]
+        source = ReleaseSource(REPOSITORY, self.key, opener, sleep=lambda _: None)
+        destination = self.base/'received.deb'
+        source.fetch('v2.28.0', asset, destination, lambda *_: True)
+        self.assertEqual(data, destination.read_bytes())
+        self.assertEqual([], list(self.base.glob('.download-*.part')))
+        opener.open.side_effect = http.client.IncompleteRead(b'private body', 20)
+        opener.open.reset_mock()
+        with self.assertRaises(UpdateError):
+            source.fetch('v2.28.0', asset, self.base/'failed.deb', lambda *_: True)
+        self.assertEqual(3, opener.open.call_count)
+        self.assertFalse((self.base/'failed.deb').exists())
+        self.assertEqual([], list(self.base.glob('.download-*.part')))
+
+    def test_invalid_tls_certificate_is_terminal_without_retry(self):
+        opener = Mock()
+        opener.open.side_effect = urllib.error.URLError(ssl.SSLCertVerificationError(1, 'private certificate data'))
+        source = ReleaseSource(REPOSITORY, self.key, opener, sleep=lambda _: None)
+        with self.assertRaises(UpdateError): source._read(self.list_url, 100)
+        self.assertEqual(1, opener.open.call_count)
 
     def release(self):
         assets = [{'name': MANIFEST_NAME, 'state': 'uploaded', 'size': len(self.raw)},

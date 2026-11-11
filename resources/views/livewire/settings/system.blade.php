@@ -21,6 +21,7 @@
             <a href="{{ route('settings.backup') }}" class="cmp-btn cmp-btn-secondary">Download backup</a>
             <a href="{{ route('settings.transfer') }}" class="cmp-btn cmp-btn-secondary">Selective import / export</a>
         </div>
+        <livewire:station-backups-panel />
     </div>
     <x-slot name="help">
         <p>On a server where cmprovision4 is installed (a new one, or this one after a reinstall), as root:</p>

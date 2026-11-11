@@ -78,6 +78,7 @@ class Controller:
         self.etc, self.runtime, self.run = Path(etc), Path(runtime), run
         self.config = self.etc/'systemd/timesyncd.conf.d/90-cmprovision.conf'
         self.update_pending = Path('/run/cmprovision-updates/pending.json')
+        self.backup_pending = Path('/run/cmprovision-backups/pending.json')
 
     def command(self, program, *arguments, required=True):
         try:
@@ -178,6 +179,8 @@ class Controller:
         request = parse_request(json.dumps(request).encode())  # Also enforce schema for non-CLI callers.
         if request['action'] == 'status':
             return self.status()
+        if self.backup_pending.exists() or self.backup_pending.is_symlink():
+            raise TimeError('A station backup is being created; wait for it to finish.')
         if self.update_pending.exists():
             raise TimeError('Wait for the station update to finish before changing time settings.')
         if not os.path.lexists(self.runtime):
@@ -192,6 +195,8 @@ class Controller:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
                 raise TimeError('Another time settings change is running.') from error
+            if self.backup_pending.exists() or self.backup_pending.is_symlink():
+                raise TimeError('A station backup is being created; wait for it to finish.')
             if self.update_pending.exists():
                 raise TimeError('Wait for the station update to finish before changing time settings.')
             previous = self.status()

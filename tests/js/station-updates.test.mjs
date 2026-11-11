@@ -25,6 +25,10 @@ test('planned update maintenance does not leave the Livewire failure overlay', (
     assert.equal(livewireRequests().response(503, 'station-update'), true);
 });
 
+test('backup maintenance also suppresses the modal failure overlay', () => {
+    assert.equal(livewireRequests().response(503, 'station-backup'), true);
+});
+
 test('real errors and session expiry keep Livewire default handling', () => {
     const requests = livewireRequests();
     for (const [status, marker] of [[503, null], [500, 'station-update'], [419, null], [403, null], [503, 'other-maintenance']]) {

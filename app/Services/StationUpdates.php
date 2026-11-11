@@ -27,7 +27,7 @@ class StationUpdates
     }
     public function scheduled(): void
     {
-        if (!$this->control->available() || $this->control->pending()) return;
+        if (!$this->control->available() || $this->control->pending() || app(StationBackupsControl::class)->pending()) return;
         Cache::lock('station-updates-schedule', 20)->get(function () {
             $due = [];
             foreach ($this->preferences() as $part => $enabled) {
