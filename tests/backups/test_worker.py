@@ -114,5 +114,81 @@ class WorkerTest(unittest.TestCase):
             self.assertIsNone(self.store.status()['pending'])
             self.store.cancel(job['id']); self.worker.run(job['id'])
 
+    def test_cancel_during_actual_readback_does_not_commit_the_download(self):
+        from unittest.mock import patch
+        from backup_archive import verify_stream
+        job = self.job()
+        from backup_system import LinuxBackupSystem
+        cleanup = self.system.cleanup
+        def remove(directory, keep_download=False):
+            cleanup(directory, keep_download)
+            LinuxBackupSystem(self.store, root=self.root).cleanup(directory, keep_download)
+        self.system.cleanup = remove
+        def verify(*args, **kwargs):
+            # The real reader must poll this callback, not just cancellation before it starts.
+            polls = [0]
+            def canceled():
+                polls[0] += 1
+                if polls[0] < 3: return False
+                self.store.cancel(job['id'])
+                return True
+            kwargs['canceled'] = canceled
+            return verify_stream(*args, **kwargs)
+        with patch.object(self.module, 'verify_stream', side_effect=verify): self.worker.run(job['id'])
+        result = self.store.operation(job['id'])
+        self.assertEqual('canceled', result['state'], result['message'])
+        self.assertFalse(result.get('committed', False))
+        self.assertIsNone(self.store.status()['pending'])
+        self.assertIn(('cleanup', False), self.system.calls)
+        self.assertFalse((self.store.job_dir(job['id'])/'backup.cmpbackup').exists())
+
+    def test_cancel_during_final_ciphertext_hash_does_not_commit(self):
+        from unittest.mock import patch
+        job = self.job()
+        original = self.worker.progress
+        def progress(identity, phase, done, total):
+            if phase == 'verifying' and total and done: self.store.cancel(identity)
+            return original(identity, phase, done, total)
+        with patch.object(self.worker, 'progress', side_effect=progress): self.worker.run(job['id'])
+        self.assertEqual('canceled', self.store.operation(job['id'])['state'])
+        self.assertIsNone(self.store.status()['pending'])
+
+    def test_deferred_multiday_schedule_coalesces_slots_at_actual_capture(self):
+        from backup_broker import tick
+        from backup_schedule import due
+        from unittest.mock import Mock
+        now = [1794211200] # Monday 2026-11-09 08:00 UTC.
+        self.store.clock = lambda: now[0]
+        self.store.save_profile({'type': 'ftp', 'name': 'Fixture', 'host': '127.0.0.1', 'user': 'fixture', 'password': 'fixture', 'path': '/backups'})
+        target = self.store.status()['profiles'][0]['id']
+        config = {'enabled': True, 'frequency': 'daily', 'time': '03:00', 'weekday': 0,
+            'profile': target, 'keep': 7, 'images': False, 'packages': False}
+        self.store.save_schedule(config, timezone='UTC')
+        self.store.mutate(lambda value: value['schedule'].update(not_before=0))
+        slot = due(self.store.configuration()['schedule'], [], now[0], 'UTC')
+        job, _ = self.store.begin('a'*64, target, {'images': False, 'packages': False}, scheduled=True, slot=slot)
+        self.system.active = [{'phase': 'write'}]; self.worker.run(job['id'])
+        self.assertEqual('waiting', self.store.operation(job['id'])['state'])
+        now[0] += 2*86400
+        self.system.active = []
+        class Destination:
+            def __init__(inner, *args): pass
+            def __enter__(inner): return inner
+            def __exit__(inner, *args): pass
+            def upload(inner, *args): return {'sha256': 'a'*64, 'size': 1024, 'name': 'fixture', 'station_id': self.store.configuration()['station_id']}
+            def namespace(inner): return 'fixture'
+            def prune(inner, *args): return []
+        self.module.Worker(self.store, self.system, remote=Destination).run(job['id'])
+        self.assertEqual('succeeded', self.store.operation(job['id'])['state'])
+        launcher = Mock()
+        self.system.timezone = lambda: 'UTC'; self.system.sweep = lambda: None
+        import subprocess
+        self.system.command = lambda *args, **kw: subprocess.CompletedProcess([], 3, stdout='inactive', stderr='')
+        tick(self.store, self.system, launcher)
+        launcher.assert_not_called()
+        now[0] += 86400
+        tick(self.store, self.system, launcher)
+        launcher.assert_called_once()
+
 
 if __name__ == '__main__': unittest.main()

@@ -13,6 +13,7 @@ NAMES = ('station-updates.py', 'update_manifest.py', 'update_store.py', 'update_
          'update_worker.py', 'update_system.py', 'update_utility.py', 'update_broker.py',
          'update_recovery.py', 'update_retention.py', 'update_diagnostics.py', 'publisher.json', 'publisher.pub')
 TRUST = ('publisher.json', 'publisher.pub')
+LEGACY_NAMES = tuple(name for name in NAMES if name != 'update_diagnostics.py')
 
 
 def protected(path, owner, directory=False):
@@ -43,10 +44,12 @@ def install_dispatcher(store):
     target = store.root/'recover.py'
     if target.exists() or target.is_symlink():
         protected(target, store.owner)
-        return # Protocol1 dispatcher is deliberately not replaced during self-update.
+    # This stdlib-only protocol-1 dispatcher accepts both historical inventories.
+    # Atomic replacement keeps an already-pending old runner bootable during upgrade.
     source = Path(__file__)
     protected(source, store.owner)
-    write(target, source.read_bytes(), 0o600)
+    raw = source.read_bytes()
+    if not target.exists() or target.read_bytes() != raw: write(target, raw, 0o600)
 
 
 def retain_runner(store, identity, installed=Path('/usr/lib/cmprovision'), names=NAMES,
@@ -115,7 +118,7 @@ def dispatch(root=Path('/var/lib/cmprovision-updates'), runtime=Path('/run/cmpro
     if runner.get('directory') != str(directory): raise RuntimeError('The retained recovery path does not match.')
     for path in (directory.parent, directory): protected(path, owner, directory=True)
     hashes = runner.get('hashes')
-    if not isinstance(hashes, dict) or set(hashes) != set(NAMES):
+    if not isinstance(hashes, dict) or set(hashes) not in (set(NAMES), set(LEGACY_NAMES)):
         raise RuntimeError('The retained recovery inventory is invalid.')
     for name, digest in hashes.items():
         path = directory/name

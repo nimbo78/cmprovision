@@ -20,6 +20,7 @@ def prepare(package):
     finally: (ROOT/'usr/sbin/policy-rc.d').unlink()
     (ROOT/'etc/hostname').write_text('cmprovision-backups-bench\n')
     shutil.copyfile(Path(__file__).with_name('run_acceptance.py'), ROOT/'fixture/backups-acceptance.py')
+    shutil.copyfile(Path(__file__).with_name('run_failure_acceptance.py'), ROOT/'fixture/backups-failure-acceptance.py')
     (ROOT/'fixture/backup-acceptance-only').write_text('Disposable backup acceptance; no hardware attached.\n')
 
 

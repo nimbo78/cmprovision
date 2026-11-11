@@ -30,6 +30,25 @@ def relative(value):
     return True
 
 
+def validate_payloads(value, members, options, hashes=True):
+    if type(value) is not dict or set(value) != {'schema', 'references'} or value['schema'] != 1 or type(value['references']) is not list or len(value['references']) > 4000:
+        raise UpdateError('The snapshot payload reference inventory is invalid.')
+    files, seen = {row['name']: row for row in members}, set()
+    for row in value['references']:
+        if (type(row) is not dict or set(row) != {'name', 'group', 'sha256', 'size'} or row.get('group') not in ('images', 'packages')
+                or not relative(row.get('name')) or not row['name'].startswith('application/public/uploads/') or row['name'] in seen
+                or (row['group'] == 'packages') != row['name'].startswith('application/public/uploads/packages/')
+                or row['sha256'] is not None and not re.fullmatch('[0-9a-f]{64}', str(row['sha256']))
+                or row['size'] is not None and (type(row['size']) is not int or not 0 <= row['size'] <= 2**40)):
+            raise UpdateError('An invalid snapshot payload reference was found.')
+        seen.add(row['name'])
+        if not options[row['group']]: continue
+        member = files.get(row['name'])
+        if (not member or row['size'] is not None and member['size'] != row['size']
+                or hashes and row['sha256'] is not None and member['sha256'] != row['sha256']):
+            raise UpdateError('A selected image, split copy or sensor package is missing or differs from the snapshot database.')
+
+
 def system_member(name):
     if name in FIXED: return True
     if any(name.startswith(prefix+'/') for prefix in TREES): return True

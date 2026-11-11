@@ -12,7 +12,7 @@
         <template x-if="percent() !== null"><div><div class="cmp-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="percent()" aria-label="Backup bytes processed"><span class="cmp-progress-bar" :style="{ width: percent() + '%' }"></span></div><p class="text-xs mono" x-text="percent() + '% · ' + Math.round(operation.bytes / 1048576) + ' / ' + Math.round(operation.total / 1048576) + ' MiB'"></p></div></template>
         <p x-show="busy() && percent() === null" class="text-sm"><span class="animate-pulse" aria-hidden="true">●</span> Working…</p>
         <p x-show="operation?.warning" class="text-warn" x-text="operation?.warning"></p>
-        <button type="button" x-show="busy() && operation?.state !== 'recovery-required'" x-on:click="$wire.cancel(operation.id)" class="cmp-btn cmp-btn-secondary">Cancel job</button>
+        <button type="button" x-show="busy() && operation?.action !== 'restore' && operation?.state !== 'recovery-required'" x-on:click="$wire.cancel(operation.id)" class="cmp-btn cmp-btn-secondary">Cancel job</button>
         <template x-if="operation?.host_keys"><div class="space-y-2"><p>Compare the fingerprint with your SFTP server, then explicitly accept a key.</p><template x-for="key in operation.host_keys" :key="key.key"><div class="break-all text-xs mono"><span x-text="key.fingerprint"></span> <button type="button" class="text-link" x-on:click="profile.host_key = key.key">Use this key</button></div></template></div></template>
     </div>
     <fieldset @disabled(!$confirmed) class="space-y-4">
@@ -29,8 +29,9 @@
         <p class="text-sm text-fg-muted" x-text="status.schedule?.enabled ? 'Schedule: ' + status.schedule.frequency + ' at ' + status.schedule.time + ' · ' + (status.timezone || 'system time') : 'Scheduled backups are off.'"></p>
         <div class="space-y-2"><h4 class="font-semibold">Recent jobs</h4><template x-for="item in (status.history || [])" :key="item.id"><div class="border border-line rounded-lg p-3 text-sm space-y-1"><p><span class="mono" x-text="new Date(item.created_at * 1000).toLocaleString()"></span> · <strong x-text="item.state"></strong></p><p x-text="item.message"></p><template x-if="item.state === 'ready' && item.expires_at * 1000 > Date.now()"><a class="text-link" :href="@js(url('/settings/backups')) + '/' + item.id + '/download'">Download encrypted copy</a></template></div></template></div>
     </div>
-    <form x-show="screen === 'master'" x-cloak class="space-y-3" x-on:submit.prevent="await $wire.saveMasterPassword(master); master = ''">
+    <form x-show="screen === 'master'" x-cloak class="space-y-3" x-on:submit.prevent="await $wire.saveMasterPassword(master, masterConfirmation); master = ''; masterConfirmation = ''">
         <label class="block text-sm">Master password<input type="password" autocomplete="new-password" minlength="12" required x-model="master" class="cmp-field w-full mt-1"></label>
+        <label class="block text-sm">Confirm master password<input type="password" autocomplete="new-password" minlength="12" required x-model="masterConfirmation" class="cmp-field w-full mt-1"></label>
         <p class="text-sm text-fg-muted">At least 12 characters. Changing this password affects new copies; older files still need their original password.</p>
         <div class="flex gap-2"><button class="cmp-btn">Save password</button><button type="button" class="cmp-btn cmp-btn-secondary" x-on:click="back()">Back</button></div>
     </form>

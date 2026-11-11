@@ -10,7 +10,7 @@ import re
 import stat
 import uuid
 
-from backup_policy import APP, FIXED, TREES, read, relative, safe_open, system_member
+from backup_policy import APP, FIXED, TREES, read, relative, safe_open, system_member, validate_payloads
 from update_manifest import DEB_VERSION_RE, UpdateError, compatibility_error, verify_manifest
 
 GROUPS = frozenset(('network', 'ssh', 'host', 'time', 'display', 'web', 'role', 'publisher', 'sudo'))
@@ -93,7 +93,7 @@ def _accounts(archive, context, names, emergency):
 
 
 def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, selected_accounts=(), interfaces=None,
-        allow_snapshot=False, publisher=None, repository=None, emergency='root'):
+        allow_snapshot=False, publisher=None, repository=None, emergency='root', preview=False):
     value = archive.manifest
     if mode not in ('migrate', 'same-station') or not set(groups) <= GROUPS: raise UpdateError('Choose a supported restore mode and system groups.')
     if mode == 'migrate' and 'sudo' in groups: raise UpdateError('Preserve destination sudo configuration during migration; selected accounts may join existing sudo groups.')
@@ -107,12 +107,13 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
         raise UpdateError('Invalid backup payload selection metadata.')
     members = {item['name']: item for item in value['members']}
     required = {'application/.env', 'application/database.sqlite', 'application/etc/dnsmasq.conf', 'system/accounts.json',
-        'system/service-state.json', 'system/backup-config.json', 'system/time.json'}
+        'system/service-state.json', 'system/backup-config.json', 'system/time.json', 'system/payloads.json'}
     if not required <= members.keys(): raise UpdateError('The full backup lacks required application/system metadata.')
     restore_backup_configuration(json_member(archive, 'system/backup-config.json'), now=context.get('now', 0))
+    validate_payloads(json_member(archive, 'system/payloads.json'), value['members'], options)
     software = value.get('software')
     if type(software) is not list or not 2 <= len(software) <= 3: raise UpdateError('The software inventory is incomplete.')
-    install, evidence, packages = [], {}, set()
+    install, evidence, packages, needs_opt_in = [], {}, set(), False
     for item in software:
         if type(item) is not dict: raise UpdateError('Invalid software provenance record.')
         package = item.get('package')
@@ -123,15 +124,17 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
             member = item.get('archive')
             if member not in members or not member.startswith('software/'+package+'_'): raise UpdateError('A required station package is missing.')
             current = context.get('cmprovision' if package == 'cmprovision4' else 'fpms_version')
-            if current == item['version']: continue # Reuse trusted installed software; no archived executable is run.
+            if current == item['version'] and context.get('verified_packages', {}).get(package) and not context.get('recovering'):
+                continue # Reuse checked installed software, never assume matching versions imply intact files.
         else:
             if item.get('component') != 'utility-os' or item.get('selector') != value.get('utility_selector'):
                 raise UpdateError('The active Utility OS record is invalid.')
             if item.get('covered_by') == 'cmprovision4': continue
-            if context.get('utility_selector') == item['selector']: continue
+            if context.get('utility_selector') == item['selector'] and not context.get('recovering'): continue
             member = item.get('archive')
             if member is None:
-                if not allow_snapshot: raise UpdateError('Restoring a local Utility OS tree requires --allow-snapshot-software.')
+                needs_opt_in = True
+                if not allow_snapshot and not preview: raise UpdateError('Restoring a local Utility OS tree requires --allow-snapshot-software.')
                 continue
             if member not in members: raise UpdateError('The Utility OS release archive is missing.')
         if item.get('provenance') == 'signed-release':
@@ -149,8 +152,11 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
             error = compatibility_error(signed, dict(context, cmprovision=value['version'], debian='13', architecture=context['os']['architecture']))
             if error: raise UpdateError(error)
             evidence[member] = envelope
-        elif item.get('provenance') != 'local-snapshot' or not allow_snapshot:
-            raise UpdateError('Installing captured local software requires explicit --allow-snapshot-software, or preinstall the matching station image.')
+        elif item.get('provenance') != 'local-snapshot': raise UpdateError('Unknown archived software provenance.')
+        else:
+            needs_opt_in = True
+            if not allow_snapshot and not preview:
+                raise UpdateError('Installing captured local software requires explicit --allow-snapshot-software, or preinstall the matching station image.')
         install.append(member)
     if 'cmprovision4' not in packages: raise UpdateError('The application package is absent from the software inventory.')
     accounts = _accounts(archive, context, selected_accounts, emergency)
@@ -190,7 +196,8 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
         'preserved': [name for name in ('network', 'ssh', 'host', 'role') if name not in groups],
         'images_included': options['images'], 'packages_included': options['packages'],
         'projects_deactivated': not options['images'] or not options['packages'],
-        'snapshot_software_opt_in': bool(allow_snapshot), 'emergency_administrator': emergency, 'preserve_ntp_provider': not clock['restore_ntp']}
+        'snapshot_software_opt_in': bool(allow_snapshot), 'requires_snapshot_software_opt_in': needs_opt_in,
+        'emergency_administrator': emergency, 'preserve_ntp_provider': not clock['restore_ntp']}
     return {'preview': preview, 'system': selected, 'remove': remove, 'rewritten': rewritten, 'accounts': accounts,
         'install': install, 'evidence': evidence, 'restore_role': 'role' in groups, 'mode': mode, 'groups': list(groups), 'time': clock}
 
@@ -242,7 +249,8 @@ class Restorer:
         from update_manifest import canonical_bytes
         self.system.recovering = recover
         with inspect_archive(source, password, self.store.private) as archive:
-            plan = plan_restore(archive, self.system.restore_context(recovery=recover), **options)
+            plan = plan_restore(archive, self.system.restore_context(recovery=recover), preview=not apply, **options)
+            self.system.validate_restore_payloads(archive)
             if not apply: return plan['preview']
             job = None
             if not recover:

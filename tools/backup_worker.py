@@ -10,6 +10,17 @@ from update_diagnostics import journal
 from update_manifest import UpdateError
 
 
+def boot_recovery(store, system):
+    pending = store.configuration()['pending']
+    if not pending: return
+    store._atomic(store.pending_file, {'schema': 1, 'id': pending['id'], 'at': pending['at']}, 0o644)
+    job = store.operation(pending['id'])
+    (system.quiesce_restore if job['action'] == 'restore' else system.pause)(pending['services'])
+    # Never start Before= services while executing their boot ordering barrier.
+    system.command(['/usr/bin/systemd-run', '--quiet', '--collect', '--unit=cmprovision-backup-recovery', '--',
+        '/usr/bin/python3', '-I', '/usr/lib/cmprovision/station-backups.py', '--recover'], timeout=8)
+
+
 class Worker:
     def __init__(self, store, system, remote=Remote):
         self.store, self.system, self.remote = store, system, remote
@@ -80,12 +91,14 @@ class Worker:
         identity = job['id']
         if not self._freeze(identity): return
         directory = self.store.job_dir(identity)
-        self.store.update(identity, state='collecting', message='Collecting consistent application data and station settings.')
+        captured_at = int(self.store.clock())
+        self.store.update(identity, state='collecting', captured_at=captured_at, message='Collecting consistent application data and station settings.')
+        job = self.store.operation(identity)
         entries, metadata = self.system.collect(job, directory)
         password = job['snapshot']['master_password']
         canceled = lambda: self.canceled(identity)
         if canceled(): raise UpdateError('Backup canceled.')
-        name = datetime.fromtimestamp(job['created_at'], timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+identity+'.cmpbackup'
+        name = datetime.fromtimestamp(captured_at, timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+identity+'.cmpbackup'
         self.store.update(identity, state='archiving', message='Building and encrypting the station backup.', name=name)
         receipt = None
         if job['target'] == 'download':
@@ -93,8 +106,15 @@ class Worker:
             manifest = create(entries, path, password, metadata,
                 progress=lambda done, total: self.progress(identity, 'archiving', done, total), canceled=canceled)
             self.store.update(identity, state='verifying', bytes=0, total=0, message='Authenticating the encrypted file by streaming read-back.')
-            if verify_stream(path, password, directory) != manifest: raise UpdateError('Backup read-back manifest does not match.')
-            with path.open('rb') as stream: digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if verify_stream(path, password, directory, canceled=canceled) != manifest: raise UpdateError('Backup read-back manifest does not match.')
+            size = path.stat().st_size
+            hashed, fingerprint = 0, hashlib.sha256()
+            with path.open('rb') as stream:
+                while chunk := stream.read(1024**2):
+                    if canceled(): raise UpdateError('Backup canceled.')
+                    fingerprint.update(chunk); hashed += len(chunk)
+                    self.progress(identity, 'verifying', hashed, size)
+            digest = fingerprint.hexdigest()
             size, outcome = path.stat().st_size, 'ready'
         else:
             with self.remote(job['snapshot']['profile'], job['snapshot']['station_id'], directory) as remote:
@@ -104,6 +124,7 @@ class Worker:
                 self.store.record_remote(identity, receipt)
                 digest, size, outcome = receipt['sha256'], receipt['size'], 'succeeded'
         # Commit the copy outcome before service cleanup. Recovery never repeats an already usable copy.
+        if canceled(): raise UpdateError('Backup canceled.')
         self.store.update(identity, committed=True, committed_at=int(self.store.clock()), outcome=outcome, bytes=size, total=size, sha256=digest,
             expires_at=int(self.store.clock())+3600 if outcome == 'ready' else None)
         self._finish(identity, outcome, 'Encrypted backup ready to download.' if outcome == 'ready' else 'Remote backup verified and committed.')
@@ -155,6 +176,7 @@ class Worker:
             self.store._atomic(self.store.pending_file, {'schema': 1, 'id': identity, 'at': pending['at']}, 0o644)
             job = self.store.operation(identity)
             if job['action'] == 'restore':
+                self.system.quiesce_restore(pending['services'])
                 self.store.update(identity, state='recovery-required', message='An administrator restore was interrupted. Keep provisioning stopped and run cmprovision-full-restore --recover over SSH.')
                 return
             if job.get('committed'):

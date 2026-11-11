@@ -29,7 +29,16 @@ class StationBackupsPanel extends Component
         } catch (\RuntimeException $error) { $this->error = $error->getMessage(); }
     }
 
-    public function saveMasterPassword(#[\SensitiveParameter] string $password): void { $this->execute(['action' => 'password', 'password' => $password]); }
+    public function saveMasterPassword(#[\SensitiveParameter] string $password, #[\SensitiveParameter] string $confirmation = ''): void
+    {
+        abort_unless(auth()->check(), 403);
+        $this->ensurePasswordIsConfirmed();
+        if (! hash_equals($password, $confirmation)) {
+            $this->error = 'The master passwords do not match. Enter them again.';
+            return;
+        }
+        $this->execute(['action' => 'password', 'password' => $password]);
+    }
     public function saveProfile(#[\SensitiveParameter] array $profile): void { $this->execute(['action' => 'save-profile', 'profile' => $profile]); }
     public function deleteProfile(string $id): void { $this->execute(['action' => 'delete-profile', 'id' => $id]); }
     public function saveSchedule(array $schedule): void { $this->execute(['action' => 'schedule', 'schedule' => $schedule]); }

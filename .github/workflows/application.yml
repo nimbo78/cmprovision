@@ -206,6 +206,9 @@ jobs:
           sudo systemd-run --machine=cmprovision-backups-bench --pipe --wait --collect \
             --unit=cmprovision-backups-acceptance /usr/bin/python3 /fixture/backups-acceptance.py \
             2>&1 | tee "$RUNNER_TEMP/backup-acceptance.log"
+          sudo systemd-run --machine=cmprovision-backups-bench --pipe --wait --collect \
+            --unit=cmprovision-backups-failure-acceptance /usr/bin/python3 /fixture/backups-failure-acceptance.py \
+            2>&1 | tee -a "$RUNNER_TEMP/backup-acceptance.log"
       - name: Preserve backup acceptance diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

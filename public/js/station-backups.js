@@ -7,15 +7,15 @@
     const terminal = ['ready', 'succeeded', 'failed', 'canceled'];
     function create(url, initial) {
         return {
-            status: initial, operation: initial.operation || null, screen: 'overview', master: '', profile: {}, schedule: {},
+            status: initial, operation: initial.operation || null, screen: 'overview', master: '', masterConfirmation: '', profile: {}, schedule: {},
             target: 'download', images: false, packages: false, reconnecting: false, signin: false, timer: null, destroyed: false, submitting: false,
             busy() { return !!this.operation && !terminal.includes(this.operation.state); },
             percent() { return this.operation?.total > 0 && ['archiving', 'uploading', 'verifying'].includes(this.operation.state)
                 ? Math.min(100, Math.floor(this.operation.bytes * 100 / this.operation.total)) : null; },
             init() { this.poll(); },
-            destroy() { this.destroyed = true; clearTimeout(this.timer); this.master = ''; this.profile = {}; },
+            destroy() { this.destroyed = true; clearTimeout(this.timer); this.master = ''; this.masterConfirmation = ''; this.profile = {}; },
             accept(value) { if (value?.schema === 1) { this.status = value; this.operation = value.operation || null; } },
-            back() { this.master = ''; this.profile = {}; this.screen = 'overview'; if (this.$wire) this.$wire.back(); },
+            back() { this.master = ''; this.masterConfirmation = ''; this.profile = {}; this.screen = 'overview'; if (this.$wire) this.$wire.back(); },
             async startBackup() {
                 if (this.submitting || this.busy()) return;
                 this.submitting = true;

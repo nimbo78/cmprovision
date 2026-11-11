@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from backup_broker import Broker, decode_request, reconcile, tick
 from backup_store import BackupStore
 from backup_system import LinuxBackupSystem
-from backup_worker import Worker
+from backup_worker import Worker, boot_recovery
 from update_diagnostics import journal
 from update_manifest import UpdateError
 
@@ -41,12 +41,7 @@ def main():
         elif args == ['--recover']:
             Worker(store, system).recover_pending(); result = {'message': 'Backup recovery reconciled.'}
         elif args == ['--recover-boot']:
-            pending = store.configuration()['pending']
-            if pending:
-                store._atomic(store.pending_file, {'schema': 1, 'id': pending['id'], 'at': pending['at']}, 0o644)
-                # Do not start Before= boot services while still running their ordering barrier.
-                system.command(['/usr/bin/systemd-run', '--quiet', '--collect', '--unit=cmprovision-backup-recovery', '--',
-                    '/usr/bin/python3', '-I', '/usr/lib/cmprovision/station-backups.py', '--recover'], timeout=8)
+            boot_recovery(store, system)
             result = {'message': 'Backup boot recovery scheduled.'}
         elif len(args) == 2 and args[0] == '--worker' and re.fullmatch(r'[0-9a-f]{32}', args[1]):
             Worker(store, system).run(args[1])

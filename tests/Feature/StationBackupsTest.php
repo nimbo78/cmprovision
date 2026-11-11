@@ -38,13 +38,24 @@ class StationBackupsTest extends TestCase
     {
         $control = $this->control();
         $this->actingAs(User::factory()->create());
-        try { Livewire::test(StationBackupsPanel::class)->call('saveMasterPassword', 'a private master password'); }
+        try { Livewire::test(StationBackupsPanel::class)->call('saveMasterPassword', 'a private master password', 'a private master password'); }
         catch (\Illuminate\Auth\Access\AuthorizationException $expected) {}
         $this->assertSame([], $control->calls);
         $this->withSession(['auth.password_confirmed_at' => time()]);
-        $component = Livewire::test(StationBackupsPanel::class)->call('saveMasterPassword', 'a private master password');
+        $component = Livewire::test(StationBackupsPanel::class)->call('saveMasterPassword', 'a private master password', 'a private master password');
         $this->assertSame('password', $control->calls[0]['action']);
         $this->assertStringNotContainsString('a private master password', json_encode($component->instance()->all()));
+    }
+
+    public function test_master_password_mismatch_never_reaches_the_privileged_broker(): void
+    {
+        $control = $this->control();
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        $component = Livewire::test(StationBackupsPanel::class)
+            ->call('saveMasterPassword', 'a private master password', 'a mistyped master password')
+            ->assertSet('error', 'The master passwords do not match. Enter them again.');
+        $this->assertSame([], $control->calls);
+        $this->assertStringNotContainsString('a mistyped master password', json_encode($component->instance()->all()));
     }
 
     public function test_profile_secrets_are_action_arguments_and_create_is_idempotent_until_back(): void

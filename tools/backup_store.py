@@ -165,7 +165,13 @@ class BackupStore(UpdateStore):
         def change(state):
             job = state['operations'].get(identity)
             if not job: raise UpdateError('Backup operation was not found.')
+            if fields.get('committed') and job['cancel_requested']:
+                raise UpdateError('Backup canceled before commit.')
             job.update(fields, updated_at=int(self.clock()))
+            if fields.get('committed') and job['scheduled']:
+                from backup_schedule import due
+                slot = due(state['schedule'], [], job.get('captured_at', job['created_at']), state.get('schedule_timezone', 'UTC'))
+                if slot and slot not in state['slots']: state['slots'] = (state['slots']+[slot])[-400:]
             if job['state'] == 'succeeded' and job['action'] == 'backup': state['last_success_at'] = job.get('committed_at', int(self.clock()))
             if job['state'] in TERMINAL: job.pop('snapshot', None)
             return job
@@ -210,11 +216,21 @@ class BackupStore(UpdateStore):
         def change(state):
             job = state['operations'][identity]
             if job['state'] in TERMINAL: return
+            if job['action'] == 'restore': raise UpdateError('Administrator restores must be recovered over SSH; they cannot be canceled in the browser.')
             if job.get('committed'): raise UpdateError('This backup is already complete; station cleanup is finishing.')
             job['cancel_requested'] = True
             job['message'] = 'Cancellation requested. A network operation can take up to 60 seconds to stop.'
         self.mutate(change)
         return self.status()
+
+    def rotate_station_identity(self):
+        def change(state):
+            # Atomic root-private lineage lets the sweeper recognize our pre-migration artifacts
+            # even after history eviction; never adopt arbitrary owner markers on disk.
+            known = state.get('artifact_station_ids', [])
+            if state['station_id'] not in known: known.append(state['station_id'])
+            state.update(artifact_station_ids=known, station_id=uuid.uuid4().hex)
+        self.mutate(change)
 
     def mark_pending(self, identity, services):
         def change(state):
@@ -222,12 +238,26 @@ class BackupStore(UpdateStore):
             state['pending'] = {'schema': 1, 'id': identity, 'at': int(self.clock()), 'services': copy.deepcopy(services)}
             return state['pending']
         pending = self.mutate(change)
+        self._atomic(self.root/'boot-blocked', {'id': identity}, 0o644)
         self._atomic(self.pending_file, {'schema': 1, 'id': identity, 'at': pending['at']}, 0o644)
+
+    def allow_boot(self):
+        path = self.root/'boot-blocked'
+        if path.exists() or path.is_symlink():
+            self._file(path, 0o644)
+            pending = self._load()['pending']
+            if not pending or json.loads(path.read_bytes()) != {'id': pending['id']}:
+                raise UpdateError('The durable backup boot barrier does not match recovery state.')
+            path.unlink()
+            descriptor = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try: os.fsync(descriptor)
+            finally: os.close(descriptor)
 
     def clear_pending(self, identity):
         with self.lock('control'):
             state = self._load()
             if state['pending'] and state['pending']['id'] != identity: raise UpdateError('A different backup owns maintenance.')
+            self.allow_boot()
             if self.pending_file.exists() or self.pending_file.is_symlink():
                 self._file(self.pending_file, 0o644); self.pending_file.unlink()
             state['pending'] = None
@@ -237,7 +267,7 @@ class BackupStore(UpdateStore):
         def change(state):
             job = state['operations'][identity]
             value = {key: receipt[key] for key in ('name', 'size', 'sha256', 'station_id', 'namespace')}
-            value.update(id=identity, created_at=job['created_at'], sequence=job['sequence'])
+            value.update(id=identity, created_at=job.get('captured_at', job['created_at']), sequence=job['sequence'])
             if not any(item['id'] == identity for item in state['remote_copies']): state['remote_copies'].append(value)
         self.mutate(change)
 

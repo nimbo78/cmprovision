@@ -59,9 +59,48 @@ class SystemTest(unittest.TestCase):
             'cmprovision-queue.service': {'active': True, 'enabled': 'enabled'}}
         system.pause(services)
         self.assertFalse(any('nginx.service' in call or 'php8.4-fpm.service' in call for call in calls))
+        self.assertIn(['/usr/bin/systemctl', 'mask', '--runtime', 'cmprovision-queue.service'], calls)
         system.resume(services)
         self.assertTrue(any('mask' in call and 'cmprovision-dnsmasq.service' in call for call in calls))
         self.assertFalse(any('unmask' in call and 'cmprovision-dnsmasq.service' in call for call in calls))
+
+    def test_reboot_reestablishes_restore_masks_before_recovery_is_scheduled(self):
+        from backup_worker import boot_recovery
+        calls, masked = [], set()
+        def run(argv, **options):
+            calls.append(argv)
+            if 'mask' in argv: masked.add(argv[-1])
+            if 'systemd-run' in argv[0]:
+                self.assertEqual({'nginx.service', 'cmprovision-dnsmasq.service'}, masked)
+            return subprocess.CompletedProcess(argv, 0, stdout='', stderr='')
+        system = self.module.LinuxBackupSystem(self.store, root=self.root, runner=run)
+        job, _ = self.store.begin('d'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        services = {name: {'active': True, 'enabled': 'enabled'} for name in ('nginx.service', 'cmprovision-dnsmasq.service')}
+        self.store.mark_pending(job['id'], services)
+        self.store.pending_file.unlink() # /run disappeared at reboot; durable state remains.
+        boot_recovery(self.store, system)
+        self.assertTrue(self.store.pending_file.exists())
+        self.assertTrue(any('systemd-run' in argv[0] for argv in calls))
+        system.resume(services)
+        self.assertTrue(all(['/usr/bin/systemctl', 'unmask', '--runtime', name] in calls for name in services))
+
+    def test_migration_rebinds_only_known_job_owners_and_expiry_removes_plaintext(self):
+        system = self.module.LinuxBackupSystem(self.store, root=self.root)
+        job, _ = self.store.begin('e'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        directory = self.store.job_dir(job['id'])
+        (directory/'plaintext').write_text('old station secret')
+        unknown = self.store.private/'jobs'/('0'*32); unknown.mkdir(mode=0o700)
+        self.store._atomic(unknown/'owner.json', {'schema': 1, 'id': '0'*32, 'station_id': '0'*32, 'created_at': 0}, 0o600)
+        recovery = self.root/'var/backups/cmprovision-full-restore'/job['id']
+        recovery.mkdir(parents=True); (recovery/'before.cmpbackup').write_bytes(b'encrypted recovery')
+        self.store.update(job['id'], state='succeeded')
+        self.store.rotate_station_identity()
+        self.store.begin('f'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        self.store.clock = lambda: job['created_at']+7200
+        system.sweep()
+        self.assertFalse(directory.exists())
+        self.assertTrue((recovery/'before.cmpbackup').exists())
+        self.assertTrue(unknown.exists())
 
     def test_mutation_lock_exists_readable_but_not_writable_by_web_and_is_first(self):
         system = self.module.LinuxBackupSystem(self.store, root=self.root)
@@ -104,6 +143,7 @@ class SystemTest(unittest.TestCase):
         def snapshot(directory):
             path = directory/'database.sqlite'; path.write_bytes(b'snapshot fixture'); return path
         system.snapshot_database = snapshot
+        system.payload_references = lambda path: {'schema': 1, 'references': []}
         directory = self.store.job_dir(job['id'])
         entries, metadata = system.collect(job, directory)
         names = {entry.name for entry in entries}

@@ -49,13 +49,15 @@ The supported baseline is Debian/Raspberry Pi OS **Trixie** with cmprovision ins
 ## Create or schedule a copy
 
 1. Confirm your **account password** when requested. This authorizes the operation.
-2. Open **Master password** and save an archive password of at least 12 characters.
+2. Open **Master password**, enter an archive password of at least 12 characters twice and save it.
 3. Choose **Download in this browser**, or **Add destination** and save a remote profile.
 4. For SFTP, read the server fingerprints, compare them with the server administrator's trusted value and explicitly accept a key. Choose **Test** to verify write/read/delete access.
 5. Choose optional images/packages and select **Create encrypted backup**. You can leave the page and reconnect. **Cancel job** removes the incomplete copy and restores the station's previous services.
 6. Use **Schedule** to opt in to daily/weekly copies. The default is off; the suggested time is **03:00 in the station time zone**. Choose one remote destination and how many successful copies to retain, initially seven.
 
 Busy stations wait for active/reserved work to finish. Missed schedule slots coalesce into one request. Repeated autumn hours run once; a missing spring time runs at the first valid minute. Changing the station time zone establishes a fresh schedule boundary.
+
+A copy deferred for several days covers schedule slots up to its actual snapshot time. Selecting images/packages requires every usable database reference, including completed split copies, to exist with matching checksums/sizes. Missing selected payloads fail creation or restore inspection; pending/failed image downloads are excluded from usable references. SQLite reference inspection runs as www-data, supports databases up to **512 MiB** and **4,000 payload references**, and requires temporary space for another database copy.
 
 Percentages appear only for measured byte counts. Preparation and streaming remote upload with unknown total size show an activity state. Verification completes before a copy is advertised as usable. A browser copy expires after **one hour**; the last **50 job summaries** remain.
 
@@ -112,11 +114,13 @@ Mappings use destination interface MAC addresses. Name/UID/GID conflicts or miss
 
 Available OS groups are `network`, `ssh`, `host`, `time`, `display`, `web`, `role`, `publisher`, `sudo`. Defaults are `time,display,web`. `sudo` configuration is restored only in `--mode same-station`; migration can put selected accounts in existing destination groups. Selecting `role` explicitly restores source service masks, so check the switch/network design first. A fresh migration keeps d62-style masked DHCP/USB services masked by default.
 
-Restored schedules are disabled and the master password must be set again. Migration generates a new backup UUID. Missing optional image/package payloads deactivate the active project; select and validate a usable project before provisioning.
+Restored schedules are disabled and the master password must be set again. Migration generates a new backup UUID. Excluding images/packages deactivates the active project; select and validate a usable project before provisioning. Destination Linux networking and SSH are preserved by default, while coherent application data includes the source `.env` and dnsmasq configuration. Review custom stand subnets and application URLs before enabling provisioning.
 
 ## Trust archived software
 
 Matching already-installed station packages and a valid installed Utility OS can be reused. Installing archived software verifies its signed publisher manifest and hashes against the **destination's existing trusted publisher key**.
+
+Package reuse also requires a clean installed-file verification. Emergency recovery reinstalls archived packages even when their versions match. Captured bundled Utility OS trees replace their slot exactly; obsolete files are removed by an atomic tree exchange. Explicitly trusted unsigned managed trees use the same exact replacement in bundled-modern.
 
 Repacked packages and unsigned Utility OS trees are marked **local-snapshot**. To execute them, the administrator must review the preview/archive fingerprint and explicitly add `--allow-snapshot-software`. An encrypted archive password alone does not establish publisher provenance. An explicitly trusted unsigned managed Utility OS tree is restored into the editable bundled-modern slot; it is never given a forged signed managed-release identity.
 
@@ -129,6 +133,8 @@ Before destination changes, the command creates and verifies:
 ```
 
 It uses the password supplied for the restoration. Keep this recovery material until acceptance is complete; it is excluded from later full archives and normal backup retention.
+
+Runtime service masks and a retained systemd boot guard prevent DHCP/TFTP/USB restarts during restore, including after a reboot or interrupted package configuration. The guard is released only after application/Utility OS health checks. Old job staging remains eligible for expiry after migration; the encrypted pre-restore recovery archive is retained separately. Administrator restores cannot be canceled from the browser.
 
 If restoration fails after changes start, provisioning stays stopped and the maintenance marker remains. Use SSH/local console:
 

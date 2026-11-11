@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 
 from update_manifest import UpdateError, canonical_bytes
-from backup_policy import safe_open, valid_member
+from backup_policy import safe_open, valid_member, validate_payloads
 
 MAX_MEMBERS = 100000
 MAX_MANIFEST = 16*1024**2
@@ -120,6 +120,10 @@ def create(entries, destination, password, metadata, progress=None, canceled=Non
                                 raise UpdateError('A backup source changed while it was being archived. Retry when the station is idle.')
                         members.append({'name': entry.name, 'size': size, 'sha256': reader.hash.hexdigest(), 'mode': info.mode, 'group': entry.group})
                 manifest = dict(metadata, format='cmprovision-full-backup', schema=2, members=members)
+                payloads = next((entry for entry in entries if entry.name == 'system/payloads.json'), None)
+                if payloads:
+                    with payloads.opened() as source: references = json.loads(source.read(MAX_MANIFEST+1))
+                    validate_payloads(references, members, metadata['options'])
                 raw = canonical_bytes(manifest)
                 if len(raw) > MAX_MANIFEST: raise UpdateError('Backup manifest exceeds its size limit.')
                 info = tarfile.TarInfo('manifest.json'); info.size = len(raw); info.mode = 0o600
@@ -169,14 +173,17 @@ class VerifiedArchive:
 
 
 @contextmanager
-def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private', _stream=False):
+def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private', _stream=False, canceled=None):
     """Authenticate the complete stream before decompressing or allowing any destination mutation."""
     directory = Path(tempfile.mkdtemp(prefix='inspect-', dir=work))
     directory.chmod(0o700)
     path = directory/'archive.tar.gz'
     process = None
     stack = ExitStack()
+    def check_cancel():
+        if canceled and canceled(): raise UpdateError('Backup canceled.')
     try:
+        check_cancel()
         encrypted = stack.enter_context(safe_open(Path(source).parent, Path(source).name))
         if _stream:
             process = _codec('decrypt', password, encrypted, subprocess.PIPE)
@@ -193,6 +200,7 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
         observed, manifest, total, metadata, metadata_bytes = {}, None, 0, {}, 0
         with tarfile.open(fileobj=plain, mode='r|gz') as archive:
             for item in archive:
+                check_cancel()
                 if manifest is not None or not item.isfile() or item.name in observed or item.size < 0:
                     raise UpdateError('Backup contains duplicate, non-regular or misplaced members.')
                 if item.name == 'manifest.json':
@@ -219,6 +227,7 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
                 chunks = []
                 read = 0
                 while chunk := stream.read(1024**2):
+                    check_cancel()
                     read += len(chunk); digest.update(chunk)
                     if cache: chunks.append(chunk)
                 if read != item.size: raise UpdateError('Backup member was truncated.')
@@ -235,8 +244,9 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
                 raise UpdateError('Backup contents do not match the manifest.')
             named.add(member['name'])
         if _stream:
-            while process.stdout.read(1024**2): pass
+            while process.stdout.read(1024**2): check_cancel()
             if process.wait(timeout=60): raise UpdateError('Backup authentication failed: wrong password, damaged file or unsupported format.')
+        check_cancel()
         yield VerifiedArchive(path, manifest, metadata)
     except (OSError, ValueError, TypeError, tarfile.TarError, subprocess.SubprocessError) as error:
         if isinstance(error, UpdateError): raise
@@ -248,6 +258,6 @@ def inspect_archive(source, password, work='/var/lib/cmprovision-backups/private
         shutil.rmtree(directory)
 
 
-def verify_stream(source, password, work):
+def verify_stream(source, password, work, canceled=None):
     """Validate a newly created download by read-back without a second plaintext archive on disk."""
-    with inspect_archive(source, password, work, _stream=True) as verified: return verified.manifest
+    with inspect_archive(source, password, work, _stream=True, canceled=canceled) as verified: return verified.manifest

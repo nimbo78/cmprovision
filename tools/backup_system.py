@@ -14,7 +14,7 @@ import subprocess
 import tarfile
 
 from backup_archive import Entry, RESERVE
-from backup_policy import APP, inventory, read, safe_open, _files
+from backup_policy import APP, inventory, read, safe_open, _files, validate_payloads
 from backup_store import BackupBusy
 from update_manifest import DEB_VERSION_RE, UpdateError, canonical_bytes, verify_manifest
 from update_system import LinuxSystem, BOOT_SERVICES, READERS
@@ -106,10 +106,40 @@ class LinuxBackupSystem:
             if value.get('pending'): raise UpdateError('The station updater is still in maintenance or recovery.')
 
     def capture_services(self): return self.platform.capture_services()
+    def ensure_boot_guard(self):
+        from update_recovery import write
+        changed = False
+        # Retain outside dpkg: an interrupted unpack must not remove the boot barrier.
+        for name in BOOT_SERVICES:
+            for part in ('etc', 'etc/systemd', 'etc/systemd/system', 'etc/systemd/system/'+name+'.d'):
+                self.store._directory(self.root/part, 0o755)
+            path = self.root/'etc/systemd/system'/(name+'.d/90-cmprovision-backup-guard.conf')
+            raw = ('[Unit]\nConditionPathExists=!'+str(self.store.root/'boot-blocked')+'\n').encode()
+            if path.exists() or path.is_symlink():
+                self.store._file(path, 0o644)
+                if path.read_bytes() != raw: raise UpdateError('The retained backup boot guard was modified; inspect it over SSH.')
+            else: write(path, raw, 0o644); changed = True
+        if changed: self.command(['/usr/bin/systemctl', 'daemon-reload'])
+
     def pause(self, services):
-        for name in services:
-            if name in BOOT_SERVICES or name in READERS: self.command(['/usr/bin/systemctl', 'stop', name])
-    def resume(self, services): self.platform.resume(services)
+        self.quiesce_restore({name: state for name, state in services.items() if name in BOOT_SERVICES or name in READERS})
+
+    def quiesce_restore(self, services):
+        # Maintainer scripts and explicit restarts cannot reopen readers/boot servers mid-restore.
+        # Existing persistent/runtime masks belong to the station and must be preserved.
+        self.ensure_boot_guard()
+        pending = self.store.configuration()['pending']
+        if pending: self.store._atomic(self.store.root/'boot-blocked', {'id': pending['id']}, 0o644)
+        for name, state in services.items():
+            if not state['enabled'].startswith('masked'):
+                self.command(['/usr/bin/systemctl', 'mask', '--runtime', name])
+            self.command(['/usr/bin/systemctl', 'stop', name])
+    def resume(self, services):
+        self.platform.resume(services, boot=False)
+        boot = {name: state for name, state in services.items() if name in BOOT_SERVICES}
+        if boot:
+            self.store.allow_boot()
+            self.platform.resume(boot)
 
     def snapshot_database(self, directory):
         destination = Path(directory)/'database.sqlite'
@@ -134,6 +164,14 @@ class LinuxBackupSystem:
             return destination
         finally:
             self.command([*prefix, '/usr/bin/rm', '-rf', '--', temporary], check=False)
+
+    def payload_references(self, database):
+        helper = getattr(self, 'payload_helper', Path(__file__).with_name('backup_payloads.py'))
+        with safe_open(Path(database).parent, Path(database).name) as stream:
+            if os.fstat(stream.fileno()).st_size > 512*1024**2: raise UpdateError('Snapshot database exceeds the supported 512 MiB inspection limit.')
+            raw = self.command(['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/python3', '-I', helper], stdin=stream, timeout=120)
+        try: return json.loads(raw)
+        except ValueError as error: raise UpdateError('The snapshot payload reference inventory is unreadable.') from error
 
     def timezone(self):
         if self.root == Path('/'):
@@ -281,6 +319,8 @@ class LinuxBackupSystem:
         context = self.context()
         snapshot = self.snapshot_database(stage)
         entries, absent = inventory(self.root, **job['options'])
+        payloads = self.payload_references(snapshot)
+        validate_payloads(payloads, [{'name': entry.name, 'size': entry.size()} for entry in entries], job['options'], hashes=False)
         entries.append(Entry('application/database.sqlite', root=stage, source=snapshot.name))
         catalogues = self._catalogues()
         software = []
@@ -293,7 +333,7 @@ class LinuxBackupSystem:
             evidence.update(provenance=software[0]['provenance'], covered_by='cmprovision4')
         entries.extend(utility); software.append(evidence)
         pending = self.store.configuration()['pending']
-        system = {'system/service-state.json': pending['services'], 'system/backup-config.json': job['snapshot']['config'],
+        system = {'system/payloads.json': payloads, 'system/service-state.json': pending['services'], 'system/backup-config.json': job['snapshot']['config'],
             'system/software.json': software, 'system/os.json': context['os'],
             'system/time.json': {'timezone': self.timezone(), 'enabled': self.command(['/usr/bin/systemctl', 'is-enabled', 'systemd-timesyncd.service'], check=False).stdout.strip(),
                 'active': self.command(['/usr/bin/systemctl', 'is-active', 'systemd-timesyncd.service'], check=False).stdout.strip()}}
@@ -301,7 +341,7 @@ class LinuxBackupSystem:
         metadata = {'station_id': job['snapshot']['station_id'], 'version': context['cmprovision'],
             'source_commit': context.get('source_commit', 'unknown'), 'os': context['os'], 'options': job['options'],
             'utility_selector': context['utility_selector'], 'software': software, 'absent': absent,
-            'created_at': job['created_at'], 'scope': 'supported-station-configuration'}
+            'created_at': job.get('captured_at', job['created_at']), 'scope': 'supported-station-configuration'}
         return entries, metadata
 
     def cleanup(self, directory, keep_download=False):
@@ -326,7 +366,7 @@ class LinuxBackupSystem:
             value = json.loads(read(directory, 'owner.json', 4096))
             job = state['operations'].get(directory.name)
             expiry = job.get('expires_at') if job else None
-            if (value.get('id') != directory.name or value.get('station_id') != state['station_id']
+            if (value.get('id') != directory.name or value.get('station_id') not in [state['station_id'], *state.get('artifact_station_ids', [])]
                     or type(value.get('created_at')) is not int): continue
             if self.store.clock() >= (expiry or value['created_at']+3600): shutil.rmtree(directory)
         # Current completed download must expire too; do not touch a live worker's artifacts.

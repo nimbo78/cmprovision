@@ -20,7 +20,7 @@ class RestoreTest(unittest.TestCase):
             'software': [{'package': 'cmprovision4', 'version': '2.28.0', 'archive': 'software/cmprovision4_2.28.0_all.deb', 'provenance': 'local-snapshot'},
                          {'component': 'utility-os', 'selector': 'bundled-modern', 'provenance': 'local-snapshot', 'covered_by': 'cmprovision4'}],
             'utility_selector': 'bundled-modern', 'absent': []}
-        self.context = {'cmprovision': '2.28.0', 'fpms_version': None, 'os': self.metadata['os'],
+        self.context = {'cmprovision': '2.28.0', 'fpms_version': None, 'os': self.metadata['os'], 'verified_packages': {'cmprovision4': True},
             'utility_selector': 'bundled-modern', 'utility_os_version': '2026.10',
             'accounts': [{'name': 'root', 'uid': 0, 'gid': 0}], 'groups': {'root': 0, 'sudo': 27},
             'interfaces': {'eth0': '00:11:22:33:44:55'}}
@@ -36,6 +36,7 @@ class RestoreTest(unittest.TestCase):
             Entry('system/backup-config.json', data=canonical_bytes({'schema': 1, 'profiles': {}, 'schedule': {'enabled': False,
                 'frequency': 'daily', 'time': '03:00', 'weekday': 0, 'profile': None, 'keep': 7, 'images': False, 'packages': False}})),
             Entry('system/service-state.json', data=b'{}'), Entry('system/time.json', data=canonical_bytes(self.time_settings)),
+            Entry('system/payloads.json', data=b'{"schema":1,"references":[]}'),
             Entry('system/etc/hostname', data=b'source-station'), Entry('system/etc/ssh/sshd_config', data=b'PasswordAuthentication yes'),
             Entry('system/etc/default/cmprovision-stand-interface', data=b'eth0'),
             Entry('system/etc/NetworkManager/system-connections/stand.nmconnection',
@@ -91,6 +92,7 @@ class RestoreTest(unittest.TestCase):
         calls = []
         class Effects:
             def restore_context(inner, recovery=False): return self.context
+            def validate_restore_payloads(inner, archive): pass
             def freeze_restore(inner, job): calls.append('freeze'); store.mark_pending(job['id'], {})
             def recovery_snapshot(inner, archive, job, password): calls.append('recovery'); raise UpdateError('No recovery space.')
             def release_restore(inner, job): calls.append('release'); store.clear_pending(job['id'])
@@ -222,6 +224,53 @@ class RestoreTest(unittest.TestCase):
         self.assertEqual(['time', 'web'], self.module.selected_groups('time,web', recovery=True))
         self.assertIn('role', self.module.selected_groups(None, recovery=True))
         self.assertNotIn('role', self.module.selected_groups(None, recovery=False))
+
+    def test_same_version_recovery_reinstalls_damaged_software(self):
+        self.context.update(recovering=True, verified_packages={'cmprovision4': False})
+        with inspect_archive(self.archive(), 'a sufficiently long password', self.root) as archive:
+            plan = self.module.plan_restore(archive, self.context, allow_snapshot=True)
+        self.assertIn('software/cmprovision4_2.28.0_all.deb', plan['install'])
+
+    def test_preview_can_disclose_snapshot_software_without_authorizing_its_execution(self):
+        from backup_store import BackupStore
+        store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid())
+        self.context.update(recovering=True, verified_packages={})
+        class Effects:
+            def restore_context(inner, recovery=False): return self.context
+            def validate_restore_payloads(inner, archive): pass
+        preview = self.module.Restorer(store, Effects()).run(self.archive(), 'a sufficiently long password')
+        self.assertEqual(['software/cmprovision4_2.28.0_all.deb'], preview['install'])
+        self.assertFalse(preview['snapshot_software_opt_in'])
+        self.assertTrue(preview['requires_snapshot_software_opt_in'])
+        self.assertIsNone(store.configuration()['pending'])
+
+    def test_utility_replacement_is_exact_for_unsigned_managed_and_bundled_recovery(self):
+        import hashlib
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from backup_store import BackupStore
+        from backup_restore_system import LinuxRestoreSystem
+        from update_utility import REQUIRED, verify_tree
+        store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid())
+        system = LinuxRestoreSystem(store, root=self.root)
+        system.context = lambda: {'utility_selector': 'bundled-modern'}
+        system.platform.activate_utility = Mock()
+        target = system.app/'scriptexecute64'; target.mkdir(parents=True)
+        (target/'obsolete.dtb').write_bytes(b'old')
+        for selector, label in (('managed:2026.11.1', 'managed-2026.11.1'), ('bundled-modern', 'bundled-modern')):
+            stage = self.root/label; base = stage/'utility-os'/label; base.mkdir(parents=True)
+            lines = ['version=2026.11.1', 'bits=64', 'kernel=6.18.50']
+            for name in sorted(REQUIRED):
+                path = base/name; path.parent.mkdir(exist_ok=True, parents=True); path.write_bytes(label.encode()); path.chmod(0o600)
+                lines.append('file='+hashlib.sha256(path.read_bytes()).hexdigest()+' '+str(path.stat().st_size)+' '+name)
+            (base/'MANIFEST').write_text('\n'.join(lines)+'\n'); (base/'MANIFEST').chmod(0o600)
+            if selector.startswith('managed:'): (base/'receipt.json').write_text('{}')
+            archive = SimpleNamespace(manifest={'utility_selector': selector, 'software': [{'component': 'utility-os'}]})
+            system._restore_utility(archive, {'evidence': {}}, stage)
+            verify_tree(target, owner=os.getuid())
+            self.assertFalse((target/'obsolete.dtb').exists())
+            self.assertEqual(label.encode(), (target/'kernel8.img').read_bytes())
+            system.platform.activate_utility.assert_called_with('bundled-modern')
 
 
 if __name__ == '__main__': unittest.main()

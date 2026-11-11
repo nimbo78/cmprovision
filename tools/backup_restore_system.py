@@ -1,5 +1,6 @@
 """Privileged restore effects, separately injectable for disposable integration tests."""
 from contextlib import contextmanager
+import ctypes
 import hashlib
 import json
 import os
@@ -7,10 +8,11 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import tempfile
 import uuid
 
 from backup_archive import RESERVE, create, verify_stream
-from backup_policy import APP, read, safe_open
+from backup_policy import APP, read, safe_open, validate_payloads
 from backup_restore import file_group, json_member, parent_fd, write_file, restore_backup_configuration
 from backup_system import LinuxBackupSystem, RUNTIME_TABLES
 from backup_worker import Worker
@@ -19,6 +21,19 @@ from update_system import BOOT_SERVICES, parse_plan
 
 
 class LinuxRestoreSystem(LinuxBackupSystem):
+    def validate_restore_payloads(self, archive):
+        size = next(row['size'] for row in archive.manifest['members'] if row['name'] == 'application/database.sqlite')
+        if size > 512*1024**2 or shutil.disk_usage(self.store.private).free < size*2+RESERVE:
+            raise UpdateError('Not enough space to inspect snapshot database references with the free-space reserve.')
+        with tempfile.TemporaryDirectory(prefix='payload-check-', dir=self.store.private) as directory:
+            path = Path(directory)/'database.sqlite'
+            with path.open('xb') as output: archive.copy('application/database.sqlite', output)
+            path.chmod(0o600)
+            references = self.payload_references(path)
+        if references != json_member(archive, 'system/payloads.json'):
+            raise UpdateError('The archived payload inventory differs from the actual snapshot database references.')
+        validate_payloads(references, archive.manifest['members'], archive.manifest['options'])
+
     def restore_context(self, recovery=False):
         try:
             value = self.context()
@@ -34,6 +49,11 @@ class LinuxRestoreSystem(LinuxBackupSystem):
                 'os': {'id': fields.get('ID', '').strip('"'), 'version': fields.get('VERSION_ID', '').strip('"'),
                     'architecture': self.command(['/usr/bin/dpkg', '--print-architecture'])}}
         value['accounts'] = []
+        value['recovering'] = recovery
+        value['verified_packages'] = {}
+        for package in ('cmprovision4', 'fpms-lite'):
+            result = self.command(['/usr/bin/dpkg', '--verify', package], check=False)
+            value['verified_packages'][package] = result.returncode == 0 and not result.stdout.strip()
         for line in read(self.root, 'etc/passwd').decode().splitlines():
             fields = line.split(':')
             if len(fields) == 7: value['accounts'].append({'name': fields[0], 'uid': int(fields[2]), 'gid': int(fields[3])})
@@ -175,7 +195,7 @@ class LinuxRestoreSystem(LinuxBackupSystem):
                 if len(parts) != 2 or len(parts[1]) < 2: raise UpdateError('Could not inspect interrupted package state safely.')
                 if parts[1][0] == 'i' and (parts[1][1] != 'i' or parts[1][2:].strip()): broken.add(parts[0])
             if not broken or not broken <= expected.keys(): raise UpdateError('Unrelated packages need repair over SSH before station recovery.')
-        result = parse_plan(self.command(['/usr/bin/apt-get', '--simulate', '--no-remove', 'install', *paths], timeout=120))
+        result = parse_plan(self.command(['/usr/bin/apt-get', '--simulate', '--reinstall', '--no-remove', 'install', *paths], timeout=120))
         if not all({'package': key, 'version': version} in result for key, version in expected.items()): raise UpdateError('The package restore plan has changed.')
         return result
 
@@ -184,10 +204,9 @@ class LinuxRestoreSystem(LinuxBackupSystem):
         paths = [stage/name for name in plan['install'] if name.endswith('.deb')]
         if paths:
             installation = self.package_plan(paths, archive)
-            self.command(['/usr/bin/apt-get', '-y', '--download-only', '--no-remove', '--allow-downgrades', 'install', *paths], timeout=1800)
+            self.command(['/usr/bin/apt-get', '-y', '--download-only', '--reinstall', '--no-remove', '--allow-downgrades', 'install', *paths], timeout=1800)
         pending = self.store.configuration()['pending']
-        for name in pending['services']:
-            if name not in BOOT_SERVICES: self.command(['/usr/bin/systemctl', 'stop', name])
+        self.quiesce_restore(pending['services'])
         if paths:
             if self.package_plan(paths, archive) != installation: raise UpdateError('The package restore plan changed before installation.')
             self.command(['/usr/bin/dpkg', '--force-confold', '--unpack', *paths], timeout=600)
@@ -233,27 +252,44 @@ class LinuxRestoreSystem(LinuxBackupSystem):
         if member in plan['evidence']:
             from update_utility import ManagedUtility
             ManagedUtility(self.store).prepare(plan['evidence'][member], stage/member)
-        elif selector.startswith('managed:') and self.context()['utility_selector'] != selector:
+        elif selector in ('bundled-modern', 'legacy') or selector.startswith('managed:') and (
+                getattr(self, 'recovering', False) or self.context()['utility_selector'] != selector):
             # Root explicitly trusted the snapshot tree. Publish as the package's editable bundled OS,
             # never forge a signed managed receipt for unverifiable captured files.
-            label = 'managed-'+selector.split(':')[1]
+            label = 'managed-'+selector.split(':')[1] if selector.startswith('managed:') else selector
             base = stage/'utility-os'/label
-            for current, unused, files in os.walk(base):
+            (base/'receipt.json').unlink(missing_ok=True)
+            for current, unused, files in os.walk(base, followlinks=False):
+                os.chmod(current, 0o755)
                 for name in files:
                     path = Path(current)/name
-                    if path.relative_to(base).as_posix() == 'receipt.json': continue
-                    relative = path.relative_to(base).as_posix()
-                    with safe_open(base, relative) as source:
-                        write_file(self.root, APP+'/scriptexecute64/'+relative, lambda output: shutil.copyfileobj(source, output, 1024**2), 0o644)
-            selector = 'bundled-modern'
+                    if not path.is_file() or path.is_symlink(): raise UpdateError('Unsafe staged Utility OS file.')
+                    path.chmod(0o644)
+            if selector != 'legacy':
+                from update_utility import verify_tree
+                verify_tree(base, owner=self.store.owner)
+            target = 'scriptexecute' if selector == 'legacy' else 'scriptexecute64'
+            with parent_fd(self.root, APP+'/'+target) as (parent, leaf):
+                try: info = os.stat(leaf, dir_fd=parent, follow_symlinks=False)
+                except FileNotFoundError: os.rename(base, leaf, dst_dir_fd=parent)
+                else:
+                    if not stat.S_ISDIR(info.st_mode): raise UpdateError('The destination Utility OS tree is unsafe.')
+                    # Linux exchange is atomic: readers see one exact tree, including after a crash.
+                    exchange = ctypes.CDLL(None, use_errno=True).renameat2
+                    exchange.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+                    exchange.restype = ctypes.c_int
+                    if exchange(-100, os.fsencode(base), parent, os.fsencode(leaf), 2):
+                        raise UpdateError('The exact Utility OS tree could not be atomically replaced.')
+                os.fsync(parent)
+            if selector.startswith('managed:'): selector = 'bundled-modern'
         self.platform.activate_utility(selector)
 
     def finish_restore(self, archive, plan, job):
         imported = restore_backup_configuration(json_member(archive, 'system/backup-config.json'), now=self.store.clock())
         def reset(state):
             state.update(**imported, master_password=None, slots=[], remote_copies=[], last_success_at=None)
-            if plan['mode'] == 'migrate': state['station_id'] = uuid.uuid4().hex
         self.store.mutate(reset)
+        if plan['mode'] == 'migrate': self.store.rotate_station_identity()
         pending = self.store.configuration()['pending']
         services = pending['services']
         if plan['restore_role']:
