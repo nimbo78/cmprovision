@@ -116,10 +116,15 @@ class RemoteIntegrationTest(unittest.TestCase):
         objects = self.root/'objects'; objects.mkdir()
         script = self.root/'ftp-server.py'
         script.write_text('from pyftpdlib.authorizers import DummyAuthorizer\n'
+            'from OpenSSL import SSL\n'
             'from pyftpdlib.handlers import FTPHandler, TLS_FTPHandler\nfrom pyftpdlib.servers import FTPServer\n'
             'authorizer = DummyAuthorizer()\nauthorizer.add_user("backup", "test-transport-password", '+repr(str(objects))+', perm="elradfmwMT")\n'
             'handler = '+('TLS_FTPHandler' if tls else 'FTPHandler')+'\nhandler.authorizer = authorizer\n'
             'handler.certfile = '+repr(str(self.cert))+'\nhandler.keyfile = '+repr(str(self.key))+'\n'
+            # https://github.com/giampaolo/pyftpdlib/issues/602: TLS 1.3 uploads may truncate.
+            # Pin only the disposable
+            # server to TLS 1.2; production rclone negotiation and certificate checks are unchanged.
+            + ('handler.ssl_options |= SSL.OP_NO_TLSv1_3\n' if tls else '')+
             'FTPServer(("127.0.0.1", '+str(self.port)+'), handler).serve_forever()\n')
         self.launch([sys.executable, str(script)])
         profile = {'name': 'Loopback FTP', 'type': 'ftp', 'host': '127.0.0.1', 'port': self.port,

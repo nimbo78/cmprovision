@@ -152,4 +152,6 @@ For an interrupted **backup creation**, use `sudo python3 -I /usr/lib/cmprovisio
 
 ## Validation level
 
+The loopback FTPS fixture uses TLS 1.2 because of [pyftpdlib's TLS 1.3 truncation issue](https://github.com/giampaolo/pyftpdlib/issues/602). Production TLS negotiation and certificate verification remain unchanged; real FTPS-server acceptance is separate.
+
 The automated checks cover the archive policy, authentication/tampering, multi-gigabyte streaming, scheduling/DST, admission/recovery, web authentication and real loopback SFTP/FTP/FTPS/HTTPS-S3 endpoints. The S3 fixture is Moto, with unversioned small PUT and versioned multipart coverage; external AWS/MinIO and unversioned multipart acceptance remain separate. A disposable Debian station exercises actual account tools, SSH validation, NetworkManager reload, SQLite as www-data, archived package downgrade/installation, same-version repair and interrupted CLI recovery. An injected configuration failure and simulated loss of runtime state verify that enabled boot services remain blocked until authenticated recovery restores their original role. Physical restore and real external storage acceptance require a designated expendable station.
