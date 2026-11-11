@@ -5,6 +5,7 @@ import importlib.util
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 
 ROOT = Path('/var/tmp/cmprovision-backups-bench')
 
@@ -18,6 +19,19 @@ def prepare(package):
     try:
         subprocess.run(['chroot', str(ROOT), '/usr/bin/apt-get', '-y', '--no-install-recommends', 'install', 'openssh-server'], check=True)
     finally: (ROOT/'usr/sbin/policy-rc.d').unlink()
+    # Model the real portable FPMS package's optional Installed-Size omission, without
+    # GPIO dependencies or starting a physical display on the disposable amd64 station.
+    version = subprocess.check_output(['dpkg-deb', '-f', str(package), 'Version'], text=True).strip()
+    with tempfile.TemporaryDirectory(prefix='backup-fpms-fixture-') as directory:
+        staging = Path(directory)
+        (staging/'DEBIAN').mkdir()
+        (staging/'DEBIAN/control').write_text('Package: fpms-lite\nVersion: '+version+'\nArchitecture: all\n'
+            'Maintainer: Disposable acceptance <fixture@example.test>\nDescription: Headerless-size backup fixture\n')
+        path = staging/'usr/share/cmprovision-backup-acceptance/fpms-fixture'
+        path.parent.mkdir(parents=True); path.write_text('No GPIO or display implementation; package capture test only.\n')
+        output = ROOT/'fixture/fpms-fixture.deb'
+        subprocess.run(['dpkg-deb', '--root-owner-group', '--build', str(staging), str(output)], check=True)
+        subprocess.run(['chroot', str(ROOT), '/usr/bin/dpkg', '-i', '/fixture/fpms-fixture.deb'], check=True)
     (ROOT/'etc/hostname').write_text('cmprovision-backups-bench\n')
     shutil.copyfile(Path(__file__).with_name('run_acceptance.py'), ROOT/'fixture/backups-acceptance.py')
     shutil.copyfile(Path(__file__).with_name('run_failure_acceptance.py'), ROOT/'fixture/backups-failure-acceptance.py')

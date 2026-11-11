@@ -59,17 +59,23 @@ def run():
     with inspect_archive(archive, 'disposable full archive master password', store.private) as verified:
         assert 'system/accounts.json' in {item['name'] for item in verified.manifest['members']}
         assert all(item['provenance'] in ('local-snapshot', 'signed-release') for item in verified.manifest['software'])
-        package = next(item['archive'] for item in verified.manifest['software'] if item.get('package') == 'cmprovision4')
-        captured = fixture/'captured.deb'
-        with captured.open('xb') as output: verified.copy(package, output)
-    # Change the installed package version so restoration must execute the archived package path.
-    candidate = fixture/'candidate'; command('dpkg-deb', '-R', str(captured), str(candidate))
-    control = candidate/'DEBIAN/control'
+        captured = {}
+        for item in verified.manifest['software']:
+            if not item.get('package'): continue
+            path = fixture/('captured-'+item['package']+'.deb')
+            with path.open('xb') as output: verified.copy(item['archive'], output)
+            captured[item['package']] = path
+    # Keep the two station packages aligned, including in the mandatory pre-restore copy.
     candidate_version = system.platform.package('cmprovision4')+'+backupacceptance1'
-    control.write_text(re.sub(r'^Version: .+$', 'Version: '+candidate_version, control.read_text(), flags=re.M))
-    candidate_deb = fixture/'candidate.deb'
-    command('dpkg-deb', '-Zgzip', '-z1', '--threads-max=1', '--build', str(candidate), str(candidate_deb))
-    subprocess.run(['dpkg', '--force-confold', '-i', str(candidate_deb)],
+    candidates = []
+    for name, path in captured.items():
+        candidate = fixture/('candidate-'+name); command('dpkg-deb', '-R', str(path), str(candidate))
+        control = candidate/'DEBIAN/control'
+        control.write_text(re.sub(r'^Version: .+$', 'Version: '+candidate_version, control.read_text(), flags=re.M))
+        candidate_deb = fixture/('candidate-'+name+'.deb')
+        command('dpkg-deb', '-Zgzip', '-z1', '--threads-max=1', '--build', str(candidate), str(candidate_deb))
+        candidates.append(str(candidate_deb))
+    subprocess.run(['dpkg', '--force-confold', '-i', *candidates],
         env=dict(os.environ, CMPROVISION_NO_SNAPSHOT='1', DEBIAN_FRONTEND='noninteractive'), check=True,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     stale = Path('/var/lib/cmprovision/storage/app/after-backup-'+uuid.uuid4().hex); stale.write_text('must disappear'); os.chown(stale, 33, 33)

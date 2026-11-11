@@ -180,5 +180,28 @@ class SystemTest(unittest.TestCase):
             with self.assertRaises(UpdateError): system._package('cmprovision4', '2.29.0~dev1', self.root, [])
         self.assertFalse(any('dpkg-repack' in argv[0] for argv in calls))
 
+    def test_package_without_optional_installed_size_uses_only_its_registered_files(self):
+        from unittest.mock import patch
+        package_root = self.root/'usr/lib/fpms-lite'; package_root.mkdir(parents=True)
+        (package_root/'panel.py').write_bytes(b'panel fixture')
+        (package_root/'shared.py').symlink_to('panel.py')
+        calls = []
+        def run(argv, **options):
+            calls.append(argv)
+            text = ''
+            if '--listfiles' in argv: text = '/usr\n/usr/lib\n/usr/lib/fpms-lite\n/usr/lib/fpms-lite/panel.py\n/usr/lib/fpms-lite/shared.py\n'
+            elif argv[0].endswith('/dpkg-repack'): (Path(options['cwd'])/'fpms-lite_2.29.0~dev1_all.deb').write_bytes(b'package fixture')
+            elif argv[0].endswith('/dpkg-deb'): text = 'Package: fpms-lite\nVersion: 2.29.0~dev1\nArchitecture: all\n'
+            return subprocess.CompletedProcess(argv, 0, stdout=text, stderr='')
+        system = self.module.LinuxBackupSystem(self.store, root=self.root, runner=run)
+        entry, evidence = system._package('fpms-lite', '2.29.0~dev1', self.root, [])
+        self.assertEqual('local-snapshot', evidence['provenance'])
+        self.assertEqual('software/fpms-lite_2.29.0~dev1_all.deb', entry.name)
+        self.assertTrue(any('--listfiles' in argv for argv in calls))
+        self.assertTrue(any(argv[0].endswith('/dpkg-repack') for argv in calls))
+        retry = self.root/'retry'; retry.mkdir()
+        with patch('backup_system.shutil.disk_usage', return_value=shutil._ntuple_diskusage(10**9,10**9-268435456,268435456)):
+            with self.assertRaises(UpdateError): system._package('fpms-lite', '2.29.0~dev1', retry, [])
+
 
 if __name__ == '__main__': unittest.main()

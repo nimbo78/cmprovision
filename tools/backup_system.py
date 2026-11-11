@@ -241,6 +241,27 @@ class LinuxBackupSystem:
                 except (OSError, UpdateError): continue
         return None, None
 
+    def _installed_package_bytes(self, name):
+        size = self.command(['/usr/bin/dpkg-query', '-W', '-f=${Installed-Size}', name])
+        if size:
+            if not re.fullmatch(r'[0-9]{1,12}', size): raise UpdateError('The installed package size metadata is invalid.')
+            return int(size)*1024
+        # Installed-Size is optional (the portable fpms-lite package omits it). Inspect
+        # registered leaf metadata only: directory recursion would count unrelated user payloads.
+        paths = self.command(['/usr/bin/dpkg-query', '--listfiles', name]).splitlines()
+        if not paths or len(paths) > 100000: raise UpdateError('The installed package file inventory is unavailable.')
+        total = 0
+        for value in paths:
+            path = Path(value)
+            if not path.is_absolute() or '..' in path.parts or len(value) > 4096:
+                raise UpdateError('The installed package file inventory is unsafe.')
+            try: info = (self.root/value.lstrip('/')).lstat()
+            except OSError as error: raise UpdateError('A registered station package file is missing; repair the package before backup.') from error
+            if stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode): total += info.st_size
+            elif not stat.S_ISDIR(info.st_mode): raise UpdateError('A registered station package file has an unsupported type.')
+            if total > 2**40: raise UpdateError('The installed station package exceeds the backup size limit.')
+        return total
+
     def _package(self, name, version, directory, catalogues):
         if not re.fullmatch(DEB_VERSION_RE, version): raise UpdateError('Installed package version is invalid.')
         original, envelope = self._original(name, version, catalogues)
@@ -251,8 +272,8 @@ class LinuxBackupSystem:
                 'package': name, 'version': version, 'archive': member, 'provenance': 'signed-release', 'envelope': envelope}
         package_dir = directory/name
         package_dir.mkdir(mode=0o700)
-        size = self.command(['/usr/bin/dpkg-query', '-W', '-f=${Installed-Size}', name])
-        if not re.fullmatch(r'[0-9]{1,12}', size) or shutil.disk_usage(directory).free < int(size)*2048+RESERVE:
+        size = self._installed_package_bytes(name)
+        if shutil.disk_usage(directory).free < size*2+RESERVE:
             raise UpdateError('Not enough space to capture the required station package while preserving the free-space reserve.')
         self.command(['/usr/bin/dpkg-repack', '--deb-option=-Zgzip', '--deb-option=-z1', '--deb-option=--threads-max=1', name],
             cwd=package_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
