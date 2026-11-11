@@ -1,4 +1,4 @@
-cmprovision4 (2.29.0~dev2) unstable; urgency=medium
+cmprovision4 (2.29.0) unstable; urgency=medium
 
   * Retain bounded updater failure diagnostics and retry interrupted HTTP reads.
   * Add authenticated encrypted full station backups, remote destinations,
@@ -7,8 +7,10 @@ cmprovision4 (2.29.0~dev2) unstable; urgency=medium
     emergency access preservation and mandatory recovery snapshots.
   * Inspect registered package files when optional Installed-Size is absent,
     including portable fpms-lite packages.
+  * Preserve diagnostics for controlled release-check failures while checking
+    the remaining independent component.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Wed, 11 Nov 2026 04:00:00 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Wed, 11 Nov 2026 12:58:00 +0300
 
 cmprovision4 (2.28.0) unstable; urgency=medium
 
