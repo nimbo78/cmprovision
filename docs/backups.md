@@ -124,6 +124,8 @@ Package reuse also requires a clean installed-file verification. Emergency recov
 
 Repacked packages and unsigned Utility OS trees are marked **local-snapshot**. To execute them, the administrator must review the preview/archive fingerprint and explicitly add `--allow-snapshot-software`. An encrypted archive password alone does not establish publisher provenance. An explicitly trusted unsigned managed Utility OS tree is restored into the editable bundled-modern slot; it is never given a forged signed managed-release identity.
 
+Read-only preview can list software requiring this permission without granting it. Applying that plan still requires the explicit flag.
+
 ## Interrupted restoration
 
 Before destination changes, the command creates and verifies:
@@ -150,4 +152,4 @@ For an interrupted **backup creation**, use `sudo python3 -I /usr/lib/cmprovisio
 
 ## Validation level
 
-The automated checks cover the archive policy, authentication/tampering, multi-gigabyte streaming, scheduling/DST, admission/recovery, web authentication and real loopback SFTP/FTP/FTPS/HTTPS-S3 endpoints. The S3 fixture is Moto, with unversioned small PUT and versioned multipart coverage; external AWS/MinIO and unversioned multipart acceptance remain separate. A disposable Debian station exercises actual account tools, SSH validation, NetworkManager reload, SQLite as www-data, archived package downgrade/installation and interrupted CLI recovery. Physical restore and real external storage acceptance require a designated expendable station.
+The automated checks cover the archive policy, authentication/tampering, multi-gigabyte streaming, scheduling/DST, admission/recovery, web authentication and real loopback SFTP/FTP/FTPS/HTTPS-S3 endpoints. The S3 fixture is Moto, with unversioned small PUT and versioned multipart coverage; external AWS/MinIO and unversioned multipart acceptance remain separate. A disposable Debian station exercises actual account tools, SSH validation, NetworkManager reload, SQLite as www-data, archived package downgrade/installation, same-version repair and interrupted CLI recovery. An injected configuration failure and simulated loss of runtime state verify that enabled boot services remain blocked until authenticated recovery restores their original role. Physical restore and real external storage acceptance require a designated expendable station.
