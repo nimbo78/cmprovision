@@ -156,7 +156,12 @@ class BackupStore(UpdateStore):
                 state['slots'] = (state['slots']+[slot])[-400:]
             ordered = sorted(state['operations'].values(), key=lambda item: item.get('sequence', 0))
             for old in ordered[:-50]:
-                if old['state'] in TERMINAL: state['operations'].pop(old['id'])
+                # UI history is capped separately. Keep ownership evidence until
+                # its actual archive is retired, even after 50 unrelated jobs.
+                download = (old['action'] == 'backup' and old['target'] == 'download' and old['state'] == 'ready'
+                            and os.path.lexists(self.private/'jobs'/old['id']/'backup.cmpbackup'))
+                if old['state'] in TERMINAL and not old.get('recovery_file') and not download:
+                    state['operations'].pop(old['id'])
             state['requests'] = dict(list(state['requests'].items())[-4096:])
             return job, True
         with self.lock('worker', blocking=False): return self.mutate(change)

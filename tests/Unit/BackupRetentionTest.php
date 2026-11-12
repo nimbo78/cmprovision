@@ -192,4 +192,78 @@ class BackupRetentionTest extends TestCase
         $this->assertStringContainsString('DEFAULT_DEST=/var/backups/cmprovision', $script);
         $this->assertStringContainsString('"$path" = "${OUT:-}"', $script, 'the snapshot just made is never removed');
     }
+
+    public function test_prune_waits_for_another_snapshot_operation_on_the_same_destination()
+    {
+        $names = $this->fill();
+        $lock = fopen($this->dir, 'r');
+        $this->assertTrue(flock($lock, LOCK_EX));
+        $process = proc_open(['sh', dirname(__DIR__, 2).'/tools/backup.sh', '--prune', $this->dir],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        try
+        {
+            usleep(200000);
+            $this->assertTrue(proc_get_status($process)['running'], 'another operation owns the destination');
+            foreach ($names as $name)
+                $this->assertDirectoryExists($this->dir.'/'.$name, 'nothing is removed until the owner releases the destination');
+        }
+        finally
+        {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            foreach ($pipes as $pipe) fclose($pipe);
+            proc_close($process);
+        }
+        $this->assertDirectoryExists($this->dir.'/'.$names[9]);
+    }
+
+    public function test_prune_preserves_a_snapshot_being_read_by_restore()
+    {
+        $names = $this->fill();
+        $source = $this->dir.'/'.$names[0];
+        $lock = fopen($source, 'r');
+        flock($lock, LOCK_SH);
+        try
+        {
+            [$code, $out] = $this->run_('--prune '.escapeshellarg($this->dir));
+            $this->assertSame(0, $code, $out);
+            $this->assertDirectoryExists($source);
+            $this->assertDirectoryExists($this->dir.'/'.$names[9]);
+        }
+        finally
+        {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+        $this->run_('--prune '.escapeshellarg($this->dir));
+        $this->assertDirectoryDoesNotExist($source, 'resolved restore no longer pins the old copy');
+    }
+
+    public function test_restore_locks_its_source_before_any_system_changes()
+    {
+        if (! function_exists('posix_geteuid') || posix_geteuid() !== 0)
+            $this->markTestSkipped('restore preflight requires root');
+        $names = $this->fill();
+        $source = $this->dir.'/'.$names[0];
+        file_put_contents($source.'/app.tar.gz', 'archive fixture');
+        // Execute the real preflight only, ending before the first system-effect function.
+        $script = file_get_contents(dirname(__DIR__, 2).'/tools/restore.sh');
+        $prefix = substr($script, 0, strpos($script, "network_guard()\n"));
+        $lock = fopen($source, 'r');
+        flock($lock, LOCK_EX);
+        $process = proc_open(['sh', '-c', $prefix, 'restore-preflight', $source],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        try
+        {
+            usleep(200000);
+            $this->assertTrue(proc_get_status($process)['running'], 'restore waits for snapshot creation/pruning');
+        }
+        finally
+        {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            foreach ($pipes as $pipe) fclose($pipe);
+            proc_close($process);
+        }
+    }
 }

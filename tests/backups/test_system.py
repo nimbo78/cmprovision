@@ -80,6 +80,44 @@ class SystemTest(unittest.TestCase):
         self.module.LinuxBackupSystem(self.store, root=self.root).sweep()
         self.assertTrue(path.exists())
 
+    def test_pre_restore_ownership_survives_job_history_eviction(self):
+        old, _ = self.store.begin('a'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        directory = self.root/'var/backups/cmprovision-full-restore'/old['id']
+        directory.mkdir(parents=True, mode=0o700)
+        previous = directory/'before.cmpbackup'
+        previous.write_bytes(b'verified recovery'); previous.chmod(0o600)
+        self.store.update(old['id'], state='succeeded', recovery_file=str(previous))
+        for number in range(51):
+            job, _ = self.store.begin(f'{number:064x}', 'download', {'images': False, 'packages': False}, action='test')
+            self.store.update(job['id'], state='succeeded')
+        new, _ = self.store.begin('b'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        directory = previous.parents[1]/new['id']; directory.mkdir(mode=0o700)
+        replacement = directory/'before.cmpbackup'
+        replacement.write_bytes(b'new verified recovery'); replacement.chmod(0o600)
+        self.store.update(new['id'], state='succeeded', recovery_file=str(replacement))
+        self.module.LinuxBackupSystem(self.store, root=self.root).sweep()
+        self.assertFalse(previous.exists(), 'owned copies must remain identifiable beyond 50 UI summaries')
+        self.assertTrue(replacement.exists())
+        self.assertEqual(50, len(self.store.status()['history']))
+
+    def test_download_ownership_survives_job_history_eviction(self):
+        self.store.configure_password('a sufficiently long master password')
+        old, _ = self.store.begin('a'*64, 'download', {'images': False, 'packages': False})
+        previous = self.store.job_dir(old['id'])/'backup.cmpbackup'
+        previous.write_bytes(b'verified fixture'); previous.chmod(0o600)
+        self.store.update(old['id'], state='ready', bytes=previous.stat().st_size, expires_at=int(self.store.clock())+3600)
+        for number in range(51):
+            job, _ = self.store.begin(f'{number:064x}', 'download', {'images': False, 'packages': False}, action='test')
+            self.store.update(job['id'], state='succeeded')
+        new, _ = self.store.begin('b'*64, 'download', {'images': False, 'packages': False})
+        replacement = self.store.job_dir(new['id'])/'backup.cmpbackup'
+        replacement.write_bytes(b'new verified fixture'); replacement.chmod(0o600)
+        self.store.update(new['id'], state='ready', bytes=replacement.stat().st_size, expires_at=int(self.store.clock())+3600)
+        self.module.LinuxBackupSystem(self.store, root=self.root).sweep()
+        self.assertFalse(previous.exists(), 'download ownership must survive UI history rotation too')
+        self.assertTrue(replacement.exists())
+        self.assertEqual(50, len(self.store.status()['history']))
+
     def test_sweep_skips_non_object_ownership_markers_without_touching_their_files(self):
         self.store.configure_password('a sufficiently long master password')
         job, _ = self.store.begin('a'*64, 'download', {'images': False, 'packages': False})

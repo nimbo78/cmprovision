@@ -66,16 +66,29 @@ prune() {
         path="$DEST/$name"
         completed_snapshot "$path" || continue
         [ "$path" != "$keeper" ] || continue
-        if rm -rf "$path"; then
+        # Restore holds a shared lock on its source across nested package hooks.
+        if (exec 7< "$path"; flock -xn 7 || exit 75; rm -rf "$path"); then
             removed=$((removed + 1))
         else
-            echo "could not remove $path" >&2
+            case $? in 75) ;; *) echo "could not remove $path" >&2 ;; esac
         fi
     done
     if [ "$removed" != 0 ]; then
         echo "removed $removed older snapshot(s) from $DEST, kept the newest $KEEP"
     fi
 }
+
+# Serialize creation and pruning for this destination without creating a lock file.
+# An absent destination needs no work for --prune; explicit symlink destinations are refused.
+if [ "$PRUNE" = 1 ] && [ ! -e "$DEST" ] && [ ! -L "$DEST" ]; then exit 0; fi
+if [ "$PRUNE" = 0 ]; then
+    [ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
+fi
+umask 077
+[ ! -L "$DEST" ] || { echo "snapshot destination must be a directory, not a link" >&2; exit 1; }
+mkdir -p -m 700 "$DEST"
+exec 8< "$DEST"
+flock -x 8
 
 if [ "$PRUNE" = 1 ]; then
     prune
@@ -84,14 +97,11 @@ fi
 
 VER=$(dpkg-query -W -f='${Version}' cmprovision4 2>/dev/null || echo unknown)
 OUT="$DEST/$(date +%Y%m%d-%H%M%S)-$VER"
-[ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
 # A snapshot of an unconfirmed network move could combine the old and new interfaces.
 if [ -e /run/cmprovision-network/pending ] || [ -e /var/lib/cmprovision-network/transactions/pending.json ]; then
     echo "Confirm or recover the pending network change before making a backup." >&2; exit 1
 fi
 # The snapshot holds .env (APP_KEY), password hashes, printer and SNMP credentials: root-only.
-umask 077
-mkdir -p -m 700 "$DEST"
 mkdir -m 700 "$OUT"
 : > "$OUT/.incomplete"
 
