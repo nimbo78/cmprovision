@@ -1,3 +1,19 @@
+cmprovision4 (2.30.0) unstable; urgency=medium
+
+  * Release module hardware identity across web, HDMI and both FPMS layouts:
+    model, PCB revision, RAM, eMMC, built-in Wi-Fi and inferred CM4 SKU.
+  * Release optional rescue Wi-Fi with a ten-minute management search,
+    separate-radio ownership, routed sensor/VLAN access and client-aware
+    shutdown after management recovery.
+  * Include rescue configuration in encrypted network backups, preserving
+    destination networking by default and supporting permanent-MAC mapping.
+  * Retire the owned source guard after confirmed external AP shutdown and
+    include sysctl in the isolated real DHCP/NAT acceptance container.
+  * Add versioned English/Russian release notes for the complete signed
+    application, FPMS and experimental station-image release pipeline.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 12 Nov 2026 18:49:00 +0000
+
 cmprovision4 (2.30.0~dev3) unstable; urgency=medium
 
   * Remove the owned rescue source guard after NetworkManager confirms an
