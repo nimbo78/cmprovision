@@ -17,6 +17,7 @@ from update_manifest import COMPONENTS, SHA_RE, UOS_VERSION_RE, UpdateError, can
 STATES = frozenset(('queued', 'checking', 'downloading', 'verifying', 'ready', 'preparing', 'applying',
                     'reconnecting', 'succeeded', 'rolled-back', 'failed', 'canceled', 'unknown', 'recovery-required'))
 TERMINAL = frozenset(('ready', 'succeeded', 'rolled-back', 'failed', 'canceled'))
+RECOVERY_TTL = 7*24*60*60
 MAX_STATE = 4*1024*1024
 ID_RE = r'[0-9a-f]{32}'
 NONCE_RE = r'[0-9a-f]{64}'
@@ -171,7 +172,7 @@ class UpdateStore:
 
     def _public_operation(self, operation, history=False):
         keys = {'id', 'action', 'component', 'components', 'version', 'state', 'created_at', 'updated_at',
-                'downloaded', 'total', 'message', 'cancel_requested', 'diagnostic', 'recovery_diagnostic'}
+                'downloaded', 'total', 'message', 'cancel_requested', 'diagnostic', 'recovery_diagnostic', 'recovery_expires_at'}
         if not history: keys |= {'log'}
         result = {key: copy.deepcopy(value) for key, value in operation.items() if key in keys}
         previous = operation.get('previous', {})
@@ -281,9 +282,12 @@ class UpdateStore:
         def action(state):
             operation = state['operations'].get(identity)
             if operation is None: raise UpdateError('Update operation was not found.')
+            completed = operation.get('updated_at') if operation['state'] == 'succeeded' else int(self.clock())
             operation.update(changes, updated_at=int(self.clock()))
             if operation['downloaded'] > operation['total']: raise UpdateError('Update progress exceeds its total.')
             if operation['state'] == 'succeeded' and (operation.get('backup') or operation.get('previous')):
+                if type(completed) is int and completed >= 0:
+                    operation.setdefault('recovery_expires_at', completed+RECOVERY_TTL)
                 state['recoveries'][identity] = copy.deepcopy(operation)
                 state['recoveries'] = dict(sorted(state['recoveries'].items(),
                     key=lambda item: item[1]['sequence'])[-1:])

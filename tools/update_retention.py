@@ -6,10 +6,18 @@ from pathlib import Path
 import re
 import shutil
 import stat
-import time
 
-from update_store import TERMINAL
+from update_store import TERMINAL, RECOVERY_TTL
 from update_manifest import UpdateError
+
+
+def recovery_expired(operation, now):
+    expiry = operation.get('recovery_expires_at')
+    if expiry is None:
+        completed = operation.get('updated_at')
+        if type(completed) is not int or completed < 0: return False
+        expiry = completed+RECOVERY_TTL
+    return type(expiry) is int and expiry >= 0 and now >= expiry
 
 
 def prune_idle(store):
@@ -26,8 +34,8 @@ def prune_idle(store):
         prune(store, managed=None)
 
 
-def prune(store, managed=Path('/var/lib/cmprovision-utility-os'), now=None, active_selector=None):
-    now = time.time() if now is None else now
+def prune(store, managed=Path('/var/lib/cmprovision-utility-os'), now=None, active_selector=None, before_snapshot=False):
+    now = store.clock() if now is None else now
     with store.lock('control'):
         state = store._load()
         references = {value.get('id') for value in state['checks'].values()} | set(state['ready'])
@@ -39,7 +47,8 @@ def prune(store, managed=Path('/var/lib/cmprovision-utility-os'), now=None, acti
             if current['action'] == 'rollback': protected.add(current['request']['operation'])
         # Migrate old histories too. A currently selected rollback source is an
         # extra temporary reference, never an excuse to delete live recovery data.
-        latest = sorted(state['recoveries'], key=lambda key: state['recoveries'][key]['sequence'])[-1:]
+        eligible = [key for key, operation in state['recoveries'].items() if not recovery_expired(operation, now)]
+        latest = [] if before_snapshot else sorted(eligible, key=lambda key: state['recoveries'][key]['sequence'])[-1:]
         state['recoveries'] = {key: value for key, value in state['recoveries'].items()
                                if key in set(latest) | protected}
         if current: references.add(current['request'].get('candidate'))

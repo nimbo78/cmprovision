@@ -13,6 +13,24 @@ from update_store import UpdateStore
 
 
 class RecoveryMigrationTest(unittest.TestCase):
+    def test_idle_status_retires_one_expired_point_but_skips_a_locked_worker(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            now = [1000]
+            store = UpdateStore(root/'updates', root/'run', owner=os.getuid(), clock=lambda: now[0])
+            job, _ = store.begin({'action': 'check', 'nonce': 'a'*64, 'components': ['application']})
+            directory = store.private/'recovery'/job['id']
+            store._directory(directory, 0o700)
+            os.utime(directory, (now[0], now[0]))
+            store.update(job['id'], state='succeeded', backup={'directory': str(directory)})
+            now[0] += 604800
+            broker = Broker(store)
+            with store.lock('worker', blocking=False):
+                self.assertEqual(1, len(broker.request({'action': 'status'})['recoveries']))
+                self.assertTrue(directory.exists())
+            self.assertEqual([], broker.request({'action': 'status'})['recoveries'])
+            self.assertFalse(directory.exists())
+
     def test_idle_status_migrates_legacy_recoveries_but_does_not_interrupt_a_worker_or_backup(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
