@@ -6,6 +6,13 @@ DIAG_FILE=${DIAG_FILE:-${CMP_DIAG_TMP:-/tmp}/cmprovision-module-diagnostics.txt}
 DIAG_STATE=${CMP_DIAG_STATE:-${CMP_DIAG_TMP:-/tmp}/cmprovision-diagnostics}
 DIAG_BOOT_ID=$(tr -d '\000\r\n' 2>/dev/null < "$DIAG_PROC/sys/kernel/random/boot_id")
 cmp_diag_text() { if [ -r "$1" ]; then tr -d '\000\r\n' < "$1" | cut -c1-160; fi; }
+# Device-tree cells are big-endian bytes. Read at most five to reject truncated/oversized cells,
+# preserving an actual zero word rather than confusing an unavailable attribute with zero.
+cmp_diag_word() {
+    diag_word=$(od -An -tx1 -N5 "$1" 2>/dev/null | tr -d ' \n')
+    [ "${#diag_word}" -eq 8 ] && printf '%s' "$diag_word"
+    return 0
+}
 # The legacy and minimal USB images may have no timeout applet. Bound this one firmware read
 # in a subshell, without changing or killing any pre-existing target process.
 cmp_diag_power() (
@@ -91,6 +98,23 @@ cmp_diag_collect() (
             echo "eth_$diag_field=$(cmp_diag_text "$diag_eth/statistics/$diag_field")"
         done
         echo "model=$(cmp_diag_text "$DIAG_PROC/device-tree/model")"
+        diag_revision=$(cmp_diag_word "$DIAG_PROC/device-tree/system/linux,revision")
+        [ -n "$diag_revision" ] || diag_revision=$(awk '$1 == "Revision" {print $3; exit}' "$DIAG_PROC/cpuinfo" 2>/dev/null)
+        echo "revision_code=$diag_revision"
+        echo "board_revision_ext=$(cmp_diag_word "$DIAG_PROC/device-tree/chosen/rpi-boardrev-ext")"
+        # Inventory on-module MMC independently of a project's SD/USB/NVMe write target.
+        diag_emmc=unknown; diag_emmc_sectors=
+        if [ -d "$DIAG_SYS/class/block" ]; then
+            diag_emmc=not_detected
+            for diag_mmc in "$DIAG_SYS"/class/block/mmcblk[0-9]; do
+                [ "$(cmp_diag_text "$diag_mmc/device/type")" = MMC ] || continue
+                diag_emmc=detected
+                diag_emmc_sectors=$(cmp_diag_text "$diag_mmc/size")
+                break
+            done
+        fi
+        echo "emmc=$diag_emmc"
+        echo "emmc_sectors=$diag_emmc_sectors"
         echo "block=$diag_block"
         echo "host=$diag_host"
         echo "controller=$diag_controller"

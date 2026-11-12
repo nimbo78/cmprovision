@@ -80,7 +80,7 @@ class WallboardSnapshot
                     'phase' => 'unregistered', 'state' => 'unknown', 'detail' => 'USB observation; no provisioning run',
                     'percent' => null, 'speed' => null, 'eta' => null, 'cycle' => null, 'silent' => null,
                     'diagnostics' => $this->diagnostics($row->report, $row->received_at), 'steps' => [], 'advice' => null,
-                    'os_state' => null, 'registered' => false];
+                    'os_state' => null, 'registered' => false, 'hardware' => ModuleHardware::fromFacts($row->report['facts'] ?? [])];
 
         $modules = array_values($modules);
         $counts = ['done' => 0, 'running' => 0, 'failed' => 0, 'stale' => 0, 'unknown' => 0];
@@ -145,7 +145,7 @@ class WallboardSnapshot
             // the front panel: the step by the percent, what went wrong in short and in full, its exit codes
             'step' => ShortCause::step($cm), 'cause' => $short['cause'] ?? null, 'reason' => $short['reason'] ?? null,
             'code' => $short['code'] ?? null,
-            'name' => $cm->displayName(), 'port' => $port,
+            'name' => $cm->displayName(), 'port' => $port, 'hardware' => ModuleHardware::forModule($cm),
             'phase' => $cm->usb_prep_at !== null && $cm->phase === 'done' ? 'ready' : $cm->phase, 'state' => StandMap::moduleState($cm), 'detail' => $cm->phase_detail,
             'percent' => $cm->progressPercent(), 'speed' => $cm->bytesPerSecond(), 'eta' => $cm->secondsLeft(),
             'bytes' => $cm->progress_bytes, 'total' => $cm->progress_total,

@@ -101,7 +101,9 @@
                     <tr><td class="text-fg-muted">Re-provision</td><td><livewire:reprovision-dialog :serial="$cm->serial" :key="'reprovision-'.$cm->serial" /></td></tr>
                     <tr><td class="text-fg-muted">MAC</td><td class="font-mono">{{ $cm->mac }}</td></tr>
                     <tr><td class="text-fg-muted">Serial</td><td class="font-mono text-fg-muted">{{ $cm->serial }}</td></tr>
-                    <tr><td class="text-fg-muted">Model</td><td>{{ $cm->model }}</td></tr>
+                    @foreach (['model' => 'Model', 'revision' => 'PCB revision', 'ram' => 'RAM', 'emmc' => 'eMMC', 'wifi' => 'Built-in Wi-Fi', 'sku' => 'Inferred SKU'] as $key => $label)
+                    <tr><td class="text-fg-muted">{{ $label }}</td><td>{{ $hardware[$key] }}</td></tr>
+                    @endforeach
                     <tr><td class="text-fg-muted">Board</td><td>{{ $cm->board_pending_since ? 'looking up the switch port…' : $cm->provisioning_board }}</td></tr>
                     <tr><td class="text-fg-muted">Project</td><td>{{ $cm->project ? $cm->project->name : '' }}</td></tr>
                     <tr><td class="text-fg-muted">Image</td><td>{{ $cm->image_filename }} <span class="text-xs text-fg-muted font-mono break-all">{{ $cm->image_sha256 }}</span></td></tr>
@@ -141,8 +143,8 @@
                     </tr>
                     @endif
                     <tr>
-                        <td class="text-fg-muted">Memory, storage</td>
-                        <td>{{ $cm->memory_in_gb }} GiB &middot; {{ $cm->storage ? round($cm->storage / 1000 / 1000 / 1000).' GB' : 'no storage' }}</td>
+                        <td class="text-fg-muted">Write target</td>
+                        <td>{{ $cm->provisioning_storage ?: 'Unknown' }} &middot; {{ $cm->storage ? round($cm->storage / 1000 / 1000 / 1000, 1).' GB detected' : 'capacity not reported' }}</td>
                     </tr>
                     <tr><td class="text-fg-muted">Temperature</td><td>{{ $cm->temp1 }} at the start @if ($cm->temp2) &middot; {{ $cm->temp2 }} at the end @endif</td></tr>
                     <tr><td class="text-fg-muted">Utility OS</td><td>{{ $cm->utilityOsLabel() }}</td></tr>
