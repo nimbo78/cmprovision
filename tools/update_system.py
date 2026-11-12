@@ -177,14 +177,14 @@ class LinuxSystem:
         directory = self.store.private/'recovery'/identity
         self.store._directory(directory, 0o700)
         # Refuse installation unless a full, reinstallable snapshot can be kept independently
-        # of the application's ordinary five-snapshot retention policy.
+        # of the application's ordinary snapshot retention policy.
         size = int(self.command(['/usr/bin/du', '-sx', '--block-size=1', APP]).split()[0])
         if shutil.disk_usage(directory).free < size*2+128*1024**2:
             raise UpdateError('Not enough free space for a required recovery snapshot.')
         restore = directory/'restore.sh'
         shutil.copyfile('/usr/sbin/cmprovision-restore', restore)
         restore.chmod(0o700)
-        self.command(['/usr/sbin/cmprovision-backup', '--with-uploads', '--keep', 'all', directory], timeout=1800)
+        self.command(['/usr/sbin/cmprovision-backup', '--with-uploads', '--keep', '1', directory], timeout=1800)
         snapshots = [path for path in directory.iterdir() if path.is_dir() and not path.is_symlink()]
         if len(snapshots) != 1: raise UpdateError('Could not identify the completed recovery snapshot.')
         snapshot = snapshots[0]
