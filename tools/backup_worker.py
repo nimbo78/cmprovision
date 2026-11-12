@@ -124,26 +124,33 @@ class Worker:
                 self.store.record_remote(identity, receipt)
                 digest, size, outcome = receipt['sha256'], receipt['size'], 'succeeded'
         # Commit the copy outcome before service cleanup. Recovery never repeats an already usable copy.
-        if canceled(): raise UpdateError('Backup canceled.')
-        self.store.update(identity, committed=True, committed_at=int(self.store.clock()), outcome=outcome, bytes=size, total=size, sha256=digest,
-            expires_at=int(self.store.clock())+3600 if outcome == 'ready' else None)
+        if not receipt:
+            if canceled(): raise UpdateError('Backup canceled.')
+            self.store.update(identity, committed=True, committed_at=int(self.store.clock()), outcome=outcome, bytes=size, total=size, sha256=digest,
+                expires_at=int(self.store.clock())+3600)
         self._finish(identity, outcome, 'Encrypted backup ready to download.' if outcome == 'ready' else 'Remote backup verified and committed.')
-        if receipt:
-            try:
-                with self.remote(job['snapshot']['profile'], job['snapshot']['station_id'], directory) as remote:
-                    removed = remote.prune(self.store.configuration()['remote_copies'], job['snapshot']['profile']['keep'])
-                    self.store.forget_remote(removed)
-            except Exception:
-                self.store.update(identity, warning='The new backup is safe, but cleanup of older remote copies failed. Check destination delete permission.')
 
     def _finish(self, identity, outcome, message):
         pending = self.store.configuration()['pending']
         if pending and pending['id'] == identity:
             self.system.resume(pending['services'])
+        job = self.store.operation(identity)
+        if outcome == 'succeeded' and job['target'] != 'download':
+            try:
+                with self.remote(job['snapshot']['profile'], job['snapshot']['station_id'], self.store.job_dir(identity)) as remote:
+                    removed = remote.prune(self.store.configuration()['remote_copies'], 1)
+                    self.store.forget_remote(removed)
+            except Exception:
+                self.store.update(identity, warning='The new backup is safe, but cleanup of older remote copies failed. Check destination delete permission.')
         self.system.cleanup(self.store.job_dir(identity), keep_download=outcome == 'ready')
         self.store.update(identity, state=outcome, message=message)
         if pending:
             with self.system.admission_lock(): self.store.clear_pending(identity)
+        if outcome == 'ready':
+            from backup_retention import prune_downloads
+            try: prune_downloads(self.store)
+            except (UpdateError, OSError):
+                self.store.update(identity, warning='The new backup is safe, but cleanup of older downloads failed.')
 
     def _failed(self, identity, error):
         job = self.store.operation(identity)

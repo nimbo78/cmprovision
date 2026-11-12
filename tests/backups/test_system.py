@@ -34,6 +34,103 @@ class SystemTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.store = BackupStore(self.root/'state', self.root/'runtime', owner=os.getuid())
 
+    def test_idle_sweep_retires_superseded_downloads_and_expires_their_links(self):
+        self.store.configure_password('a sufficiently long master password')
+        copies = []
+        for number in range(2):
+            job, _ = self.store.begin(f'{number:064x}', 'download', {'images': False, 'packages': False})
+            path = self.store.job_dir(job['id'])/'backup.cmpbackup'
+            path.write_bytes(b'verified fixture'); path.chmod(0o600)
+            self.store.update(job['id'], state='ready', bytes=path.stat().st_size, expires_at=int(self.store.clock())+3600)
+            copies.append((job['id'], path))
+        unknown = self.store.private/'jobs'/'operator-backup'
+        unknown.mkdir(); (unknown/'keep').write_text('operator-owned')
+        self.module.LinuxBackupSystem(self.store, root=self.root).sweep()
+        self.assertFalse(copies[0][1].exists())
+        self.assertTrue(copies[1][1].exists())
+        self.assertTrue((unknown/'keep').exists())
+        with self.assertRaises(UpdateError): self.store.download_file(copies[0][0])
+
+    def test_idle_sweep_retains_only_the_latest_ledger_proven_pre_restore_copy(self):
+        copies = []
+        for number in range(2):
+            job, _ = self.store.begin(f'{number:064x}', 'download', {'images': False, 'packages': False}, action='restore')
+            directory = self.root/'var/backups/cmprovision-full-restore'/job['id']
+            directory.mkdir(parents=True, mode=0o700)
+            path = directory/'before.cmpbackup'
+            path.write_bytes(b'verified recovery'); path.chmod(0o600)
+            self.store.update(job['id'], state='succeeded', recovery_file=str(path))
+            copies.append(path)
+        unknown = copies[0].parents[1]/'operator-backup'
+        unknown.mkdir(); (unknown/'keep').write_text('operator-owned')
+        self.module.LinuxBackupSystem(self.store, root=self.root).sweep()
+        self.assertFalse(copies[0].exists())
+        self.assertTrue(copies[1].exists())
+        self.assertTrue((unknown/'keep').exists())
+
+    def test_sweep_preserves_expired_source_artifacts_while_restore_is_active(self):
+        self.store.configure_password('a sufficiently long master password')
+        old, _ = self.store.begin('a'*64, 'download', {'images': False, 'packages': False})
+        path = self.store.job_dir(old['id'])/'backup.cmpbackup'
+        path.write_bytes(b'active restore source'); path.chmod(0o600)
+        self.store.update(old['id'], state='ready', bytes=path.stat().st_size, expires_at=int(self.store.clock())-1)
+        current, _ = self.store.begin('b'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        self.store.update(current['id'], state='collecting')
+        self.store.mark_pending(current['id'], {})
+        self.module.LinuxBackupSystem(self.store, root=self.root).sweep()
+        self.assertTrue(path.exists())
+
+    def test_pre_restore_ownership_survives_job_history_eviction(self):
+        old, _ = self.store.begin('a'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        directory = self.root/'var/backups/cmprovision-full-restore'/old['id']
+        directory.mkdir(parents=True, mode=0o700)
+        previous = directory/'before.cmpbackup'
+        previous.write_bytes(b'verified recovery'); previous.chmod(0o600)
+        self.store.update(old['id'], state='succeeded', recovery_file=str(previous))
+        for number in range(51):
+            job, _ = self.store.begin(f'{number:064x}', 'download', {'images': False, 'packages': False}, action='test')
+            self.store.update(job['id'], state='succeeded')
+        new, _ = self.store.begin('b'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        directory = previous.parents[1]/new['id']; directory.mkdir(mode=0o700)
+        replacement = directory/'before.cmpbackup'
+        replacement.write_bytes(b'new verified recovery'); replacement.chmod(0o600)
+        self.store.update(new['id'], state='succeeded', recovery_file=str(replacement))
+        self.module.LinuxBackupSystem(self.store, root=self.root).sweep()
+        self.assertFalse(previous.exists(), 'owned copies must remain identifiable beyond 50 UI summaries')
+        self.assertTrue(replacement.exists())
+        self.assertEqual(50, len(self.store.status()['history']))
+
+    def test_download_ownership_survives_job_history_eviction(self):
+        self.store.configure_password('a sufficiently long master password')
+        old, _ = self.store.begin('a'*64, 'download', {'images': False, 'packages': False})
+        previous = self.store.job_dir(old['id'])/'backup.cmpbackup'
+        previous.write_bytes(b'verified fixture'); previous.chmod(0o600)
+        self.store.update(old['id'], state='ready', bytes=previous.stat().st_size, expires_at=int(self.store.clock())+3600)
+        for number in range(51):
+            job, _ = self.store.begin(f'{number:064x}', 'download', {'images': False, 'packages': False}, action='test')
+            self.store.update(job['id'], state='succeeded')
+        new, _ = self.store.begin('b'*64, 'download', {'images': False, 'packages': False})
+        replacement = self.store.job_dir(new['id'])/'backup.cmpbackup'
+        replacement.write_bytes(b'new verified fixture'); replacement.chmod(0o600)
+        self.store.update(new['id'], state='ready', bytes=replacement.stat().st_size, expires_at=int(self.store.clock())+3600)
+        self.module.LinuxBackupSystem(self.store, root=self.root).sweep()
+        self.assertFalse(previous.exists(), 'download ownership must survive UI history rotation too')
+        self.assertTrue(replacement.exists())
+        self.assertEqual(50, len(self.store.status()['history']))
+
+    def test_sweep_skips_non_object_ownership_markers_without_touching_their_files(self):
+        self.store.configure_password('a sufficiently long master password')
+        job, _ = self.store.begin('a'*64, 'download', {'images': False, 'packages': False})
+        directory = self.store.job_dir(job['id'])
+        path = directory/'backup.cmpbackup'
+        path.write_bytes(b'foreign fixture'); path.chmod(0o600)
+        (directory/'owner.json').write_text('[]')
+        self.store.update(job['id'], state='ready', bytes=path.stat().st_size, expires_at=int(self.store.clock())-1)
+        next_job, _ = self.store.begin('b'*64, 'download', {'images': False, 'packages': False}, action='test')
+        self.store.update(next_job['id'], state='succeeded')
+        self.module.LinuxBackupSystem(self.store, root=self.root).sweep()
+        self.assertTrue(path.exists())
+
     def test_snapshot_uses_www_data_and_clears_only_snapshot_runtime_tables(self):
         if os.geteuid() != 0 or not shutil.which('sqlite3'): self.skipTest('root and sqlite3 for disposable account boundary')
         self.root.chmod(0o755)
@@ -108,8 +205,11 @@ class SystemTest(unittest.TestCase):
         recovery.mkdir(parents=True); (recovery/'before.cmpbackup').write_bytes(b'encrypted recovery')
         self.store.update(job['id'], state='succeeded')
         self.store.rotate_station_identity()
-        self.store.begin('f'*64, 'download', {'images': False, 'packages': False}, action='restore')
+        queued, _ = self.store.begin('f'*64, 'download', {'images': False, 'packages': False}, action='restore')
         self.store.clock = lambda: job['created_at']+7200
+        system.sweep()
+        self.assertTrue(directory.exists(), 'housekeeping defers while another restore is queued')
+        self.store.update(queued['id'], state='failed')
         system.sweep()
         self.assertFalse(directory.exists())
         self.assertTrue((recovery/'before.cmpbackup').exists())

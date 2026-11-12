@@ -60,53 +60,54 @@ class BackupRetentionTest extends TestCase
         return array_values(array_diff(scandir($this->dir), ['.', '..']));
     }
 
-    public function test_prune_keeps_the_newest_five_by_default_and_leaves_everything_else()
+    public function test_prune_keeps_only_the_newest_complete_snapshot_and_leaves_everything_else()
     {
         $names = $this->fill();
         [$code, $out] = $this->run_('--prune '.escapeshellarg($this->dir));
         $this->assertSame(0, $code, $out);
-        $this->assertStringContainsString('removed 5 older snapshot(s)', $out);
+        $this->assertStringContainsString('removed 9 older snapshot(s)', $out);
         $left = $this->left();
-        foreach (array_slice($names, 5) as $name)
+        foreach (array_slice($names, 9) as $name)
             $this->assertContains($name, $left, 'the newest stay');
-        foreach (array_slice($names, 0, 5) as $name)
+        foreach (array_slice($names, 0, 9) as $name)
             $this->assertNotContains($name, $left, 'the oldest go');
         foreach (['.before-upgrade', 'notes', '20261001-120000-readme.txt'] as $other)
             $this->assertContains($other, $left, 'only snapshot directories are touched');
     }
 
-    public function test_keep_sets_how_many_stay()
+    public function test_legacy_keep_arguments_cannot_raise_the_one_copy_cap()
     {
         $names = $this->fill();
         [$code, $out] = $this->run_('--prune --keep 2 '.escapeshellarg($this->dir));
         $this->assertSame(0, $code, $out);
         $snapshots = array_values(array_filter($this->left(), fn ($n) => preg_match('/^\d{8}-\d{6}-2\./', $n)));
-        $this->assertSame(array_slice($names, 8), $snapshots);
+        $this->assertSame([$names[9]], $snapshots);
 
         $this->run_('--prune --keep=1 '.escapeshellarg($this->dir));
         $snapshots = array_values(array_filter($this->left(), fn ($n) => preg_match('/^\d{8}-\d{6}-2\./', $n)));
         $this->assertSame([$names[9]], $snapshots);
     }
 
-    public function test_the_environment_sets_the_default_and_all_keeps_everything()
+    public function test_environment_and_legacy_all_cannot_raise_the_one_copy_cap()
     {
         $names = $this->fill();
         $this->run_('--prune '.escapeshellarg($this->dir), ['CMPROVISION_BACKUP_KEEP' => '8']);
-        $this->assertCount(8, array_filter($this->left(), fn ($n) => preg_match('/^\d{8}-\d{6}-2\./', $n)));
+        $this->assertCount(1, array_filter($this->left(), fn ($n) => preg_match('/^\d{8}-\d{6}-2\./', $n)));
 
         [$code] = $this->run_('--prune --keep all '.escapeshellarg($this->dir));
         $this->assertSame(0, $code);
-        $this->assertCount(8, array_filter($this->left(), fn ($n) => preg_match('/^\d{8}-\d{6}-2\./', $n)), 'all removes nothing');
+        $this->assertCount(1, array_filter($this->left(), fn ($n) => preg_match('/^\d{8}-\d{6}-2\./', $n)), 'legacy all still keeps one');
         $this->assertContains($names[9], $this->left());
     }
 
-    public function test_fewer_snapshots_than_the_limit_are_all_kept()
+    public function test_a_single_complete_snapshot_is_kept()
     {
         $this->fill();
+        $this->run_('--prune --keep=1 '.escapeshellarg($this->dir));
         [$code, $out] = $this->run_('--prune --keep 10 '.escapeshellarg($this->dir));
         $this->assertSame(0, $code, $out);
         $this->assertStringNotContainsString('removed', $out);
-        $this->assertCount(10, array_filter($this->left(), fn ($n) => preg_match('/^\d{8}-\d{6}-2\./', $n)));
+        $this->assertCount(1, array_filter($this->left(), fn ($n) => preg_match('/^\d{8}-\d{6}-2\./', $n)));
     }
 
     public function test_a_symlink_named_like_a_snapshot_is_not_followed()
@@ -128,7 +129,7 @@ class BackupRetentionTest extends TestCase
         file_put_contents($this->dir.'/20261098-120000-file', 'x');
         $this->run_('--prune --keep 3 '.escapeshellarg($this->dir));
         $snapshots = array_values(array_filter($this->left(), fn ($n) => is_dir($this->dir.'/'.$n) && !is_link($this->dir.'/'.$n) && preg_match('/^\d{8}-\d{6}-2\./', $n)));
-        $this->assertSame(array_slice($names, 7), $snapshots, 'three real snapshots stay');
+        $this->assertSame([$names[9]], $snapshots, 'one real snapshot stays');
     }
 
     public function test_nonsense_limits_are_refused_before_anything_is_removed()
@@ -145,11 +146,124 @@ class BackupRetentionTest extends TestCase
         $this->assertCount(10, array_filter($this->left(), fn ($n) => preg_match('/^\d{8}-\d{6}-2\./', $n)));
     }
 
-    public function test_only_the_default_destination_is_trimmed_after_a_snapshot()
+    public function test_an_incomplete_newer_snapshot_does_not_displace_the_latest_complete_copy()
+    {
+        $names = $this->fill();
+        $incomplete = $this->dir.'/20261031-120000-2.12.99';
+        mkdir($incomplete);
+        file_put_contents($incomplete.'/.incomplete', 'still being created');
+        [$code, $out] = $this->run_('--prune '.escapeshellarg($this->dir));
+        $this->assertSame(0, $code, $out);
+        $this->assertDirectoryExists($this->dir.'/'.$names[9]);
+        $this->assertDirectoryExists($incomplete, 'active/unfinished copies are protected');
+        foreach (array_slice($names, 0, 9) as $name)
+            $this->assertDirectoryDoesNotExist($this->dir.'/'.$name);
+    }
+
+    public function test_snapshot_like_operator_names_cannot_delete_unrelated_files()
+    {
+        $this->fill();
+        $unrecognized = '20260101-120000-2.0 notes';
+        mkdir($this->dir.'/'.$unrecognized);
+        mkdir($this->dir.'/20260102-120000-manual');
+        [$code, $out] = $this->run_('--prune '.escapeshellarg($this->dir));
+        $this->assertSame(0, $code, $out);
+        $this->assertDirectoryExists($this->dir.'/notes');
+        $this->assertDirectoryExists($this->dir.'/'.$unrecognized);
+        $this->assertDirectoryExists($this->dir.'/20260102-120000-manual');
+    }
+
+    public function test_the_just_completed_snapshot_replaces_the_previous_copy_after_a_clock_correction()
+    {
+        $names = $this->fill();
+        // OUT is the completed replacement selected by the script before its final prune.
+        [$code, $out] = $this->run_('--prune '.escapeshellarg($this->dir), ['OUT' => $this->dir.'/'.$names[0]]);
+        $this->assertSame(0, $code, $out);
+        $this->assertDirectoryExists($this->dir.'/'.$names[0]);
+        foreach (array_slice($names, 1) as $name)
+            $this->assertDirectoryDoesNotExist($this->dir.'/'.$name);
+    }
+
+    public function test_every_explicit_snapshot_destination_is_trimmed_after_success()
     {
         $script = file_get_contents(dirname(__DIR__, 2).'/tools/backup.sh');
-        $this->assertMatchesRegularExpression('/if \[ "\$DEST" = "\$DEFAULT_DEST" \]; then\s+prune\s+fi/', $script);
+        $this->assertDoesNotMatchRegularExpression('/if \[ "\$DEST" = "\$DEFAULT_DEST" \]; then\s+prune\s+fi/', $script);
+        $this->assertMatchesRegularExpression('/rm -f "\$OUT\/\.incomplete"[\s\S]*\nprune\s*$/', $script);
         $this->assertStringContainsString('DEFAULT_DEST=/var/backups/cmprovision', $script);
         $this->assertStringContainsString('"$path" = "${OUT:-}"', $script, 'the snapshot just made is never removed');
+    }
+
+    public function test_prune_waits_for_another_snapshot_operation_on_the_same_destination()
+    {
+        $names = $this->fill();
+        $lock = fopen($this->dir, 'r');
+        $this->assertTrue(flock($lock, LOCK_EX));
+        $process = proc_open(['sh', dirname(__DIR__, 2).'/tools/backup.sh', '--prune', $this->dir],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        try
+        {
+            usleep(200000);
+            $this->assertTrue(proc_get_status($process)['running'], 'another operation owns the destination');
+            foreach ($names as $name)
+                $this->assertDirectoryExists($this->dir.'/'.$name, 'nothing is removed until the owner releases the destination');
+        }
+        finally
+        {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            foreach ($pipes as $pipe) fclose($pipe);
+            proc_close($process);
+        }
+        $this->assertDirectoryExists($this->dir.'/'.$names[9]);
+    }
+
+    public function test_prune_preserves_a_snapshot_being_read_by_restore()
+    {
+        $names = $this->fill();
+        $source = $this->dir.'/'.$names[0];
+        $lock = fopen($source, 'r');
+        flock($lock, LOCK_SH);
+        try
+        {
+            [$code, $out] = $this->run_('--prune '.escapeshellarg($this->dir));
+            $this->assertSame(0, $code, $out);
+            $this->assertDirectoryExists($source);
+            $this->assertDirectoryExists($this->dir.'/'.$names[9]);
+        }
+        finally
+        {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+        $this->run_('--prune '.escapeshellarg($this->dir));
+        $this->assertDirectoryDoesNotExist($source, 'resolved restore no longer pins the old copy');
+    }
+
+    public function test_restore_locks_its_source_before_any_system_changes()
+    {
+        if (! function_exists('posix_geteuid') || posix_geteuid() !== 0)
+            $this->markTestSkipped('restore preflight requires root');
+        $names = $this->fill();
+        $source = $this->dir.'/'.$names[0];
+        file_put_contents($source.'/app.tar.gz', 'archive fixture');
+        // Execute the real preflight only, ending before the first system-effect function.
+        $script = file_get_contents(dirname(__DIR__, 2).'/tools/restore.sh');
+        $prefix = substr($script, 0, strpos($script, "network_guard()\n"));
+        $lock = fopen($source, 'r');
+        flock($lock, LOCK_EX);
+        $process = proc_open(['sh', '-c', $prefix, 'restore-preflight', $source],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        try
+        {
+            usleep(200000);
+            $this->assertTrue(proc_get_status($process)['running'], 'restore waits for snapshot creation/pruning');
+        }
+        finally
+        {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            foreach ($pipes as $pipe) fclose($pipe);
+            proc_close($process);
+        }
     }
 }

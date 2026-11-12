@@ -6,6 +6,14 @@ from support import ROOT
 
 
 class ScheduleTest(unittest.TestCase):
+    def test_legacy_schedule_cannot_request_more_than_one_successful_copy(self):
+        value = {'enabled': True, 'frequency': 'daily', 'time': '03:00', 'weekday': 0,
+                 'profile': 'a'*32, 'keep': 365, 'images': False, 'packages': False}
+        result = self.module.validate_schedule(value, {'a'*32: {}}, 1000)
+        self.assertEqual(1, result['keep'])
+        self.assertTrue(result['enabled'])
+        self.assertEqual('03:00', result['time'])
+
     def setUp(self):
         self.module = importlib.import_module('backup_schedule')
         self.config = {'enabled': True, 'frequency': 'daily', 'time': '03:00', 'weekday': 0,

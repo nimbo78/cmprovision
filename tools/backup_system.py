@@ -376,6 +376,17 @@ class LinuxBackupSystem:
             else: path.unlink()
 
     def sweep(self):
+        try:
+            guard = self.store.idle_worker()
+            guard.__enter__()
+        except UpdateError: return
+        try: self._sweep_locked()
+        finally: guard.__exit__(None, None, None)
+
+    def _sweep_locked(self):
+        from backup_retention import prune_downloads, prune_restore_snapshots
+        prune_downloads(self.store)
+        prune_restore_snapshots(self.store, self.root)
         state = self.store.configuration()
         current = state['current']
         for directory in (self.store.private/'jobs').iterdir():
@@ -385,16 +396,17 @@ class LinuxBackupSystem:
             if not marker.exists() or marker.is_symlink(): continue
             self.store._file(marker, 0o600)
             value = json.loads(read(directory, 'owner.json', 4096))
+            if type(value) is not dict: continue
             job = state['operations'].get(directory.name)
             expiry = job.get('expires_at') if job else None
             if (value.get('id') != directory.name or value.get('station_id') not in [state['station_id'], *state.get('artifact_station_ids', [])]
                     or type(value.get('created_at')) is not int): continue
-            if self.store.clock() >= (expiry or value['created_at']+3600): shutil.rmtree(directory)
+            if self.store.clock() >= (value['created_at']+3600 if expiry is None else expiry): shutil.rmtree(directory)
         # Current completed download must expire too; do not touch a live worker's artifacts.
         job = state['operations'].get(current)
         if job and job['state'] in ('ready', 'succeeded', 'failed', 'canceled') and not state['pending']:
-            expiry = job.get('expires_at') or job['updated_at']+3600
+            expiry = job.get('expires_at')
+            if expiry is None: expiry = job['updated_at']+3600
             if self.store.clock() >= expiry:
-                with self.store.lock('worker', blocking=False):
-                    path = self.store.private/'jobs'/current
-                    if path.exists(): self.store._directory(path, 0o700); shutil.rmtree(path)
+                path = self.store.private/'jobs'/current
+                if path.exists(): self.store._directory(path, 0o700); shutil.rmtree(path)

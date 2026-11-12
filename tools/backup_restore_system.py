@@ -306,3 +306,8 @@ class LinuxRestoreSystem(LinuxBackupSystem):
         self.platform.utility_health(self.context()['utility_selector'])
         self.resume({key: state for key, state in services.items() if key in BOOT_SERVICES})
         with self.admission_lock(): self.store.clear_pending(job['id'])
+        # All source members have been consumed and both health checks passed.
+        from backup_retention import prune_restore_snapshots
+        try: prune_restore_snapshots(self.store, self.root)
+        except (UpdateError, OSError):
+            self.store.update(job['id'], warning='Restore is healthy, but cleanup of older recovery copies failed.')

@@ -12,6 +12,35 @@ from update_broker import Broker, decode_request, reconcile
 from update_store import UpdateStore
 
 
+class RecoveryMigrationTest(unittest.TestCase):
+    def test_idle_status_migrates_legacy_recoveries_but_does_not_interrupt_a_worker_or_backup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store = UpdateStore(root/'updates', root/'run', owner=os.getuid())
+            legacy, paths = {}, []
+            for number in range(2):
+                operation, _ = store.begin({'action': 'check', 'nonce': f'{number:064x}', 'components': ['application']})
+                path = store.private/'recovery'/operation['id']
+                store._directory(path, 0o700)
+                store.update(operation['id'], state='succeeded', backup={'directory': str(path)})
+                legacy[operation['id']] = store.operation(operation['id'])
+                paths.append(path)
+            store._mutate(lambda state: state.update(recoveries=legacy))
+            broker = Broker(store)
+            pending = store.runtime.with_name('cmprovision-backups')/'pending.json'
+            pending.parent.mkdir()
+            pending.write_text('{}')
+            self.assertEqual(2, len(broker.request({'action': 'status'})['recoveries']))
+            self.assertTrue(all(path.exists() for path in paths))
+            pending.unlink()
+            with store.lock('worker', blocking=False):
+                self.assertEqual(2, len(broker.request({'action': 'status'})['recoveries']))
+                self.assertTrue(all(path.exists() for path in paths))
+            self.assertEqual([paths[-1].name], [row['id'] for row in broker.request({'action': 'status'})['recoveries']])
+            self.assertFalse(paths[0].exists())
+            self.assertTrue(paths[-1].exists())
+
+
 class BrokerTest(unittest.TestCase):
     def test_backup_gate_rejects_new_checks_but_keeps_status_available(self):
         with tempfile.TemporaryDirectory() as temporary:

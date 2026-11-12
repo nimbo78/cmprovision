@@ -70,7 +70,16 @@ class Broker:
 
     def request(self, request):
         action = request['action']
-        if action == 'status': return self.store.snapshot()
+        if action == 'status':
+            status = self.store.snapshot()
+            current = status['operation']
+            orphan = current and current['id'] not in {row['id'] for row in status['recoveries']} and (
+                self.store.private/'recovery'/current['id']).exists()
+            if len(status['recoveries']) > 1 or orphan:
+                from update_retention import prune_idle
+                try: prune_idle(self.store)
+                except (UpdateError, OSError): pass # Housekeeping cannot make status/recovery unavailable.
+            return self.store.snapshot()
         if action == 'diagnostics':
             from update_diagnostics import read
             return read(self.store, request['id'])

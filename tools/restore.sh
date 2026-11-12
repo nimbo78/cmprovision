@@ -27,6 +27,10 @@ done
 SRC=${1:?usage: restore.sh [--data-only] [--force] <snapshot directory>}
 APP=/var/lib/cmprovision
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
+# Pin the source inode before checking/reading it. Nested apt hooks may create and
+# prune sibling snapshots; they skip this shared lock without holding the parent.
+exec 7< "$SRC"
+flock -s 7
 [ -f "$SRC/app.tar.gz" ] || { echo "$SRC: not a backup directory" >&2; exit 1; }
 [ ! -e "$SRC/.incomplete" ] || { echo "$SRC: the backup did not finish; refusing to restore it" >&2; exit 1; }
 

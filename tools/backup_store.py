@@ -1,5 +1,6 @@
 """Root-private backup state, idempotent jobs and a deliberately narrow public projection."""
 import copy
+from contextlib import contextmanager, ExitStack
 import hashlib
 import json
 import os
@@ -35,7 +36,7 @@ class BackupStore(UpdateStore):
                 if self.pending_file.exists() or self.pending_file.is_symlink(): raise UpdateError('Backup recovery state is missing.')
                 self._persist({'schema': 1, 'station_id': uuid.uuid4().hex, 'master_password': None,
                     'profiles': {}, 'schedule': {'enabled': False, 'frequency': 'daily', 'time': '03:00', 'weekday': 0,
-                        'profile': None, 'keep': 7, 'images': False, 'packages': False},
+                        'profile': None, 'keep': 1, 'images': False, 'packages': False},
                     'slots': [], 'operations': {}, 'requests': {}, 'current': None, 'pending': None,
                     'sequence': 0, 'remote_copies': [], 'last_success_at': None})
 
@@ -48,6 +49,12 @@ class BackupStore(UpdateStore):
         if (type(value) is not dict or value.get('schema') != 1 or not matches(ID_RE, value.get('station_id'))
                 or any(type(value.get(key)) is not dict for key in ('profiles', 'schedule', 'operations', 'requests'))):
             raise UpdateError('Backup state is invalid; recover over SSH.')
+        # Read-time migration also covers profiles/schedules saved by older versions.
+        # No credentials, enable switches or active job snapshots are rewritten.
+        value['schedule']['keep'] = 1
+        for profile in value['profiles'].values():
+            if type(profile) is not dict: raise UpdateError('Backup destination state is invalid.')
+            profile['keep'] = 1
         return value
 
     @staticmethod
@@ -83,6 +90,15 @@ class BackupStore(UpdateStore):
 
     def status(self): return self._projection(self._load())
     def snapshot(self): return self.status()
+
+    @contextmanager
+    def idle_worker(self):
+        with ExitStack() as locks:
+            with self.lock('control'):
+                self.idle(self._load())
+                locks.enter_context(self.lock('worker', blocking=False))
+            yield
+
     def configuration(self): return copy.deepcopy(self._load())
     def export_configuration(self):
         state = self._load()
@@ -140,7 +156,12 @@ class BackupStore(UpdateStore):
                 state['slots'] = (state['slots']+[slot])[-400:]
             ordered = sorted(state['operations'].values(), key=lambda item: item.get('sequence', 0))
             for old in ordered[:-50]:
-                if old['state'] in TERMINAL: state['operations'].pop(old['id'])
+                # UI history is capped separately. Keep ownership evidence until
+                # its actual archive is retired, even after 50 unrelated jobs.
+                download = (old['action'] == 'backup' and old['target'] == 'download' and old['state'] == 'ready'
+                            and os.path.lexists(self.private/'jobs'/old['id']/'backup.cmpbackup'))
+                if old['state'] in TERMINAL and not old.get('recovery_file') and not download:
+                    state['operations'].pop(old['id'])
             state['requests'] = dict(list(state['requests'].items())[-4096:])
             return job, True
         with self.lock('worker', blocking=False): return self.mutate(change)
@@ -168,14 +189,18 @@ class BackupStore(UpdateStore):
             if fields.get('committed') and job['cancel_requested']:
                 raise UpdateError('Backup canceled before commit.')
             job.update(fields, updated_at=int(self.clock()))
-            if fields.get('committed') and job['scheduled']:
-                from backup_schedule import due
-                slot = due(state['schedule'], [], job.get('captured_at', job['created_at']), state.get('schedule_timezone', 'UTC'))
-                if slot and slot not in state['slots']: state['slots'] = (state['slots']+[slot])[-400:]
+            if fields.get('committed'): self._cover_schedule(state, job)
             if job['state'] == 'succeeded' and job['action'] == 'backup': state['last_success_at'] = job.get('committed_at', int(self.clock()))
             if job['state'] in TERMINAL: job.pop('snapshot', None)
             return job
         return self.mutate(change)
+
+    @staticmethod
+    def _cover_schedule(state, job):
+        if job['scheduled']:
+            from backup_schedule import due
+            slot = due(state['schedule'], [], job.get('captured_at', job['created_at']), state.get('schedule_timezone', 'UTC'))
+            if slot and slot not in state['slots']: state['slots'] = (state['slots']+[slot])[-400:]
 
     def save_profile(self, value):
         from backup_remote import validate_profile
@@ -269,6 +294,13 @@ class BackupStore(UpdateStore):
             value = {key: receipt[key] for key in ('name', 'size', 'sha256', 'station_id', 'namespace')}
             value.update(id=identity, created_at=job.get('captured_at', job['created_at']), sequence=job['sequence'])
             if not any(item['id'] == identity for item in state['remote_copies']): state['remote_copies'].append(value)
+            # Publication of the verified remote completion marker is the commit
+            # point. Persist its receipt and outcome together; later cancellation
+            # or service recovery must never turn this copy into an abandoned one.
+            job.update(committed=True, committed_at=int(self.clock()), updated_at=int(self.clock()),
+                outcome='succeeded', bytes=receipt['size'], total=receipt['size'], sha256=receipt['sha256'],
+                expires_at=None, cancel_requested=False)
+            self._cover_schedule(state, job)
         self.mutate(change)
 
     def forget_remote(self, identities):

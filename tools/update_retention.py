@@ -1,11 +1,29 @@
 """Bounded updater-owned artifacts. No images, user backups or unrelated directories are pruned."""
 import copy
+from contextlib import ExitStack
 import os
 from pathlib import Path
 import re
 import shutil
 import stat
 import time
+
+from update_store import TERMINAL
+from update_manifest import UpdateError
+
+
+def prune_idle(store):
+    """Housekeeping may not take a queued/live worker's execution slot."""
+    with ExitStack() as locks:
+        with store.lock('control'):
+            state = store._load()
+            current = state['operations'].get(state['current'])
+            if state['critical'] or current and current['state'] not in TERMINAL: return
+            try: locks.enter_context(store.lock('worker', blocking=False))
+            except UpdateError: return
+            if os.path.lexists(store.runtime.with_name('cmprovision-backups')/'pending.json'): return
+        # Without a proven active selector, status housekeeping leaves Utility OS trees alone.
+        prune(store, managed=None)
 
 
 def prune(store, managed=Path('/var/lib/cmprovision-utility-os'), now=None, active_selector=None):
@@ -14,18 +32,27 @@ def prune(store, managed=Path('/var/lib/cmprovision-utility-os'), now=None, acti
         state = store._load()
         references = {value.get('id') for value in state['checks'].values()} | set(state['ready'])
         current = state['operations'].get(state['current'])
+        protected = set()
+        if state['critical']: protected.add(state['critical']['id'])
+        if current and (current['state'] not in TERMINAL or current['id'] in protected):
+            protected.add(current['id'])
+            if current['action'] == 'rollback': protected.add(current['request']['operation'])
+        # Migrate old histories too. A currently selected rollback source is an
+        # extra temporary reference, never an excuse to delete live recovery data.
+        latest = sorted(state['recoveries'], key=lambda key: state['recoveries'][key]['sequence'])[-1:]
+        state['recoveries'] = {key: value for key, value in state['recoveries'].items()
+                               if key in set(latest) | protected}
         if current: references.add(current['request'].get('candidate'))
         # Keep a small spare catalogue window as well as every live UI/receipt reference.
         references |= set(list(state['catalogues'])[-4:])
         state['catalogues'] = {key: value for key, value in state['catalogues'].items() if key in references}
         store._persist(state)
-        retained = set(state['recoveries'])
-        if state['current']: retained.add(state['current'])
-        if state['critical']: retained.add(state['critical']['id'])
+        retained = set(state['recoveries']) | protected
         selections = {state['context'].get('utility_selector')}
         selections.add(active_selector)
-        if current: selections.add(current['request'].get('selector'))
-        for operation in [*state['recoveries'].values(), *([current] if current else [])]:
+        if current and current['id'] in protected: selections.add(current['request'].get('selector'))
+        active = [state['operations'][key] for key in protected if key in state['operations']]
+        for operation in [*state['recoveries'].values(), *active]:
             selections.add(operation.get('previous', {}).get('utility_selector'))
         selections |= {value.get('selector') for value in state['ready'].values()}
     def cleanup(parent, valid, keep, verify=None, grace=3600):
@@ -50,6 +77,7 @@ def prune(store, managed=Path('/var/lib/cmprovision-utility-os'), now=None, acti
                     and info.st_uid == store.owner and not info.st_mode & 0o022): path.unlink()
     cleanup(store.private/'recovery', lambda value: re.fullmatch('[0-9a-f]{32}', value), retained, grace=0)
     cleanup(store.private/'runners', lambda value: re.fullmatch('[0-9a-f]{32}', value), retained, grace=0)
+    if managed is None: return
     from update_utility import ManagedUtility
     utility = ManagedUtility(store, managed)
     keep_versions = {value.split(':', 1)[1] for value in selections if isinstance(value, str) and value.startswith('managed:')}

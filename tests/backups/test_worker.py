@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from support import ROOT
 from backup_archive import Entry
@@ -60,6 +61,58 @@ class WorkerTest(unittest.TestCase):
         self.number += 1
         return self.store.begin(f'{self.number:064x}', 'download', {'images': False, 'packages': False})[0]
 
+    def remote_worker(self):
+        # Use the real upload/read-back/marker/prune path with the local transport fixture.
+        fixture = importlib.import_module('test_remote').RemoteTest()
+        fixture.setUp()
+        self.store.save_profile(dict(fixture.profile, path=str(self.root/'remote')))
+        target = self.store.status()['profiles'][0]['id']
+        def destination(profile, station, directory):
+            remote = fixture.fake(self.root)
+            remote.station = station
+            return remote
+        return self.module.Worker(self.store, self.system, remote=destination), target
+
+    def test_cancellation_after_verified_remote_publication_does_not_leave_two_completed_copies(self):
+        worker, target = self.remote_worker()
+        previous, _ = self.store.begin('a'*64, target, {'images': False, 'packages': False})
+        worker.run(previous['id'])
+        original = self.store.record_remote
+        def late_cancel(identity, receipt):
+            self.store.cancel(identity) # Publication has already succeeded; this is too late to cancel it.
+            original(identity, receipt)
+        replacement, _ = self.store.begin('b'*64, target, {'images': False, 'packages': False})
+        with patch.object(self.store, 'record_remote', side_effect=late_cancel): worker.run(replacement['id'])
+        self.assertEqual('succeeded', self.store.operation(replacement['id'])['state'])
+        self.assertEqual(1, len(list((self.root/'remote').rglob('*.complete.json'))))
+        self.assertEqual([replacement['id']], [item['id'] for item in self.store.configuration()['remote_copies']])
+
+    def test_remote_retention_finishes_after_interrupted_station_cleanup(self):
+        worker, target = self.remote_worker()
+        previous, _ = self.store.begin('a'*64, target, {'images': False, 'packages': False})
+        worker.run(previous['id'])
+        replacement, _ = self.store.begin('b'*64, target, {'images': False, 'packages': False})
+        self.system.fail_resume = True
+        worker.run(replacement['id'])
+        self.assertEqual('recovery-required', self.store.operation(replacement['id'])['state'])
+        self.system.fail_resume = False
+        worker.recover_pending()
+        self.assertEqual('succeeded', self.store.operation(replacement['id'])['state'])
+        self.assertEqual(1, len(list((self.root/'remote').rglob('*.complete.json'))))
+        self.assertEqual(2, sum(item[0] == 'collect' for item in self.system.calls), 'recovery never repeats capture/upload')
+
+    def test_interruption_after_remote_receipt_recovers_the_committed_copy(self):
+        worker, target = self.remote_worker()
+        original = self.store.record_remote
+        def interrupted(identity, receipt):
+            original(identity, receipt)
+            raise OSError('interrupted after durable publication receipt')
+        job, _ = self.store.begin('a'*64, target, {'images': False, 'packages': False})
+        with patch.object(self.store, 'record_remote', side_effect=interrupted): worker.run(job['id'])
+        self.assertEqual('succeeded', self.store.operation(job['id'])['state'])
+        self.assertEqual(1, len(list((self.root/'remote').rglob('*.complete.json'))))
+        self.assertIsNone(self.store.status()['pending'])
+
     def test_busy_station_defers_without_stopping_services_and_cancel_is_safe(self):
         job = self.job()
         self.system.active = [{'serial': 'fixture', 'phase': 'write'}]
@@ -86,6 +139,29 @@ class WorkerTest(unittest.TestCase):
         self.assertNotIn('master_password', json.dumps(self.store.status()))
         self.worker.run(job['id'])
         self.assertEqual(1, sum(item[0] == 'collect' for item in self.system.calls))
+
+    def test_verified_replacement_expires_previous_download_but_failed_replacement_preserves_it(self):
+        old = self.job(); self.worker.run(old['id'])
+        previous = self.store.download_file(old['id'])
+        failed = self.job()
+        with patch.object(self.module, 'verify_stream', side_effect=UpdateError('Fixture read-back failed.')):
+            self.worker.run(failed['id'])
+        self.assertEqual('failed', self.store.operation(failed['id'])['state'])
+        self.assertEqual(previous, self.store.download_file(old['id']))
+        self.assertTrue(previous.exists())
+        replacement = self.job(); self.worker.run(replacement['id'])
+        self.assertEqual('ready', self.store.operation(replacement['id'])['state'])
+        self.assertTrue(self.store.download_file(replacement['id']).exists())
+        self.assertFalse(previous.exists())
+        with self.assertRaises(UpdateError): self.store.download_file(old['id'])
+
+    def test_unrecognized_old_download_owner_never_breaks_a_verified_replacement(self):
+        old = self.job(); self.worker.run(old['id'])
+        path = self.store.download_file(old['id'])
+        (path.parent/'owner.json').write_text('[]')
+        replacement = self.job(); self.worker.run(replacement['id'])
+        self.assertEqual('ready', self.store.operation(replacement['id'])['state'])
+        self.assertTrue(path.exists(), 'unrecognized ownership is never guessed at')
 
     def test_failed_collection_unfreezes_and_unexpected_text_is_not_exposed(self):
         self.system.fail_collect = True

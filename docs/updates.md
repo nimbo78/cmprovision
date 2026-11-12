@@ -39,7 +39,7 @@ The two **Automatically check once a day** switches are independent and initiall
 
 Checks and downloads can run during provisioning. Critical installation pauses new board starts, conflicting configuration changes and queue processing. The application update requires a consistent snapshot and reinstallable previous packages; insufficient free space or missing recovery material prevents installation. Additional Debian dependency changes are pinned to the reviewed plan and installed from the prepared cache. This is an application recovery mechanism, not a full host-OS downgrade.
 
-Recovery snapshots include uploaded images, so large image libraries need enough additional free space for their copy. Downloads preserve a 64 MiB safety reserve. Five successful recovery points are retained; cleanup removes only the updater's inactive, unreferenced files and leaves unrelated backups untouched.
+Recovery snapshots include uploaded images, so large image libraries need enough additional free space for their copy. Downloads preserve a 64 MiB safety reserve. **One successful recovery point** is retained across application and Utility OS updates. Older history is reduced to this limit while idle and before the next snapshot's space check. Active/critical recovery and the selected rollback source stay protected until resolved, so replacement may temporarily need space for two copies. Cleanup removes only the updater's inactive, unreferenced files and leaves unrelated backups untouched.
 
 ## Utility OS and recovery
 
