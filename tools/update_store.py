@@ -286,7 +286,7 @@ class UpdateStore:
             if operation['state'] == 'succeeded' and (operation.get('backup') or operation.get('previous')):
                 state['recoveries'][identity] = copy.deepcopy(operation)
                 state['recoveries'] = dict(sorted(state['recoveries'].items(),
-                    key=lambda item: item[1]['sequence'])[-5:])
+                    key=lambda item: item[1]['sequence'])[-1:])
             return operation
         return self._mutate(action)
 

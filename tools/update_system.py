@@ -174,6 +174,7 @@ class LinuxSystem:
                       *(item['package']+'='+item['version'] for item in plan)], timeout=1800)
 
     def backup(self, identity):
+        self.prune()
         directory = self.store.private/'recovery'/identity
         self.store._directory(directory, 0o700)
         # Refuse installation unless a full, reinstallable snapshot can be kept independently
