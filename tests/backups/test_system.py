@@ -14,6 +14,19 @@ from update_manifest import UpdateError
 
 
 class SystemTest(unittest.TestCase):
+    def test_restore_maps_wifi_to_its_permanent_address_instead_of_a_random_scan_address(self):
+        from backup_restore_system import LinuxRestoreSystem
+        from types import SimpleNamespace
+        system = LinuxRestoreSystem(self.store, root=self.root)
+        system.context = lambda: {'os':{'id':'debian'}}
+        system.platform.context = lambda: {}
+        etc = self.root/'etc'; etc.mkdir()
+        (etc/'passwd').write_text('root:x:0:0:root:/root:/bin/bash\n')
+        (etc/'group').write_text('root:x:0:\n')
+        rows = [dict(ifname='wlan0', address='ee:00:00:00:00:01', permaddr='02:00:00:00:00:01')]
+        system.command = lambda argv, **kw: json.dumps(rows) if 'link' in argv else SimpleNamespace(returncode=0, stdout='')
+        self.assertEqual('02:00:00:00:00:01', system.restore_context()['interfaces']['wlan0'])
+
     def setUp(self):
         self.module = importlib.import_module('backup_system')
         self.temporary = tempfile.TemporaryDirectory()

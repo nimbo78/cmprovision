@@ -13497,10 +13497,10 @@ index 0000000..b458119
 +    assert not fonts.off_centre(centred)
 diff --git a/tests/test_cmprovision_rescue_wifi.py b/tests/test_cmprovision_rescue_wifi.py
 new file mode 100755
-index 0000000..3bccf2f
+index 0000000..db0ace8
 --- /dev/null
 +++ b/tests/test_cmprovision_rescue_wifi.py
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,106 @@
 +import copy
 +from PIL import ImageDraw
 +import pytest
@@ -13573,6 +13573,40 @@ index 0000000..3bccf2f
 +    assert ''.join(s for s in said if s and set(s) == {'W'}) == 'W'*32
 +    assert '192.168.247.1' in said and '1 client' in said
 +    assert all(0 <= box[0] and box[2] <= 128 and 0 <= box[1] and box[3] <= 128 for box in ink), [box[:5] for box in ink if box[3] > 128]
++
++
++def test_extracted_lite_package_renders_both_layouts(tmp_path):
++    import json
++    from pathlib import Path
++    import shutil
++    import subprocess
++    import sys
++    if not shutil.which('dpkg-deb'):
++        pytest.skip('Debian package tools required')
++    source = Path(__file__).resolve().parents[1]
++    subprocess.run(['sh', str(source/'tools/build-lite-deb.sh'), str(tmp_path/'out')], check=True, capture_output=True)
++    archive = next((tmp_path/'out').glob('*.deb'))
++    dest = tmp_path/'extracted'
++    subprocess.run(['dpkg-deb', '-x', str(archive), str(dest)], check=True)
++    (tmp_path/'config.json').write_text(json.dumps({'enabled':True, 'open_on_start':False}))
++    data = demo_snapshot()
++    data['rescue_wifi'] = dict(enabled=True, active=True, state='active', ssid='DEMO rescue', address='192.168.240.1', clients=1)
++    (tmp_path/'snapshot.json').write_text(json.dumps(data))
++    code = '''import json,sys
++from pathlib import Path
++sys.path.insert(0, sys.argv[1])
++from fpms.integrations.cmprovision import Panel
++directory = Path(sys.argv[2])
++data = json.loads((directory/'snapshot.json').read_text())
++for theme in ('classic','new'):
++    data['panel']['theme'] = theme
++    (directory/'snapshot.json').write_text(json.dumps(data))
++    p = Panel(directory/'config.json', directory/'snapshot.json')
++    p.refresh(now=101,force=True); p.page=4
++    assert p.frame().size == (128,128)
++'''
++    result = subprocess.run([sys.executable, '-I', '-c', code, str(dest/'usr/lib/fpms-lite'), str(tmp_path)], cwd=tmp_path, capture_output=True, text=True)
++    assert result.returncode == 0, result.stderr
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
 index 0000000..d1d97f6
@@ -15103,7 +15137,7 @@ index 0000000..c62edce
 +of Raspberry Pi OS Lite. Those require booting a clean target image later.
 diff --git a/tools/build-lite-deb.sh b/tools/build-lite-deb.sh
 new file mode 100644
-index 0000000..503dba6
+index 0000000..417db80
 --- /dev/null
 +++ b/tools/build-lite-deb.sh
 @@ -0,0 +1,62 @@
@@ -15118,7 +15152,7 @@ index 0000000..503dba6
 +trap 'rm -rf "$WORK"' EXIT
 +DEST=$WORK/pkg
 +mkdir -p "$DEST/DEBIAN" "$DEST/usr/lib/fpms-lite/fpms/integrations" "$DEST/usr/lib/fpms-lite/fpms/modules/screen" "$DEST/usr/lib/fpms-lite/fpms/fonts/cmprovision" "$DEST/usr/share/doc/fpms-lite/fonts" "$DEST/usr/share/fpms" "$DEST/usr/lib/systemd/system" "$OUT"
-+for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py integrations/cmprovision_power.py; do
++for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py integrations/cmprovision_power.py integrations/cmprovision_rescue.py; do
 +    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
 +done
 +install -m 644 "$ROOT/LICENSE" "$DEST/usr/share/doc/fpms-lite/copyright"

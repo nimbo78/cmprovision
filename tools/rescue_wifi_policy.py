@@ -89,7 +89,7 @@ def select_radios(radios, ap_mac='', client_mac=''):
 
 def has_management(profiles, stand_device, management_profiles):
     for profile in profiles:
-        if not profile.get('active') or profile.get('device') == stand_device or profile.get('mode') == 'ap':
+        if not profile.get('active') or not profile.get('carrier', True) or profile.get('device') == stand_device or profile.get('mode') == 'ap':
             continue
         if profile.get('type') != 'wifi' and profile.get('uuid') not in management_profiles:
             continue

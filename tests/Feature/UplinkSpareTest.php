@@ -114,6 +114,18 @@ class UplinkSpareTest extends TestCase
         $this->assertSame(['rescue-wifi wake'], $this->actions());
     }
 
+    public function test_ownership_is_rechecked_after_waiting_for_the_radio_lock(): void
+    {
+        foreach (['check', 'release'] as $action) {
+            @unlink($this->dir.'/owner-changed');
+            $this->forget();
+            $this->world(['wlan0' => 'connected', 'wlan1' => 'connected'], self::CARD);
+            $this->stub('rescue-wifi', 'if [ "$1" = owns ]; then [ -e "$FAKE/owner-changed" ] && exit 0; touch "$FAKE/owner-changed"; exit 1; fi; echo "rescue-wifi $*" >> "$FAKE/calls"');
+            $this->assertSame(0, $this->runAt(self::T, [$action]));
+            $this->assertSame(['rescue-wifi wake'], $this->actions(), $action.' must delegate after ownership changes');
+        }
+    }
+
     /** the recorded calls that change something: nmcli connect, disconnect and set, systemd-run, systemctl */
     protected function actions(): array
     {

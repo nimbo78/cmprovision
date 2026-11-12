@@ -129,6 +129,22 @@ class LinuxTest(unittest.TestCase):
         restore = next((i for i, (argv, _) in enumerate(self.calls) if argv[-5:] == ['device', 'set', 'wlan0', 'autoconnect', 'yes']), -1)
         self.assertGreater(restore, down)
 
+    def test_management_health_requires_nm_activation_and_carrier_but_not_a_gateway(self):
+        from rescue_wifi_policy import has_management
+        identity = '00000000-0000-0000-0000-000000000015'
+        for state, carrier, expected in [('activated', True, True), ('activated', False, False), ('activating', True, False)]:
+            with self.subTest(state=state, carrier=carrier):
+                def run(argv, **kwargs):
+                    if 'address' in argv:
+                        output = json.dumps([dict(ifname='stand.15', flags=['UP', 'LOWER_UP'] if carrier else ['UP', 'NO-CARRIER'],
+                            operstate='UP' if carrier else 'DOWN', addr_info=[dict(family='inet', local='198.18.15.2', prefixlen=24)])])
+                    elif 'UUID,TYPE,DEVICE,STATE' in argv or 'UUID,TYPE,DEVICE' in argv:
+                        output = identity+':vlan:stand.15'+(':'+state if 'UUID,TYPE,DEVICE,STATE' in argv else '')+'\n'
+                    else: output = ''
+                    return subprocess.CompletedProcess(argv, 0, stdout=output, stderr='')
+                self.linux.runner = run
+                self.assertEqual(expected, has_management(self.linux.profiles(), 'eth0', [identity]))
+
 
 if __name__ == '__main__':
     unittest.main()

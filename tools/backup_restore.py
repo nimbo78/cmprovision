@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import hashlib
 import io
 import json
+import json
 import os
 from pathlib import Path
 import re
@@ -11,7 +12,7 @@ import stat
 import uuid
 
 from backup_policy import APP, FIXED, TREES, read, relative, safe_open, system_member, validate_payloads
-from update_manifest import DEB_VERSION_RE, UpdateError, compatibility_error, verify_manifest
+from update_manifest import DEB_VERSION_RE, UpdateError, canonical_bytes, compatibility_error, verify_manifest
 
 GROUPS = frozenset(('network', 'ssh', 'host', 'time', 'display', 'web', 'role', 'publisher', 'sudo'))
 DEFAULT_GROUPS = ('time', 'display', 'web')
@@ -178,6 +179,19 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
     rewritten = {}
     mappings = interfaces or {}
     if any(key not in context['interfaces'] for key in mappings.values()): raise UpdateError('An interface mapping names a missing destination interface.')
+    mac_mappings = {key.lower(): context['interfaces'][target] for key, target in mappings.items()
+                    if re.fullmatch(r'(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}', key)}
+    rescue_config = 'etc/default/cmprovision-rescue-wifi.json'
+    if rescue_config in selected:
+        from rescue_wifi_policy import validate_config
+        config = json_member(archive, 'system/'+rescue_config)
+        try:
+            config = validate_config(config)
+            for key in ('ap_mac', 'client_mac'):
+                config[key] = mac_mappings.get(config[key].lower(), config[key])
+            rewritten[rescue_config] = canonical_bytes(validate_config(config))
+        except ValueError as error:
+            raise UpdateError('Invalid saved rescue Wi-Fi configuration.') from error
     for name in selected:
         if not name.startswith('etc/NetworkManager/system-connections/'): continue
         text = archive.read('system/'+name).decode('utf-8')
@@ -187,9 +201,11 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
             target = mappings[source[1]]
             text = re.sub(r'^interface-name=.+$', 'interface-name='+target, text, flags=re.M)
             text = re.sub(r'^mac-address=.+$', 'mac-address='+context['interfaces'][target], text, flags=re.M)
+        elif not source and macs and all(mac.lower() in mac_mappings for mac in macs):
+            text = re.sub(r'^mac-address=(.+)$', lambda match: 'mac-address='+mac_mappings[match[1].lower()], text, flags=re.M)
         elif (mode == 'migrate' and (source or macs) or source and source[1] not in context['interfaces']
                 or any(mac.lower() not in [value.lower() for value in context['interfaces'].values()] for mac in macs)):
-            raise UpdateError('A saved network profile is bound to source hardware. Supply --map-interface source=destination.')
+            raise UpdateError('A saved network profile is bound to source hardware. Supply --map-interface source=destination (source name or MAC).')
         rewritten[name] = text.encode()
     preview = {'mode': mode, 'source_station': value['station_id'], 'source_version': value['version'],
         'source_commit': value.get('source_commit', 'unknown'), 'groups': list(groups), 'accounts': list(selected_accounts),

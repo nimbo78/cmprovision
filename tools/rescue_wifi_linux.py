@@ -214,21 +214,24 @@ method=disabled
         addresses = {row['ifname']: [f"{a['local']}/{a['prefixlen']}" for a in row.get('addr_info', [])
                      if a.get('family') in ('inet', 'inet6') and not any(
                          flag in a.get('flags', []) for flag in ('tentative', 'dadfailed'))] for row in address_rows}
-        listing = self.nm('-t', '-f', 'UUID,TYPE,DEVICE', 'connection', 'show').stdout.splitlines()
+        carrier = {row['ifname']: 'LOWER_UP' in row.get('flags', []) and 'NO-CARRIER' not in row.get('flags', [])
+                   and row.get('operstate') == 'UP' for row in address_rows}
+        listing = self.nm('-t', '-f', 'UUID,TYPE,DEVICE,STATE', 'connection', 'show').stdout.splitlines()
         if len(listing) > 128:
             raise RescueError('Too many network profiles to inspect safely.')
         result = []
         for line in listing:
             fields = line.split(':')
-            if len(fields) != 3 or not re.fullmatch(r'[0-9a-f-]{36}', fields[0]):
+            if len(fields) != 4 or not re.fullmatch(r'[0-9a-f-]{36}', fields[0]):
                 continue
-            identity, kind, device = fields
+            identity, kind, device, state = fields
             kind = {'802-11-wireless':'wifi', '802-3-ethernet':'ethernet'}.get(kind, kind)
             mode = ''
             if kind == 'wifi' and device:
                 mode = self.nm('-g', '802-11-wireless.mode', 'connection', 'show', 'uuid', identity).stdout.strip()
             result.append({'uuid':identity, 'type':kind, 'device':device, 'mode':mode,
-                           'active': bool(device and device != '--'), 'addresses':addresses.get(device, [])})
+                           'active': bool(device and device != '--' and state == 'activated'),
+                           'carrier':carrier.get(device, False), 'addresses':addresses.get(device, [])})
         return result
 
     def radios(self):

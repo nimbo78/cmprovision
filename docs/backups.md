@@ -103,6 +103,8 @@ sudo cmprovision-full-restore /srv/restore/station.cmpbackup \
 
 To restore selected account credentials and explicitly map a source network interface:
 
+For a Wi-Fi profile bound only by MAC, use the source permanent MAC as the mapping key, for example `--map-interface 02:00:00:00:00:01=wlan0`. Map both rescue AP/client radios when replacing hardware: the AP profile and private controller configuration are rewritten consistently. Omit network restoration to preserve destination networking, including its rescue credentials.
+
 ```sh
 sudo cmprovision-full-restore /srv/restore/station.cmpbackup \
   --mode migrate --groups time,display,web,network \
