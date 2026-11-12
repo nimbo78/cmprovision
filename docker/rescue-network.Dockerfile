@@ -1,7 +1,7 @@
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 network-manager wpasupplicant dnsmasq-base nftables iproute2 iputils-ping \
-    busybox dbus udev util-linux && rm -rf /var/lib/apt/lists/*
+    busybox dbus udev util-linux procps && rm -rf /var/lib/apt/lists/*
 WORKDIR /work
 COPY tools/ /work/tools/
 COPY tests/network/ /work/tests/network/
