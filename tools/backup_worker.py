@@ -144,6 +144,11 @@ class Worker:
         self.store.update(identity, state=outcome, message=message)
         if pending:
             with self.system.admission_lock(): self.store.clear_pending(identity)
+        if outcome == 'ready':
+            from backup_retention import prune_downloads
+            try: prune_downloads(self.store)
+            except (UpdateError, OSError):
+                self.store.update(identity, warning='The new backup is safe, but cleanup of older downloads failed.')
 
     def _failed(self, identity, error):
         job = self.store.operation(identity)

@@ -1,5 +1,6 @@
 """Root-private backup state, idempotent jobs and a deliberately narrow public projection."""
 import copy
+from contextlib import contextmanager, ExitStack
 import hashlib
 import json
 import os
@@ -89,6 +90,15 @@ class BackupStore(UpdateStore):
 
     def status(self): return self._projection(self._load())
     def snapshot(self): return self.status()
+
+    @contextmanager
+    def idle_worker(self):
+        with ExitStack() as locks:
+            with self.lock('control'):
+                self.idle(self._load())
+                locks.enter_context(self.lock('worker', blocking=False))
+            yield
+
     def configuration(self): return copy.deepcopy(self._load())
     def export_configuration(self):
         state = self._load()

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from support import ROOT
 from backup_archive import Entry
@@ -86,6 +87,29 @@ class WorkerTest(unittest.TestCase):
         self.assertNotIn('master_password', json.dumps(self.store.status()))
         self.worker.run(job['id'])
         self.assertEqual(1, sum(item[0] == 'collect' for item in self.system.calls))
+
+    def test_verified_replacement_expires_previous_download_but_failed_replacement_preserves_it(self):
+        old = self.job(); self.worker.run(old['id'])
+        previous = self.store.download_file(old['id'])
+        failed = self.job()
+        with patch.object(self.module, 'verify_stream', side_effect=UpdateError('Fixture read-back failed.')):
+            self.worker.run(failed['id'])
+        self.assertEqual('failed', self.store.operation(failed['id'])['state'])
+        self.assertEqual(previous, self.store.download_file(old['id']))
+        self.assertTrue(previous.exists())
+        replacement = self.job(); self.worker.run(replacement['id'])
+        self.assertEqual('ready', self.store.operation(replacement['id'])['state'])
+        self.assertTrue(self.store.download_file(replacement['id']).exists())
+        self.assertFalse(previous.exists())
+        with self.assertRaises(UpdateError): self.store.download_file(old['id'])
+
+    def test_unrecognized_old_download_owner_never_breaks_a_verified_replacement(self):
+        old = self.job(); self.worker.run(old['id'])
+        path = self.store.download_file(old['id'])
+        (path.parent/'owner.json').write_text('[]')
+        replacement = self.job(); self.worker.run(replacement['id'])
+        self.assertEqual('ready', self.store.operation(replacement['id'])['state'])
+        self.assertTrue(path.exists(), 'unrecognized ownership is never guessed at')
 
     def test_failed_collection_unfreezes_and_unexpected_text_is_not_exposed(self):
         self.system.fail_collect = True
