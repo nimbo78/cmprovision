@@ -106,7 +106,7 @@ ssh da2 'sudo dpkg -i ~/cmprovision/build/cmprovision4_<версия>_all.deb'
 ```
 
 Перед распаковкой `preinst` берёт снимок данных (с 2.17.0 при каждом обновлении, в `/var/backups/cmprovision`,
-остаются пять последних; см. [upgrading.md](upgrading.md)). `postinst` сам выполнит
+остаётся один завершённый снимок; см. [upgrading.md](upgrading.md)). `postinst` сам выполнит
 `php artisan migrate --force`, поправит владельцев, перепишет пул FPM и перезапустит
 PHP-FPM; службы очереди перезапустит `dh_installsystemd`. Если dpkg пожалуется на
 зависимости (на машине, где пакет уже работает, не должен) —

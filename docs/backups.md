@@ -53,13 +53,13 @@ The supported baseline is Debian/Raspberry Pi OS **Trixie** with cmprovision ins
 3. Choose **Download in this browser**, or **Add destination** and save a remote profile.
 4. For SFTP, read the server fingerprints, compare them with the server administrator's trusted value and explicitly accept a key. Choose **Test** to verify write/read/delete access.
 5. Choose optional images/packages and select **Create encrypted backup**. You can leave the page and reconnect. **Cancel job** removes the incomplete copy and restores the station's previous services.
-6. Use **Schedule** to opt in to daily/weekly copies. The default is off; the suggested time is **03:00 in the station time zone**. Choose one remote destination and how many successful copies to retain, initially seven.
+6. Use **Schedule** to opt in to daily/weekly copies. The default is off; the suggested time is **03:00 in the station time zone**. Choose one remote destination. Retention is fixed at **one verified copy per destination**, including profiles saved with a larger limit.
 
 Busy stations wait for active/reserved work to finish. Missed schedule slots coalesce into one request. Repeated autumn hours run once; a missing spring time runs at the first valid minute. Changing the station time zone establishes a fresh schedule boundary.
 
 A copy deferred for several days covers schedule slots up to its actual snapshot time. Selecting images/packages requires every usable database reference, including completed split copies, to exist with matching checksums/sizes. Missing selected payloads fail creation or restore inspection; pending/failed image downloads are excluded from usable references. SQLite reference inspection runs as www-data, supports databases up to **512 MiB** and **4,000 payload references**, and requires temporary space for another database copy.
 
-Percentages appear only for measured byte counts. Preparation and streaming remote upload with unknown total size show an activity state. Verification completes before a copy is advertised as usable. A browser copy expires after **one hour**; the last **50 job summaries** remain.
+Percentages appear only for measured byte counts. Preparation and streaming remote upload with unknown total size show an activity state. Verification completes before a copy is advertised as usable. Only the latest verified browser copy remains available, for up to **one hour**; its predecessor's link expires after replacement. Failed or canceled creation preserves the previous usable copy. The last **50 job summaries** remain without retaining their archives.
 
 ![Full station backup in Settings](images/full-station-backup.png)
 
@@ -76,7 +76,7 @@ Percentages appear only for measured byte counts. Preparation and streaming remo
 
 Blank credential fields preserve the saved value. **Clear saved value** explicitly removes one. Never put credentials in a URL. S3 uses a configured profile without ambient instance credentials.
 
-Each station writes into its own UUID namespace. An upload becomes successful only after encrypted read-back matches the original size/SHA256 and a completion marker is committed. Retention deletes only copies recorded by this station for that exact destination; unrelated files remain. A retention failure leaves the new verified copy usable and reports a warning.
+Each station writes into its own UUID namespace. An upload becomes successful only after encrypted read-back matches the original size/SHA256 and a completion marker is committed. The previous copy is removed only after that verification, leaving **one verified copy per station and destination**. Retention deletes only copies recorded by this station for that exact destination; unrelated files remain. A retention failure leaves the new verified copy usable and reports a warning; fix destination delete permissions to remove the extra copy on the next successful backup.
 
 S3 bucket versioning may retain old object versions, and aborted multipart uploads can require a bucket lifecycle rule. Configure lifecycle separately for your dedicated backup prefix; cmprovision does not broadly purge a bucket's multipart uploads or foreign objects.
 
@@ -136,7 +136,7 @@ Before destination changes, the command creates and verifies:
 /var/backups/cmprovision-full-restore/<operation-id>/before.cmpbackup
 ```
 
-It uses the password supplied for the restoration. Keep this recovery material until acceptance is complete; it is excluded from later full archives and normal backup retention.
+It uses the password supplied for the restoration. **One verified pre-restore recovery copy** is retained separately from ordinary backups and excluded from later full archives. Older recorded copies are removed after successful restoration and health checks, or during idle cleanup. An active or interrupted restoration protects its recovery material until resolved; manually stored or unrecognized files are preserved.
 
 Runtime service masks and a retained systemd boot guard prevent DHCP/TFTP/USB restarts during restore, including after a reboot or interrupted package configuration. The guard is released only after application/Utility OS health checks. Old job staging remains eligible for expiry after migration; the encrypted pre-restore recovery archive is retained separately. Administrator restores cannot be canceled from the browser.
 

@@ -106,7 +106,7 @@ ssh da2 'sudo dpkg -i ~/cmprovision/build/cmprovision4_<version>_all.deb'
 ```
 
 Before unpacking, `preinst` creates an automatic backup snapshot (starting with 2.17.0, stored in
-`/var/backups/cmprovision`, keeping the last five snapshots; see [upgrading.md](upgrading.md)).
+`/var/backups/cmprovision`, keeping one completed snapshot; see [upgrading.md](upgrading.md)).
 `postinst` runs `php artisan migrate --force`, fixes file permissions, regenerates the FPM pool
 configuration, and restarts PHP-FPM; queue services are restarted by `dh_installsystemd`.
 If dpkg warns about missing dependencies (unlikely on an already working system), run:

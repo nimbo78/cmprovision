@@ -30,7 +30,7 @@ Reload browser tabs that were open during the upgrade.
 
 ## Backups and rollback
 
-Every upgrade automatically takes a snapshot under `/var/backups/cmprovision/<timestamp>-<old-version>/` before it unpacks anything, including the old package (since 2.17.0 also from 2.5 and later; before that only from older versions). It needs free space of twice what the application holds (without the uploaded images). From a version older than 2.5 (1.x or 2.0–2.4), if all three snapshot attempts fail, the upgrade stops and leaves the old version installed: try again with no modules on the stand. From 2.5 on a snapshot that cannot be made (a server in use, a full disk) is told in the output and the upgrade goes on; take one yourself with `cmprovision-backup` when you want a way back. The newest five snapshots stay, the older ones are removed after the upgrade.
+Every upgrade automatically takes a snapshot under `/var/backups/cmprovision/<timestamp>-<old-version>/` before it unpacks anything, including the old package (since 2.17.0 also from 2.5 and later; before that only from older versions). It needs free space of twice what the application holds (without the uploaded images). From a version older than 2.5 (1.x or 2.0–2.4), if all three snapshot attempts fail, the upgrade stops and leaves the old version installed: try again with no modules on the stand. From 2.5 on a snapshot that cannot be made (a server in use, a full disk) is told in the output and the upgrade goes on; take one yourself with `cmprovision-backup` when you want a way back. The newest completed snapshot stays; older completed copies are removed after the upgrade.
 
 To restore that version and its data:
 
@@ -47,7 +47,7 @@ sudo cmprovision-backup
 
 Replace `<snapshot>` with the actual snapshot directory. By default, backups omit uploaded images and packages. Use `sudo cmprovision-backup --with-uploads` to include them.
 
-Snapshots take 100–150 MB each, so only the newest five stay: after a snapshot in `/var/backups/cmprovision` the older ones are removed. `--keep N` (or `CMPROVISION_BACKUP_KEEP=N` in the environment) sets another number, `--keep all` keeps every snapshot. `sudo cmprovision-backup --prune` applies the limit without making a snapshot, for example after an upgrade that left a long list. Only directories named `<date>-<time>-<version>` are ever removed; a destination you give by hand is trimmed only by `--prune`.
+Only **one completed snapshot per destination** is retained, including a destination supplied explicitly. The previous copy remains until the new snapshot completes. Legacy `--keep N`, `--keep all` and `CMPROVISION_BACKUP_KEEP` arguments are accepted but cannot raise this limit. `sudo cmprovision-backup --prune` applies the limit without making a snapshot. Cleanup recognizes completed `<date>-<time>-<version>` directories with a regular database copy; unfinished snapshots, links and unrelated files are preserved.
 
 ### A copy to keep away from this server
 

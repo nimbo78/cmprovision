@@ -2,7 +2,7 @@
 # Before an upgrade keep a snapshot of the data: cmprovision-restore <snapshot> puts the old version back. From a version
 # older than 2.5 the upgrade changed so much (2.0: Laravel 13 and new database columns; 2.4: the switches in a table of their
 # own; 2.5: new services, the database in WAL, notifications through the queue) that it stops when no snapshot can be made.
-# From 2.5 on (2.17.0) a snapshot that cannot be made is told and the upgrade goes on; the newest five snapshots stay
+# From 2.5 on (2.17.0) a snapshot that cannot be made is told and the upgrade goes on; one completed snapshot stays
 # (cmprovision-backup --prune, run by postinst).
 # Uploaded images are not in it: the upgrade leaves them alone.
 set -e
