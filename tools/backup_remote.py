@@ -34,7 +34,7 @@ def validate_profile(value, previous=None):
     if type(value) is not dict or set(value)-FIELDS: raise UpdateError('Unknown backup destination fields.')
     previous = previous or {}
     profile = {'id': value.get('id') or previous.get('id') or uuid.uuid4().hex,
-        'name': value.get('name', ''), 'type': value.get('type'), 'path': value.get('path', ''), 'keep': value.get('keep', 7)}
+        'name': value.get('name', ''), 'type': value.get('type'), 'path': value.get('path', ''), 'keep': value.get('keep', 1)}
     if not matches(ID_RE, profile['id']) or profile['type'] not in ('sftp', 'ftp', 's3'):
         raise UpdateError('Choose SFTP, FTP/FTPS or S3 as the backup destination.')
     if type(profile['name']) is not str or not 1 <= len(profile['name'].strip()) <= 60 or any(ord(c) < 32 for c in profile['name']):
@@ -42,6 +42,7 @@ def validate_profile(value, previous=None):
     if type(profile['path']) is not str or len(profile['path']) > 1024 or any(c in profile['path'] for c in ('\x00', '\n', '\r', '\\')) or '..' in profile['path'].split('/'):
         raise UpdateError('Enter a destination path without parent traversal or control characters.')
     if type(profile['keep']) is not int or not 1 <= profile['keep'] <= 365: raise UpdateError('Retention must be 1 to 365 successful copies.')
+    profile['keep'] = 1 # Accept legacy clients/configuration without allowing a larger retention window.
     clear = value.get('clear', [])
     if type(clear) is not list or any(type(key) is not str or key not in SECRETS for key in clear):
         raise UpdateError('Invalid credential clearing choice.')
@@ -304,7 +305,7 @@ class Remote:
         removed = []
         eligible = [item for item in records if item.get('station_id') == self.station and item.get('namespace') == self.namespace()]
         ordered = sorted(enumerate(eligible), key=lambda item: (item[1].get('sequence', item[1]['created_at']), item[0]), reverse=True)
-        for _, record in ordered[keep:]:
+        for _, record in ordered[1:]:
             name = record['name']
             if not re.fullmatch(r'[0-9]{8}T[0-9]{6}Z-[0-9a-f]{32}\.cmpbackup', name): continue
             if record.get('station_id') != self.station or record.get('namespace') != self.namespace(): continue

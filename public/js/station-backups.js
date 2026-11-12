@@ -25,15 +25,16 @@
                 } finally { this.submitting = false; }
             },
             edit(saved = null) {
-                this.profile = { type: 'sftp', name: '', host: '', port: 22, user: '', path: '/backups', keep: 7,
+                this.profile = { type: 'sftp', name: '', host: '', port: 22, user: '', path: '/backups', keep: 1,
                     auth: 'password', host_key: '', mode: 'explicit', plain_ack: false, bucket: '', region: 'us-east-1',
                     endpoint: '', path_style: true, clear: [] };
                 if (saved) for (const [key, value] of Object.entries(saved)) if (!key.startsWith('has_') && !secrets.includes(key)) this.profile[key] = value;
+                this.profile.keep = 1;
                 for (const key of secrets) this.profile[key] = '';
                 this.screen = 'profile';
             },
             editSchedule() {
-                this.schedule = Object.assign({ enabled: false, frequency: 'daily', time: '03:00', weekday: 0, profile: null, keep: 7, images: false, packages: false }, this.status.schedule || {});
+                this.schedule = Object.assign({ enabled: false, frequency: 'daily', time: '03:00', weekday: 0, profile: null, keep: 1, images: false, packages: false }, this.status.schedule || {}, { keep: 1 });
                 delete this.schedule.not_before;
                 this.screen = 'schedule';
             },

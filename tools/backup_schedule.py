@@ -19,7 +19,7 @@ def validate_schedule(value, profiles, now):
         raise UpdateError('Choose a weekday and retention from 1 to 365 successful copies.')
     if value['enabled'] and (not matches(ID_RE, value['profile']) or value['profile'] not in profiles):
         raise UpdateError('Choose a saved remote destination before enabling scheduled backups.')
-    return dict(value, not_before=int(now))
+    return dict(value, keep=1, not_before=int(now))
 
 
 def _candidate(config, date, zone):

@@ -4,6 +4,18 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const ui = require('../../public/js/station-backups.js');
 
+test('new and legacy backup forms always submit retention one', () => {
+    const panel = ui.create('/status', { schedule: { enabled: false, keep: 365, time: '04:00' } });
+    panel.edit();
+    assert.equal(panel.profile.keep, 1);
+    panel.edit({ id: 'a'.repeat(32), keep: 7 });
+    assert.equal(panel.profile.keep, 1);
+    panel.editSchedule();
+    assert.equal(panel.schedule.keep, 1);
+    assert.equal(panel.schedule.time, '04:00');
+    assert.equal(panel.schedule.enabled, false);
+});
+
 test('only byte-counted phases display numeric progress', () => {
     const panel = ui.create('/status', { operation: { state: 'verifying', bytes: 0, total: 0 } });
     assert.equal(panel.percent(), null);

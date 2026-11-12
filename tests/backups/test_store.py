@@ -18,6 +18,24 @@ class StoreTest(unittest.TestCase):
         self.now = 1000
         self.store = self.module.BackupStore(self.root/'store', self.root/'run', owner=os.getuid(), clock=lambda: self.now)
 
+    def test_default_and_legacy_retention_are_one_without_changing_credentials_or_schedule_switches(self):
+        self.assertEqual(1, self.store.status()['schedule']['keep'])
+        profile = {'id': 'a'*32, 'type': 'sftp', 'name': 'fixture', 'host': '127.0.0.1',
+                   'user': 'backup', 'path': '/backups', 'password': 'fixture credential', 'keep': 365}
+        self.store.save_profile(profile)
+        self.assertEqual(1, self.store.configuration()['profiles']['a'*32]['keep'])
+        state = self.store.configuration()
+        state['profiles']['a'*32]['keep'] = 365
+        state['schedule'].update(keep=7, enabled=False)
+        self.store._atomic(self.store.state_file, state, 0o600)
+        fresh = self.module.BackupStore(self.root/'store', self.root/'run', owner=os.getuid(), clock=lambda: self.now)
+        config = fresh.configuration()
+        self.assertEqual(1, config['profiles']['a'*32]['keep'])
+        self.assertEqual(1, config['schedule']['keep'])
+        self.assertEqual('fixture credential', config['profiles']['a'*32]['password'])
+        self.assertFalse(config['schedule']['enabled'])
+        self.assertEqual(1, fresh.export_configuration()['schedule']['keep'])
+
     def test_master_password_is_private_and_status_never_returns_secrets(self):
         self.store.configure_password('a sufficiently long master password')
         raw = json.dumps(self.store.status())

@@ -26,6 +26,15 @@ class StationBackupsTest extends TestCase
         return $control;
     }
 
+    public function test_retention_is_one_verified_copy_without_an_editable_count(): void
+    {
+        $this->control();
+        $this->actingAs(User::factory()->create());
+        Livewire::test(StationBackupsPanel::class)
+            ->assertSee('Only the latest verified backup is retained')
+            ->assertDontSee('Keep successful copies');
+    }
+
     public function test_status_requires_authentication_and_is_not_cached(): void
     {
         $control = $this->control();

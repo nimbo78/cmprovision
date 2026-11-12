@@ -95,7 +95,7 @@ class RemoteTest(unittest.TestCase):
                     self.assertFalse(Path(remote.object(name+'.part').split(':', 1)[1]).exists())
                     records.append({'id': str(index), 'name': name, 'created_at': index, 'station_id': 'b'*32, 'namespace': remote.namespace()})
                 foreign = dict(records[0], id='foreign', station_id='e'*32, created_at=9999)
-                removed = remote.prune(records+[foreign], 1)
+                removed = remote.prune(records+[foreign], 365)
                 self.assertEqual(['0'], removed)
                 self.assertTrue(Path(remote.object(names[1]).split(':', 1)[1]).exists())
 

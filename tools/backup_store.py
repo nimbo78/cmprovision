@@ -35,7 +35,7 @@ class BackupStore(UpdateStore):
                 if self.pending_file.exists() or self.pending_file.is_symlink(): raise UpdateError('Backup recovery state is missing.')
                 self._persist({'schema': 1, 'station_id': uuid.uuid4().hex, 'master_password': None,
                     'profiles': {}, 'schedule': {'enabled': False, 'frequency': 'daily', 'time': '03:00', 'weekday': 0,
-                        'profile': None, 'keep': 7, 'images': False, 'packages': False},
+                        'profile': None, 'keep': 1, 'images': False, 'packages': False},
                     'slots': [], 'operations': {}, 'requests': {}, 'current': None, 'pending': None,
                     'sequence': 0, 'remote_copies': [], 'last_success_at': None})
 
@@ -48,6 +48,12 @@ class BackupStore(UpdateStore):
         if (type(value) is not dict or value.get('schema') != 1 or not matches(ID_RE, value.get('station_id'))
                 or any(type(value.get(key)) is not dict for key in ('profiles', 'schedule', 'operations', 'requests'))):
             raise UpdateError('Backup state is invalid; recover over SSH.')
+        # Read-time migration also covers profiles/schedules saved by older versions.
+        # No credentials, enable switches or active job snapshots are rewritten.
+        value['schedule']['keep'] = 1
+        for profile in value['profiles'].values():
+            if type(profile) is not dict: raise UpdateError('Backup destination state is invalid.')
+            profile['keep'] = 1
         return value
 
     @staticmethod
