@@ -143,7 +143,7 @@ and the [WLAN Pi M4+ connections](docs/hardware/wlanpi-m4-plus.md).
 sudo apt install ./cmprovision4_*_all.deb
 ```
 
-Every upgrade takes a rollback snapshot automatically (the newest five stay). Reload open browser tabs after upgrading.
+Every upgrade takes a rollback snapshot automatically (one completed copy is retained). Reload open browser tabs after upgrading.
 
 The [upgrade and restore guide](docs/upgrading.md) covers snapshots, rollback, PHP upgrades and changes to switch settings.
 
