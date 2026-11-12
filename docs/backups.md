@@ -82,6 +82,8 @@ Publishing that verified completion marker finishes the remote copy: cancellatio
 
 S3 bucket versioning may retain old object versions, and aborted multipart uploads can require a bucket lifecycle rule. Configure lifecycle separately for your dedicated backup prefix; cmprovision does not broadly purge a bucket's multipart uploads or foreign objects.
 
+A power loss between remote publication and saving its ownership receipt can leave an unrecorded remote object. Inspect that station's dedicated prefix manually in this case; automatic cleanup never guesses ownership of unrecorded objects.
+
 ## Preview restoration
 
 Install a compatible Trixie station first. Copy the `.cmpbackup` file onto protected storage with enough room for authentication, staging and a fresh recovery copy. The process preserves at least **256 MiB** free; required package capture also checks space before repacking. Repacking uses one compression thread. The archive limit is 1 TiB; configuration metadata is limited to 16 MiB per file and 64 MiB in total. Payload staging reads the archive once.
