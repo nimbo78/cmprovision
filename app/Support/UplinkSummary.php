@@ -43,7 +43,16 @@ class UplinkSummary
         }
         // a snapshot cached by a version before 2.5.2 has no spare
         $spare = $status['spare'] ?? null;
-        if ($spare !== null && $spare['state'] === 'standby' && $spare['device'] !== null) {
+        $rescue = $status['rescue_wifi'] ?? [];
+        if (!empty($rescue['active'])) {
+            $clients = is_int($rescue['clients'] ?? null) ? (string) $rescue['clients'] : '?';
+            $view['sections'][] = ['Rescue Wi-Fi AP', implode(' / ', array_filter([$rescue['ssid'] ?? null,
+                $rescue['address'] ?? null, $clients.' client'.($clients === '1' ? '' : 's')]))];
+        } elseif (!empty($rescue['enabled'])) {
+            $view['sections'][] = ['Rescue Wi-Fi AP', \App\Services\RescueWifi::label($rescue)
+                .(isset($rescue['remaining']) ? ' / '.gmdate('i:s', $rescue['remaining']) : '')];
+        }
+        if (empty($rescue['active']) && $spare !== null && $spare['state'] === 'standby' && $spare['device'] !== null) {
             // "30 s" is LOST_SECONDS of tools/uplink-spare
             $view['sections'][] = ['Cold spare: built-in Wi-Fi ('.$spare['device'].')',
                 'off while '.($uplink !== null ? 'the '.self::adapterPhrase($uplink) : 'another uplink')

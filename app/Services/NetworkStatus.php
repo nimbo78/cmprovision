@@ -218,7 +218,7 @@ class NetworkStatus
         };
 
         return [
-            'state' => $values['state'],
+            'state' => ($values['rescue_ap'] ?? '') === '1' ? 'ap' : $values['state'],
             'since' => $time('since'),
             'device' => ($values['spare'] ?? '') !== '' ? $values['spare'] : null,
             'lost_since' => $time('lost_since'),

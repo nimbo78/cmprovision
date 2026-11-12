@@ -283,6 +283,12 @@ class NetworkStatusTest extends TestCase
             $this->readStatus(null, $this->root.'/spare')['spare']);
     }
 
+    public function test_rescue_owned_radio_is_not_described_as_an_idle_spare(): void
+    {
+        file_put_contents($this->root.'/spare', "state=waiting\nrescue_ap=1\nspare=wlan0\n");
+        $this->assertSame('ap', $this->readStatus(null, $this->root.'/spare')['spare']['state']);
+    }
+
     public function test_no_cold_spare_without_its_file_or_with_one_it_cannot_read()
     {
         $status = $this->readStatus(null, $this->root.'/none');

@@ -381,8 +381,25 @@ def progress_text(m):
     return str(m['percent']) + '% / ' + speed + 'ETA ' + duration(m.get('eta')) + slow_suffix(m)
 
 
+def rescue_banner(data):
+    value = data.get('rescue_wifi')
+    if not isinstance(value, dict) or not (value.get('enabled') is True or value.get('active') is True):
+        return ''
+    state = value.get('state')
+    label = state.upper() if state in ('off', 'standby', 'waiting', 'starting', 'active', 'recovery', 'stopping', 'paused', 'fault', 'unavailable') else 'UNAVAILABLE'
+    parts = ['AP ' + label]
+    if value.get('active') is True:
+        parts += [safe(value.get('ssid')), safe(value.get('address'))]
+        clients = value.get('clients')
+        parts.append((str(clients) if type(clients) is int and 0 <= clients <= 512 else '?') + ' clients')
+    elif type(value.get('remaining')) is int and 0 <= value['remaining'] <= 3600:
+        parts.append(duration(value['remaining']))
+    return ' / '.join(parts)
+
+
 def header(c, data, now):
     counts = data.get('counts', {})
+    rescue = rescue_banner(data)
     if c.cols >= 100:
         # Six columns by three rows are roughly square in a console font.
         # Keep the web mark's simple cm tile; the name is ordinary readable text.
@@ -396,6 +413,8 @@ def header(c, data, now):
         count_line = ('LOCAL %02d  OURS %02d  DONE %02d' % (len(data.get('modules', [])), len(data.get('recognized', [])), counts.get('done', 0))) if data.get('recognized') else ('ON STAND %02d   DONE %02d' % (len(data.get('modules', [])), counts.get('done', 0)))
         c.text(x, 1, count_line, 'good')
         c.text(x, 2, 'RUN %02d  FAIL %02d  STALE %02d' % (counts.get('running', 0), counts.get('failed', 0), counts.get('stale', 0)), 'warn')
+        if rescue:
+            c.text(0, 3, rescue, 'accent' if data['rescue_wifi'].get('active') else 'warn')
         c.text(0, 4, 'PROJECT: ' + safe(data.get('project') or 'none active'), 'fg', c.cols - 32)
         c.text(c.cols - 30, 4, 'UPDATED ' + age(data.get('generated_at'), now), 'dim')
         c.line(5)
@@ -405,8 +424,10 @@ def header(c, data, now):
     local = ('LOCAL %d / OURS %d' % (len(data.get('modules', [])), len(data.get('recognized', [])))) if data.get('recognized') else ('ON STAND %d' % len(data.get('modules', [])))
     c.text(0, 2, local + ' / DONE %d / RUN %d / FAIL %d / STALE %d' %
            (counts.get('done', 0), counts.get('running', 0), counts.get('failed', 0), counts.get('stale', 0)), 'warn')
-    c.line(3)
-    return 5
+    if rescue:
+        c.text(0, 3, rescue, 'accent' if data['rescue_wifi'].get('active') else 'warn')
+    c.line(4 if rescue else 3)
+    return 6 if rescue else 5
 
 
 def port_mark(port, modules):

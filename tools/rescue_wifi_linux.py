@@ -186,14 +186,18 @@ method=disabled
             response = self.nm('-w', '5', 'connection', 'down', 'uuid', PROFILE_UUID, check=False)
             if response.returncode in (0, 10):
                 self.remove_guard()
+                self.nm('device', 'set', device, 'autoconnect', 'yes', check=False)
             raise
 
     def stop(self):
         self.check_owned_profile()
+        devices = [p['device'] for p in self.profiles() if p['uuid'] == PROFILE_UUID and p['active'] and IFNAME.fullmatch(p['device'])]
         active = self.nm('-g', 'UUID', 'connection', 'show', '--active').stdout.splitlines()
         if PROFILE_UUID in active:
             self.nm('-w', '10', 'connection', 'down', 'uuid', PROFILE_UUID, timeout=15)
         self.remove_guard()
+        for device in devices:
+            self.nm('device', 'set', device, 'autoconnect', 'yes', check=False)
 
     def retire(self):
         self.stop()

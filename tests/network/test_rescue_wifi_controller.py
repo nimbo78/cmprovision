@@ -12,7 +12,7 @@ from rescue_wifi_linux import PROFILE_UUID
 
 class FakeLinux:
     def __init__(self):
-        self.active, self.management, self.known = False, False, True
+        self.active, self.management, self.known, self.spare_active = False, False, True, False
         self.count, self.calls = 0, []
 
     def radios(self):
@@ -28,6 +28,9 @@ class FakeLinux:
         if self.management:
             rows.append(dict(uuid='00000000-0000-0000-0000-000000000001', device='wlan1', type='wifi', mode='infrastructure',
                              active=True, addresses=['192.168.68.23/24']))
+        if self.spare_active:
+            rows.append(dict(uuid='00000000-0000-0000-0000-000000000002', device='wlan0', type='wifi', mode='infrastructure',
+                             active=True, addresses=['192.168.68.24/24']))
         return rows
 
     def networks(self, **options): return ['172.20.0.0/16']
@@ -167,6 +170,58 @@ class ControllerTest(unittest.TestCase):
         self.control.configure({'enabled':True})
         self.control.check()
         self.assertFalse(self.linux.active)
+
+    def test_starting_state_is_published_before_the_slow_nm_operation(self):
+        self.configure()
+        self.control.request('start')
+        def start(config, radio):
+            self.assertEqual('starting', self.store.read(self.store.status, public=True).get('state'))
+            self.linux.active = True
+        self.linux.start = start
+        self.control.check()
+
+    def test_restored_missing_radio_is_reported_without_hiding_replacement_choices(self):
+        self.configure()
+        config = self.store.read(self.store.config)
+        config['ap_mac'] = '02:00:00:00:00:99'
+        self.store.write(self.store.config, config)
+        result = self.control.status()
+        self.assertIsNotNone(result['readiness_error'])
+        self.assertEqual(2, len(result['radios']))
+        self.control.check()
+        self.assertFalse(self.linux.active)
+
+    def test_legacy_spare_status_and_busy_guard_follow_a_live_spare_client(self):
+        self.configure()
+        self.linux.spare_active = True
+        self.control.check()
+        self.assertTrue(self.control.busy(), 'A Wi-Fi check must not borrow a radio carrying client traffic.')
+        self.assertIn('state=active', self.store.read_text(self.store.runtime/'uplink-spare', public=True) or '')
+
+    def test_disable_returns_client_radio_ownership_to_the_legacy_controller(self):
+        self.configure()
+        self.linux.spare_active = True
+        self.control.check()
+        self.control.configure({'enabled':False})
+        self.assertFalse(self.control.busy())
+
+    def test_new_route_collision_stops_only_the_owned_ap_even_with_clients(self):
+        self.configure()
+        self.control.request('start')
+        self.control.check()
+        self.linux.count = 1
+        self.linux.networks = lambda **options: ['172.20.0.0/16', '192.168.240.0/24']
+        result = self.control.check()
+        self.assertFalse(self.linux.active)
+        self.assertEqual('subnet_conflict', result['reason'])
+
+    def test_retire_removes_an_owned_inactive_profile_after_disable(self):
+        self.configure()
+        self.control.configure({'enabled':False})
+        self.linux.keyfile = self.store.root/'etc/default/owned-profile'
+        self.linux.keyfile.write_text('owned')
+        self.control.retire()
+        self.assertIn('retire', self.linux.calls)
 
 
 if __name__ == '__main__': unittest.main()

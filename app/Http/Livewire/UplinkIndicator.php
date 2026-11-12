@@ -34,8 +34,10 @@ class UplinkIndicator extends Component
 
     public function render()
     {
+        $status = $this->status;
+        if ($status !== null) $status['rescue_wifi'] = app(\App\Services\RescueWifi::class)->status();
         return view('livewire.uplink-indicator', [
-            'v' => $this->status === null ? null : UplinkSummary::from($this->status),
+            'v' => $status === null ? null : UplinkSummary::from($status),
             'poll' => NetworkStatus::POLL_SECONDS,
         ]);
     }

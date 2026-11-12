@@ -64,6 +64,15 @@ class StoreTest(unittest.TestCase):
         with self.assertRaises(self.Error):
             self.store.read(self.store.config)
 
+    def test_rejected_radio_lock_does_not_leak_file_descriptors(self):
+        self.store.radio_lock.write_text('')
+        self.store.radio_lock.chmod(0o666)
+        before = len(os.listdir('/proc/self/fd'))
+        for _ in range(3):
+            with self.assertRaises(self.Error), self.store.lock():
+                pass
+        self.assertEqual(before, len(os.listdir('/proc/self/fd')))
+
 
 if __name__ == '__main__':
     unittest.main()

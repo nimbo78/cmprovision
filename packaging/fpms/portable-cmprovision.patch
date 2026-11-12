@@ -10481,10 +10481,10 @@ index 0000000..1fc12f4
 +                COLORS.update(old)
 diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
 new file mode 100644
-index 0000000..6e332de
+index 0000000..9fed72a
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_classic.py
-@@ -0,0 +1,362 @@
+@@ -0,0 +1,370 @@
 +"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
 +the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
@@ -10816,12 +10816,20 @@ index 0000000..6e332de
 +                elif isinstance(disabled, list) and disabled:
 +                    lines[-1] = f"{len(disabled)} services disabled"
 +
++            from .cmprovision_rescue import info as rescue_info, lines as rescue_lines
++            rescue = rescue_info(panel.data)
++            if rescue and rescue['active']:
++                lines = rescue_lines(panel.data, lambda s: draw.textlength(s, font=panel.small), 118)
++                service_colour = 'muted'
++            elif rescue:
++                lines[1] = rescue['summary']
++
 +            for i, value in enumerate(lines):
 +                label(
 +                    5,
-+                    42 + i * 14,
++                    (40 + i * 12) if rescue and rescue["active"] else (42 + i * 14),
 +                    value or "--",
-+                    "text" if i == 0 else (service_colour if i == 4 else "muted"),
++                    "accent" if rescue and rescue["active"] and i == 0 else "text" if i == 0 else (service_colour if i == 4 else "muted"),
 +                    panel.small,
 +                )
 +        draw.line((3, 115, 124, 115), fill=COLORS["line"])
@@ -11226,10 +11234,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..bf5badd
+index 0000000..3d7f9ae
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,1001 @@
+@@ -0,0 +1,1019 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -12092,6 +12100,20 @@ index 0000000..bf5badd
 +    d.line((0, y, 127, y), fill=P["line"])
 +    y += 3
 +    st = panel.data.get("station") if isinstance(panel.data.get("station"), dict) else None
++    from .cmprovision_rescue import info as rescue_info, lines as rescue_lines
++    rescue = rescue_info(panel.data)
++    if rescue and rescue['active']:
++        clients = rescue['clients']
++        body.draw(img, 2, y, fonts.fit(body, rescue['summary'], LINE_W - body.width(clients) - 6), P['accent'])
++        body.draw(img, 126 - body.width(clients), y, clients, P['muted'])
++        y += body.h + 1
++        for value in rescue_lines(panel.data, body.width, LINE_W)[1:-1]:
++            f = code if value == rescue['address'] else body
++            f.draw(img, 2, y, fonts.fit(f, value, LINE_W), P['fg'])
++            y += f.h + 1
++        d.line((0, y, 127, y), fill=P['line'])
++        health_rows(img, d, panel, st or {}, y + 3)
++        return
 +    if st is None:
 +        body.draw(img, 2, y, "--", P["muted"])
 +        return
@@ -12203,6 +12225,10 @@ index 0000000..bf5badd
 +            rows.append(("good", name, "answering"))
 +    if st.get("storage"):
 +        rows.append(("warn" if st.get("storage_low") else "good", "Disk", text(st.get("storage"))))
++    from .cmprovision_rescue import info as rescue_info
++    rescue = rescue_info(panel.data)
++    if rescue and not rescue['active']:
++        rows.append(('warn' if rescue['summary'] != 'AP ready' else 'muted', None, rescue['summary']))
 +    order = {"bad": 0, "warn": 1, "muted": 2, "good": 3}
 +    return sorted(rows, key=lambda r: order[r[0]])
 +
@@ -12364,6 +12390,56 @@ index 0000000..27cf5b7
 +    for n, line in enumerate(lines):
 +        legend.draw(img, 2, 109 + 10 * n, line, p["fg"])
 +    return img
+diff --git a/fpms/integrations/cmprovision_rescue.py b/fpms/integrations/cmprovision_rescue.py
+new file mode 100644
+index 0000000..012eb82
+--- /dev/null
++++ b/fpms/integrations/cmprovision_rescue.py
+@@ -0,0 +1,44 @@
++"""Secret-free rescue Wi-Fi presentation shared by Classic and New."""
++import ipaddress
++
++
++def info(data):
++    from .cmprovision import text
++    raw = data.get('rescue_wifi')
++    if not isinstance(raw, dict) or not (raw.get('enabled') is True or raw.get('active') is True):
++        return None
++    state = text(raw.get('state'))
++    summary = {'active':'AP active', 'recovery':'AP recovery', 'waiting':'AP waiting', 'paused':'AP paused',
++               'fault':'AP failed', 'unavailable':'AP status stale', 'starting':'AP starting',
++               'stopping':'AP stopping', 'standby':'AP ready', 'off':'AP off'}.get(state, 'AP unavailable')
++    active = raw.get('active') is True
++    remaining = raw.get('remaining')
++    if not active and type(remaining) is int and 0 <= remaining <= 3600:
++        summary += f' {remaining // 60}:{remaining % 60:02}'
++    clients = raw.get('clients')
++    clients = clients if type(clients) is int and 0 <= clients <= 512 else None
++    address = text(raw.get('address'))
++    try:
++        if ipaddress.ip_address(address).version != 4: address = ''
++    except ValueError:
++        address = ''
++    return {'active':active, 'summary':summary, 'ssid':text(raw.get('ssid'))[:32], 'address':address,
++            'clients':f'{clients} client' + ('' if clients == 1 else 's') if clients is not None else '? clients'}
++
++
++def lines(data, measure=None, width=118):
++    value = info(data)
++    if not value: return []
++    result = [value['summary']]
++    if not value['active']: return result
++    measure = measure or (lambda s: len(s) * 6)
++    chunk = ''
++    for char in value['ssid']:
++        if chunk and measure(chunk + char) > width:
++            result.append(chunk)
++            chunk = ''
++        chunk += char
++    if chunk: result.append(chunk)
++    if value['address']: result.append(value['address'])
++    result.append(value['clients'])
++    return result
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
 index 0000000..5e02f1e
@@ -13419,6 +13495,84 @@ index 0000000..b458119
 +    assert img.size == (128, 128)
 +    assert not fonts.overlaps(ink)
 +    assert not fonts.off_centre(centred)
+diff --git a/tests/test_cmprovision_rescue_wifi.py b/tests/test_cmprovision_rescue_wifi.py
+new file mode 100755
+index 0000000..3bccf2f
+--- /dev/null
++++ b/tests/test_cmprovision_rescue_wifi.py
+@@ -0,0 +1,72 @@
++import copy
++from PIL import ImageDraw
++import pytest
++from fpms.integrations import cmprovision_fonts as fonts
++from test_cmprovision_v2 import demo_snapshot, panel_with
++
++
++@pytest.mark.parametrize('theme', ['classic', 'new'])
++@pytest.mark.parametrize('mode', ['light', 'dark'])
++def test_station_exposes_rescue_ssid_ip_and_clients_without_password(tmp_path, monkeypatch, theme, mode):
++    data = demo_snapshot()
++    data['panel'].update(theme=theme, color_mode=mode)
++    data['rescue_wifi'] = dict(enabled=True, active=True, state='active', ssid='ap-d62', address='192.168.240.1',
++                               clients=2, password='must-not-be-drawn')
++    p = panel_with(tmp_path, data)
++    p.page = 4
++    classic = []
++    original = ImageDraw.ImageDraw.text
++    def record(self, xy, text, *args, **kwargs):
++        classic.append(str(text))
++        return original(self, xy, text, *args, **kwargs)
++    monkeypatch.setattr(ImageDraw.ImageDraw, 'text', record)
++    fonts.start_recording()
++    image = p.frame()
++    ink, _ = fonts.stop_recording()
++    said = ' '.join(classic + [box[4] for box in ink])
++    assert 'AP active' in said
++    assert 'ap-d62' in said
++    assert '192.168.240.1' in said
++    assert '2 clients' in said
++    assert 'must-not-be-drawn' not in said
++    assert image.size == (128, 128)
++    assert all(0 <= box[0] and box[2] <= 128 and 0 <= box[1] and box[3] <= 128 for box in ink)
++
++
++@pytest.mark.parametrize('theme', ['classic', 'new'])
++def test_rescue_countdown_is_ten_minutes_and_missing_old_field_is_supported(tmp_path, monkeypatch, theme):
++    data = demo_snapshot()
++    data['panel']['theme'] = theme
++    data['rescue_wifi'] = dict(enabled=True, active=False, state='waiting', remaining=600)
++    p = panel_with(tmp_path, data)
++    p.page = 4
++    classic = []
++    original = ImageDraw.ImageDraw.text
++    def record(self, xy, text, *args, **kwargs):
++        classic.append(str(text)); return original(self, xy, text, *args, **kwargs)
++    monkeypatch.setattr(ImageDraw.ImageDraw, 'text', record)
++    fonts.start_recording(); p.frame(); ink, _ = fonts.stop_recording()
++    said = ' '.join(classic + [box[4] for box in ink])
++    assert 'AP waiting' in said and '10:00' in said
++    del p.data['rescue_wifi']
++    assert p.frame().size == (128, 128)
++
++
++@pytest.mark.parametrize('theme', ['classic', 'new'])
++@pytest.mark.parametrize('mode', ['light', 'dark'])
++def test_long_ssid_wraps_without_hiding_address_or_clients(tmp_path, monkeypatch, theme, mode):
++    data = demo_snapshot()
++    data['panel'].update(theme=theme, color_mode=mode)
++    data['rescue_wifi'] = dict(enabled=True, active=True, state='recovery', ssid='W'*32, address='192.168.247.1', clients=1)
++    p = panel_with(tmp_path, data); p.page = 4
++    classic = []
++    original = ImageDraw.ImageDraw.text
++    def record(self, xy, text, *args, **kwargs):
++        classic.append(str(text)); return original(self, xy, text, *args, **kwargs)
++    monkeypatch.setattr(ImageDraw.ImageDraw, 'text', record)
++    fonts.start_recording(); image = p.frame(); ink, _ = fonts.stop_recording()
++    # Classic also paints an off-screen probe when recording; ink records the visible label once.
++    said = [box[4] for box in ink]
++    assert ''.join(s for s in said if s and set(s) == {'W'}) == 'W'*32
++    assert '192.168.247.1' in said and '1 client' in said
++    assert all(0 <= box[0] and box[2] <= 128 and 0 <= box[1] and box[3] <= 128 for box in ink), [box[:5] for box in ink if box[3] > 128]
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
 index 0000000..d1d97f6

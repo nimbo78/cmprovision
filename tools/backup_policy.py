@@ -15,6 +15,7 @@ FIXED = ('etc/hostname', 'etc/hosts', 'etc/default/locale', 'etc/locale.conf', '
     'etc/NetworkManager/NetworkManager.conf', 'etc/ssh/sshd_config', 'etc/sudoers',
     'etc/nginx/sites-available/cmprovision', 'etc/default/cmprovision-stand-interface',
     'etc/default/cmprovision-uplink', 'etc/default/cmprovision-wallboard.json', 'etc/default/cmprovision-fpms.json',
+    'etc/default/cmprovision-rescue-wifi.json',
     'etc/cmprovision-updates/publisher.json', 'etc/cmprovision-updates/publisher.pub')
 TREES = ('etc/NetworkManager/system-connections', 'etc/NetworkManager/conf.d', 'etc/NetworkManager/certs',
     'etc/ssh/sshd_config.d', 'etc/sudoers.d', 'etc/systemd/timesyncd.conf.d', 'var/lib/cmprovision-network/vlans')

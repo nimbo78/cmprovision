@@ -115,6 +115,20 @@ class LinuxTest(unittest.TestCase):
         self.assertNotIn('hook forward', guard)
         self.assertNotIn('flush ruleset', guard)
 
+    def test_stop_restores_client_autoconnect_only_on_the_owned_ap_radio(self):
+        self.linux.profiles = lambda: [dict(uuid=self.uuid, device='wlan0', active=True)]
+        self.linux.stop()
+        self.assertTrue(any(argv[-5:] == ['device', 'set', 'wlan0', 'autoconnect', 'yes'] for argv, _ in self.calls))
+        self.assertFalse(any('wlan1' in argv for argv, _ in self.calls))
+
+    def test_failed_start_restores_client_autoconnect_after_confirmed_down(self):
+        self.fail_up = True
+        with self.assertRaises(self.Error):
+            self.linux.start(self.cfg, self.radio)
+        down = next(i for i, (argv, _) in enumerate(self.calls) if 'down' in argv)
+        restore = next((i for i, (argv, _) in enumerate(self.calls) if argv[-5:] == ['device', 'set', 'wlan0', 'autoconnect', 'yes']), -1)
+        self.assertGreater(restore, down)
+
 
 if __name__ == '__main__':
     unittest.main()

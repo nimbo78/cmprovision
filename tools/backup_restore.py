@@ -47,6 +47,7 @@ def restore_backup_configuration(value, now):
 
 
 def file_group(name):
+    if name == 'etc/default/cmprovision-rescue-wifi.json': return 'network'
     if name.startswith(('etc/NetworkManager/', 'var/lib/cmprovision-network/')) or name == 'etc/dhcpcd.conf': return 'network'
     if name.startswith('etc/ssh/'): return 'ssh'
     if name.startswith('etc/sudoers'): return 'sudo'

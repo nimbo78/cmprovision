@@ -110,10 +110,10 @@ class Store:
         self.directory(self.runtime)
         try:
             fd = os.open(self.radio_lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)
-            self._check(os.fstat(fd), public=True)
         except OSError as error:
             raise RescueError('The radio lock could not be opened safely.') from error
         try:
+            self._check(os.fstat(fd), public=True)
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
@@ -216,7 +216,8 @@ class Controller:
             return True
 
     def busy(self):
-        return bool(self.store.read(self.store.state).get('active_config'))
+        state = self.store.read(self.store.state)
+        return bool(state.get('active_config') or self.config()['enabled'] and state.get('radio_in_use'))
 
     def _observed(self, config, state):
         from rescue_wifi_linux import PROFILE_UUID
@@ -236,6 +237,8 @@ class Controller:
             result['management'] = has_management(profiles, stand, config['management_profiles'])
             result['other_management'] = has_management([p for p in profiles if p['device'] != ap['device']],
                                                        stand, config['management_profiles'])
+            result['uplink_device'] = next((p['device'] for p in profiles if p['device'] != ap['device'] and
+                                           has_management([p], stand, config['management_profiles'])), '')
             result['spare_connected'] = any(p['active'] and p['device'] == ap['device'] and p['uuid'] != PROFILE_UUID for p in profiles)
             result['radio_busy'] = any(p['active'] and p['device'] == ap['device'] and p['uuid'] != PROFILE_UUID and
                                       (p['type'] != 'wifi' or p.get('mode') not in ('', 'infrastructure')) for p in profiles)
@@ -258,6 +261,19 @@ class Controller:
                   'clients':observed.get('clients'), 'remaining':state.get('remaining'), 'active':active,
                   'pending_settings':active and effective != config}
         self.store.write(self.store.status, public, public=True)
+        if ap and observed.get('known') and (config['enabled'] or active or state.get('action') == 'stop'):
+            legacy_path = self.store.runtime/'uplink-spare'
+            previous = dict(line.split('=', 1) for line in (self.store.read_text(legacy_path, public=True) or '').splitlines() if '=' in line)
+            owns_ap = active or state.get('action') == 'start'
+            legacy_state = 'waiting' if owns_ap else 'off' if not observed.get('spare_enabled', True) else \
+                'active' if observed.get('spare_connected') else 'standby' if observed.get('other_management') else 'waiting'
+            now = int(self.wallclock())
+            since = previous.get('since', '') if previous.get('state') == legacy_state else ''
+            since = since if since.isdigit() else str(now)
+            lost = previous.get('lost_since', '') if legacy_state == 'active' else ''
+            lost = lost if lost.isdigit() else str(now) if legacy_state == 'active' else ''
+            body = f"state={legacy_state}\nsince={since}\nspare={ap['device']}\nuplink={observed.get('uplink_device', '')}\nup_since=\nlost_since={lost}\nrescue_ap={int(owns_ap)}\n"
+            self.store.write_text(legacy_path, body, public=True)
         return public
 
     def check(self):
@@ -267,16 +283,23 @@ class Controller:
                 return self._publish(config, {'state':'off', 'reason':'disabled'}, {})
             observed, ap, _ = self._observed(config, old)
             state = decide(config, observed, old, self.monotonic(), self.boot())
+            state['radio_in_use'] = bool(observed['ap_active'] or observed['spare_connected']) if observed['known'] else bool(old.get('radio_in_use'))
             if old.get('restart_requested') and old.get('boot_id') == self.boot():
                 state['restart_requested'] = True
                 if observed['ap_active'] and observed['known'] and not observed['deferred']:
                     state.update(action='stop', reason='manual_restart')
             if observed['ap_active']:
                 state['active_config'] = old.get('active_config') or config
+                if observed['known'] and not observed['deferred']:
+                    try:
+                        choose_subnet(self.linux.networks(inactive=False, exclude_device=ap['device']), state['active_config']['subnet'])
+                    except ValueError:
+                        state.update(action='stop', reason='subnet_conflict')
             action = state['action']
             if action == 'start':
                 state['active_config'] = config
                 self.store.write(self.store.state, state)  # ownership survives worker interruption during NM activation
+                self._publish(config, state, observed, ap)
                 try:
                     self.linux.start(config, ap)
                     observed.update(ap_active=True, clients=0)
@@ -292,6 +315,7 @@ class Controller:
                 self.linux.stop()
                 state.pop('active_config', None)
                 observed.update(ap_active=False, clients=0)
+                state['radio_in_use'] = False
                 state['state'] = 'paused' if state.get('pause_until', 0) > self.monotonic() else 'standby' if config['enabled'] else 'off'
             elif action in ('connect_spare', 'disconnect_spare'):
                 try:
@@ -307,13 +331,16 @@ class Controller:
         config = self.config()
         settings = {key:value for key, value in config.items() if key != 'password'}
         settings['password_configured'] = bool(config['password'])
+        radios, choices, readiness = [], [], None
         try:
             radios = self.linux.radios()
             choices = [p for p in self.linux.profiles() if p['type'] in ('ethernet', 'vlan')]
             readiness = None
             self.linux.binding()
+            if config['enabled']:
+                select_radios(radios, config['ap_mac'], config['client_mac'])
         except (RescueError, OSError, ValueError) as error:
-            radios, choices, readiness = [], [], str(error)
+            readiness = str(error)
         return {'settings':settings, 'status':self.store.read(self.store.status, public=True),
                 'radios':radios, 'management_profiles':choices, 'readiness_error':readiness}
 
@@ -326,7 +353,8 @@ class Controller:
     def retire(self):
         with self.store.gates(), self.store.lock():
             config = self.config()
-            if config['enabled'] or self.store.read(self.store.state).get('active_config'):
+            if config['enabled'] or self.store.read(self.store.state).get('active_config') or \
+                    getattr(self.linux, 'keyfile', self.store.root/'nonexistent').exists():
                 self.linux.retire()
             config['enabled'] = False
             self.store.write(self.store.config, config)

@@ -23,6 +23,27 @@ def snapshot():
                 modules=[device()], switches=[], counts=dict(done=0, running=1, failed=0, stale=0))
 
 
+class RescueWifiTest(unittest.TestCase):
+    def test_active_ap_shows_its_ssid_ip_and_clients_in_every_view(self):
+        data = snapshot()
+        data['rescue_wifi'] = dict(enabled=True, active=True, state='active', ssid='cmprovision-rescue',
+                                   address='192.168.240.1', clients=2)
+        for width, height in ((100, 35), (160, 45), (240, 68)):
+            for view in ('desk', 'flow', 'engineer'):
+                with self.subTest(width=width, view=view):
+                    frame = w.frame(data, width, height, view=view, now=1001).plain()
+                    self.assertIn('AP ACTIVE', frame)
+                    self.assertIn('cmprovision-rescue', frame)
+                    self.assertIn('192.168.240.1', frame)
+                    self.assertIn('2 clients', frame)
+
+    def test_waiting_ap_shows_ten_minute_countdown_and_disabled_ap_adds_no_banner(self):
+        data = snapshot()
+        self.assertNotIn('RESCUE AP', w.frame(data, 160, 45, now=1001).plain())
+        data['rescue_wifi'] = dict(enabled=True, active=False, state='waiting', remaining=600)
+        self.assertIn('AP WAITING / 10:00', w.frame(data, 160, 45, now=1001).plain())
+
+
 class ReaderTest(unittest.TestCase):
     def test_a_replaced_file_is_read_once_and_unusable_ones_are_ignored(self):
         with tempfile.TemporaryDirectory() as directory:

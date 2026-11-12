@@ -29,6 +29,7 @@
         'station-power': 'system',
         'time': 'system',
         'wifi': 'network',
+        'rescue-wifi': 'network',
         'switches': 'network',
         'dhcp': 'network',
         'utility-os': 'provisioning',
