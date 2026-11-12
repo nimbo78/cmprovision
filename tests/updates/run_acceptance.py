@@ -97,7 +97,7 @@ def run():
     def download():
         entry = operation('download', component='application', tag='v'+version)
         assert entry['state'] == 'ready', entry
-        return store.snapshot()['ready'][-1]
+        return next(item for item in store.snapshot()['ready'] if item['id'] == envelope['id'])
     ready = download()
     health = system.health
     def reject_target(expected, services):
@@ -142,29 +142,23 @@ def run():
     metadata_uos = fixture/'uos.json'
     metadata_uos.write_bytes(raw_uos)
     subprocess.run(['minisign', '-S', '-W', '-s', str(key), '-m', str(metadata_uos)], check=True, stdout=subprocess.DEVNULL)
-    source.selected = {'id': hashlib.sha256(raw_uos).hexdigest(), 'manifest': uos, 'raw': base64.b64encode(raw_uos).decode(),
+    utility_envelope = {'id': hashlib.sha256(raw_uos).hexdigest(), 'manifest': uos, 'raw': base64.b64encode(raw_uos).decode(),
         'signature': base64.b64encode(metadata_uos.with_name('uos.json.minisig').read_bytes()).decode(), 'incompatible': None}
+    source.selected = utility_envelope
     source.files[archive.name] = archive
     before = system.context()['utility_selector']
     entry = operation('download', component='utility-os', tag='utility-os-2026.11.1')
     assert entry['state'] == 'ready', entry
     assert system.context()['utility_selector'] == before
-    ready_uos = next(item for item in store.snapshot()['ready'] if item['release']['component'] == 'utility-os')
-    entry = operation('apply', candidate=ready_uos['id'], receipt=ready_uos['receipt'])
-    assert entry['state'] == 'succeeded', entry
-    assert system.context()['utility_selector'] == 'managed:2026.11.1'
-    entry = operation('rollback', operation=entry['id'])
-    assert entry['state'] == 'succeeded', entry
-    assert system.context()['utility_selector'] == before
-    entry = operation('activate', selector='managed:2026.11.1')
-    assert entry['state'] == 'succeeded', entry
+    # Preparing an OS is read-only. Roll back the application while its snapshot
+    # is the retained point, before a successful OS change replaces that point.
     entry = operation('rollback', operation=application_result['id'])
     assert entry['state'] == 'succeeded', entry
     assert system.package('cmprovision4') == original
     try: system.validate_utility('managed:2026.11.1')
     except UpdateError: pass
     else: raise AssertionError('Incompatible managed Utility OS accepted after application rollback.')
-    print('PASS: real signed Utility OS prepare/apply/rollback and compatibility rejection after application rollback.')
+    print('PASS: real application rollback and prepared Utility OS compatibility rejection after downgrade.')
 
     # Interrupt after real dpkg installation, then damage the live updater and issuer key.
     # The stable boot dispatcher must run the retained modules and restore the issuer too.
@@ -194,6 +188,36 @@ def run():
     assert system.package('cmprovision4') == original
     assert Path('/etc/cmprovision-updates/publisher.pub').read_bytes() == public.read_bytes()
     print('PASS: interrupted real install recovered through retained Python runner despite damaged live helper/key.')
+
+    # Re-establish the compatible application, then exercise independent OS
+    # changes. One shared recovery slot deliberately replaces this app point.
+    system.install = install
+    source.selected = envelope
+    ready = download()
+    application_result = operation('apply', candidate=ready['id'], receipt=ready['receipt'])
+    assert application_result['state'] == 'succeeded', application_result
+    assert system.package('cmprovision4') == version
+    source.selected = utility_envelope
+    entry = operation('download', component='utility-os', tag='utility-os-2026.11.1')
+    assert entry['state'] == 'ready', entry
+    ready_uos = next(item for item in store.snapshot()['ready'] if item['release']['component'] == 'utility-os')
+    entry = operation('apply', candidate=ready_uos['id'], receipt=ready_uos['receipt'])
+    assert entry['state'] == 'succeeded', entry
+    assert system.context()['utility_selector'] == 'managed:2026.11.1'
+    entry = operation('rollback', operation=entry['id'])
+    assert entry['state'] == 'succeeded', entry
+    assert system.context()['utility_selector'] == before
+    entry = operation('activate', selector='managed:2026.11.1')
+    assert entry['state'] == 'succeeded', entry
+    assert [item['id'] for item in store.snapshot()['recoveries']] == [entry['id']]
+    assert not Path(application_result['backup']['directory']).exists(), 'obsolete application snapshot was not reclaimed'
+    stale = operation('rollback', operation=application_result['id'])
+    assert stale['state'] == 'failed', stale
+    assert stale['message'] == 'The selected recovery snapshot is no longer retained.', stale
+    assert system.package('cmprovision4') == version
+    assert system.context()['utility_selector'] == 'managed:2026.11.1'
+    assert not store.snapshot()['pending']
+    print('PASS: signed Utility OS apply/rollback, one retained point and rejection of a retired application snapshot.')
 
 
 if __name__ == '__main__': run()
