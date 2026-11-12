@@ -17,6 +17,7 @@ if [ "$1" = "purge" ]; then
     rm -f /var/lib/cmprovision/etc/boot
     rm -f /etc/default/cmprovision-wallboard.json
     rm -f /etc/default/cmprovision-fpms.json
+    rm -f /etc/default/cmprovision-rescue-wifi.json /run/cmprovision/rescue-wifi.json /run/cmprovision/rescue-wifi-state.json
     # the display's renderer user (2.7.5)
     deluser --system cmprovision-wallboard >/dev/null 2>&1 || true
     delgroup --system cmprovision-wallboard >/dev/null 2>&1 || true

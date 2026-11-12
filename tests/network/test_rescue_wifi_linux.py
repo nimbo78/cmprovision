@@ -25,6 +25,7 @@ class LinuxTest(unittest.TestCase):
         self.store.initialize()
         self.calls, self.fail_up = [], False
         self.tables, self.collision, self.backend = [], False, 'nftables'
+        self.nat_ready = True
         self.linux = Linux(self.store, runner=self.run_command)
         self.cfg = dict(DEFAULTS, enabled=True, ssid='cmprovision-test', password='secret-safe-12345678',
                         ap_mac='02:00:00:00:00:01', client_mac='02:00:00:00:00:02', subnet='192.168.240.0/24')
@@ -49,6 +50,9 @@ class LinuxTest(unittest.TestCase):
                 self.tables = []
         elif argv[-4:-1] == ['connection','up','uuid'] and self.fail_up:
             code = 10
+        elif argv[-4:-1] == ['connection','up','uuid'] and self.nat_ready:
+            self.tables.append({'table':{'family':'ip', 'name':'nm-shared-wlan0'}})
+            self.tables.append({'rule':{'expr':[{'masquerade':None}]}})
         elif 'connection' in argv and 'show' in argv:
             output = ''
         return subprocess.CompletedProcess(argv, code, stdout=output, stderr='do not expose raw diagnostics')
@@ -82,6 +86,11 @@ class LinuxTest(unittest.TestCase):
         with self.assertRaises(self.Error):
             self.linux.start(self.cfg, self.radio)
         self.assertFalse(self.linux.keyfile.exists())
+
+    def test_successful_nm_activation_without_nat_is_not_reported_as_working_sharing(self):
+        self.nat_ready = False
+        with self.assertRaises(self.Error):
+            self.linux.start(self.cfg, self.radio)
 
     def test_failed_nm_start_is_deactivated_before_our_guard_is_removed(self):
         self.fail_up = True

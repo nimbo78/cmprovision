@@ -20,6 +20,15 @@ if [ "$1" = "upgrade" ] || [ "$1" = "remove" ]; then
     fi
 fi
 
+# NM keeps an AP independently of our oneshot service. Removal/downgrade releases only our sharing profile;
+# ordinary upgrades retain it so an engineer's session survives package replacement.
+if [ -x /usr/lib/cmprovision/rescue-wifi ] && { [ "$1" = "remove" ] || { [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.30.0~dev2"; }; }; then
+    /usr/lib/cmprovision/rescue-wifi retire || {
+        echo "Cannot remove cmprovision while rescue Wi-Fi cleanup needs attention." >&2
+        exit 1
+    }
+fi
+
 # Release the optional FPMS data consumer before application code changes or leaves.
 # The normal FPMS process belongs to its own package and continues to run.
 # The shared data producer goes too: it is a long-running PHP process and would keep the old code (it no longer follows

@@ -51,6 +51,13 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual('standby', result['state'])
         self.assertIsNone(result['action'])
 
+    def test_returning_primary_must_be_stable_even_if_spare_has_been_healthy_for_longer(self):
+        spare = self.step(100, management=True, spare_connected=True)
+        primary = self.step(1000, spare, management=True, spare_connected=True, other_management=True)
+        self.assertIsNone(primary['action'])
+        self.assertIsNone(self.step(1059, primary, management=True, spare_connected=True, other_management=True)['action'])
+        self.assertEqual('disconnect_spare', self.step(1060, primary, management=True, spare_connected=True, other_management=True)['action'])
+
     def test_a_healthy_client_is_never_replaced(self):
         first = self.step(100)
         self.assertEqual('unavailable', self.step(800, first, radio_busy=True)['state'])

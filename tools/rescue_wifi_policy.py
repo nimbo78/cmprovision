@@ -112,7 +112,7 @@ def decide(config, observed, state, now, boot_id):
     previous = state if state.get('boot_id') == boot_id else {}
     result = {'boot_id': boot_id, 'state': 'standby', 'reason': 'management_available', 'action': None,
               'remaining': None}
-    for key in ('lost_since', 'healthy_since', 'idle_since', 'last_spare_attempt', 'hold_until',
+    for key in ('lost_since', 'healthy_since', 'other_since', 'idle_since', 'last_spare_attempt', 'hold_until',
                 'pause_until', 'retry_after', 'failures'):
         value = previous.get(key)
         if type(value) in (int, float) and 0 <= value <= now + 3600:
@@ -145,6 +145,10 @@ def decide(config, observed, state, now, boot_id):
         result.pop('healthy_since', None)
         result.pop('idle_since', None)
         result.setdefault('lost_since', now)
+    if observed.get('other_management'):
+        result.setdefault('other_since', now)
+    else:
+        result.pop('other_since', None)
     hold = result.get('hold_until', 0) - now
     if active:
         if not healthy or hold > 0:
@@ -164,7 +168,7 @@ def decide(config, observed, state, now, boot_id):
         return output('stopping', 'management_recovered', 'stop')
     if healthy and hold <= 0:
         if observed.get('other_management') and observed.get('spare_connected') and \
-                now - result['healthy_since'] >= 60 and observed.get('spare_enabled'):
+                now - result.get('other_since', now) >= 60 and observed.get('spare_enabled'):
             return output('standby', 'management_available', 'disconnect_spare')
         return output('standby', 'management_available')
     if not observed.get('ready'):

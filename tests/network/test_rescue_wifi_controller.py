@@ -39,6 +39,7 @@ class FakeLinux:
     def start(self, config, radio): self.calls.append('start'); self.active = True
     def stop(self): self.calls.append('stop'); self.active = False
     def remove_guard(self): self.calls.append('remove-guard')
+    def retire(self): self.stop(); self.calls.append('retire')
 
 
 @unittest.skipUnless(os.name == 'posix', 'Linux root controller')
@@ -138,6 +139,34 @@ class ControllerTest(unittest.TestCase):
         self.now = 1900
         self.control.check()
         self.assertEqual('start', self.linux.calls[-1])
+
+    def test_confirmed_restart_applies_staged_settings_on_the_next_activation(self):
+        self.configure()
+        self.control.request('start')
+        self.control.check()
+        self.control.configure({'ssid':'New SSID'})
+        try:
+            self.control.request('restart')
+        except rescue_wifi.RescueError:
+            self.fail('The explicit restart action has not been implemented.')
+        self.control.check()
+        self.assertFalse(self.linux.active)
+        self.control.check()
+        self.assertEqual(['start', 'stop', 'start'], self.linux.calls)
+        self.assertEqual('New SSID', self.store.read(self.store.status, public=True)['ssid'])
+
+    def test_arbitrary_profile_uuid_is_not_accepted_as_wired_management(self):
+        with self.assertRaises(rescue_wifi.RescueError):
+            self.configure(management_profiles=['00000000-0000-0000-0000-000000000099'])
+
+    def test_disabling_cancels_a_queued_manual_start_before_reenable(self):
+        self.configure()
+        self.control.request('start')
+        self.control.configure({'enabled':False})
+        self.control.check()
+        self.control.configure({'enabled':True})
+        self.control.check()
+        self.assertFalse(self.linux.active)
 
 
 if __name__ == '__main__': unittest.main()

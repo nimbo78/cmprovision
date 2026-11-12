@@ -98,6 +98,20 @@ add rule inet cmprovision_rescue input iifname "{device}" ip saddr != {config['s
         if re.search(r'^firewall-backend\s*=\s*none\s*$', text, re.M):
             raise RescueError('NetworkManager sharing firewall is disabled. Enable a supported NAT backend before rescue Wi-Fi.')
         self._guard_owned()  # also proves nft is available and detects a foreign owner before profile writes
+        return 'iptables' if re.search(r'^firewall-backend\s*=\s*iptables\s*$', text, re.M) else 'nftables'
+
+    def verify_sharing(self, backend, device, subnet):
+        if backend == 'iptables':
+            text = self.run('/usr/sbin/iptables', '-t', 'nat', '-S', 'POSTROUTING').stdout
+            if any(subnet in line and 'MASQUERADE' in line and 'nm-shared' in line for line in text.splitlines()):
+                return
+        else:
+            response = self.run('/usr/sbin/nft', '-j', 'list', 'table', 'ip', 'nm-shared-' + device, check=False)
+            if response.returncode == 0:
+                rows = json.loads(response.stdout).get('nftables', [])
+                if any('masquerade' in expression for row in rows for expression in row.get('rule', {}).get('expr', [])):
+                    return
+        raise RescueError('The access point activated but its sharing/NAT rules are missing.')
 
     def check_owned_profile(self):
         response = self.nm('-g', 'connection.id', 'connection', 'show', 'uuid', PROFILE_UUID, check=False)
@@ -121,11 +135,13 @@ add rule inet cmprovision_rescue input iifname "{device}" ip saddr != {config['s
         config = validate_config(config)
         self.binding()
         choose_subnet(self.networks(), config['subnet'])
-        self.check_backend()
+        backend = self.check_backend()
         self.check_owned_profile()
         device = radio['device']
         if not IFNAME.fullmatch(device) or radio['mac'] != config['ap_mac']:
             raise RescueError('The selected Wi-Fi radio changed.')
+        if has_management([p for p in self.profiles() if p['device'] == device], '', config['management_profiles']):
+            raise RescueError('The selected radio recovered a client connection; keep it connected.')
         address = str(ipaddress.ip_network(config['subnet']).network_address + 1)
         # Decimal bytes keep SSID spaces, semicolons and UTF-8 unambiguous in NM 1.52 keyfiles.
         ssid = ';'.join(str(b) for b in config['ssid'].encode('utf-8')) + ';'
@@ -164,6 +180,7 @@ method=disabled
         try:
             self.nm('connection', 'load', str(self.keyfile))
             self.nm('-w', '15', 'connection', 'up', 'uuid', PROFILE_UUID, timeout=20)
+            self.verify_sharing(backend, device, config['subnet'])
         except RescueError:
             # Keep the input guard if deactivation cannot be confirmed.
             response = self.nm('-w', '5', 'connection', 'down', 'uuid', PROFILE_UUID, check=False)
@@ -177,6 +194,15 @@ method=disabled
         if PROFILE_UUID in active:
             self.nm('-w', '10', 'connection', 'down', 'uuid', PROFILE_UUID, timeout=15)
         self.remove_guard()
+
+    def retire(self):
+        self.stop()
+        response = self.nm('connection', 'delete', 'uuid', PROFILE_UUID, check=False)
+        if response.returncode not in (0, 10):
+            raise RescueError('The owned rescue connection could not be removed.')
+        if os.path.lexists(self.keyfile):
+            self.store._check(self.keyfile.lstat())
+            self.keyfile.unlink()
 
     def profiles(self):
         """Only active eligible addressing, plus UUID choices for explicit wired management."""

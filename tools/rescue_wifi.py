@@ -180,11 +180,20 @@ class Controller:
                 exclude = ap['device'] if state.get('active_config') else None
                 config['subnet'] = choose_subnet(self.linux.networks(exclude_device=exclude), config['subnet'])
             config = validate_config(config)
+            if config['management_profiles']:
+                eligible = {p['uuid'] for p in self.linux.profiles() if p['type'] in ('ethernet', 'vlan')}
+                if not set(config['management_profiles']).issubset(eligible):
+                    raise RescueError('Select existing wired or VLAN profiles for management.')
             self.store.write(self.store.config, config)
+            if not config['enabled']:
+                state = self.store.read(self.store.state)
+                for key in ('hold_until', 'pause_until', 'restart_requested', 'lost_since', 'healthy_since', 'idle_since', 'retry_after'):
+                    state.pop(key, None)
+                self.store.write(self.store.state, state)
             return {'saved':True, 'password_configured':bool(config['password'])}
 
     def request(self, action):
-        if action not in ('start', 'pause', 'resume'):
+        if action not in ('start', 'pause', 'resume', 'restart'):
             raise RescueError('Unknown rescue Wi-Fi action.')
         with self.store.gates(), self.store.lock():
             if not self.config()['enabled']:
@@ -192,8 +201,9 @@ class Controller:
             state = self.store.read(self.store.state)
             if state.get('boot_id') != self.boot():
                 state = {'boot_id':self.boot()}
-            state['hold_until'] = self.monotonic() + 900 if action == 'start' else 0
+            state['hold_until'] = self.monotonic() + 900 if action in ('start', 'restart') else 0
             state['pause_until'] = self.monotonic() + 900 if action == 'pause' else 0
+            state['restart_requested'] = action == 'restart'
             state.pop('retry_after', None)
             self.store.write(self.store.state, state)
             return {'queued':True}
@@ -257,8 +267,12 @@ class Controller:
                 return self._publish(config, {'state':'off', 'reason':'disabled'}, {})
             observed, ap, _ = self._observed(config, old)
             state = decide(config, observed, old, self.monotonic(), self.boot())
-            if old.get('active_config') and observed['ap_active']:
-                state['active_config'] = old['active_config']
+            if old.get('restart_requested') and old.get('boot_id') == self.boot():
+                state['restart_requested'] = True
+                if observed['ap_active'] and observed['known'] and not observed['deferred']:
+                    state.update(action='stop', reason='manual_restart')
+            if observed['ap_active']:
+                state['active_config'] = old.get('active_config') or config
             action = state['action']
             if action == 'start':
                 state['active_config'] = config
@@ -268,6 +282,7 @@ class Controller:
                     observed.update(ap_active=True, clients=0)
                     state.update(state='active', reason='management_unavailable', failures=0)
                     state.pop('retry_after', None)
+                    state.pop('restart_requested', None)
                 except (RescueError, ValueError) as error:
                     failures = min(int(old.get('failures', 0)) + 1, 4)
                     state.update(state='fault', reason='start_failed', failures=failures,
@@ -308,6 +323,17 @@ class Controller:
         return {'ssid':config['ssid'], 'password':config['password'],
                 'active':{'ssid':active['ssid'], 'password':active['password']} if active else None}
 
+    def retire(self):
+        with self.store.gates(), self.store.lock():
+            config = self.config()
+            if config['enabled'] or self.store.read(self.store.state).get('active_config'):
+                self.linux.retire()
+            config['enabled'] = False
+            self.store.write(self.store.config, config)
+            self.store.write(self.store.state, {'boot_id':self.boot(), 'state':'off', 'reason':'disabled'})
+            self._publish(config, {'state':'off', 'reason':'disabled'}, {})
+            return {'retired':True}
+
 
 def main():
     from rescue_wifi_linux import Linux
@@ -330,7 +356,7 @@ def main():
             if len(raw) > 16384:
                 raise RescueError('Rescue Wi-Fi request is too large.')
             result = control.configure(json.loads(raw))
-        elif action in ('start', 'pause', 'resume'):
+        elif action in ('start', 'pause', 'resume', 'restart'):
             result = control.request(action)
         elif action == 'status':
             result = control.status()
@@ -338,9 +364,11 @@ def main():
             result = control.reveal()
         elif action == 'check':
             result = control.check()
+        elif action == 'retire':
+            result = control.retire()
         else:
             raise RescueError('Unknown rescue Wi-Fi action.')
-        if action in ('configure', 'start', 'pause', 'resume'):
+        if action in ('configure', 'start', 'pause', 'resume', 'restart'):
             linux.run('/usr/bin/systemctl', '--no-block', 'start', 'cmprovision-rescue-wifi.service', check=False)
         print(json.dumps(result, ensure_ascii=False))
         return 0

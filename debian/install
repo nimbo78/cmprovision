@@ -23,6 +23,9 @@ debian/cmprovision-queue.service lib/systemd/system
 debian/cmprovision-queue-images.service lib/systemd/system
 debian/cmprovision-uplink.service lib/systemd/system
 debian/cmprovision-uplink.timer lib/systemd/system
+debian/cmprovision-rescue-wifi.service lib/systemd/system
+debian/cmprovision-rescue-wifi.timer lib/systemd/system
+debian/021_cmprovision-rescue-wifi etc/sudoers.d
 debian/010_cmprovision etc/sudoers.d
 
 debian/cmprovision-usb-diagnostics.service lib/systemd/system
