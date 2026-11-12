@@ -231,6 +231,7 @@ method=disabled
                 mode = self.nm('-g', '802-11-wireless.mode', 'connection', 'show', 'uuid', identity).stdout.strip()
             result.append({'uuid':identity, 'type':kind, 'device':device, 'mode':mode,
                            'active': bool(device and device != '--' and state == 'activated'),
+                           'transitioning': state in ('activating', 'deactivating'),
                            'carrier':carrier.get(device, False), 'addresses':addresses.get(device, [])})
         return result
 

@@ -53,6 +53,34 @@ class LifecycleTest(unittest.TestCase):
         self.assertFalse(self.control.config()['enabled'])
         self.assertFalse(self.control.busy())
 
+    def test_external_ap_shutdown_retires_its_guard_before_client_radio_reuse(self):
+        self.control.configure({'enabled':True})
+        self.control.request('start')
+        self.control.check()
+        self.control.request('resume')
+        self.linux.active, self.linux.spare_active = False, True
+        self.control.check()
+        self.assertIn('remove-guard', self.linux.calls)
+        self.assertNotIn('active_config', self.store.read(self.store.state))
+
+    def test_missing_ap_radio_still_retires_guard_when_nm_confirms_ap_is_down(self):
+        self.control.configure({'enabled':True})
+        self.control.request('start')
+        self.control.check()
+        self.linux.active = False
+        self.linux.radios = lambda: []
+        self.control.check()
+        self.assertIn('remove-guard', self.linux.calls)
+
+    def test_nm_activation_in_progress_keeps_guard_and_private_ownership(self):
+        from rescue_wifi_linux import PROFILE_UUID
+        self.control.configure({'enabled':True})
+        self.control.request('start'); self.control.check(); self.control.request('resume')
+        self.linux.profiles = lambda: [dict(uuid=PROFILE_UUID, device='wlan0', type='wifi', mode='ap', active=False, transitioning=True)]
+        self.control.check()
+        self.assertNotIn('remove-guard', self.linux.calls)
+        self.assertIn('active_config', self.store.read(self.store.state))
+
     def test_timer_and_fixed_sudo_actions_are_packaged(self):
         service = ROOT/'debian/cmprovision-rescue-wifi.service'
         timer = ROOT/'debian/cmprovision-rescue-wifi.timer'

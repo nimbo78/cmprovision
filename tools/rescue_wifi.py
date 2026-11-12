@@ -222,12 +222,16 @@ class Controller:
     def _observed(self, config, state):
         from rescue_wifi_linux import PROFILE_UUID
         result = {'known':True, 'ready':True, 'management':False, 'ap_active':bool(state.get('active_config')),
+                  'ap_observed':False,
                   'radio_busy':False, 'blocked':False, 'deferred':self.store.pending(), 'clients':None,
                   'spare_enabled':True, 'spare_connected':False, 'other_management':False}
         radios, profiles, ap = [], [], None
         try:
             radios, profiles = self.linux.radios(), self.linux.profiles()
+            if any(p['uuid'] == PROFILE_UUID and p.get('transitioning') for p in profiles):
+                raise RescueError('The owned AP connection is still changing.')
             result['ap_active'] = any(p['uuid'] == PROFILE_UUID and p['active'] for p in profiles)
+            result['ap_observed'] = True
             active_config = state.get('active_config') if result['ap_active'] else None
             effective = active_config or config
             ap, _ = select_radios(radios, effective['ap_mac'], effective['client_mac'])
@@ -282,6 +286,9 @@ class Controller:
             if not config['enabled'] and not old.get('active_config'):
                 return self._publish(config, {'state':'off', 'reason':'disabled'}, {})
             observed, ap, _ = self._observed(config, old)
+            if old.get('active_config') and observed['ap_observed'] and not observed['ap_active']:
+                # NM confirmed shutdown, even if the former radio is missing. Never leave its source guard on a reused device.
+                self.linux.remove_guard()
             state = decide(config, observed, old, self.monotonic(), self.boot())
             state['radio_in_use'] = bool(observed['ap_active'] or observed['spare_connected']) if observed['known'] else bool(old.get('radio_in_use'))
             if old.get('restart_requested') and old.get('boot_id') == self.boot():
