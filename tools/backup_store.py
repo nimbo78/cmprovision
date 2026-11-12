@@ -189,14 +189,18 @@ class BackupStore(UpdateStore):
             if fields.get('committed') and job['cancel_requested']:
                 raise UpdateError('Backup canceled before commit.')
             job.update(fields, updated_at=int(self.clock()))
-            if fields.get('committed') and job['scheduled']:
-                from backup_schedule import due
-                slot = due(state['schedule'], [], job.get('captured_at', job['created_at']), state.get('schedule_timezone', 'UTC'))
-                if slot and slot not in state['slots']: state['slots'] = (state['slots']+[slot])[-400:]
+            if fields.get('committed'): self._cover_schedule(state, job)
             if job['state'] == 'succeeded' and job['action'] == 'backup': state['last_success_at'] = job.get('committed_at', int(self.clock()))
             if job['state'] in TERMINAL: job.pop('snapshot', None)
             return job
         return self.mutate(change)
+
+    @staticmethod
+    def _cover_schedule(state, job):
+        if job['scheduled']:
+            from backup_schedule import due
+            slot = due(state['schedule'], [], job.get('captured_at', job['created_at']), state.get('schedule_timezone', 'UTC'))
+            if slot and slot not in state['slots']: state['slots'] = (state['slots']+[slot])[-400:]
 
     def save_profile(self, value):
         from backup_remote import validate_profile
@@ -290,6 +294,13 @@ class BackupStore(UpdateStore):
             value = {key: receipt[key] for key in ('name', 'size', 'sha256', 'station_id', 'namespace')}
             value.update(id=identity, created_at=job.get('captured_at', job['created_at']), sequence=job['sequence'])
             if not any(item['id'] == identity for item in state['remote_copies']): state['remote_copies'].append(value)
+            # Publication of the verified remote completion marker is the commit
+            # point. Persist its receipt and outcome together; later cancellation
+            # or service recovery must never turn this copy into an abandoned one.
+            job.update(committed=True, committed_at=int(self.clock()), updated_at=int(self.clock()),
+                outcome='succeeded', bytes=receipt['size'], total=receipt['size'], sha256=receipt['sha256'],
+                expires_at=None, cancel_requested=False)
+            self._cover_schedule(state, job)
         self.mutate(change)
 
     def forget_remote(self, identities):

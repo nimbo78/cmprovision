@@ -78,6 +78,8 @@ Blank credential fields preserve the saved value. **Clear saved value** explicit
 
 Each station writes into its own UUID namespace. An upload becomes successful only after encrypted read-back matches the original size/SHA256 and a completion marker is committed. The previous copy is removed only after that verification, leaving **one verified copy per station and destination**. Retention deletes only copies recorded by this station for that exact destination; unrelated files remain. A retention failure leaves the new verified copy usable and reports a warning; fix destination delete permissions to remove the extra copy on the next successful backup.
 
+Publishing that verified completion marker finishes the remote copy: cancellation arriving afterward does not undo it. If station service cleanup is interrupted, recovery finishes retention without uploading the archive again.
+
 S3 bucket versioning may retain old object versions, and aborted multipart uploads can require a bucket lifecycle rule. Configure lifecycle separately for your dedicated backup prefix; cmprovision does not broadly purge a bucket's multipart uploads or foreign objects.
 
 ## Preview restoration

@@ -49,6 +49,8 @@ Replace `<snapshot>` with the actual snapshot directory. By default, backups omi
 
 Only **one completed snapshot per destination** is retained, including a destination supplied explicitly. The previous copy remains until the new snapshot completes. Legacy `--keep N`, `--keep all` and `CMPROVISION_BACKUP_KEEP` arguments are accepted but cannot raise this limit. `sudo cmprovision-backup --prune` applies the limit without making a snapshot. Cleanup recognizes completed `<date>-<time>-<version>` directories with a regular database copy; unfinished snapshots, links and unrelated files are preserved.
 
+Snapshot creation and pruning are serialized per destination. An active `cmprovision-restore` protects its source through package installation and data restoration; this can temporarily retain an extra copy until restoration finishes.
+
 ### A copy to keep away from this server
 
 The snapshots stay on the server they were made on, so they do not help when its card or disk is lost. **Settings → System → Backup → Download backup** (since 2.20.0) gives one file to keep somewhere else; the web password is asked again before it. It holds the database, the settings, the firmware store, the SSH key of Re-provision, `.env` and the DHCP config. The images and the packages of the OS check are not in it (they are gigabytes), nor is the system config (the nginx site, php.ini, the network).
