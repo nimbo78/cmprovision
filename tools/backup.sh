@@ -83,6 +83,10 @@ prune() {
 if [ "$PRUNE" = 1 ] && [ ! -e "$DEST" ] && [ ! -L "$DEST" ]; then exit 0; fi
 if [ "$PRUNE" = 0 ]; then
     [ "$(id -u)" = 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
+    # Refuse before even creating a destination; check again after waiting for its lock.
+    if [ -e /run/cmprovision-network/pending ] || [ -e /var/lib/cmprovision-network/transactions/pending.json ]; then
+        echo "Confirm or recover the pending network change before making a backup." >&2; exit 1
+    fi
 fi
 umask 077
 [ ! -L "$DEST" ] || { echo "snapshot destination must be a directory, not a link" >&2; exit 1; }
