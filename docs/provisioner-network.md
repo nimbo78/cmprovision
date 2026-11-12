@@ -2,6 +2,8 @@
 
 # Provisioner Networking
 
+For optional engineer access during management Wi-Fi outages, see [Rescue Wi-Fi access](rescue-wifi.md): a separate protected AP with routed access to attached sensors and VLANs.
+
 Reference guide detailing the provisioner network architecture for three milestones:
 2.5.1 (`/scriptexecute` restricted strictly to the stand network), 2.5.2 (onboard Wi-Fi as a cold
 spare), and 2.5.3 (Wi-Fi management via web UI).

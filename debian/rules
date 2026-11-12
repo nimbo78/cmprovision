@@ -19,6 +19,8 @@ override_dh_install:
 	install -D -m 755 tools/uplink-spare debian/cmprovision4/usr/lib/cmprovision/uplink-spare
 	install -D -m 755 tools/90-cmprovision-uplink debian/cmprovision4/usr/lib/NetworkManager/dispatcher.d/90-cmprovision-uplink
 	install -D -m 755 tools/wifi-networks debian/cmprovision4/usr/lib/cmprovision/wifi-networks
+	install -D -m 755 tools/rescue-wifi debian/cmprovision4/usr/lib/cmprovision/rescue-wifi
+	for f in rescue_wifi.py rescue_wifi_policy.py rescue_wifi_linux.py; do install -D -m 644 tools/$$f debian/cmprovision4/usr/lib/cmprovision/$$f; done
 	install -D -m 755 tools/vlan-networks debian/cmprovision4/usr/lib/cmprovision/vlan-networks
 	install -D -m 755 tools/network-transaction debian/cmprovision4/usr/lib/cmprovision/network-transaction
 	install -D -m 755 tools/dnsmasq-start debian/cmprovision4/usr/lib/cmprovision/dnsmasq-start

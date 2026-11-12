@@ -54,6 +54,19 @@ class UplinkSummaryTest extends TestCase
         ], $changes);
     }
 
+    public function test_rescue_access_is_separate_from_internet_and_suppresses_stale_idle_spare_text(): void
+    {
+        $view = UplinkSummary::from(self::snapshot(['uplink' => null, 'backups' => [], 'modules' => null,
+            'spare' => ['state' => 'standby', 'device' => 'wlan0'],
+            'rescue_wifi' => ['enabled' => true, 'active' => true, 'state' => 'active', 'ssid' => 'ap-bench',
+                'address' => '192.168.240.1', 'clients' => 1]]));
+        $this->assertSame('offline', $view['icon']);
+        $this->assertCount(1, $view['sections']);
+        $this->assertSame('Rescue Wi-Fi AP', $view['sections'][0][0]);
+        $this->assertStringContainsString('ap-bench', $view['sections'][0][1]);
+        $this->assertStringContainsString('192.168.240.1', $view['sections'][0][1]);
+    }
+
     public function test_wifi_6_card_with_a_backup_and_the_modules_network()
     {
         $v = UplinkSummary::from(self::snapshot());

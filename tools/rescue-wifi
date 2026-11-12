@@ -1,0 +1,9 @@
+#!/usr/bin/python3 -I
+"""Import only root-installed sibling modules, ignoring caller PYTHONPATH."""
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rescue_wifi import main
+
+sys.exit(main())

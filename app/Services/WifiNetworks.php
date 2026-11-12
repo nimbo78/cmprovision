@@ -96,7 +96,7 @@ class WifiNetworks
         $groups = $others = [];
         foreach ($profiles as $p) {
             $p += $this->details($p['uuid']);
-            if ($p['id'] === self::CHECK_ID) {
+            if ($p['id'] === self::CHECK_ID || ($p['uuid'] === RescueWifi::PROFILE_UUID && $p['mode'] === 'ap')) {
                 continue;
             }
             $why = $this->unmanaged($p);
@@ -132,6 +132,8 @@ class WifiNetworks
     /** why Check now cannot run: it needs the built-in Wi-Fi idle in the cold spare; null when it can */
     public function checkBlocker(): ?string
     {
+        if (app(RescueWifi::class)->status()['active'] ?? false)
+            return 'the built-in Wi-Fi provides rescue access';
         $spare = (new NetworkStatus($this->net, $this->routes, null, null, $this->spare))->spare();
         if ($spare === null || $spare['device'] === null) {
             // tools/uplink-spare writes its state on a NetworkManager event, or two minutes after a boot
@@ -143,6 +145,7 @@ class WifiNetworks
             'active' => 'the built-in Wi-Fi carries the traffic',
             'waiting' => 'the cold spare is switching',
             'off' => 'the cold spare is off (SPARE=no)',
+            'ap' => 'the built-in Wi-Fi provides rescue access',
         ][$spare['state']];
     }
 

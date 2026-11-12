@@ -24,6 +24,7 @@ SPARE=${WIFI_NETWORKS_SPARE:-/usr/lib/cmprovision/uplink-spare}
 WAIT=${WIFI_NETWORKS_WAIT:-10}
 # the name of the copy a check brings up
 CHECK_ID=cmprovision-check
+RESCUE=${WIFI_NETWORKS_RESCUE:-/usr/lib/cmprovision/rescue-wifi}
 # nmcli untranslated, text tools on UTF-8; nothing the input brings is expanded as a file name
 LC_ALL=C.UTF-8
 export LC_ALL
@@ -423,6 +424,9 @@ cmd_check() {
     keep=$(kept)
     exec 8>"$RUN/uplink-spare.lock"
     flock -w "$WAIT" 8 || busy "the cold spare is switching right now"
+    if [ -x "$RESCUE" ] && "$RESCUE" radio-busy >/dev/null 2>&1; then
+        busy "the built-in Wi-Fi provides rescue access: finish the AP session before checking a network"
+    fi
     spare_ready || busy "$reason"
     drop_checks
     copy_for_check "$keep" || fail "'$ssid' could not be copied for the check"
@@ -452,6 +456,11 @@ cmd_check() {
 
 # the networks in reach of either radio (rescanning is for root alone), but those without a name
 cmd_scan() {
+    exec 8>"$RUN/uplink-spare.lock"
+    flock -w "$WAIT" 8 || fail "the Wi-Fi radio is switching right now"
+    if [ -x "$RESCUE" ] && "$RESCUE" radio-busy >/dev/null 2>&1; then
+        fail "the built-in Wi-Fi provides rescue access: a scan is paused while the AP is active"
+    fi
     nmcli -t -f SSID,SIGNAL,SECURITY,FREQ device wifi list --rescan yes 2>/dev/null | grep -v '^:' || true
 }
 

@@ -97,6 +97,8 @@ class WallboardSnapshot
             // Both local displays use the same station-wide sunrise calculation as the web UI.
             'display_auto_mode' => DisplaySunMode::auto(now()->toDateTimeImmutable(), SunPlace::forZone(config('app.display_timezone'))),
             'hdmi_auto_mode' => Setting::find('hdmi_color_mode')?->value === 'auto',
+            // Independent of FPMS enablement: HDMI and either panel layout consume the same secret-free status.
+            'rescue_wifi' => app(\App\Services\RescueWifi::class)->status(),
             // for the FPMS panel only: the address and the interface come from NetworkManager and iw, which HDMI never needed
             'station' => app(Fpms::class)->settings()['enabled'] ? DisplayStation::current() : null];
     }

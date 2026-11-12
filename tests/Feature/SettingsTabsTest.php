@@ -43,7 +43,7 @@ class SettingsTabsTest extends TestCase
 
     protected function tab(?string $tab)
     {
-        if ($tab === 'system') $this->actingAs(User::factory()->create());
+        if (in_array($tab, ['system', 'network'], true)) $this->actingAs(User::factory()->create());
         return Livewire::withQueryParams($tab === null ? [] : ['tab' => $tab])->test(Settings::class);
     }
 

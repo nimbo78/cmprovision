@@ -1,3 +1,21 @@
+cmprovision4 (2.30.0~dev3) unstable; urgency=medium
+
+  * Remove the owned rescue source guard after NetworkManager confirms an
+    external AP shutdown or a missing radio, before client radio reuse.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 12 Nov 2026 05:05:00 +0300
+
+cmprovision4 (2.30.0~dev2) unstable; urgency=medium
+
+  * Add optional rescue Wi-Fi with a ten-minute management search timeout,
+    shared DHCP/NAT, safe radio ownership and client-aware recovery.
+  * Configure and monitor rescue access in web settings, HDMI and both
+    FPMS layouts without exposing passwords in ordinary status snapshots.
+  * Include rescue settings in encrypted network backups while preserving
+    destination networking during migration by default.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Thu, 12 Nov 2026 11:30:00 +0300
+
 cmprovision4 (2.30.0~dev1) unstable; urgency=medium
 
   * Show module model, PCB revision, RAM, eMMC, built-in Wi-Fi and inferred

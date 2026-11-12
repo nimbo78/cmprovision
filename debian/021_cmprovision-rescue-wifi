@@ -1,0 +1,7 @@
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/rescue-wifi status
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/rescue-wifi configure
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/rescue-wifi start
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/rescue-wifi pause
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/rescue-wifi resume
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/rescue-wifi restart
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/rescue-wifi reveal

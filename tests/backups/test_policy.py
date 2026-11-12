@@ -9,6 +9,11 @@ from update_manifest import UpdateError
 
 
 class PolicyTest(unittest.TestCase):
+    def test_rescue_configuration_is_in_the_encrypted_system_inventory(self):
+        self.put('etc/default/cmprovision-rescue-wifi.json', b'{"password":"private-rescue-fixture"}')
+        entries, _ = self.module.inventory(self.root, images=False, packages=False)
+        self.assertIn('system/etc/default/cmprovision-rescue-wifi.json', {item.name for item in entries})
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

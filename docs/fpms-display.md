@@ -7,6 +7,8 @@ A cold boot on Raspberry Pi OS Lite, all five pages and KEY2 were checked on a C
 Waveshare display. The remaining physical controls and both themes still need acceptance.
 
 FPMS shows a compact read-only view on a Waveshare 1.44-inch 128×128 display.
+
+The Station page in Classic and New also shows [rescue Wi-Fi](rescue-wifi.md): its search countdown or active SSID, gateway and associated-client count. Passwords are never drawn on the display.
 The first hardware target is CM4. A display is optional: web provisioning works
 without it, and HDMI and FPMS can be used at the same time.
 

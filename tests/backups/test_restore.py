@@ -11,6 +11,10 @@ from update_manifest import UpdateError, canonical_bytes
 
 
 class RestoreTest(unittest.TestCase):
+    def test_rescue_configuration_is_network_data_not_web_or_station_role(self):
+        from backup_restore import file_group
+        self.assertEqual('network', file_group('etc/default/cmprovision-rescue-wifi.json'))
+
     def setUp(self):
         self.module = importlib.import_module('backup_restore')
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
@@ -23,7 +27,8 @@ class RestoreTest(unittest.TestCase):
         self.context = {'cmprovision': '2.28.0', 'fpms_version': None, 'os': self.metadata['os'], 'verified_packages': {'cmprovision4': True},
             'utility_selector': 'bundled-modern', 'utility_os_version': '2026.10',
             'accounts': [{'name': 'root', 'uid': 0, 'gid': 0}], 'groups': {'root': 0, 'sudo': 27},
-            'interfaces': {'eth0': '00:11:22:33:44:55'}}
+            'interfaces': {'eth0': '00:11:22:33:44:55', 'wlan0':'02:00:00:00:00:01', 'wlan1':'02:00:00:00:00:02'}}
+        self.mapping = {'eth0':'eth0', '12:00:00:00:00:01':'wlan0', '12:00:00:00:00:02':'wlan1'}
         self.account = {'name': 'operator', 'uid': 1000, 'gid': 1000, 'primary_group': 'operator', 'groups': ['sudo'],
             'home': '/home/operator', 'shell': '/bin/bash', 'gecos': 'Operator', 'password_hash': '$y$fixture',
             'aging': ['20000', '0', '99999', '7', '', '', ''], 'authorized_keys': ''}
@@ -39,6 +44,11 @@ class RestoreTest(unittest.TestCase):
             Entry('system/payloads.json', data=b'{"schema":1,"references":[]}'),
             Entry('system/etc/hostname', data=b'source-station'), Entry('system/etc/ssh/sshd_config', data=b'PasswordAuthentication yes'),
             Entry('system/etc/default/cmprovision-stand-interface', data=b'eth0'),
+            Entry('system/etc/default/cmprovision-rescue-wifi.json', data=canonical_bytes(dict(__import__('rescue_wifi_policy').DEFAULTS,
+                password='secret-rescue-fixture', enabled=True, ssid='Source rescue', subnet='192.168.240.0/24',
+                ap_mac='12:00:00:00:00:01', client_mac='12:00:00:00:00:02'))),
+            Entry('system/etc/NetworkManager/system-connections/cmprovision-rescue.nmconnection',
+                data=b'[connection]\nid=cmprovision-rescue\n[wifi]\nmac-address=12:00:00:00:00:01\n'),
             Entry('system/etc/NetworkManager/system-connections/stand.nmconnection',
                 data=b'[connection]\ninterface-name=eth0\n[ethernet]\nmac-address=AA:BB:CC:DD:EE:FF\n')]
         path = self.root/'copy.cmpbackup'
@@ -54,11 +64,30 @@ class RestoreTest(unittest.TestCase):
         self.assertFalse(plan['restore_role'])
         self.assertNotIn('$y$fixture', json.dumps(plan['preview']))
 
+    def test_encrypted_ap_credentials_require_explicit_network_restore_and_stay_out_of_preview(self):
+        path = self.archive()
+        self.assertNotIn(b'secret-rescue-fixture', path.read_bytes())
+        with inspect_archive(path, 'a sufficiently long password', self.root) as archive:
+            default = self.module.plan_restore(archive, self.context)
+            explicit = self.module.plan_restore(archive, self.context, groups=['network'], interfaces=self.mapping)
+        config = 'etc/default/cmprovision-rescue-wifi.json'
+        profile = 'etc/NetworkManager/system-connections/cmprovision-rescue.nmconnection'
+        self.assertNotIn(config, default['system'])
+        self.assertNotIn(profile, default['system'])
+        self.assertIn(config, explicit['system'])
+        self.assertIn(profile, explicit['system'])
+        self.assertNotIn('secret-rescue-fixture', json.dumps(explicit['preview']))
+        restored = json.loads(explicit['rewritten'][config])
+        self.assertEqual('02:00:00:00:00:01', restored['ap_mac'])
+        self.assertEqual('02:00:00:00:00:02', restored['client_mac'])
+        self.assertEqual('secret-rescue-fixture', restored['password'])
+        self.assertIn(b'mac-address=02:00:00:00:00:01', explicit['rewritten'][profile])
+
     def test_network_restore_needs_explicit_mapping_for_source_mac_binding(self):
         with inspect_archive(self.archive(), 'a sufficiently long password', self.root) as archive:
             with self.assertRaises(UpdateError): self.module.plan_restore(archive, self.context, groups=['network'])
-            plan = self.module.plan_restore(archive, self.context, groups=['network'], interfaces={'eth0': 'eth0'})
-            profile = next(data for name, data in plan['rewritten'].items() if name.endswith('.nmconnection'))
+            plan = self.module.plan_restore(archive, self.context, groups=['network'], interfaces=self.mapping)
+            profile = plan['rewritten']['etc/NetworkManager/system-connections/stand.nmconnection']
             self.assertIn(b'mac-address=00:11:22:33:44:55', profile)
 
     def test_account_selection_rejects_emergency_or_service_uid_collision(self):

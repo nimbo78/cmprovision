@@ -19,6 +19,19 @@ class WallboardTest extends TestCase
 {
     use RefreshDatabase, PoeStand;
 
+    public function test_rescue_network_is_available_to_hdmi_even_when_fpms_is_disabled(): void
+    {
+        $this->stand();
+        $wifi = new \Tests\Support\FakeRescueWifi;
+        $wifi->state = array_merge($wifi->state, ['enabled' => true, 'active' => true, 'state' => 'active', 'clients' => 1]);
+        $this->app->instance(\App\Services\RescueWifi::class, $wifi);
+        $snapshot = app(WallboardSnapshot::class)->current();
+        $this->assertNull($snapshot['station']);
+        $this->assertSame('192.168.240.1', $snapshot['rescue_wifi']['address']);
+        $this->assertSame(1, $snapshot['rescue_wifi']['clients']);
+        $this->assertArrayNotHasKey('password', $snapshot['rescue_wifi']);
+    }
+
     public function test_snapshot_uses_the_ports_map_and_shared_poll_without_exposing_secrets()
     {
         $cm = $this->stand();

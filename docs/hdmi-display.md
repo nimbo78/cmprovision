@@ -8,6 +8,8 @@ on a Linux virtual console; it does not need a graphical desktop, Chromium or an
 
 This is separate from the target module's [tty2 troubleshooting console](local-console.md).
 
+When [rescue Wi-Fi](rescue-wifi.md) is enabled, the header also shows its countdown or active SSID, gateway and associated-client count. It does not display the AP password.
+
 ## Enable it
 
 1. Connect the provisioner's HDMI output to the monitor and select its HDMI input. Full HD is the usual target;

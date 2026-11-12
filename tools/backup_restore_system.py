@@ -59,7 +59,7 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             if len(fields) == 7: value['accounts'].append({'name': fields[0], 'uid': int(fields[2]), 'gid': int(fields[3])})
         value['groups'] = {parts[0]: int(parts[2]) for parts in (line.split(':') for line in read(self.root, 'etc/group').decode().splitlines()) if len(parts) == 4}
         interfaces = json.loads(self.command(['/usr/sbin/ip', '-j', 'link', 'show']))
-        value['interfaces'] = {item['ifname']: item['address'] for item in interfaces if item.get('address') and re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', item.get('ifname', ''))}
+        value['interfaces'] = {item['ifname']: item.get('permaddr') or item['address'] for item in interfaces if item.get('address') and re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', item.get('ifname', ''))}
         return value
 
     def freeze_restore(self, job):

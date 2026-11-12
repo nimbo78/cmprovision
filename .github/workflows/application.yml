@@ -84,7 +84,7 @@ jobs:
   prepare-auto-release:
     name: Prepare stable release candidate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == (vars.CMPROVISION_RELEASE_REPOSITORY || 'nimbo78/cmprovision')
-    needs: [php, javascript, image-release-checks, station-power, station-updates, station-backups, station-updates-integration]
+    needs: [php, javascript, image-release-checks, station-power, station-updates, station-backups, station-updates-integration, rescue-wifi]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -146,6 +146,16 @@ jobs:
             cd /tmp/backup-tests
             CMPROVISION_REMOTE_ACCEPTANCE=1 CMPROVISION_LARGE_BACKUP_TEST=1 python3 -B -m unittest discover -s tests/backups -v
           '
+
+  rescue-wifi:
+    name: Rescue Wi-Fi and real DHCP/NAT
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -f docker/rescue-network.Dockerfile -t cmprovision-rescue-tests .
+      # No host mounts: all privileged networking runs in disposable namespaces inside this test container.
+      - run: docker run --rm --privileged cmprovision-rescue-tests
 
   station-updates-integration:
     name: Debian update and rollback acceptance

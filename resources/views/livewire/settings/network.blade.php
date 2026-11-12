@@ -1,4 +1,5 @@
 <livewire:wifi-settings />
+<livewire:rescue-wifi-settings />
 
 <livewire:network-settings />
 

@@ -90,11 +90,40 @@ class UplinkSpareTest extends TestCase
         $env = 'FAKE='.escapeshellarg($this->dir).' PATH='.escapeshellarg($this->dir.'/bin').':"$PATH"'
             .' UPLINK_SPARE_SYS='.escapeshellarg($this->dir.'/sys').' UPLINK_SPARE_RUN='.escapeshellarg($this->dir.'/run')
             .' UPLINK_SPARE_CONF='.escapeshellarg($this->dir.'/default').' UPLINK_SPARE_NOW='.$t
+            .' UPLINK_SPARE_RESCUE='.escapeshellarg($this->dir.'/bin/rescue-wifi')
             .' UPLINK_SPARE='.escapeshellarg(base_path('tools/uplink-spare'));
         $out = [];
         exec($env.' sh '.escapeshellarg(base_path($script)).' '.implode(' ', array_map('escapeshellarg', $args)).' 2>&1', $out, $code);
         $this->output = implode("\n", $out);
         return $code;
+    }
+
+    public function test_rescue_owner_queues_a_check_without_legacy_radio_actions(): void
+    {
+        $this->world(['wlan0' => 'disconnected', 'wlan1' => 'disconnected'], '');
+        $this->stub('rescue-wifi', '[ "$1" = owns ] && exit 0; echo "rescue-wifi $*" >> "$FAKE/calls"');
+        $this->assertSame(0, $this->runAt(self::T));
+        $this->assertSame(['rescue-wifi wake'], $this->actions());
+    }
+
+    public function test_legacy_release_does_not_disconnect_or_reassign_owned_rescue_radio(): void
+    {
+        $this->world(['wlan0' => 'connected', 'wlan1' => 'connected'], self::CARD);
+        $this->stub('rescue-wifi', '[ "$1" = owns ] && exit 0; echo "rescue-wifi $*" >> "$FAKE/calls"');
+        $this->assertSame(0, $this->runAt(self::T, ['release']));
+        $this->assertSame(['rescue-wifi wake'], $this->actions());
+    }
+
+    public function test_ownership_is_rechecked_after_waiting_for_the_radio_lock(): void
+    {
+        foreach (['check', 'release'] as $action) {
+            @unlink($this->dir.'/owner-changed');
+            $this->forget();
+            $this->world(['wlan0' => 'connected', 'wlan1' => 'connected'], self::CARD);
+            $this->stub('rescue-wifi', 'if [ "$1" = owns ]; then [ -e "$FAKE/owner-changed" ] && exit 0; touch "$FAKE/owner-changed"; exit 1; fi; echo "rescue-wifi $*" >> "$FAKE/calls"');
+            $this->assertSame(0, $this->runAt(self::T, [$action]));
+            $this->assertSame(['rescue-wifi wake'], $this->actions(), $action.' must delegate after ownership changes');
+        }
     }
 
     /** the recorded calls that change something: nmcli connect, disconnect and set, systemd-run, systemctl */
