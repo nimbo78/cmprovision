@@ -29,14 +29,15 @@ class StationUpdates
     {
         if (!$this->control->available() || $this->control->pending() || app(StationBackupsControl::class)->pending()) return;
         Cache::lock('station-updates-schedule', 20)->get(function () {
+            // Local expiry housekeeping also runs when publisher checks are disabled/not due.
+            $status = $this->control->status();
+            if (!empty($status['operation']) && !in_array($status['operation']['state'] ?? '', ['ready', 'succeeded', 'rolled-back', 'failed', 'canceled'], true)) return;
             $due = [];
             foreach ($this->preferences() as $part => $enabled) {
                 $last = (int) (Setting::find('updates_last_attempt_'.$part)?->value ?? 0);
                 if ($enabled && now()->timestamp - $last >= 86400) $due[] = $part;
             }
             if (!$due) return;
-            $status = $this->control->status();
-            if (!empty($status['operation']) && !in_array($status['operation']['state'] ?? '', ['ready', 'succeeded', 'rolled-back', 'failed', 'canceled'], true)) return;
             $this->check($due);
             foreach ($due as $part) Setting::updateOrCreate(['key' => 'updates_last_attempt_'.$part], ['value' => (string) now()->timestamp]);
         });

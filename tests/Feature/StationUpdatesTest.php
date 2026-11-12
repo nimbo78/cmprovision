@@ -18,9 +18,10 @@ class StationUpdatesTest extends TestCase
     {
         $fake = new class($status) extends StationUpdatesControl {
             public array $calls = [];
+            public int $statusCalls = 0;
             public function __construct(public array $state) {}
             public function available(): bool { return true; }
-            public function status(): array { return $this->state; }
+            public function status(): array { $this->statusCalls++; return $this->state; }
             public function request(array $request): array { $this->calls[] = $request; return ['id' => str_repeat('a', 32)]; }
             public function pending(): bool { return false; }
         };
@@ -50,6 +51,28 @@ class StationUpdatesTest extends TestCase
         $updates->scheduled();
         $this->assertCount(1, $control->calls);
         $this->assertSame(['application'], $control->calls[0]['components']);
+    }
+
+    public function test_scheduled_housekeeping_runs_with_publisher_checks_disabled_or_not_due(): void
+    {
+        $control = $this->control();
+        $updates = app(StationUpdates::class);
+        $updates->scheduled();
+        $this->assertSame(1, $control->statusCalls, 'hourly status triggers local snapshot expiry');
+        $this->assertSame([], $control->calls, 'disabled auto-check never contacts the publisher');
+        $updates->savePreferences(true, false);
+        Setting::updateOrCreate(['key' => 'updates_last_attempt_application'], ['value' => (string) now()->timestamp]);
+        $updates->scheduled();
+        $this->assertSame(2, $control->statusCalls, 'not-due publisher checks still perform housekeeping');
+        $this->assertSame([], $control->calls);
+    }
+
+    public function test_updates_explain_expiry_and_retirement_before_new_snapshot(): void
+    {
+        $this->control();
+        $this->actingAs(User::factory()->create())->get('/settings?tab=updates')
+            ->assertOk()->assertSee('7 days')
+            ->assertSee('removed before checking free space and creating the next snapshot');
     }
 
     public function test_confirmation_binds_actor_and_receipt_expires_and_replays_one_nonce(): void

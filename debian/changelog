@@ -1,3 +1,14 @@
+cmprovision4 (2.30.2~dev1) unstable; urgency=medium
+
+  * Expire updater recovery points seven days after successful completion,
+    including local hourly cleanup when publisher checks are disabled.
+  * Retire previous recovery points before checking free space and creating
+    the next application snapshot, while protecting an active rollback source.
+  * Explain snapshot expiry and pre-snapshot retirement in Settings and the
+    English and Russian update/backup guides.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 02:46:21 +0300
+
 cmprovision4 (2.30.1) unstable; urgency=medium
 
   * Retain one completed package snapshot and updater recovery point, with

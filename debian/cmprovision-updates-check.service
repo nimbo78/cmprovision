@@ -1,5 +1,5 @@
 [Unit]
-Description=Check enabled cmprovision update components when due
+Description=Expire idle recovery snapshots and check enabled cmprovision updates when due
 After=network-online.target cmprovision-updates-recover.service
 Wants=network-online.target
 
