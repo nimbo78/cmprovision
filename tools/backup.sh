@@ -44,20 +44,28 @@ esac
 KEEP=1
 DEST=${1:-$DEFAULT_DEST}
 
-# The snapshots of this script are the directories named <date>-<time>-<version>; the names sort by time.
+# A completed snapshot has a regular database copy; other operator paths are not ours.
+completed_snapshot() {
+    [ -d "$1" ] && [ ! -L "$1" ] && [ ! -e "$1/.incomplete" ] && [ ! -L "$1/.incomplete" ] &&
+        [ -f "$1/database.sqlite" ] && [ ! -L "$1/database.sqlite" ]
+}
+
 prune() {
     removed=0
-    seen=0
-    for name in $(ls -1 "$DEST" 2>/dev/null | grep -E '^[0-9]{8}-[0-9]{6}-' | sort -r); do
+    # Full names exclude whitespace and shell patterns before iterating shell words.
+    names=$(ls -1 "$DEST" 2>/dev/null | grep -E '^[0-9]{8}-[0-9]{6}-[A-Za-z0-9][A-Za-z0-9.+:~_-]*$' | sort -r)
+    keeper=''
+    for name in $names; do
         path="$DEST/$name"
-        # a file or a link with such a name is not a snapshot and does not take a place among the newest
-        if [ ! -d "$path" ] || [ -L "$path" ] || [ -e "$path/.incomplete" ]; then
-            continue
-        fi
-        seen=$((seen + 1))
-        if [ "$seen" -le "$KEEP" ] || [ "$path" = "${OUT:-}" ]; then
-            continue
-        fi
+        completed_snapshot "$path" || continue
+        [ -n "$keeper" ] || keeper=$path
+        # Prefer the just-completed replacement even when the clock moved backwards.
+        if [ "$path" = "${OUT:-}" ]; then keeper=$path; break; fi
+    done
+    for name in $names; do
+        path="$DEST/$name"
+        completed_snapshot "$path" || continue
+        [ "$path" != "$keeper" ] || continue
         if rm -rf "$path"; then
             removed=$((removed + 1))
         else

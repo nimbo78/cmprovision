@@ -160,6 +160,30 @@ class BackupRetentionTest extends TestCase
             $this->assertDirectoryDoesNotExist($this->dir.'/'.$name);
     }
 
+    public function test_snapshot_like_operator_names_cannot_delete_unrelated_files()
+    {
+        $this->fill();
+        $unrecognized = '20260101-120000-2.0 notes';
+        mkdir($this->dir.'/'.$unrecognized);
+        mkdir($this->dir.'/20260102-120000-manual');
+        [$code, $out] = $this->run_('--prune '.escapeshellarg($this->dir));
+        $this->assertSame(0, $code, $out);
+        $this->assertDirectoryExists($this->dir.'/notes');
+        $this->assertDirectoryExists($this->dir.'/'.$unrecognized);
+        $this->assertDirectoryExists($this->dir.'/20260102-120000-manual');
+    }
+
+    public function test_the_just_completed_snapshot_replaces_the_previous_copy_after_a_clock_correction()
+    {
+        $names = $this->fill();
+        // OUT is the completed replacement selected by the script before its final prune.
+        [$code, $out] = $this->run_('--prune '.escapeshellarg($this->dir), ['OUT' => $this->dir.'/'.$names[0]]);
+        $this->assertSame(0, $code, $out);
+        $this->assertDirectoryExists($this->dir.'/'.$names[0]);
+        foreach (array_slice($names, 1) as $name)
+            $this->assertDirectoryDoesNotExist($this->dir.'/'.$name);
+    }
+
     public function test_every_explicit_snapshot_destination_is_trimmed_after_success()
     {
         $script = file_get_contents(dirname(__DIR__, 2).'/tools/backup.sh');
