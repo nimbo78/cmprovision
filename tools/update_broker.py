@@ -71,11 +71,9 @@ class Broker:
     def request(self, request):
         action = request['action']
         if action == 'status':
-            from update_retention import prune_idle, recovery_expired
+            from update_retention import prune_idle, recovery_expired, has_unretained_artifacts
             status = self.store.snapshot()
-            current = status['operation']
-            orphan = current and current['id'] not in {row['id'] for row in status['recoveries']} and (
-                self.store.private/'recovery'/current['id']).exists()
+            orphan = has_unretained_artifacts(self.store, {row['id'] for row in status['recoveries']})
             if len(status['recoveries']) > 1 or orphan or any(recovery_expired(row, self.store.clock()) for row in status['recoveries']):
                 try: prune_idle(self.store)
                 except (UpdateError, OSError): pass # Housekeeping cannot make status/recovery unavailable.

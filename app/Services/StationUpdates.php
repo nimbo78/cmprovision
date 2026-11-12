@@ -29,8 +29,8 @@ class StationUpdates
     {
         if (!$this->control->available() || $this->control->pending() || app(StationBackupsControl::class)->pending()) return;
         Cache::lock('station-updates-schedule', 20)->get(function () {
-            // Local expiry housekeeping also runs when publisher checks are disabled/not due.
-            $status = $this->control->status();
+            // The cached projection cannot expire files; use the fixed local root broker.
+            $status = $this->control->request(['action' => 'status']);
             if (!empty($status['operation']) && !in_array($status['operation']['state'] ?? '', ['ready', 'succeeded', 'rolled-back', 'failed', 'canceled'], true)) return;
             $due = [];
             foreach ($this->preferences() as $part => $enabled) {

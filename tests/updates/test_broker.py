@@ -4,7 +4,7 @@ import tempfile
 import os
 from pathlib import Path
 import subprocess
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from support import *
 from update_manifest import UpdateError
@@ -13,6 +13,29 @@ from update_store import UpdateStore
 
 
 class RecoveryMigrationTest(unittest.TestCase):
+    def test_idle_status_retries_expired_files_after_delete_failure_and_a_later_check(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            now = [1000]
+            store = UpdateStore(root/'updates', root/'run', owner=os.getuid(), clock=lambda: now[0])
+            previous, _ = store.begin({'action': 'check', 'nonce': 'a'*64, 'components': ['application']})
+            directory = store.private/'recovery'/previous['id']
+            store._directory(directory, 0o700); os.utime(directory, (1000, 1000))
+            store.update(previous['id'], state='succeeded', backup={'directory': str(directory)})
+            current, _ = store.begin({'action': 'check', 'nonce': 'b'*64, 'components': ['application']})
+            store.update(current['id'], state='succeeded')
+            now[0] += 604800
+            broker = Broker(store)
+            with patch('update_retention.shutil.rmtree', side_effect=OSError('temporary deletion failure')) as remove:
+                self.assertEqual([], broker.request({'action': 'status'})['recoveries'])
+                remove.assert_called_once()
+            self.assertTrue(directory.exists(), 'metadata is retired before physical deletion')
+            with store.lock('worker', blocking=False):
+                broker.request({'action': 'status'})
+                self.assertTrue(directory.exists(), 'a retry must still respect a live worker')
+            broker.request({'action': 'status'})
+            self.assertFalse(directory.exists(), 'later hourly polls retry even when the point is no longer current')
+
     def test_idle_status_retires_one_expired_point_but_skips_a_locked_worker(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

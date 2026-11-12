@@ -20,6 +20,22 @@ def recovery_expired(operation, now):
     return type(expiry) is int and expiry >= 0 and now >= expiry
 
 
+def has_unretained_artifacts(store, retained):
+    """Retry metadata-first cleanup after unlink failure or an interrupted prune."""
+    for name in ('recovery', 'runners'):
+        parent = store.private/name
+        try:
+            info = parent.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != store.owner or info.st_mode & 0o022: continue
+            for path in parent.iterdir():
+                if not re.fullmatch(r'[0-9a-f]{32}', path.name) or path.name in retained: continue
+                info = path.lstat()
+                if (stat.S_ISDIR(info.st_mode) and info.st_uid == store.owner and not info.st_mode & 0o022
+                        and info.st_mtime <= store.clock()): return True
+        except OSError: continue # Housekeeping observation cannot make public status unavailable.
+    return False
+
+
 def prune_idle(store):
     """Housekeeping may not take a queued/live worker's execution slot."""
     with ExitStack() as locks:
