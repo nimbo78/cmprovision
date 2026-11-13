@@ -28,9 +28,9 @@ FPMS packages are not assumed compatible. Raspberry Pi OS needs `dtparam=spi=on`
 ## Validation status
 
 The Lite image passed a cold PoE boot on the CM4 station wlanpi-d62. Photos confirmed
-Overview, Ports, Devices, Errors and Station on its Waveshare display. KEY2 was
-checked by the operator. Remaining physical controls, Classic and Dark-mode
-appearance still need acceptance. FPMS remains preview.
+Overview, Ports, Devices, Errors and Station on its Waveshare display. The operator
+confirmed physical button checks on 14 November 2026. Classic, Dark-mode appearance
+and day/night Auto transitions still need acceptance. FPMS remains preview.
 
 A full FPMS package for WLAN Pi OS is no longer planned. The existing adapter is retained for compatibility,
 but its build, upgrade and hardware acceptance are outside the supported scope.
@@ -40,7 +40,7 @@ The package's fixed root bridge starts a bounded `www-data` Artisan command thro
 using the same live confirmation service as the web UI. Root never reads the application database,
 and the display sandbox remains unchanged. The updated `cmprovision4` package is required;
 read-only previews and the retained WLAN Pi OS adapter do not supply a power callback.
-Real reboot, shutdown and physical KEY1/KEY3 acceptance remain pending.
+Physical button checks are confirmed; real reboot and shutdown cycles remain separately tracked.
 
 On Station, OK on an active rescue AP opens a Wi-Fi QR; another OK shows its SSID/password.
 KEY2 closes the card. A private root-owned runtime file shares the running credentials

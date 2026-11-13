@@ -3,9 +3,10 @@
 # FPMS front panel
 
 **Preview.** The optional FPMS integration and `fpms-lite` are available from cmprovision 2.23.0.
-A cold boot on Raspberry Pi OS Lite, all five pages and KEY2 were checked on a CM4 with the
-Waveshare display. Auto operation in the current layout was reported by the user on 13 November 2026.
-The remaining physical controls, Classic, Dark and day/night Auto transitions still need acceptance.
+A cold boot on Raspberry Pi OS Lite and all five pages were checked on a CM4 with the
+Waveshare display. The user confirmed physical button checks on 14 November 2026.
+Auto operation in the current layout was reported on 13 November 2026.
+Classic, Dark and day/night Auto transitions still need acceptance.
 
 FPMS shows a compact read-only view on a Waveshare 1.44-inch 128×128 display.
 
