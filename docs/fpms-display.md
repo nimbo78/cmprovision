@@ -8,6 +8,11 @@ Waveshare display. The user confirmed physical button checks on 14 November 2026
 Auto operation in the current layout was reported on 13 November 2026.
 Classic, Dark and day/night Auto transitions still need acceptance.
 
+The ready image **2.30.3~dev6** passed CM4 hardware acceptance on 14 November 2026:
+image writing and SHA256, the first-boot OS check, and a cold PoE boot after restoring
+station data and networking. Update recovery started without manual repair; FPMS
+reported `running` after SPI restoration. Raspberry Pi Imager customization remains untested.
+
 FPMS shows a compact read-only view on a Waveshare 1.44-inch 128×128 display.
 
 The Station page in Classic and New also shows [rescue Wi-Fi](rescue-wifi.md): its search countdown or active SSID, gateway and associated-client count. In Lite, press **OK** while the AP is active to open its Wi-Fi QR code. Press **OK** again to see the SSID and password; up/down scrolls long credentials. **KEY2** closes the card. The same QR and connection details appear temporarily on HDMI. Both screens return to their normal view after **60 seconds**, or when the card is closed. A normal status page never shows the password.

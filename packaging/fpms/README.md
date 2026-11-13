@@ -32,6 +32,12 @@ Overview, Ports, Devices, Errors and Station on its Waveshare display. The opera
 confirmed physical button checks on 14 November 2026. Classic, Dark-mode appearance
 and day/night Auto transitions still need acceptance. FPMS remains preview.
 
+The ready image 2.30.3~dev6 passed writing, SHA256 and its first-boot OS check on CM4
+on 14 November 2026. Update recovery initialized without manual repair. After restoring
+station data, networking and SPI, a clean shutdown and five-second PoE power cycle
+returned a healthy system with FPMS reporting `running`. This does not add new physical
+screen, theme or button observations; Raspberry Pi Imager customization remains untested.
+
 A full FPMS package for WLAN Pi OS is no longer planned. The existing adapter is retained for compatibility,
 but its build, upgrade and hardware acceptance are outside the supported scope.
 
