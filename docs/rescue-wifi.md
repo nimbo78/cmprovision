@@ -52,7 +52,7 @@ The generated AP password is unique to this station. It differs from web and SSH
 
 ## Status and recovery
 
-Settings shows the state, countdown, active SSID, gateway, client count and staged changes. The uplink summary lists rescue access separately from internet connectivity. HDMI and both FPMS layouts show the same AP state and connection address, without passwords.
+Settings shows the state, countdown, active SSID, gateway, client count and staged changes. The uplink summary lists rescue access separately from internet connectivity. HDMI and both FPMS layouts show the same AP state and connection address. In FPMS Lite, open **Station** and press **OK** on an active AP to show a Wi-Fi connection QR on FPMS and HDMI for **60 seconds**. Another OK switches FPMS between QR and SSID/password; up/down scrolls long credentials, and **KEY2** closes both displays immediately. Scanning connects to the running AP, not staged settings. Normal status pages and shared snapshots do not contain the password.
 
 For an activation failure, check the card's explanation, interface binding, selected radio, conflicting routes and the service journal:
 

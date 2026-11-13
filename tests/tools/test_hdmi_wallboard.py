@@ -24,6 +24,58 @@ def snapshot():
 
 
 class RescueWifiTest(unittest.TestCase):
+    def test_temporary_access_card_keeps_qr_quiet_zone_and_hides_after_expiry(self):
+        value = dict(version=1, created_at=100, expires_at=160, ssid='Lab rescue', password='example-pass-123',
+                     matrix=[[False]*37 for _ in range(37)])
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'qr.json'
+            path.write_text(json.dumps(value))
+            path.chmod(0o640)
+            real_fstat = os.fstat
+            def root_stat(fd):
+                value = real_fstat(fd)
+                return SimpleNamespace(st_mode=value.st_mode, st_uid=0, st_nlink=value.st_nlink, st_size=value.st_size)
+            with patch.object(w.os, 'fstat', side_effect=root_stat):
+                self.assertIsNotNone(w.rescue_access(path, now=120))
+            self.assertIsNone(w.rescue_access(path, now=160))
+            self.assertIsNone(w.rescue_access(path, now=99))
+            for cols, rows in ((100, 35), (160, 45), (240, 60)):
+                canvas = w.access_frame(value, cols, rows, now=120)
+                self.assertIn('Lab rescue', canvas.plain())
+                self.assertIn('example-pass-123', canvas.plain())
+                self.assertIn('40s', canvas.plain())
+                qr = [(x, y) for y, row in enumerate(canvas.cells) for x, (_, ink) in enumerate(row) if ink.startswith('qr')]
+                self.assertEqual(len(qr), 37*19)
+            path.chmod(0o644)
+            self.assertIsNone(w.rescue_access(path, now=120))
+
+    def test_qr_console_cells_reconstruct_the_exact_original_modules(self):
+        matrix = [[(x + y) % 3 == 0 for x in range(37)] for y in range(37)]
+        value = dict(matrix=matrix, ssid='Lab', password='example-pass-123', expires_at=160)
+        canvas = w.access_frame(value, 100, 35, now=120)
+        packed = [[(char, ink) for char, ink in row if ink.startswith('qr')] for row in canvas.cells]
+        packed = [row for row in packed if row]
+        restored = []
+        for row in packed:
+            restored.append([ink in ('qr11', 'qr10') for char, ink in row])
+            restored.append([ink in ('qr11', 'qr01') for char, ink in row])
+        self.assertEqual(restored[:len(matrix)], matrix)
+
+    def test_access_reader_rejects_links_oversize_and_invalid_matrix(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'qr.json'
+            target = Path(folder)/'target.json'
+            target.write_text('{}')
+            path.symlink_to(target)
+            self.assertIsNone(w.rescue_access(path, now=120))
+            path.unlink()
+            path.write_text('x'*32769)
+            path.chmod(0o640)
+            self.assertIsNone(w.rescue_access(path, now=120))
+            path.write_text(json.dumps(dict(version=1, created_at=100, expires_at=160,
+                                          ssid='Lab', password='secret-123456', matrix=[[1]])))
+            self.assertIsNone(w.rescue_access(path, now=120))
+
     def test_active_ap_shows_its_ssid_ip_and_clients_in_every_view(self):
         data = snapshot()
         data['rescue_wifi'] = dict(enabled=True, active=True, state='active', ssid='cmprovision-rescue',

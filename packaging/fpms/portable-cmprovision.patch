@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..1fc12f4
+index 0000000..ede557a
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,435 @@
+@@ -0,0 +1,467 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10228,12 +10228,14 @@ index 0000000..1fc12f4
 +
 +
 +class Panel:
-+    def __init__(self, config=CONFIG, snapshot=SNAPSHOT, can_leave=True, clock=time.monotonic, power_client=None):
++    def __init__(self, config=CONFIG, snapshot=SNAPSHOT, can_leave=True, clock=time.monotonic, power_client=None, rescue_client=None):
 +        """can_leave: there is a menu to go back to (WLAN Pi); on Lite the panel is the whole screen.
 +        clock: monotonic seconds, for the leave prompt (the tests turn it)."""
 +        self.can_leave, self.clock = can_leave, clock
 +        from .cmprovision_power import PowerMenu
 +        self.power_menu = PowerMenu(power_client, clock) if power_client else None
++        from .cmprovision_rescue import AccessCard
++        self.rescue_menu = AccessCard(rescue_client, clock) if rescue_client else None
 +        # button 2 on a page asks first: until this time a second press leaves (PROMPT_SECONDS)
 +        self.prompt_until = None
 +        self.config, self.snapshot = Path(config), Path(snapshot)
@@ -10359,6 +10361,12 @@ index 0000000..1fc12f4
 +        its KEY3 menu uses KEY1 to confirm, never the centre used to open/select."""
 +        with self.lock:
 +            now = self.clock()
++            if self.rescue_menu:
++                self.rescue_menu.expire()
++                if self.rescue_menu.open:
++                    self.rescue_menu.key(key)
++                    if key == 'KEY1': self.page, self.scroll = 0, 0
++                    if key != 'KEY3': return True
 +            if self.power_menu and self.power_menu.open:
 +                self.power_menu.key(key)
 +                return True
@@ -10397,6 +10405,8 @@ index 0000000..1fc12f4
 +                self.index = (self.index + (1 if key == "DOWN" else -1)) % max(
 +                    1, len(self.rows())
 +                )
++            elif key == 'CENTER' and self.page == 4 and self.rescue_available():
++                self.rescue_menu.show()
 +            elif key == "CENTER" and self.page == 0:
 +                if self.error_count():
 +                    self.page, self.index = 3, 0
@@ -10454,8 +10464,30 @@ index 0000000..1fc12f4
 +            views.append(view)
 +        return views
 +
++    def rescue_available(self):
++        from .cmprovision_rescue import info
++        value = info(self.data)
++        return bool(self.rescue_menu and value and value['active'] and self.age is not None and self.age <= 20
++                    and self.data['rescue_wifi'].get('state') in ('active', 'recovery'))
++
++    def expire_access(self):
++        # Also called while the LCD sleeps, so its credential lease does not outlive the card.
++        with self.lock:
++            if self.rescue_menu:
++                self.rescue_menu.expire()
++                if self.rescue_menu.open and (not self.rescue_available() or self.rescue_menu.credentials and
++                        self.rescue_menu.credentials['ssid'] != self.data['rescue_wifi'].get('ssid')):
++                    self.rescue_menu.close()
++
 +    def frame(self):
 +        with self.lock, PALETTE_LOCK:
++            if self.rescue_menu:
++                self.expire_access()
++                if self.rescue_menu.open:
++                    from .cmprovision_rescue import render
++                    from . import cmprovision_new
++                    palette = cmprovision_new.LIGHT if self.color_mode() == 'light' else cmprovision_new.DARK
++                    return render(self.rescue_menu, palette)
 +            if self.theme() == "new":
 +                from . import cmprovision_new
 +
@@ -10481,10 +10513,10 @@ index 0000000..1fc12f4
 +                COLORS.update(old)
 diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
 new file mode 100644
-index 0000000..9fed72a
+index 0000000..0389398
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_classic.py
-@@ -0,0 +1,370 @@
+@@ -0,0 +1,371 @@
 +"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
 +the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
@@ -10842,7 +10874,8 @@ index 0000000..9fed72a
 +                117,
 +                ("Up/down scroll   2 Back" if scrollable else "2 Back")
 +                if panel.detail
-+                else (f"< > Page   OK  2 {leave}" if panel.page in (1, 2, 3) else f"< > Page   2 {leave}"),
++                else ('OK Wi-Fi QR  2 Back' if panel.page == 4 and panel.rescue_available() else
++                      f"< > Page   OK  2 {leave}" if panel.page in (1, 2, 3) else f"< > Page   2 {leave}"),
 +                "muted",
 +                panel.small,
 +            )
@@ -11234,10 +11267,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..3d7f9ae
+index 0000000..2aa966a
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,1019 @@
+@@ -0,0 +1,1022 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -12111,6 +12144,9 @@ index 0000000..3d7f9ae
 +            f = code if value == rescue['address'] else body
 +            f.draw(img, 2, y, fonts.fit(f, value, LINE_W), P['fg'])
 +            y += f.h + 1
++        if panel.rescue_available():
++            body.draw(img, 2, y, 'OK Wi-Fi QR', P['accent'])
++            y += body.h + 1
 +        d.line((0, y, 127, y), fill=P['line'])
 +        health_rows(img, d, panel, st or {}, y + 3)
 +        return
@@ -12392,12 +12428,165 @@ index 0000000..27cf5b7
 +    return img
 diff --git a/fpms/integrations/cmprovision_rescue.py b/fpms/integrations/cmprovision_rescue.py
 new file mode 100644
-index 0000000..012eb82
+index 0000000..4d36e2d
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_rescue.py
-@@ -0,0 +1,44 @@
-+"""Secret-free rescue Wi-Fi presentation shared by Classic and New."""
+@@ -0,0 +1,197 @@
++"""Public AP summary and an explicitly opened, short-lived local access card."""
++import grp
 +import ipaddress
++import json
++import os
++from pathlib import Path
++import stat
++import subprocess
++import tempfile
++import time
++
++STATUS = Path('/run/cmprovision/rescue-wifi.json')
++LEASE = Path('/run/fpms/rescue-wifi-qr.json')
++SECONDS = 60
++
++
++def wifi_payload(ssid, password):
++    if not isinstance(ssid, str) or not 1 <= len(ssid.encode('utf-8')) <= 32 or any(ord(c) < 32 or ord(c) == 127 for c in ssid):
++        raise ValueError('Invalid SSID')
++    if not isinstance(password, str) or not 12 <= len(password) <= 63 or any(not 32 <= ord(c) <= 126 for c in password):
++        raise ValueError('Invalid password')
++    def escape(value):
++        return ''.join(('\\' if c in '\\;,:"' else '') + c for c in value)
++    return f'WIFI:T:WPA;S:{escape(ssid)};P:{escape(password)};;'
++
++
++def qr_matrix(ssid, password):
++    import qrcode
++    code = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=1, border=4)
++    code.add_data(wifi_payload(ssid, password), optimize=0)
++    code.make(fit=True)
++    return code.get_matrix()
++
++
++def request():
++    """Lite is root, inside its unchanged sandbox. Never expose credentials in the public snapshot.
++
++    The only shared secret file is root-owned, readable by the HDMI user, in Lite's
++    own runtime directory. Readers enforce the same monotonic 60-second expiry.
++    """
++    with os.fdopen(os.open(STATUS, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'r', encoding='utf-8') as source:
++        st = os.fstat(source.fileno())
++        if not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or st.st_mode & 0o022 or st.st_size > 65536:
++            raise ValueError('AP status unavailable')
++        status = json.loads(source.read(65537))
++    if status.get('active') is not True or status.get('state') not in ('active', 'recovery') or \
++            type(status.get('checked_at')) not in (int, float) or not 0 <= time.time() - status['checked_at'] <= 90:
++        raise ValueError('AP is not active')
++    result = subprocess.run(['/usr/lib/cmprovision/rescue-wifi', 'reveal'],
++                            capture_output=True, text=True, timeout=5, check=False)
++    if result.returncode or len(result.stdout) > 8192:
++        raise ValueError('AP credentials unavailable')
++    value = json.loads(result.stdout).get('active')
++    if not isinstance(value, dict) or value.get('ssid') != status.get('ssid'):
++        raise ValueError('AP credentials unavailable')
++    ssid, password = value.get('ssid'), value.get('password')
++    now = time.monotonic()
++    value = dict(version=1, created_at=now, expires_at=now + SECONDS, ssid=ssid,
++                 password=password, matrix=qr_matrix(ssid, password))
++    directory = LEASE.parent.lstat()
++    if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != 0 or directory.st_mode & 0o022:
++        raise ValueError('Display directory unavailable')
++    fd, name = tempfile.mkstemp(prefix='.rescue-qr-', dir=LEASE.parent)
++    try:
++        with os.fdopen(fd, 'w', encoding='utf-8') as destination:
++            json.dump(value, destination, ensure_ascii=False)
++            os.fchmod(destination.fileno(), 0o640)
++            os.fchown(destination.fileno(), 0, grp.getgrnam('cmprovision-wallboard').gr_gid)
++        os.replace(name, LEASE)
++    finally:
++        if os.path.exists(name): os.unlink(name)
++    return value
++
++
++def clear_lease():
++    try: LEASE.unlink(missing_ok=True)
++    except OSError: pass
++
++
++class AccessCard:
++    def __init__(self, client, clock):
++        self.client, self.clock = client, clock
++        self.open, self.credentials, self.deadline = False, None, 0
++        self.stage, self.scroll = 'qr', 0
++
++    def show(self):
++        self.open, self.stage, self.scroll = True, 'qr', 0
++        self.deadline = self.clock() + SECONDS
++        try:
++            value = self.client()
++            wifi_payload(value['ssid'], value['password'])
++            self.credentials = value
++        except Exception:
++            self.credentials, self.stage = None, 'error'
++            clear_lease()
++
++    def close(self):
++        self.open, self.credentials = False, None
++        clear_lease()
++
++    def expire(self):
++        if self.open and self.clock() >= self.deadline:
++            self.close()
++
++    def key(self, key):
++        if key in ('KEY1', 'KEY2', 'LEFT', 'KEY3'):
++            self.close()
++        elif key in ('CENTER', 'RIGHT') and self.credentials:
++            self.stage = 'text' if self.stage == 'qr' else 'qr'
++            self.scroll = 0
++        elif key in ('UP', 'DOWN'):
++            self.scroll = max(0, self.scroll + (1 if key == 'DOWN' else -1))
++
++
++def render(card, palette):
++    from PIL import Image, ImageDraw
++    from . import cmprovision_fonts as fonts
++    if card.stage == 'qr' and card.credentials:
++        # Black/white, full quiet zone, integer pixels: independent of the UI theme.
++        matrix = card.credentials['matrix']
++        scale = 128 // len(matrix)
++        image = Image.new('RGB', (128, 128), 'white')
++        draw = ImageDraw.Draw(image)
++        offset = (128 - len(matrix) * scale) // 2
++        for y, row in enumerate(matrix):
++            for x, dark in enumerate(row):
++                if dark:
++                    left, top = offset + x * scale, offset + y * scale
++                    draw.rectangle((left, top, left + scale - 1, top + scale - 1), fill='black')
++        return image
++    image = Image.new('RGB', (128, 128), palette['bg'])
++    fg = palette.get('fg', palette.get('text'))
++    body, code, tiny = fonts.font('body'), fonts.font('code'), fonts.font('tiny')
++    body.draw(image, 2, 2, 'Rescue Wi-Fi', palette['accent'])
++    if card.credentials:
++        ssid = card.credentials['ssid']
++        # These compact bitmap fonts intentionally have limited Unicode coverage.
++        # Do not present substituted '?' glyphs as the network's actual name.
++        ssid = ssid if all(c in code.glyphs for c in ssid) else 'Scan QR for SSID'
++        lines = ['SSID', ssid, 'Password', card.credentials['password']]
++    else:
++        lines = ['QR unavailable', 'Check AP / package']
++    wrapped = []
++    for line in lines:
++        part = ''
++        for char in line:
++            if part and code.width(part + char) > 124:
++                wrapped.append(part); part = ''
++            part += char
++        wrapped.append(part)
++    card.scroll = min(card.scroll, max(0, len(wrapped) - 7))
++    for i, line in enumerate(wrapped[card.scroll:card.scroll + 7]):
++        code.draw(image, 2, 18 + i * (code.h + 1), line, fg)
++    tiny.draw(image, 2, 116, 'OK QR  2 Back  ' + str(max(0, int(card.deadline-card.clock()))) + 's', palette['muted'])
++    return image
 +
 +
 +def info(data):
@@ -12442,10 +12631,10 @@ index 0000000..012eb82
 +    return result
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..5e02f1e
+index 0000000..1390bc4
 --- /dev/null
 +++ b/fpms/lite.py
-@@ -0,0 +1,147 @@
+@@ -0,0 +1,152 @@
 +"""Compact station menu. No imports from the WLAN Pi application/provider."""
 +
 +import argparse
@@ -12458,6 +12647,7 @@ index 0000000..5e02f1e
 +
 +from .integrations.cmprovision import CONFIG, SNAPSHOT, Panel, heartbeat
 +from .integrations.cmprovision_power import request as power_request
++from .integrations.cmprovision_rescue import request as rescue_request
 +
 +BUTTONS = {
 +    6: "UP",
@@ -12490,7 +12680,8 @@ index 0000000..5e02f1e
 +    args = parser.parse_args()
 +    # the panel is the whole screen here: button 2 goes back to Overview instead of leaving
 +    panel = Panel(args.config, args.snapshot, can_leave=False,
-+                  power_client=None if args.preview else power_request)
++                  power_client=None if args.preview else power_request,
++                  rescue_client=None if args.preview else rescue_request)
 +    panel.refresh(force=True)
 +    if args.preview:
 +        panel.frame().save(args.preview)
@@ -12545,6 +12736,7 @@ index 0000000..5e02f1e
 +                    panel.refresh()
 +                except Exception:
 +                    logging.getLogger(__name__).exception("snapshot not usable")
++                panel.expire_access()
 +                if args.sleep and now - last_key >= args.sleep and not sleeping:
 +                    screen.sleep()
 +                    sleeping = True
@@ -12585,6 +12777,8 @@ index 0000000..5e02f1e
 +                                )
 +                        last_frame = 0
 +        finally:
++            if panel.rescue_menu:
++                panel.rescue_menu.close()
 +            if hasattr(screen, "device"):
 +                screen.sleep()
 +                screen.device.module_exit()
@@ -13495,8 +13689,203 @@ index 0000000..b458119
 +    assert img.size == (128, 128)
 +    assert not fonts.overlaps(ink)
 +    assert not fonts.off_centre(centred)
+diff --git a/tests/test_cmprovision_rescue_qr.py b/tests/test_cmprovision_rescue_qr.py
+new file mode 100644
+index 0000000..3ee0b1a
+--- /dev/null
++++ b/tests/test_cmprovision_rescue_qr.py
+@@ -0,0 +1,189 @@
++import json
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++from fpms.integrations import cmprovision_rescue as r
++from test_cmprovision_v2 import Clock, demo_snapshot, panel_with
++
++
++def active_data():
++    data = demo_snapshot()
++    data['rescue_wifi'] = dict(enabled=True, active=True, state='active', ssid='Rescue;lab',
++                               address='192.168.240.1', clients=0)
++    return data
++
++
++@pytest.mark.parametrize('theme', ['classic', 'new'])
++@pytest.mark.parametrize('mode', ['light', 'dark', 'auto'])
++def test_ok_on_active_station_opens_qr_then_credentials_for_one_minute(tmp_path, theme, mode):
++    clock, calls = Clock(), []
++    data = active_data()
++    data['panel'].update(theme=theme, color_mode=mode)
++    def client():
++        calls.append(True)
++        return dict(ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)])
++    p = panel_with(tmp_path, data, clock=clock, rescue_client=client)
++    p.page = 4
++    p.key('CENTER')
++    assert calls == [True] and p.rescue_menu.open
++    assert p.rescue_menu.stage == 'qr'
++    assert p.frame().size == (128, 128)
++    p.key('CENTER')
++    assert p.rescue_menu.stage == 'text'
++    assert p.frame().size == (128, 128)
++    assert 'pass:word;123' not in json.dumps(p.data)
++    clock.now += 60
++    p.frame()
++    assert not p.rescue_menu.open and p.rescue_menu.credentials is None
++    assert calls == [True]
++
++
++@pytest.mark.parametrize('change', [dict(active=False), dict(state='unavailable')])
++def test_inactive_or_stale_ap_never_requests_password(tmp_path, change):
++    data = active_data()
++    data['rescue_wifi'].update(change)
++    calls = []
++    p = panel_with(tmp_path, data, rescue_client=lambda: calls.append(True))
++    p.page = 4
++    p.key('CENTER')
++    assert calls == [] and not p.rescue_menu.open
++
++
++def test_back_clears_credentials_and_power_key_keeps_existing_menu(tmp_path):
++    p = panel_with(tmp_path, active_data(), rescue_client=lambda: dict(
++        ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)]))
++    p.page = 4
++    p.key('CENTER'); p.key('KEY2')
++    assert not p.rescue_menu.open and p.rescue_menu.credentials is None
++    assert p.page == 4
++
++
++def test_wifi_payload_escapes_delimiters_without_changing_password():
++    assert r.wifi_payload('Lab;:known,\\"', 'a:b;c,d\\e"123') == (
++        'WIFI:T:WPA;S:Lab\\;\\:known\\,\\\\\\";P:a\\:b\\;c\\,d\\\\e\\"123;;')
++
++
++def test_largest_supported_credentials_keep_integer_two_pixel_qr_and_quiet_zone():
++    matrix = r.qr_matrix(';'*32, ':'*63)
++    assert len(matrix) <= 64
++    assert all(len(row) == len(matrix) for row in matrix)
++    assert all(not cell for row in matrix[:4] + matrix[-4:] for cell in row)
++    assert all(not cell for row in matrix for cell in row[:4] + row[-4:])
++
++
++def test_request_uses_running_credentials_and_private_hdmi_lease(tmp_path, monkeypatch):
++    # Model the installed root-owned status/runtime directory on an unprivileged CI runner.
++    real_fstat, real_lstat, chowns = r.os.fstat, Path.lstat, []
++    def root_stat(info):
++        return SimpleNamespace(st_mode=info.st_mode, st_uid=0, st_size=info.st_size)
++    monkeypatch.setattr(r.os, 'fstat', lambda fd: root_stat(real_fstat(fd)))
++    monkeypatch.setattr(Path, 'lstat', lambda path: root_stat(real_lstat(path)))
++    monkeypatch.setattr(r.os, 'fchown', lambda fd, uid, gid: chowns.append((uid, gid)))
++    status, lease = tmp_path/'status.json', tmp_path/'lease.json'
++    status.write_text(json.dumps(dict(active=True, state='recovery', checked_at=100, ssid='Running')))
++    status.chmod(0o644)
++    monkeypatch.setattr(r, 'STATUS', status)
++    monkeypatch.setattr(r, 'LEASE', lease)
++    monkeypatch.setattr(r.time, 'time', lambda: 101)
++    monkeypatch.setattr(r.time, 'monotonic', lambda: 20)
++    monkeypatch.setattr(r.grp, 'getgrnam', lambda name: SimpleNamespace(gr_gid=0))
++    monkeypatch.setattr(r.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=json.dumps(
++        dict(ssid='Staged', password='staged-secret', active=dict(ssid='Running', password='actual-secret')))))
++    value = r.request()
++    assert value['ssid'] == 'Running' and value['password'] == 'actual-secret'
++    saved = json.loads(lease.read_text())
++    assert saved['expires_at'] == 80 and saved['created_at'] == 20
++    assert lease.stat().st_mode & 0o777 == 0o640
++    assert chowns == [(0, 0)]
++    assert 'staged-secret' not in lease.read_text()
++    status.write_text(json.dumps(dict(active=False, state='standby', checked_at=101)))
++    with pytest.raises(Exception):
++        r.request()
++
++
++def test_secret_helper_failure_is_generic_on_screen(tmp_path):
++    def fail():
++        raise RuntimeError('never-print-this-secret')
++    p = panel_with(tmp_path, active_data(), rescue_client=fail)
++    p.page = 4; p.key('CENTER')
++    assert p.rescue_menu.stage == 'error'
++    assert p.rescue_menu.credentials is None
++    assert 'never-print' not in repr(p.rescue_menu.__dict__)
++    assert p.frame().size == (128, 128)
++
++
++def test_ap_change_closes_the_access_card(tmp_path):
++    p = panel_with(tmp_path, active_data(), rescue_client=lambda: dict(
++        ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)]))
++    p.page = 4; p.key('CENTER')
++    p.data['rescue_wifi']['ssid'] = 'Another AP'
++    p.frame()
++    assert not p.rescue_menu.open and p.rescue_menu.credentials is None
++
++
++def test_lite_expires_secrets_even_when_lcd_is_sleeping(tmp_path, monkeypatch):
++    import sys
++    from fpms import lite
++    clock = Clock(now=0)
++    lease = tmp_path/'lease.json'
++    lease.write_text('test-secret')
++    monkeypatch.setattr(r, 'LEASE', lease)
++    p = panel_with(tmp_path, active_data(), clock=clock, rescue_client=lambda: dict(
++        ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)]))
++    p.page = 4; p.key('CENTER')
++    p.refresh = lambda **kw: None
++    monkeypatch.setattr(lite, 'Panel', lambda *a, **kw: p)
++    monkeypatch.setattr(lite, 'heartbeat', lambda *a: None)
++    monkeypatch.setattr(lite.time, 'monotonic', clock)
++    monkeypatch.setattr(lite.signal, 'signal', lambda *a: None)
++    monkeypatch.setattr(lite.Path, 'exists', lambda path: True)
++    monkeypatch.setattr(sys, 'argv', ['fpms', '--sleep', '1', '--seconds', '70'])
++    observations = []
++    class Buttons:
++        def __enter__(self): return self
++        def __exit__(self, *a): pass
++        def wait_edge_events(self, timeout):
++            clock.now += 1
++            if clock.now > 61:
++                observations.append(True)
++                assert p.rescue_menu.credentials is None and not lease.is_file()
++            return False
++    class Screen:
++        def init(self): pass
++        def drawImage(self, image): pass
++        def sleep(self): pass
++    monkeypatch.setitem(sys.modules, 'gpiod', SimpleNamespace(request_lines=lambda *a, **kw: Buttons(), LineSettings=lambda **kw: None))
++    monkeypatch.setitem(sys.modules, 'gpiod.line', SimpleNamespace(Bias=SimpleNamespace(PULL_UP=1), Edge=SimpleNamespace(FALLING=1)))
++    monkeypatch.setitem(sys.modules, 'fpms.modules.gpiochip', SimpleNamespace(get_gpiochip=lambda: 'fake'))
++    monkeypatch.setitem(sys.modules, 'fpms.modules.screen.st7735', SimpleNamespace(ST7735=Screen))
++    lite.main()
++    assert observations
++
++
++def test_unsupported_ssid_text_explicitly_points_to_exact_qr(tmp_path):
++    from fpms.integrations import cmprovision_fonts as fonts
++    card = r.AccessCard(None, Clock())
++    card.stage, card.deadline = 'text', 1060
++    card.credentials = dict(ssid='\u30c6\u30b9\u30c8', password='example-pass-123')
++    fonts.start_recording()
++    r.render(card, dict(bg='black', fg='white', accent='orange', muted='grey'))
++    ink, _ = fonts.stop_recording()
++    assert 'Scan QR for SSID' in [box[4] for box in ink]
++
++
++@pytest.mark.parametrize('ssid,password', [('cmprovision-wlanpi-d62-rescue', 'Demo-only-123456'), (';'*32, ':'*63)])
++def test_rendered_128_pixel_qr_decodes_to_exact_wifi_payload(tmp_path, ssid, password):
++    import shutil
++    import subprocess
++    if not shutil.which('zbarimg'):
++        pytest.skip('Optional independent QR decoder')
++    card = r.AccessCard(None, Clock())
++    card.stage = 'qr'
++    card.credentials = dict(ssid=ssid, password=password, matrix=r.qr_matrix(ssid, password))
++    image = r.render(card, {})
++    path = tmp_path/'qr.png'
++    image.save(path)
++    result = subprocess.run(['zbarimg', '--quiet', '--raw', str(path)], capture_output=True, check=True)
++    assert result.stdout.decode('utf-8').rstrip('\n') == r.wifi_payload(ssid, password)
 diff --git a/tests/test_cmprovision_rescue_wifi.py b/tests/test_cmprovision_rescue_wifi.py
-new file mode 100755
+new file mode 100644
 index 0000000..db0ace8
 --- /dev/null
 +++ b/tests/test_cmprovision_rescue_wifi.py
@@ -15137,7 +15526,7 @@ index 0000000..c62edce
 +of Raspberry Pi OS Lite. Those require booting a clean target image later.
 diff --git a/tools/build-lite-deb.sh b/tools/build-lite-deb.sh
 new file mode 100644
-index 0000000..417db80
+index 0000000..6281f5d
 --- /dev/null
 +++ b/tools/build-lite-deb.sh
 @@ -0,0 +1,62 @@
@@ -15166,7 +15555,7 @@ index 0000000..417db80
 +Version: $VERSION
 +Architecture: all
 +Maintainer: cmprovision contributors
-+Depends: init-system-helpers, python3 (>= 3.13), python3-pil (>= 10.1), python3-libgpiod (>= 2), python3-spidev
++Depends: init-system-helpers, python3 (>= 3.13), python3-pil (>= 10.1), python3-qrcode, python3-libgpiod (>= 2), python3-spidev
 +Conflicts: wlanpi-fpms
 +Description: Compact FPMS station panel for cmprovision
 + Portable subset of WLAN Pi FPMS for a dedicated provisioning station.

@@ -9,7 +9,7 @@ The remaining physical controls, Classic, Dark and day/night Auto transitions st
 
 FPMS shows a compact read-only view on a Waveshare 1.44-inch 128×128 display.
 
-The Station page in Classic and New also shows [rescue Wi-Fi](rescue-wifi.md): its search countdown or active SSID, gateway and associated-client count. Passwords are never drawn on the display.
+The Station page in Classic and New also shows [rescue Wi-Fi](rescue-wifi.md): its search countdown or active SSID, gateway and associated-client count. In Lite, press **OK** while the AP is active to open its Wi-Fi QR code. Press **OK** again to see the SSID and password; up/down scrolls long credentials. **KEY2** closes the card. The same QR and connection details appear temporarily on HDMI. Both screens return to their normal view after **60 seconds**, or when the card is closed. A normal status page never shows the password.
 The first hardware target is CM4. A display is optional: web provisioning works
 without it, and HDMI and FPMS can be used at the same time.
 
@@ -115,7 +115,7 @@ installation (buttons 1 and 3 swap with the screen; button 2 stays in the middle
 
 ## Data freshness and resource use
 
-FPMS reads a local JSON snapshot; it has no access to cmprovision's database or secrets.
+FPMS reads a local JSON snapshot; it has no access to cmprovision's database. The snapshot contains no passwords. Only an explicit OK on the active rescue AP asks the installed local helper for that AP's running credentials, including when different settings are staged. A separate root-owned runtime file, readable only by root and the HDMI display user, shares them for at most 60 seconds. The file is removed when the card closes; expired files are ignored.
 It shares the existing HDMI producer, including the switch polling cache. Closing HDMI
 does not stop data needed by FPMS, and collection stops when the last consumer stops.
 
@@ -127,8 +127,8 @@ message, without freezing the menu.
 
 On a 128×128 panel some list labels are shortened (a cut is shown with `...`); a cause from the server never is, and
 the selected device's card wraps everything. The station page is a summary; network configuration remains
-in the web interface or installer. The Wi-Fi network's name is shown; NetworkManager profile names and keys never
-reach the panel.
+in the web interface or installer. The Wi-Fi network's name is shown; NetworkManager profile names and management Wi-Fi keys never
+reach the panel. The explicitly opened rescue access card is the only password display.
 
 ## Disabled boot services
 

@@ -15,7 +15,7 @@ sh packaging/fpms/build.sh lite /tmp/fpms-packages
 ```
 
 `fpms-lite` includes the display driver, GPIO discovery, station panel, navigation and
-explicitly confirmed power controls. It depends on Debian's Python, Pillow, libgpiod and spidev packages.
+explicitly confirmed power controls. It depends on Debian's Python, Pillow, qrcode, libgpiod and spidev packages.
 It does not include WLAN Pi network tools, Profiler, Bluetooth or their Python dependencies.
 It conflicts with `wlanpi-fpms` to prevent competing services and file ownership.
 
@@ -41,6 +41,12 @@ using the same live confirmation service as the web UI. Root never reads the app
 and the display sandbox remains unchanged. The updated `cmprovision4` package is required;
 read-only previews and the retained WLAN Pi OS adapter do not supply a power callback.
 Real reboot, shutdown and physical KEY1/KEY3 acceptance remain pending.
+
+On Station, OK on an active rescue AP opens a Wi-Fi QR; another OK shows its SSID/password.
+KEY2 closes the card. A private root-owned runtime file shares the running credentials
+with the HDMI display user for 60 seconds, after which both displays return to normal.
+The existing service sandbox is unchanged; no credentials enter the public snapshot.
+Physical phone scanning from both displays still needs acceptance.
 
 The separate image builder includes this package optionally. Network profiles and
 station roles are configured in the web UI. See

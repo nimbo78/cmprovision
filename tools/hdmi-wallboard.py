@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import stat
 import struct
 import subprocess
 import sys
@@ -28,6 +29,7 @@ UNIT = 'cmprovision-wallboard-display.service'
 TTY = '/dev/tty8'
 SNAPSHOT = Path('/run/cmprovision-wallboard-data/snapshot.json')
 MAX_SNAPSHOT = 2097152
+RESCUE_ACCESS = Path('/run/fpms/rescue-wifi-qr.json')
 DEBOUNCE = 2   # readings in a row before a connector change counts
 CONSOLEBLANK = Path('/sys/module/kernel/parameters/consoleblank')
 FONTS = Path('/usr/share/consolefonts')
@@ -800,14 +802,77 @@ def web_palette(palette, path=WEB_CSS):
     return dict(result, bg=bg, board=result['accent'])
 
 
-def colors(palette):
+def rescue_access(path=RESCUE_ACCESS, now=None):
+    """An explicit FPMS reveal, shared only with this display user for at most 60 seconds."""
+    now = time.monotonic() if now is None else now
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'r', encoding='utf-8') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or info.st_mode & 0o037 or info.st_size > 32768:
+                return None
+            value = json.loads(source.read(32769))
+        if value.get('version') != 1:
+            return None
+        start, end = value.get('created_at'), value.get('expires_at')
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in (start, end)) or not start <= now < end or end - start != 60:
+            return None
+        matrix, ssid, password = value.get('matrix'), value.get('ssid'), value.get('password')
+        if not isinstance(ssid, str) or not 1 <= len(ssid.encode('utf-8')) <= 32 or not isinstance(password, str) or \
+                not 12 <= len(password) <= 63 or any(not 32 <= ord(c) <= 126 for c in password):
+            return None
+        if not isinstance(matrix, list) or not 29 <= len(matrix) <= 65 or (len(matrix)-29) % 4 or \
+                any(not isinstance(row, list) or len(row) != len(matrix) or any(type(c) is not bool for c in row) for row in matrix):
+            return None
+        return value
+    except (OSError, ValueError, TypeError, AttributeError, OverflowError):
+        return None
+
+
+def access_frame(value, cols, rows, now=None):
+    """Pack two square QR modules into each 1:2 console cell, including the quiet zone."""
+    now = time.monotonic() if now is None else now
+    c = Canvas(cols, rows)
+    c.text(2, 0, 'RESCUE WI-FI / Scan to connect', 'accent')
+    matrix = value['matrix']
+    size, height = len(matrix), (len(matrix) + 1)//2
+    if cols < size + 4 or rows < height + 3:
+        c.text(2, 3, 'QR needs a larger console. Use the FPMS screen.', 'accent')
+        return c
+    top, left = max(2, (rows-height)//2), 2
+    glyphs = {(False, False):(' ', 'qr00'), (True, True):(' ', 'qr11'),
+              (True, False):('\u2580', 'qr10'), (False, True):('\u2584', 'qr01')}
+    for y in range(height):
+        for x in range(size):
+            upper = matrix[y*2][x]
+            lower = matrix[y*2+1][x] if y*2+1 < size else False
+            c.cells[top+y][left+x] = glyphs[upper, lower]
+    x, width = left+size+4, cols-(left+size+4)
+    if width >= 15:
+        y = top + 1
+        for label, text in (('SSID', value['ssid']), ('PASSWORD', value['password'])):
+            if label == 'SSID' and any(not 32 <= ord(c) < 127 for c in text):
+                text = 'Scan QR for SSID'
+            c.text(x, y, label, 'accent', width)
+            lines = textwrap.wrap(text, width=width, replace_whitespace=False, drop_whitespace=False) or ['']
+            for i, line in enumerate(lines): c.text(x, y+1+i, line, width=width)
+            y += len(lines)+3
+        c.text(x, y, 'Closes in %ds' % max(0, math.ceil(value['expires_at']-now)), 'accent', width)
+    c.text(2, rows-1, 'FPMS: OK QR/password / KEY2 close', 'accent')
+    return c
+
+
+def colors(palette, qr=False):
     if not curses.has_colors():
-        return dict.fromkeys(['fg', 'dim', 'accent', 'good', 'run', 'fail', 'warn', 'board'], 0)
+        result = dict.fromkeys(['fg', 'dim', 'accent', 'good', 'run', 'fail', 'warn', 'board', 'qr11'], 0)
+        result.update(qr00=curses.A_REVERSE, qr10=curses.A_REVERSE, qr01=curses.A_REVERSE)
+        return result
     curses.start_color()
     slots = dict(fg=7, dim=6, accent=3, good=2, run=4, fail=1, warn=5, board=3)
     custom = curses.can_change_color()
     if custom:
         rgb = web_palette(palette)
+        if qr:
+            rgb.update(dim=(0, 0, 0), warn=(255, 255, 255))
         for name, slot in dict(slots, bg=0).items():
             if name == 'board':
                 continue
@@ -821,6 +886,12 @@ def colors(palette):
         curses.init_pair(index, color, 0)
         # A_BOLD selects a different, bright palette entry on Linux consoles.
         result[name] = curses.color_pair(index) | (curses.A_BOLD if not custom and name != 'dim' else 0)
+    if qr:
+        black, white = (6, 5) if custom else (curses.COLOR_BLACK, curses.COLOR_WHITE)
+        for index, (name, fg, bg) in enumerate((('qr00', white, white), ('qr11', black, black),
+                                               ('qr10', black, white), ('qr01', black, white)), 9):
+            curses.init_pair(index, fg, bg)
+            result[name] = curses.color_pair(index)
     return result
 
 
@@ -859,11 +930,17 @@ def display(screen):
             width, height, ox, oy = viewport(cols, rows)
             canvas = frame(data, width, height, selected, view_override or config['view'], tick=tick, paused=paused,
                            step=int(time.monotonic() / SCROLL_SECONDS))
+            access = rescue_access()
+            ap = data.get('rescue_wifi', {})
+            if access and ap.get('active') is True and ap.get('ssid') == access['ssid'] and time.time()-data.get('generated_at', 0) <= 20:
+                canvas = access_frame(access, width, height)
+            else:
+                access = None
             screen.timeout(int(SCROLL_SECONDS * 1000) if canvas.scrolls else 1000)   # faster only while a text runs
             palette = resolved_palette(config['palette'], data)
-            if palette != palette_name:
-                inks = colors(palette)
-                palette_name = palette
+            if (palette, bool(access)) != palette_name:
+                inks = colors(palette, qr=bool(access))
+                palette_name = (palette, bool(access))
                 screen.bkgd(' ', inks['fg'])
                 screen.clearok(True)
             screen.erase()
