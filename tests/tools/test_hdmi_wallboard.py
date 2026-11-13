@@ -355,7 +355,7 @@ class ScalingTest(unittest.TestCase):
     def test_tall_font_rejection_falls_back_without_retries_or_changing_active_console(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ['Lat15-Terminus28x14.psf.gz', 'Lat15-Terminus32x16.psf.gz']:
+            for name in ['CyrKoi-Terminus28x14.psf.gz', 'CyrKoi-Terminus32x16.psf.gz']:
                 (root / name).touch()
             with patch.object(w, 'RUNTIME', root), patch.object(w, 'FONTS', root), \
                     patch.object(w.subprocess, 'run', side_effect=lambda args, **kw: SimpleNamespace(returncode=int('-d' in args))) as run:
@@ -368,6 +368,17 @@ class ScalingTest(unittest.TestCase):
                 w.configure_console((1920, 1080))
                 self.assertGreater(run.call_count, calls, 'a resolution change must select a new font')
                 self.assertTrue(all(c.args[0][:3] == ['/usr/bin/setfont', '-C', '/dev/tty8'] for c in run.call_args_list))
+
+    def test_upgrade_replaces_cached_font_missing_qr_half_blocks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'CyrKoi-Terminus28x14.psf.gz').touch()
+            (root/'layout.json').write_text(json.dumps(dict(resolution='1920x1080', font='Lat15-Terminus28x14.psf.gz')))
+            with patch.object(w, 'RUNTIME', root), patch.object(w, 'FONTS', root), \
+                    patch.object(w.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as run:
+                layout = w.configure_console((1920, 1080))
+                run.assert_called_once()
+                self.assertEqual(layout['font'], 'CyrKoi-Terminus28x14.psf.gz')
 
     def test_framebuffer_uses_visible_geometry_instead_of_virtual_buffer(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -194,7 +194,9 @@ def font_candidates(pixels):
     base = [(6, 12), (8, 14), (8, 16), (10, 18), (10, 20), (11, 22), (12, 24), (14, 28), (16, 32)]
     choices = []
     for width, height in base:
-        name = 'Lat15-Terminus%d%s.psf.gz' % (height, ('x%d' % width) if height not in (14, 16) else '')
+        # Same Terminus ASCII glyphs/metrics; this map also has U+2580/U+2584 for QR.
+        # Lat15 and Uni2 omit those two half-blocks even though they have U+2588.
+        name = 'CyrKoi-Terminus%d%s.psf.gz' % (height, ('x%d' % width) if height not in (14, 16) else '')
         for scale in (1, 2):
             fw, fh = width * scale, height * scale
             if (pixels and pixels[0] // fw >= 100 and pixels[1] // fh >= 38) or (not pixels and fh <= 28):
@@ -208,11 +210,11 @@ def configure_console(pixels, force=False):
     path = RUNTIME / 'layout.json'
     try:
         previous = json.loads(path.read_text())
-        if not force and isinstance(previous, dict) and previous.get('resolution') == resolution:
+        if not force and isinstance(previous, dict) and previous.get('resolution') == resolution and previous.get('format') == 2:
             return previous
     except (OSError, ValueError):
         pass
-    result = dict(resolution=resolution, font='system default')
+    result = dict(resolution=resolution, font='system default', format=2)
     for font in font_candidates(pixels):
         file = FONTS / font['name']
         if not file.is_file():
