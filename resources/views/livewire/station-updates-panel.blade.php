@@ -1,5 +1,6 @@
 <div class="space-y-6" id="updates">
     <x-settings-card title="Updates" description="Verified stable releases from the configured publisher. Installation is always manual.">
+        <p class="text-sm text-fg-muted">One recovery point is kept for 7 days. The previous point is removed before checking free space and creating the next snapshot. Active recovery stays protected.</p>
         {{-- Keep the Alpine binding stable so Livewire preserves its timer and nested log scopes. --}}
         <div class="space-y-4" x-data="StationUpdatesStatus.create(@js(route('settings.updates.status')), JSON.parse($el.dataset.initialStatus))"
              data-initial-status="{{ json_encode($status, JSON_THROW_ON_ERROR) }}"
@@ -96,6 +97,9 @@
             <x-slot name="title">{{ $confirmation['action'] === 'rollback' ? 'Restore a previous version?' : 'Apply station update?' }}</x-slot>
             <x-slot name="content"><div class="space-y-3">
                 <p>{{ $confirmation['description'] }}</p>
+                @if ($confirmation['action'] === 'apply' && !empty($status['recoveries']))
+                    <p class="text-sm text-fg-muted">Before a new application snapshot, the previous recovery point is retired. If preparation fails, it cannot be used for rollback.</p>
+                @endif
                 <p>The station must be idle. Its web interface and boot services may briefly disconnect. A failed installation automatically restores the immediate recovery snapshot.</p>
                 <p class="text-sm text-fg-muted">Do not disconnect station power. If automatic recovery fails, maintenance stays enabled and recovery requires SSH or the local console.</p>
                 @if ($error)<p class="text-neg" role="alert">{{ $error }}</p>@endif

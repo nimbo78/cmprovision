@@ -11,6 +11,17 @@ from update_store import UpdateStore
 
 
 class StoreTest(unittest.TestCase):
+    def test_recovery_expiry_is_seven_days_after_success_and_metadata_does_not_extend_it(self):
+        now = [1000]
+        self.store.clock = lambda: now[0]
+        job, _ = self.store.begin(self.request)
+        self.store.update(job['id'], state='succeeded', previous={'cmprovision': '2.30.1'})
+        point = self.store.snapshot()['recoveries'][0]
+        self.assertEqual(1000+604800, point.get('recovery_expires_at'))
+        now[0] += 3600
+        self.store.update(job['id'], message='Housekeeping note after completion.')
+        self.assertEqual(point['recovery_expires_at'], self.store.snapshot()['recoveries'][0]['recovery_expires_at'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

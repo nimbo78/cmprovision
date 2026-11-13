@@ -10,6 +10,58 @@ from update_retention import prune
 
 
 class RetentionTest(unittest.TestCase):
+    def point(self, root, clock=lambda: 1000):
+        store = UpdateStore(root/'updates', root/'run', owner=os.getuid(), clock=clock)
+        job, _ = store.begin({'action': 'check', 'nonce': 'a'*64, 'components': ['application']})
+        directory = store.private/'recovery'/job['id']
+        store._directory(directory, 0o700)
+        (directory/'evidence').write_bytes(b'owned recovery')
+        os.utime(directory, (clock(), clock()))
+        store.update(job['id'], state='succeeded', backup={'directory': str(directory)})
+        return store, job, directory
+
+    def test_completed_snapshot_expires_at_seven_days_not_before(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store, job, directory = self.point(root)
+            unrelated = directory.parent/'operator-backup'
+            unrelated.mkdir(); (unrelated/'keep').touch()
+            prune(store, root/'managed', now=1000+604799)
+            self.assertTrue(directory.exists())
+            prune(store, root/'managed', now=1000+604800)
+            self.assertFalse(directory.exists())
+            self.assertEqual([], store.snapshot()['recoveries'])
+            self.assertEqual('succeeded', store.operation(job['id'])['state'], 'keep outcome/diagnostic history')
+            self.assertTrue((unrelated/'keep').exists())
+
+    def test_legacy_snapshot_uses_recorded_completion_time_but_unknown_time_is_protected(self):
+        for stamp, expired in ((1000, True), ('unknown', False)):
+            with self.subTest(stamp=stamp), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                store, job, directory = self.point(root)
+                def legacy(state):
+                    for row in (state['operations'][job['id']], state['recoveries'][job['id']]):
+                        row.pop('recovery_expires_at', None)
+                        row['updated_at'] = stamp
+                store._mutate(legacy)
+                prune(store, root/'managed', now=1000+604800)
+                self.assertEqual(not expired, directory.exists())
+
+    def test_expired_selected_rollback_source_survives_pre_snapshot_retirement(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store, previous, source = self.point(root)
+            rollback, _ = store.begin({'action': 'rollback', 'nonce': 'b'*64, 'operation': previous['id']})
+            store.update(rollback['id'], state='preparing')
+            store.mark_pending(rollback['id'])
+            prune(store, root/'managed', now=1000+604800, before_snapshot=True)
+            self.assertTrue(source.exists())
+            self.assertEqual([previous['id']], [row['id'] for row in store.snapshot()['recoveries']])
+            store.update(rollback['id'], state='failed', committed=True)
+            store.clear_pending(rollback['id'])
+            prune(store, root/'managed', now=1000+604800)
+            self.assertFalse(source.exists())
+
     def test_successful_history_immediately_keeps_only_the_latest_recovery(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

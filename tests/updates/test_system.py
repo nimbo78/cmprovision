@@ -7,7 +7,7 @@ from update_system import LinuxSystem, parse_plan
 
 
 class SystemTest(unittest.TestCase):
-    def test_backup_reclaims_obsolete_recoveries_before_testing_free_space(self):
+    def test_backup_retires_even_the_latest_recovery_before_testing_free_space(self):
         import os
         import shutil
         import tempfile
@@ -30,7 +30,7 @@ class SystemTest(unittest.TestCase):
             system = LinuxSystem(store)
             system.www = lambda *args: {}
             from update_retention import prune
-            system.prune = lambda: prune(store, root/'managed')
+            system.prune = lambda **kwargs: prune(store, root/'managed', **kwargs)
             system.package = lambda name: None
             def command(argv, **options):
                 if argv[0].endswith('/du'): return '1024 app'
@@ -42,14 +42,37 @@ class SystemTest(unittest.TestCase):
                 raise AssertionError(argv)
             system.command = command
             def usage(path):
-                free = 0 if old[0].exists() else 512*1024**2
+                free = 0 if any(path.exists() for path in old) else 512*1024**2
                 return shutil._ntuple_diskusage(1024**3, 1024**3-free, free)
             with patch('update_system.shutil.disk_usage', side_effect=usage), patch('update_system.shutil.copyfile',
                     side_effect=lambda source, target: Path(target).write_bytes(b'fixture restore')):
                 backup = system.backup(current['id'])
             self.assertFalse(old[0].exists())
-            self.assertTrue(old[1].exists())
+            self.assertFalse(old[1].exists())
             self.assertEqual(current['id'], backup['identity'])
+
+    def test_space_failure_after_retirement_does_not_advertise_the_removed_recovery(self):
+        import os, shutil, tempfile
+        from update_store import UpdateStore
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store = UpdateStore(root/'updates', root/'run', owner=os.getuid())
+            previous, _ = store.begin({'action': 'check', 'nonce': 'a'*64, 'components': ['application']})
+            old = store.private/'recovery'/previous['id']
+            store._directory(old, 0o700)
+            store.update(previous['id'], state='succeeded', backup={'directory': str(old)})
+            current, _ = store.begin({'action': 'check', 'nonce': 'b'*64, 'components': ['application']})
+            store.update(current['id'], state='preparing'); store.mark_pending(current['id'])
+            system = LinuxSystem(store)
+            from update_retention import prune
+            system.prune = lambda **kwargs: prune(store, root/'managed', **kwargs)
+            system.command = lambda *args, **kwargs: '1024 app'
+            def no_space(path):
+                self.assertFalse(old.exists(), 'retirement must precede the disk-space check')
+                return shutil._ntuple_diskusage(1, 1, 0)
+            with patch('update_system.shutil.disk_usage', side_effect=no_space), self.assertRaisesRegex(UpdateError, 'Not enough free space'):
+                system.backup(current['id'])
+            self.assertEqual([], store.snapshot()['recoveries'])
 
     def test_apt_plan_rejects_removal_and_pins_every_install(self):
         self.assertEqual([{'package': 'cmprovision4', 'version': '2.28.0'},

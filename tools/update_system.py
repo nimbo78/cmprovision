@@ -174,7 +174,7 @@ class LinuxSystem:
                       *(item['package']+'='+item['version'] for item in plan)], timeout=1800)
 
     def backup(self, identity):
-        self.prune()
+        self.prune(before_snapshot=True)
         directory = self.store.private/'recovery'/identity
         self.store._directory(directory, 0o700)
         # Refuse installation unless a full, reinstallable snapshot can be kept independently
@@ -266,11 +266,11 @@ class LinuxSystem:
         install_dispatcher(self.store)
         return retain_runner(self.store, identity)
 
-    def prune(self):
+    def prune(self, before_snapshot=False):
         from update_retention import prune
         try: active = self.www('updates:inspect').get('utility_selector')
         except Exception: active = None
-        prune(self.store, active_selector=active)
+        prune(self.store, active_selector=active, before_snapshot=before_snapshot)
 
     def prepare_utility(self, envelope, archive, store):
         from update_utility import ManagedUtility

@@ -1,5 +1,5 @@
 [Unit]
-Description=Schedule optional daily cmprovision update checks
+Description=Schedule local recovery cleanup and optional daily cmprovision update checks
 
 [Timer]
 OnBootSec=10min

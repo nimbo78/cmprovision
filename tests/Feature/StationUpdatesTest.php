@@ -18,10 +18,15 @@ class StationUpdatesTest extends TestCase
     {
         $fake = new class($status) extends StationUpdatesControl {
             public array $calls = [];
+            public int $statusCalls = 0;
             public function __construct(public array $state) {}
             public function available(): bool { return true; }
-            public function status(): array { return $this->state; }
-            public function request(array $request): array { $this->calls[] = $request; return ['id' => str_repeat('a', 32)]; }
+            public function status(): array { $this->statusCalls++; return $this->state; }
+            public function request(array $request): array
+            {
+                $this->calls[] = $request;
+                return $request['action'] === 'status' ? $this->state : ['id' => str_repeat('a', 32)];
+            }
             public function pending(): bool { return false; }
         };
         $this->app->instance(StationUpdatesControl::class, $fake);
@@ -34,11 +39,11 @@ class StationUpdatesTest extends TestCase
         $updates = app(StationUpdates::class);
         $this->assertSame(['application' => false, 'utility-os' => false], $updates->preferences());
         $updates->scheduled();
-        $this->assertSame([], $control->calls);
+        $this->assertSame([['action' => 'status']], $control->calls);
         $updates->check();
-        $this->assertSame(['application', 'utility-os'], $control->calls[0]['components']);
+        $this->assertSame(['application', 'utility-os'], $control->calls[1]['components']);
         $this->actingAs(User::factory()->create())->get('/settings?tab=updates')->assertOk()->assertSee('Updates');
-        $this->assertCount(1, $control->calls);
+        $this->assertCount(2, $control->calls);
     }
 
     public function test_scheduled_checks_only_enabled_due_components_and_do_not_repeat_daily(): void
@@ -48,8 +53,39 @@ class StationUpdatesTest extends TestCase
         $updates->savePreferences(true, false);
         $updates->scheduled();
         $updates->scheduled();
-        $this->assertCount(1, $control->calls);
-        $this->assertSame(['application'], $control->calls[0]['components']);
+        $this->assertSame(['status', 'check', 'status'], array_column($control->calls, 'action'));
+        $this->assertSame(['application'], $control->calls[1]['components']);
+    }
+
+    public function test_scheduled_housekeeping_runs_with_publisher_checks_disabled_or_not_due(): void
+    {
+        $control = $this->control();
+        $updates = app(StationUpdates::class);
+        $updates->scheduled();
+        $this->assertSame([['action' => 'status']], $control->calls, 'hourly root request triggers actual expiry');
+        $this->assertSame(0, $control->statusCalls, 'cached public projection cannot perform cleanup');
+        $updates->savePreferences(true, false);
+        Setting::updateOrCreate(['key' => 'updates_last_attempt_application'], ['value' => (string) now()->timestamp]);
+        $updates->scheduled();
+        $this->assertSame([['action' => 'status'], ['action' => 'status']], $control->calls);
+        $this->assertSame([], array_filter($control->calls, fn ($call) => $call['action'] === 'check'), 'no publisher traffic');
+    }
+
+    public function test_scheduled_housekeeping_observes_a_busy_broker_before_starting_a_due_check(): void
+    {
+        $control = $this->control(['operation' => ['state' => 'checking']]);
+        $updates = app(StationUpdates::class);
+        $updates->savePreferences(true, false);
+        $updates->scheduled();
+        $this->assertSame([['action' => 'status']], $control->calls);
+    }
+
+    public function test_updates_explain_expiry_and_retirement_before_new_snapshot(): void
+    {
+        $this->control();
+        $this->actingAs(User::factory()->create())->get('/settings?tab=updates')
+            ->assertOk()->assertSee('7 days')
+            ->assertSee('removed before checking free space and creating the next snapshot');
     }
 
     public function test_confirmation_binds_actor_and_receipt_expires_and_replays_one_nonce(): void

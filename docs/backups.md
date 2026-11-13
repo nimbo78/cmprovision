@@ -34,6 +34,8 @@ flowchart LR
 
 The existing data-only and selective actions remain available in this same card.
 
+Updater recovery points have a separate [seven-day retention policy](updates.md#apply): the previous point is retired before the next application snapshot's free-space check. The full-backup replacement rules below still verify a new copy before retiring its predecessor.
+
 ## What a full copy saves
 
 | Always included | Optional / excluded |
