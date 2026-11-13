@@ -60,6 +60,12 @@ the post-install phase. Do not place credentials in a custom script to work arou
 
 ## Validation status
 
+> [!NOTE]
+> Hardware acceptance of the `2.30.2` image found a missing update-recovery dispatcher on first boot.
+> On an affected installation, run `sudo python3 -I /usr/lib/cmprovision/station-updates.py --initialize`,
+> then `sudo systemctl restart cmprovision-updates-recover.service` and check failed units again.
+> New builds initialize recovery after package installation and reject an absent, insecure or outdated dispatcher.
+
 The implementation is tested with encrypted database records, Livewire forms, a real loopback OpenSSH server,
 the NetworkManager keyfile parser and account configuration on a disposable copy of the real arm64 image under QEMU.
 A complete CM4 hardware run passed image verification, automatic management Wi-Fi association, password and public-key

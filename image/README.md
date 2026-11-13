@@ -9,6 +9,12 @@ against an independently supplied SHA-256, and writes the image and checksums un
 build directory. It uses the configured Debian and Raspberry Pi package repositories: their
 contents are not yet pinned to a dated snapshot, so the build is not fully reproducible.
 
+> [!NOTE]
+> Hardware acceptance of the `2.30.2` image found a missing update-recovery dispatcher on first boot.
+> On an affected installation, run `sudo python3 -I /usr/lib/cmprovision/station-updates.py --initialize`,
+> then `sudo systemctl restart cmprovision-updates-recover.service` and check failed units again.
+> New builds initialize recovery after package installation and reject an absent, insecure or outdated dispatcher.
+
 ## Build in GitHub Actions
 
 ### Automatic complete releases

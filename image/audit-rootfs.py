@@ -20,6 +20,18 @@ def read_regular(path, limit=131072):
 
 
 def audit(root):
+    # The package initializes this outside dpkg's replaceable files. A warning in postinst must not turn
+    # into a published image whose early boot ordering barrier has no program to execute.
+    dispatcher = root / 'var/lib/cmprovision-updates/recover.py'
+    try:
+        info = dispatcher.lstat()
+        parent = dispatcher.parent.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 \
+                or not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or parent.st_mode & 0o022 \
+                or read_regular(dispatcher) != read_regular(root / 'usr/lib/cmprovision/update_recovery.py'):
+            raise ValueError('The boot recovery dispatcher is missing, insecure or outdated.')
+    except OSError as error:
+        raise ValueError('The boot recovery dispatcher is missing or unreadable.') from error
     package_status = read_regular(root / 'var/lib/dpkg/status', limit=8388608)
     intel_entries = [entry for entry in package_status.split('\n\n')
                      if 'Package: firmware-iwlwifi' in entry.splitlines()]

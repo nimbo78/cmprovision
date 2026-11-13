@@ -1,3 +1,10 @@
+cmprovision4 (2.30.3~dev2) unstable; urgency=medium
+
+  * Initialize update recovery after image package installation and reject
+    exported images with a missing, insecure or outdated boot dispatcher.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 20:59:20 +0300
+
 cmprovision4 (2.30.3~dev1) unstable; urgency=medium
 
   * Allow an explicit PoE restart of powered devices without an Ethernet link,
