@@ -24,6 +24,89 @@ def snapshot():
 
 
 class RescueWifiTest(unittest.TestCase):
+    def test_automatic_qr_uses_activation_deadline_without_extending_on_poll(self):
+        status = dict(schema=1, active=True, state='active', ssid='Lab rescue', started_at=100, checked_at=1000)
+        calls = []
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'auto.json'
+            def publish(status):
+                calls.append(status['started_at'])
+                path.write_text('demo')
+            with patch.object(w, 'root_json', return_value=status), patch.object(w, 'publish_rescue_qr', side_effect=publish):
+                qr = w.AutomaticRescueQr(path)
+                qr.poll(True, now=101, wallclock=1001)
+                qr.poll(True, now=130, wallclock=1001)
+                self.assertEqual(calls, [100])
+                qr.poll(True, now=160, wallclock=1001)
+                self.assertFalse(path.exists())
+                qr.poll(True, now=200, wallclock=1001)
+                self.assertEqual(calls, [100])
+                status['started_at'] = 210
+                qr.poll(True, now=211, wallclock=1001)
+                self.assertEqual(calls, [100, 210])
+
+    def test_no_automatic_qr_for_disabled_hdmi_inactive_or_stale_ap(self):
+        good = dict(schema=1, active=True, state='active', ssid='Lab', started_at=100, checked_at=1000)
+        for enabled, change, now in ((False, {}, 101), (True, dict(active=False), 101),
+                                    (True, dict(checked_at=800), 101), (True, dict(started_at=None), 101),
+                                    (True, {}, 99), (True, dict(started_at=10**500), 101),
+                                    (True, dict(checked_at=float('nan')), 101)):
+            with self.subTest(enabled=enabled, change=change), tempfile.TemporaryDirectory() as folder:
+                with patch.object(w, 'root_json', return_value=dict(good, **change)), patch.object(w, 'publish_rescue_qr') as publish:
+                    w.AutomaticRescueQr(Path(folder)/'auto.json').poll(enabled, now=now, wallclock=1001)
+                    publish.assert_not_called()
+
+    def test_automatic_qr_retries_and_reconnects_with_original_activation_time(self):
+        status = dict(schema=1, active=True, state='active', ssid='Lab', started_at=100, checked_at=1000)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'auto.json'
+            calls = []
+            def publish(value):
+                calls.append(value['started_at'])
+                if len(calls) == 1: raise ValueError('temporary helper failure')
+                path.write_text('demo')
+            with patch.object(w, 'root_json', return_value=status), patch.object(w, 'publish_rescue_qr', side_effect=publish):
+                qr = w.AutomaticRescueQr(path)
+                qr.poll(True, now=101, wallclock=1001)
+                qr.poll(True, now=102, wallclock=1001)
+                self.assertEqual(calls, [100])
+                qr.poll(True, now=111, wallclock=1001)
+                self.assertTrue(path.exists())
+                qr.poll(False, now=120, wallclock=1001)
+                self.assertFalse(path.exists())
+                qr.poll(True, now=130, wallclock=1001)
+                self.assertTrue(path.exists())
+                self.assertEqual(calls, [100, 100, 100])
+                qr.poll(True, now=160, wallclock=1001)
+                self.assertFalse(path.exists())
+
+    def test_manual_fpms_close_suppresses_auto_card_for_this_activation_only(self):
+        status = dict(schema=1, active=True, state='active', ssid='Lab', started_at=100, checked_at=1000)
+        marker = dict(closed_at=120)
+        def read(path): return marker if path == w.RESCUE_CLOSED else status
+        with tempfile.TemporaryDirectory() as folder, patch.object(w, 'root_json', side_effect=read), \
+                patch.object(w, 'publish_rescue_qr') as publish:
+            qr = w.AutomaticRescueQr(Path(folder)/'auto.json')
+            qr.poll(True, now=121, wallclock=1001)
+            publish.assert_not_called()
+            status['started_at'] = 130
+            qr.poll(True, now=131, wallclock=1001)
+            publish.assert_called_once()
+
+    def test_auto_publisher_uses_running_credentials_and_original_expiry(self):
+        with patch.object(w.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=json.dumps(dict(
+                ssid='STAGED', password='staged-secret', active=dict(ssid='Lab;:test', password='real;secret:123'))))), \
+                patch.object(w, 'atomic_json') as write:
+            w.publish_rescue_qr(dict(ssid='Lab;:test', started_at=100))
+            args, options = write.call_args
+            value = args[1]
+            self.assertEqual(value['created_at'], 100)
+            self.assertEqual(value['expires_at'], 160)
+            self.assertEqual(value['password'], 'real;secret:123')
+            self.assertTrue(options['private'])
+            self.assertNotIn('staged-secret', json.dumps(value))
+            self.assertLessEqual(len(value['matrix']), 64)
+
     def test_temporary_access_card_keeps_qr_quiet_zone_and_hides_after_expiry(self):
         value = dict(version=1, created_at=100, expires_at=160, ssid='Lab rescue', password='example-pass-123',
                      matrix=[[False]*37 for _ in range(37)])

@@ -48,6 +48,10 @@ with the HDMI display user for 60 seconds, after which both displays return to n
 The existing service sandbox is unchanged; no credentials enter the public snapshot.
 Physical phone scanning from both displays still needs acceptance.
 
+HDMI also opens its own 60-second card at AP activation, without requiring FPMS.
+Closing the FPMS card publishes a root-owned timestamp-only marker so HDMI dismisses
+that automatic card too; the marker contains no connection credentials.
+
 The separate image builder includes this package optionally. Network profiles and
 station roles are configured in the web UI. See
 [deployment options](../../docs/deployment-options.md).

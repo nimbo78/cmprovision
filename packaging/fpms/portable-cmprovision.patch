@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..ede557a
+index 0000000..bb8d067
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,467 @@
+@@ -0,0 +1,470 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10367,6 +10367,9 @@ index 0000000..ede557a
 +                    self.rescue_menu.key(key)
 +                    if key == 'KEY1': self.page, self.scroll = 0, 0
 +                    if key != 'KEY3': return True
++            if key == 'KEY2' and self.rescue_available():
++                from .cmprovision_rescue import close_notice
++                close_notice()
 +            if self.power_menu and self.power_menu.open:
 +                self.power_menu.key(key)
 +                return True
@@ -12428,10 +12431,10 @@ index 0000000..27cf5b7
 +    return img
 diff --git a/fpms/integrations/cmprovision_rescue.py b/fpms/integrations/cmprovision_rescue.py
 new file mode 100644
-index 0000000..4d36e2d
+index 0000000..b348bf3
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_rescue.py
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,215 @@
 +"""Public AP summary and an explicitly opened, short-lived local access card."""
 +import grp
 +import ipaddress
@@ -12445,6 +12448,7 @@ index 0000000..4d36e2d
 +
 +STATUS = Path('/run/cmprovision/rescue-wifi.json')
 +LEASE = Path('/run/fpms/rescue-wifi-qr.json')
++CLOSED = Path('/run/fpms/rescue-wifi-qr-closed.json')
 +SECONDS = 60
 +
 +
@@ -12511,6 +12515,21 @@ index 0000000..4d36e2d
 +    except OSError: pass
 +
 +
++def close_notice():
++    # Public timestamp only: lets HDMI dismiss its automatic AP-start card too.
++    try:
++        fd, name = tempfile.mkstemp(prefix='.rescue-closed-', dir=CLOSED.parent)
++        try:
++            with os.fdopen(fd, 'w', encoding='utf-8') as destination:
++                json.dump(dict(closed_at=time.monotonic()), destination)
++                os.fchmod(destination.fileno(), 0o644)
++            os.replace(name, CLOSED)
++        finally:
++            if os.path.exists(name): os.unlink(name)
++    except OSError:
++        pass
++
++
 +class AccessCard:
 +    def __init__(self, client, clock):
 +        self.client, self.clock = client, clock
@@ -12529,8 +12548,10 @@ index 0000000..4d36e2d
 +            clear_lease()
 +
 +    def close(self):
++        was_open = self.open
 +        self.open, self.credentials = False, None
 +        clear_lease()
++        if was_open: close_notice()
 +
 +    def expire(self):
 +        if self.open and self.clock() >= self.deadline:
@@ -13691,10 +13712,10 @@ index 0000000..b458119
 +    assert not fonts.off_centre(centred)
 diff --git a/tests/test_cmprovision_rescue_qr.py b/tests/test_cmprovision_rescue_qr.py
 new file mode 100644
-index 0000000..3ee0b1a
+index 0000000..f48c3e9
 --- /dev/null
 +++ b/tests/test_cmprovision_rescue_qr.py
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,214 @@
 +import json
 +from pathlib import Path
 +from types import SimpleNamespace
@@ -13755,6 +13776,31 @@ index 0000000..3ee0b1a
 +    p.key('CENTER'); p.key('KEY2')
 +    assert not p.rescue_menu.open and p.rescue_menu.credentials is None
 +    assert p.page == 4
++
++
++def test_back_publishes_only_close_time_for_automatic_hdmi_qr(tmp_path, monkeypatch):
++    marker = tmp_path/'closed.json'
++    monkeypatch.setattr(r, 'CLOSED', marker)
++    monkeypatch.setattr(r.time, 'monotonic', lambda:123)
++    p = panel_with(tmp_path, active_data(), rescue_client=lambda: dict(
++        ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)]))
++    p.page = 4; p.key('CENTER'); p.key('KEY2')
++    assert json.loads(marker.read_text()) == dict(closed_at=123)
++
++
++@pytest.mark.parametrize('with_power', [False, True])
++def test_back_dismisses_automatic_hdmi_card_without_opening_manual_card(tmp_path, monkeypatch, with_power):
++    marker = tmp_path/'closed.json'
++    monkeypatch.setattr(r, 'CLOSED', marker)
++    monkeypatch.setattr(r.time, 'monotonic', lambda:123)
++    calls = []
++    p = panel_with(tmp_path, active_data(), can_leave=False, rescue_client=lambda: calls.append(True),
++                   power_client=(lambda payload: None) if with_power else None)
++    p.page = 4
++    if with_power: p.key('KEY3')
++    p.key('KEY2')
++    assert json.loads(marker.read_text()) == dict(closed_at=123)
++    assert not p.rescue_menu.open and calls == [] and p.page == (4 if with_power else 0)
 +
 +
 +def test_wifi_payload_escapes_delimiters_without_changing_password():

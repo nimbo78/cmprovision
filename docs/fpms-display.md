@@ -15,6 +15,8 @@ without it, and HDMI and FPMS can be used at the same time.
 
 ## Choose the installation profile
 
+HDMI also opens an automatic 60-second QR card when the rescue AP starts, including on stations without FPMS. FPMS retains explicit OK access; KEY2 dismisses both cards.
+
 - **Raspberry Pi OS Lite Trixie arm64:** `fpms-lite` supplies the compact station menu
   and hardware driver, without WLAN Pi applications or service dependencies.
 

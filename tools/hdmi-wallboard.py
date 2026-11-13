@@ -9,6 +9,7 @@ import argparse
 import curses
 import fcntl
 import glob
+import grp
 import json
 import math
 import os
@@ -30,6 +31,9 @@ TTY = '/dev/tty8'
 SNAPSHOT = Path('/run/cmprovision-wallboard-data/snapshot.json')
 MAX_SNAPSHOT = 2097152
 RESCUE_ACCESS = Path('/run/fpms/rescue-wifi-qr.json')
+RESCUE_AUTO = RUNTIME / 'rescue-wifi-qr.json'
+RESCUE_CLOSED = Path('/run/fpms/rescue-wifi-qr-closed.json')
+RESCUE_STATUS = Path('/run/cmprovision/rescue-wifi.json')
 DEBOUNCE = 2   # readings in a row before a connector change counts
 CONSOLEBLANK = Path('/sys/module/kernel/parameters/consoleblank')
 FONTS = Path('/usr/share/consolefonts')
@@ -66,7 +70,7 @@ def read_config(path=CONFIG):
         return dict(DEFAULTS)  # malformed settings fail closed
 
 
-def atomic_json(path, data):
+def atomic_json(path, data, private=False):
     # Both directories are root-owned. Never open a writable application path as root.
     fd, name = tempfile.mkstemp(prefix='.wallboard-', dir=path.parent)
     try:
@@ -75,7 +79,9 @@ def atomic_json(path, data):
             out.write('\n')
             out.flush()
             os.fsync(out.fileno())
-            os.fchmod(out.fileno(), 0o644)
+            os.fchmod(out.fileno(), 0o640 if private else 0o644)
+            if private:
+                os.fchown(out.fileno(), 0, grp.getgrnam('cmprovision-wallboard').gr_gid)
         os.replace(name, path)
     finally:
         if os.path.exists(name):
@@ -113,6 +119,7 @@ def watch():
     candidate, count = connected, 0
     fresh = True            # the next start is a new connection (or boot), not a retry: only that may take the console
     failures, retry_at = 0, 0.0
+    rescue_qr = AutomaticRescueQr()
     try:
         while not STOP:
             config = read_config()
@@ -126,6 +133,7 @@ def watch():
                 if count >= DEBOUNCE:
                     connected, count = reading, 0
             desired = wanted(config, connected)
+            rescue_qr.poll(desired)
             now = time.monotonic()
             if desired != active or now - last_check >= 10:
                 active = systemctl('is-active', '--quiet')
@@ -156,6 +164,7 @@ def watch():
                 last_state = state
             time.sleep(2)
     finally:
+        rescue_qr.close()
         systemctl('stop')
         atomic_json(RUNTIME / 'status.json', dict(state='stopped', connected=hdmi_connected()))
 
@@ -802,6 +811,84 @@ def web_palette(palette, path=WEB_CSS):
     return dict(result, bg=bg, board=result['accent'])
 
 
+def root_json(path):
+    """A fixed small root-owned status/close marker; never a link, pipe or app-owned file."""
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'r', encoding='utf-8') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or info.st_mode & 0o022 or info.st_size > 65536:
+                return {}
+            value = json.loads(source.read(65537))
+            return value if isinstance(value, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def rescue_closed(started, now):
+    closed = root_json(RESCUE_CLOSED).get('closed_at')
+    return type(closed) in (int, float) and started <= closed <= now
+
+
+def publish_rescue_qr(status):
+    """Root watcher reveals the running AP only; the renderer gains no privilege."""
+    import qrcode
+    result = subprocess.run(['/usr/lib/cmprovision/rescue-wifi', 'reveal'], capture_output=True,
+                            text=True, timeout=5, check=False)
+    if result.returncode or len(result.stdout) > 8192:
+        raise ValueError('Rescue credentials unavailable')
+    value = json.loads(result.stdout).get('active')
+    if not isinstance(value, dict) or value.get('ssid') != status.get('ssid'):
+        raise ValueError('Rescue credentials unavailable')
+    ssid, password = value.get('ssid'), value.get('password')
+    if not isinstance(ssid, str) or not 1 <= len(ssid.encode('utf-8')) <= 32 or \
+            any(ord(c) < 32 or ord(c) == 127 for c in ssid) or not isinstance(password, str) or \
+            not 12 <= len(password) <= 63 or any(not 32 <= ord(c) <= 126 for c in password):
+        raise ValueError('Rescue credentials unavailable')
+    def escape(text):
+        return ''.join(('\\' if c in '\\;,:"' else '') + c for c in text)
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=1, border=4)
+    qr.add_data(f'WIFI:T:WPA;S:{escape(ssid)};P:{escape(password)};;', optimize=0)
+    qr.make(fit=True)
+    atomic_json(RESCUE_AUTO, dict(version=1, created_at=status['started_at'], expires_at=status['started_at']+60,
+                                ssid=ssid, password=password, matrix=qr.get_matrix()), private=True)
+
+
+class AutomaticRescueQr:
+    def __init__(self, path=RESCUE_AUTO):
+        self.path, self.activation = path, None
+        self.retry_at = 0
+
+    def close(self):
+        self.activation = None
+        try: self.path.unlink(missing_ok=True)
+        except OSError: pass
+
+    def poll(self, enabled, now=None, wallclock=None):
+        now = time.monotonic() if now is None else now
+        wallclock = time.time() if wallclock is None else wallclock
+        status = root_json(RESCUE_STATUS)
+        started, checked = status.get('started_at'), status.get('checked_at')
+        valid = enabled and status.get('schema') == 1 and status.get('active') is True and status.get('state') in ('active', 'recovery')
+        try:
+            valid = valid and type(started) in (int, float) and math.isfinite(started) and 0 <= now-started < 60
+            valid = valid and type(checked) in (int, float) and math.isfinite(checked) and 0 <= wallclock-checked <= 90
+        except (OverflowError, ValueError):
+            valid = False
+        if not valid or rescue_closed(started, now):
+            self.close()
+            return
+        activation = (started, status.get('ssid'))
+        if (activation != self.activation or not self.path.exists()) and now >= self.retry_at:
+            self.activation = activation
+            try:
+                publish_rescue_qr(status)
+            except (OSError, ValueError, TypeError, ImportError, KeyError, subprocess.SubprocessError):
+                # Never include credentials or helper output in journal errors.
+                self.close()
+                self.retry_at = now + 10
+                print('HDMI rescue QR unavailable', flush=True)
+
+
 def rescue_access(path=RESCUE_ACCESS, now=None):
     """An explicit FPMS reveal, shared only with this display user for at most 60 seconds."""
     now = time.monotonic() if now is None else now
@@ -931,6 +1018,10 @@ def display(screen):
             canvas = frame(data, width, height, selected, view_override or config['view'], tick=tick, paused=paused,
                            step=int(time.monotonic() / SCROLL_SECONDS))
             access = rescue_access()
+            if access is None:
+                access = rescue_access(RESCUE_AUTO)
+                if access and rescue_closed(access['created_at'], time.monotonic()):
+                    access = None
             ap = data.get('rescue_wifi', {})
             if access and ap.get('active') is True and ap.get('ssid') == access['ssid'] and time.time()-data.get('generated_at', 0) <= 20:
                 canvas = access_frame(access, width, height)

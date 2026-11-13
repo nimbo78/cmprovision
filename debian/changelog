@@ -1,3 +1,10 @@
+cmprovision4 (2.30.3~dev4) unstable; urgency=medium
+
+  * Automatically show the rescue AP connection QR on HDMI for one minute
+    after each activation, including stations without FPMS.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 22:54:13 +0300
+
 cmprovision4 (2.30.3~dev3) unstable; urgency=medium
 
   * Show a temporary rescue Wi-Fi connection QR on FPMS and HDMI after

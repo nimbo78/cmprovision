@@ -2,6 +2,8 @@
 
 # HDMI stand display
 
+When the rescue Wi-Fi AP starts, HDMI automatically shows a Wi-Fi QR plus SSID/password for 60 seconds, even without FPMS. The timer starts at AP activation and does not reset on dashboard polling or renderer restart. The normal view returns automatically; FPMS KEY2 also dismisses the card.
+
 Connect a monitor or TV to the **provisioner** to follow the bench without a browser. The optional terminal display
 shows the active project, connected modules, switch ports, progress, failures and saved diagnostic snapshots. It runs
 on a Linux virtual console; it does not need a graphical desktop, Chromium or an internet connection.

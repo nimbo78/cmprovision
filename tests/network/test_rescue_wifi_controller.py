@@ -68,6 +68,19 @@ class ControllerTest(unittest.TestCase):
         self.assertNotIn(config['password'], str(result))
         self.assertTrue(result['password_configured'])
 
+    def test_each_ap_activation_has_a_stable_monotonic_start_for_hdmi_qr(self):
+        self.configure()
+        self.control.request('start')
+        status = self.control.check()
+        self.assertEqual(1000, status['started_at'])
+        self.now = 1030
+        self.assertEqual(1000, self.control.check()['started_at'])
+        self.control.request('pause')
+        self.assertIsNone(self.control.check()['started_at'])
+        self.now = 1100
+        self.control.request('start')
+        self.assertEqual(1100, self.control.check()['started_at'])
+
     def test_ap_starts_after_ten_minutes_and_zero_clients_do_not_stop_it_offline(self):
         self.configure()
         self.control.check()
