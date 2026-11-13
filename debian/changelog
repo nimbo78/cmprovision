@@ -1,4 +1,4 @@
-cmprovision4 (2.30.2~dev1) unstable; urgency=medium
+cmprovision4 (2.30.2) unstable; urgency=medium
 
   * Expire updater recovery points seven days after successful completion,
     including local hourly cleanup when publisher checks are disabled.
@@ -7,7 +7,7 @@ cmprovision4 (2.30.2~dev1) unstable; urgency=medium
   * Explain snapshot expiry and pre-snapshot retirement in Settings and the
     English and Russian update/backup guides.
 
- -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 02:46:21 +0300
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 10:50:00 +0300
 
 cmprovision4 (2.30.1) unstable; urgency=medium
 
