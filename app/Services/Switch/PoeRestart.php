@@ -17,7 +17,7 @@ use Illuminate\Support\Sleep;
 
 /**
  * PoE restart of modules (docs/operations.md#switches-and-poe-restart). One at a time on each switch of
- * the stand, only on ports with nothing but our modules or a booting Pi (StandMap::restartBlocker()), each switch
+ * the stand, on module/booting-Pi ports or an explicitly selected powered port without link (StandMap::restartBlocker()), each switch
  * checked on its fresh snapshot. Each port gets a poe_outages row before its PoE goes off, then OFF_SECONDS of
  * darkness for all of them, then each switch's ports are switched on one after the other (STAGGER_MS apart, three
  * tries each, read back). What happened goes to cmlogs and back to the operator.
@@ -104,6 +104,13 @@ class PoeRestart
             $parts[] = 'Not restarted: '.$what.' ('.$why.').';
         return ['text' => $parts ? implode(' ', $parts) : 'Nothing to restart.',
                 'error' => $r['stayed_off'] || $r['failed'] || !$r['restarted']];
+    }
+
+    public static function confirmPort(array $tile): string
+    {
+        if ($tile['state'] === 'free')
+            return 'Restart PoE on '.$tile['label'].'? The connected device cannot be identified without an Ethernet link. PoE goes off for '.self::OFF_SECONDS.' s.';
+        return self::confirm($tile['modules'][0] ?? null, $tile['label']);
     }
 
     /** The question before restarting one module, or the Raspberry Pi on a port when $cm is null; $active, the active project,

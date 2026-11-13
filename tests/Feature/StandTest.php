@@ -16,6 +16,29 @@ class StandTest extends TestCase
 {
     use RefreshDatabase, PoeStand;
 
+    public function test_a_delayed_old_snapshot_cannot_clear_newer_powered_switch_protection()
+    {
+        $this->stand();
+        $switch = EthernetSwitch::find(1);
+        $switch->forceFill(['links' => [8 => 2]])->save();
+        $state = ['switch' => $switch, 'error' => null, 'snapshot' => ['taken_at' => 100,
+            'ports' => [['ifIndex' => 8, 'up' => false, 'poe' => ['state' => 'delivering']]]]];
+        $method = new \ReflectionMethod(Stand::class, 'poweredLinks');
+        $this->assertSame([8 => 2], $method->invoke(null, $state));
+        $switch->forceFill(['links' => []])->save();
+        $old = $state;
+        $old['snapshot']['taken_at'] = 99;
+        $old['snapshot']['ports'][0]['up'] = true;
+        $this->assertSame([8 => 2], $method->invoke(null, $old));
+        $this->assertSame([8 => 2], $method->invoke(null, $state));
+        $state['snapshot']['taken_at'] = 101;
+        $this->assertSame([8 => 2], $method->invoke(null, $state));
+        $state['snapshot']['taken_at'] = 102;
+        $state['snapshot']['ports'][0]['up'] = true;
+        $this->assertSame([], $method->invoke(null, $state));
+        $this->assertSame([], $method->invoke(null, $old), 'Keep the clearing timestamp too');
+    }
+
     public function test_every_switch_is_read_and_remembers_what_it_said()
     {
         $this->stand();

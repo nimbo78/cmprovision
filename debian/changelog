@@ -1,3 +1,12 @@
+cmprovision4 (2.30.3~dev1) unstable; urgency=medium
+
+  * Allow an explicit PoE restart of powered devices without an Ethernet link,
+    retaining station, switch-link and EEPROM-write protections.
+  * Render neighbouring cmprovision stations with a neutral cm mark on HDMI,
+    matching the web and FPMS distinction from the local station.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 18:34:31 +0300
+
 cmprovision4 (2.30.2) unstable; urgency=medium
 
   * Expire updater recovery points seven days after successful completion,

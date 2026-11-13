@@ -56,6 +56,7 @@ class StandMap
                 'id' => $part['id'], 'name' => (string) $part['name'], 'snapshot' => $part['snapshot'] ?? null,
                 'answering' => $part['answering'] ?? !empty($part['snapshot']),
                 'own_macs' => array_map('strtolower', $part['own_macs'] ?? []), 'links' => $part['links'] ?? [],
+                'powered_links' => $part['powered_links'] ?? [],
             ];
         foreach ($modules as $cm)
             if ($cm->mac)
@@ -217,6 +218,19 @@ class StandMap
         return $links;
     }
 
+    /* A disconnected powered port may still feed a known switch. Keep this safety evidence separate from live
+       topology: it must not make the disconnected port own modules or appear as an active inter-switch link. */
+    protected function restartLink(array $p): ?string
+    {
+        $part = $this->parts[$p['switch']];
+        $remembered = $part['powered_links'][$p['port']['ifIndex']] ?? ($part['links'][$p['port']['ifIndex']] ?? null);
+        foreach ($this->parts as $id => $other)
+            if ($id !== $p['switch'] && (array_intersect($p['macs'], $other['own_macs']) || $this->neighbourIs($p, $other)
+                || (int) $remembered === $id))
+                return $other['name'];
+        return null;
+    }
+
     /* Of the switches one port of $from leads to, the one all the others are behind; the first when none is */
     protected function nearest(int $from, array $candidates, array $seen): int
     {
@@ -355,19 +369,19 @@ class StandMap
         return $mbps >= 1000 ? ($mbps / 1000).'G' : $mbps.'M';
     }
 
-    /** Why this port's PoE may not be switched off and on (a PoE restart), null when it may: nothing on the port but
-        one of our modules, or a Raspberry Pi that has not asked the server yet */
+    /** Why this port's PoE may not be switched off and on. An explicit port restart also permits a device drawing
+        PoE without an Ethernet link; it does not identify that device or add it to a module batch. */
     public static function restartBlocker(array $tile): ?string
     {
-        if ($tile['link'] ?? null)
-            return $tile['label'].' is the link to '.$tile['link'];
-        if ($tile['state'] === 'free')
+        if ($link = ($tile['link'] ?? $tile['restart_link'] ?? null))
+            return $tile['label'].' is the link to '.$link;
+        if ($tile['state'] === 'free' && ($tile['poe']['state'] ?? null) !== 'delivering')
             return $tile['label'].' has no link';
         if (!$tile['poe'])
             return 'no PoE on '.$tile['label'];
         if ($tile['poe']['state'] === 'disabled')
             return 'PoE is off on '.$tile['label'];   // switched off on purpose, or left off by a restart (Power on)
-        if ($tile['state'] === 'uplink')
+        if ($tile['state'] === 'uplink' || !empty($tile['server']) || !empty($tile['station']))
             return $tile['label'].' is the uplink';
         // one of them may be gone with its MAC still listed: nothing tells which one the power would cut
         if (count($tile['modules']) > 1)
@@ -380,7 +394,7 @@ class StandMap
         foreach ($tile['modules'] as $cm)
             if ($cm->failedInItsSystem())
                 return 'the module on '.$tile['label'].' runs its new system: a restart would boot it again, not provision it';
-        if (($tile['state'] === 'module' && $tile['others'] === 0) || ($tile['state'] === 'boot' && $tile['macs']))
+        if ($tile['state'] === 'free' || ($tile['state'] === 'module' && $tile['others'] === 0) || ($tile['state'] === 'boot' && $tile['macs']))
             return null;
         return 'other devices on '.$tile['label'];
     }
@@ -458,6 +472,7 @@ class StandMap
             'board_port' => $boardPort,
             'board' => trim($part['name'].' '.$boardPort),
             'link' => isset($links[$key]) ? $this->parts[$links[$key]]['name'] : null,
+            'restart_link' => !$port['up'] ? $this->restartLink($p) : null,
             // what LLDP and CDP say about the device on the port (Neighbors)
             'neighbors' => $port['neighbors'] ?? [],
             // the provisioner itself is on this port (not behind a link to another switch): the HDMI display says "cm" there

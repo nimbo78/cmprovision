@@ -55,6 +55,26 @@ class StandMapTest extends TestCase
                 'answering' => $answering && $ports !== null, 'own_macs' => $ownMacs, 'links' => $links];
     }
 
+    public function test_a_powered_switch_link_stays_protected_when_ethernet_is_down()
+    {
+        $otherMac = '00:00:00:00:02:02';
+        $poe = ['state' => 'delivering', 'class' => null, 'watts' => 6.9];
+        foreach (['mac', 'neighbor', 'remembered'] as $evidence)
+        {
+            $port = $this->port(8, 'Gi0/8', false, $evidence === 'mac' ? [$otherMac] : [], $poe);
+            if ($evidence === 'neighbor')
+                $port['neighbors'] = [['mac' => $otherMac, 'name' => 'sw02']];
+            $map = (new StandMap([
+                $this->part(1, 'sw01', [$port], [], $evidence === 'remembered' ? [8 => 2] : []),
+                $this->part(2, 'sw02', null, [$otherMac]),
+            ], [], self::SERVER))->build();
+            $tile = $map['tiles']['s1p8'];
+            $this->assertSame('free', $tile['state'], $evidence);
+            $this->assertNull($tile['link'], 'A disconnected port is not a live topology link');
+            $this->assertSame('sw01 Gi0/8 is the link to sw02', StandMap::restartBlocker($tile), $evidence);
+        }
+    }
+
     public function test_a_chain_puts_each_module_on_its_own_switch()
     {
         // sw01 Gi0/24 leads to sw02: its table holds sw02's modules and sw02's own SVI MAC
@@ -484,7 +504,7 @@ class StandMapTest extends TestCase
         $this->assertSame('empty', $this->build([$this->port(1, 'GE0/0/1', false)])['summary']['verdict']);
     }
 
-    public function test_only_ports_with_nothing_but_our_modules_or_a_booting_pi_may_be_restarted()
+    public function test_restart_allows_modules_booting_pi_and_unlinked_powered_ports()
     {
         $poe = ['state' => 'delivering', 'class' => null, 'watts' => 6.9];
         $map = $this->build([
@@ -503,7 +523,7 @@ class StandMapTest extends TestCase
         $this->assertSame('other devices on sw01 GE0/0/2', $why(2));
         $this->assertSame('no PoE on sw01 GE0/0/3', $why(3));
         $this->assertSame('other devices on sw01 GE0/0/4', $why(4));
-        $this->assertSame('sw01 GE0/0/5 has no link', $why(5));
+        $this->assertNull($why(5), 'PoE delivery, rather than Ethernet link, permits an explicit restart of this port');
         $this->assertSame('sw01 GE0/0/6 is the uplink', $why(6));
         $this->assertNull($why(7));
         $this->assertSame([1, 2], [$map['tiles']['s1p2']['others'], $map['tiles']['s1p2']['ifIndex']]);

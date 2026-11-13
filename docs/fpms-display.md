@@ -4,7 +4,8 @@
 
 **Preview.** The optional FPMS integration and `fpms-lite` are available from cmprovision 2.23.0.
 A cold boot on Raspberry Pi OS Lite, all five pages and KEY2 were checked on a CM4 with the
-Waveshare display. The remaining physical controls and both themes still need acceptance.
+Waveshare display. Auto operation in the current layout was reported by the user on 13 November 2026.
+The remaining physical controls, Classic, Dark and day/night Auto transitions still need acceptance.
 
 FPMS shows a compact read-only view on a Waveshare 1.44-inch 128×128 display.
 
@@ -54,6 +55,8 @@ value it cannot read as missing: a bad snapshot shows `Waiting for data` or `Inv
 snapshot at all: it judges the data by the age of the file.
 
 ## Look
+
+Layout and color mode are selected in the web settings; the panel buttons do not change them.
 
 **Settings → System → FPMS display** has two choices that reach the panel with its data (no restart, no
 root helper):

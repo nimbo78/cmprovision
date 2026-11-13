@@ -530,6 +530,19 @@ class QuietPortsTest(unittest.TestCase):
         text = self.panel([dict(number=10, name='Gi0/10', serials=[], state='uplink', server=True)])
         self.assertIn('|10  cm |', text)
 
+    def test_another_station_has_a_neutral_cm_mark_instead_of_up(self):
+        port = dict(number=7, name='Gi0/7', serials=[], state='uplink', server=False,
+                    station=dict(name='wlanpi-d62', address='172.20.0.2', version='2.30.2', provisioner=False))
+        self.assertEqual((' cm', 'dim'), w.port_mark(port, []))
+        self.assertIn('|7  cm  |', self.panel([port]))
+        self.assertEqual((' cm', 'accent'), w.port_mark(dict(port, server=True), []))
+
+    def test_a_stale_station_record_on_a_disconnected_port_keeps_its_empty_frame(self):
+        port = dict(number=7, name='Gi0/7', serials=[], state='free', server=False,
+                    station=dict(name='wlanpi-d62'))
+        self.assertEqual(('', 'dim'), w.port_mark(port, []))
+        self.assertNotIn('cm', self.panel([port]))
+
     def test_the_provisioner_flag_means_nothing_on_a_port_that_is_not_an_uplink(self):
         self.assertEqual('', w.port_mark(dict(state='free', server=True), [])[0])
 

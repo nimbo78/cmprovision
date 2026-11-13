@@ -100,7 +100,7 @@ class Ports extends Component
             'writable' => $writable,
             'failed' => $writable && $stand['map'] ? count(self::failedOnStand($stand)) : 0,
             'restart' => $tile ? ['blocker' => PoeRestart::switchBlocker($stand['switches'][$tile['switch_id']] ?? null) ?? StandMap::restartBlocker($tile),
-                                  'confirm' => PoeRestart::confirm($tile['modules'][0] ?? null, $tile['label'])] : null,
+                                  'confirm' => PoeRestart::confirmPort($tile)] : null,
         ]);
     }
 

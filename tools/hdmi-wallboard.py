@@ -438,8 +438,11 @@ def port_mark(port, modules):
                 ('DONE' if m['state'] == 'ok' else (str(m['percent']) + '%' if m.get('percent') is not None else phase(m)[:4])))
         return mark, INK.get(m['state'], 'dim')
     # A free port stays a quiet empty frame, with its number: the panel keeps its shape and nothing flickers on it
-    if port.get('state') == 'uplink' and port.get('server'):
-        return ' cm', 'accent'   # the provisioner itself; one space more than the other marks, so it does not crowd the number
+    if port.get('state') == 'uplink':
+        if port.get('server'):
+            return ' cm', 'accent'   # this station uses its web accent; a neighbour keeps the neutral palette
+        if port.get('station'):
+            return ' cm', 'dim'
     return {'free': ('', 'dim'), 'uplink': ('UP', 'dim'), 'unrecognized': ('UNR', 'warn'),
             'quiet': ('LNK', 'warn'), 'boot': ('BOOT', 'run'), 'recognized': ('OURS', 'accent')}.get(port.get('state'), ('?', 'dim'))
 
