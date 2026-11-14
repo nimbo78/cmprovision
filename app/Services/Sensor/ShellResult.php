@@ -17,6 +17,7 @@ final readonly class ShellResult
             (bool) preg_match('/password.*expired|change your password|password change required/i', $output) => 'password_expired',
             (bool) preg_match('/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i', $output) => 'host_changed',
             (bool) preg_match('/Permission denied|Authentication failed/i', $output) => 'denied',
+            (bool) preg_match('/not in the sudoers|not allowed to (?:execute|run)|may not run sudo|sudo:.*(?:password|authentication)/i', $output) => 'no_sudo',
             $code === 124 || (bool) preg_match('/timed out|No route to host|Connection refused|Network is unreachable/i', $output) => 'unreachable',
             default => 'error',
         };

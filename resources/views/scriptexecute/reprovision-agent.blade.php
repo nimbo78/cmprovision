@@ -29,6 +29,7 @@ if [ "$#" -eq 1 ] && [ "$1" = identify ]; then
     exit 0
 fi
 if [ "$#" -eq 1 ] && [ "$1" = inspect ]; then
+    [ "$(lsblk -dn -o RO "$STORAGE" | tr -d ' ')" = 0 ] || fail 'read-only disk'
     MODEL=$(tr -d '\000' </proc/device-tree/model 2>/dev/null) || MODEL=unknown
     REVISION=$(awk '/^Revision[[:space:]]*:/ {print tolower($3)}' /proc/cpuinfo)
     [ -n "$REVISION" ] || REVISION=unknown

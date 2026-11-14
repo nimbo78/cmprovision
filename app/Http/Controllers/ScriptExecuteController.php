@@ -205,9 +205,16 @@ exit 1
         // Keep it until the new run's active phase is saved, so a change cannot race a module just starting.
         return app(NetworkChangeGate::class)->start(function () use ($req) {
             // a module may say a serial that another row has: hold the lock of both serials
-            $serials = array_unique(array_filter([$this->serial, $this->findForStart($req)?->serial]));
+            $serials = array_unique(array_merge(
+                ModuleOperationLock::targetKeys($this->serial, Cm::normalizeMac($req->query('mac'))),
+                array_filter([$this->findForStart($req)?->serial])));
 
-            return ModuleOperationLock::run($serials, fn () => $this->startLockedProvisioning($req));
+            try {
+                return ModuleOperationLock::run($serials, fn () => $this->startLockedProvisioning($req));
+            } catch (\App\Services\ModuleOperationBusy $e) {
+                return response('Another operation is running on this module; retry shortly.', 503)
+                    ->header('Content-Type', 'text/plain')->header('Retry-After', '10');
+            }
         });
     }
 
@@ -259,6 +266,8 @@ exit 1
     /** Select the image and record its run before another writer can retire its files. */
     protected function claimProvisioning(Request $req)
     {
+        if ($reason = ReprovisionIntent::guard($this->serial, Project::getActive(), $req->query('mac')))
+            return $this->failureScript($req, $reason);
         $previous = $this->findForStart($req);
         if ($previous && $previous->serial !== $this->serial && Cm::where('serial', $this->serial)->where('id', '!=', $previous->id)->exists())
         {

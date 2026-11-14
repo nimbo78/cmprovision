@@ -37,6 +37,7 @@ class ReprovisionTest extends TestCase
         file_put_contents($this->leases, '0 02:00:00:00:00:10 172.20.0.10 test-sensor *');
         $this->app->instance(SensorAddress::class, new SensorAddress($this->leases, []));
         $this->app->instance(SensorShell::class, $this->shell = new FakeSensorShell);
+        $this->app->instance(\App\Services\Sensor\ReprovisionStation::class, new \Tests\Support\FakeReprovisionStation);
         // Existing scenarios exercise explicit account entry; automatic profiles have their own cases below.
         app(SavedAccounts::class)->toggle('wlanpi');
     }
@@ -102,7 +103,9 @@ class ReprovisionTest extends TestCase
     public function test_changed_address_after_check_is_not_used(): void
     {
         $op=$this->check(); file_put_contents($this->leases, '0 02:00:00:00:00:10 172.20.0.11 test-sensor *');
-        $this->expectExceptionMessage('address or project changed'); $this->wipe($op);
+        try {$this->wipe($op);$this->fail('A changed address was used');}
+        catch (\RuntimeException $e) {$this->assertStringContainsString('address changed',$e->getMessage());}
+        $this->assertSame(0,$this->shell->wipes());
     }
     public function test_wipe_without_a_successful_check_does_nothing(): void
     {
