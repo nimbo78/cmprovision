@@ -11,6 +11,7 @@ RUNTIME_DIRS = storage/app/public storage/framework/cache/data storage/framework
 override_dh_install:
 	# Composer may fall back to source checkouts; their VCS files are not runtime content.
 	dh_install --exclude=.git --exclude=.hg --exclude=.svn
+	php tools/package-version.php $(WEB_CONTENT)config/version.php "$$(dpkg-parsechangelog -SVersion)"
 	# VCS exclusion also removes .gitignore-only trees; fresh installs still need these directories.
 	install -d -m 755 $(addprefix $(WEB_CONTENT),$(RUNTIME_DIRS))
 	install -D -m 755 tools/sensor-askpass $(WEB_CONTENT)tools/sensor-askpass

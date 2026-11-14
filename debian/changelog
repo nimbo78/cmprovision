@@ -1,3 +1,10 @@
+cmprovision4 (2.31.0~dev2) unstable; urgency=medium
+
+  * Preserve preparation and resume markers in shareable report timings.
+  * Stamp the actual package version while retaining the source commit.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 13:02:06 +0000
+
 cmprovision4 (2.31.0~dev1) unstable; urgency=medium
 
   * Add a Storage overview with update snapshot estimates and reviewed cleanup.

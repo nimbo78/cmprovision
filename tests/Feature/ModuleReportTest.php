@@ -72,4 +72,31 @@ class ModuleReportTest extends TestCase
         $this->get('/cms/'.$cm->mac.'/report/html')->assertOk()->assertSee('Bootloader preparation only')
             ->assertSee('Image not provisioned');
     }
+
+    public function test_preparing_a_write_has_no_image_transfer_speed(): void
+    {
+        $cm=$this->module(); $at=now()->subMinutes(2)->timestamp;
+        $cm->progress_total=1000;
+        $cm->timeline=[['phase'=>'write','detail'=>'Discarding old data','at'=>$at],
+            ['phase'=>'write','detail'=>null,'at'=>$at+1], ['phase'=>'done','detail'=>null,'at'=>$at+101]];
+        $cm->save();
+        $response=$this->actingAs(User::factory()->create())->get('/cms/'.$cm->mac.'/report/json')->assertOk();
+        $response->assertJsonPath('run.steps.0.label','Preparing image write')
+            ->assertJsonPath('run.steps.0.bytes_per_second',null)
+            ->assertJsonPath('run.steps.1.bytes_per_second',10);
+    }
+
+    public function test_resumed_write_speed_counts_only_the_remaining_bytes(): void
+    {
+        $cm=$this->module(); $at=now()->subMinutes(2)->timestamp;
+        $cm->progress_total=1000;
+        $cm->timeline=[['phase'=>'write','detail'=>null,'at'=>$at],
+            ['phase'=>'write','detail'=>'credential-sentinel','from'=>400,'at'=>$at+10],
+            ['phase'=>'done','detail'=>null,'at'=>$at+70]];
+        $cm->save();
+        $response=$this->actingAs(User::factory()->create())->get('/cms/'.$cm->mac.'/report/json')->assertOk();
+        $response->assertJsonPath('run.steps.0.bytes_per_second',null)
+            ->assertJsonPath('run.steps.1.bytes_per_second',10);
+        $this->assertStringNotContainsString('credential-sentinel',$response->getContent());
+    }
 }

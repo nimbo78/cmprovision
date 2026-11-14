@@ -46,10 +46,17 @@ class ModuleReport
         foreach (array_slice(is_array($cm->timeline) ? $cm->timeline : [], 0, Cm::MAX_TIMELINE) as $entry) {
             if (!is_array($entry) || !array_key_exists($entry['phase'] ?? '', Cm::PHASE_LABELS)
                 || !is_int($entry['at'] ?? null) || $entry['at'] < 0 || $entry['at'] > 253402300799) continue;
-            $timeline[] = ['phase'=>$entry['phase'], 'detail'=>null, 'at'=>$entry['at']];
+            // Preserve the distinction between preparation, scripts and transfers without exporting arbitrary detail text.
+            $detail = $entry['detail'] ?? null;
+            $step = ['phase'=>$entry['phase'], 'detail'=>$detail === null ? null
+                : ($entry['phase'] === 'write' && $detail === 'Discarding old data' ? 'Discarding old data' : 'Recorded sub-step'),
+                'at'=>$entry['at']];
+            if (is_int($entry['from'] ?? null) && $entry['from'] >= 0) $step['from'] = $entry['from'];
+            $timeline[] = $step;
         }
         $copy = clone $cm; $copy->timeline = $timeline;
-        $steps = array_map(fn ($step) => ['phase'=>$step['phase'], 'label'=>$step['label'], 'at'=>$step['at']->toIso8601String(),
+        $steps = array_map(fn ($step) => ['phase'=>$step['phase'],
+            'label'=>$step['detail'] === 'Discarding old data' ? 'Preparing image write' : $step['label'], 'at'=>$step['at']->toIso8601String(),
             'seconds'=>$step['seconds'], 'bytes_per_second'=>$step['speed']], RunTimeline::steps($copy));
         $data['run'] = ['operation'=>$cm->usb_prep_at !== null ? 'usb-prep' : 'provisioning',
             'image_provisioned'=>$cm->usb_prep_at !== null ? false : null,
