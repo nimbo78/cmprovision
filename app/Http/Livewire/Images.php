@@ -10,6 +10,7 @@ use Livewire\Component;
 use App\Models\Image;
 use App\Services\ImageDownloads;
 use App\Services\ImageSpace;
+use App\Services\ImageRemoval;
 use App\Support\FetchSpeed;
 use \Illuminate\Http\UploadedFile;
 
@@ -89,10 +90,16 @@ class Images extends Component
             session()->flash('message', 'Nothing unused to delete.');
             return;
         }
-        $size = $space->bytes($unused);
-        foreach ($unused as $image)
-            $image->delete();
-        session()->flash('message', 'Deleted '.$unused->count().' unused '.($unused->count() === 1 ? 'image' : 'images').' ('.Image::size($size).').');
+        $size = 0;
+        $deleted = 0;
+        foreach ($unused as $image) {
+            try {
+                $bytes = $space->bytes([$image]);
+                if (app(ImageRemoval::class)->remove($image->id)) { $deleted++; $size += $bytes; }
+            }
+            catch (\RuntimeException $protected) { /* A project/run may have claimed an image after the list was drawn. */ }
+        }
+        session()->flash('message', 'Deleted '.$deleted.' unused '.($deleted === 1 ? 'image' : 'images').' ('.Image::size($size).').');
     }
 
     /* a failed fetch goes on from what is there */
@@ -108,21 +115,19 @@ class Images extends Component
     
     public function delete($id)
     {
-        Image::destroy($id);
-        session()->flash('message', 'Image deleted.');
+        try {
+            app(ImageRemoval::class)->remove((int) $id);
+            session()->flash('message', 'Image deleted.');
+        } catch (\RuntimeException $error) { session()->flash('message', $error->getMessage()); }
     }
 
     /* The pieces copy (2.6.1) that no project with "Split the image into pieces" needs */
     public function removeSplit($id)
     {
-        $image = Image::findOrFail($id);
-        if ($image->splitNeeded())
-        {
-            session()->flash('message', 'A project with "Split the image into pieces" writes this image: its pieces stay.');
-            return;
-        }
-        $image->removeSplit();
-        session()->flash('message', 'Pieces removed.');
+        try {
+            app(ImageRemoval::class)->remove((int) $id, true);
+            session()->flash('message', 'Pieces removed.');
+        } catch (\RuntimeException $error) { session()->flash('message', $error->getMessage()); }
     }
 
     public function retrySplit($id)

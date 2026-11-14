@@ -85,7 +85,7 @@
                                 @if ($i->download_state === 'failed')
                                 <button wire:click="retry({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Retry</button>
                                 @endif
-                                <button wire:click="delete({{ $i->id }})" class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
+                                <button wire:click="delete({{ $i->id }})" wire:confirm="Delete this image and its files? Images used by projects or current runs stay protected." class="cmp-btn cmp-btn-danger cmp-btn-small">Delete</button>
                                 @if (($i->split_filename || $i->split_error) && !$i->splitPreparing() && !$i->splitNeeded())
                                 <button wire:click="removeSplit({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Remove pieces</button>
                                 @elseif (!$i->splitReady() && !$i->splitPreparing() && $i->splitNeeded())
