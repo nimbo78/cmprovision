@@ -54,8 +54,8 @@ class Reprovision
                     $r = $this->shell->key($op->address,$op->id,'identify');
                 $identity = $this->agent->identity($r);
                 $legacyUnknown = $r->status === 'ok' && $identity && $identity['agent'] === '1' && !$cm;
-                if (in_array($r->status,['denied','password_expired','no_sudo'],true) || $legacyUnknown
-                    || ($r->status === 'error' && str_contains($r->output,'refused: unknown command'))) {
+                if (in_array($r->status,['denied','password_expired','no_sudo','error'],true) || $legacyUnknown
+                    || ($r->status === 'ok' && !$identity)) {
                     $account ??= $this->credentials->get($op->id);
                     if (!$account) {
                         if ($id === null && Cache::add('reprovision-auto:'.$op->mac,true,60)) {
@@ -88,17 +88,14 @@ class Reprovision
     private function inspectAccount(?Cm $cm, Operation $op, array $account): ShellResult
     {
         $this->validateAccount($account);
-        $request = $cm ? 'identify' : 'inspect';
         $r = $this->shell->account($op->address,$op->id,$account['user'],$account['password'],
-            $this->agent->command($request,$cm?->provisioning_storage,!$cm));
+            $this->agent->command('inspect',$cm?->provisioning_storage,true));
         if ($r->status !== 'ok') return $r;
         $identity = $this->agent->identity($r);
-        if (!$identity) throw new RuntimeException('The sensor did not return a supported disk identity (eMMC/SD, ext4 root on partition 2).');
+        if (!$identity || $identity['agent'] !== '2')
+            throw new RuntimeException('The account did not run the extended read-only inspector. Use an authorized sensor account with sudo access.');
         $this->inspection->validate($identity,$op->mac,$cm);
-        if (!$cm) return $r; // The first-time inspector already ran through sudo.
-        $sudo = $this->shell->account($op->address,$op->id,$account['user'],$account['password'],"sudo -k -n true || sudo -k -S -p '' true");
-        if (in_array($sudo->status,['host_changed','unreachable'],true)) return $sudo;
-        return $sudo->status === 'ok' ? $r : new ShellResult('no_sudo');
+        return $r; // Successful injected inspection already ran through sudo.
     }
 
     private function acceptAccount(Operation $op, array $account, ShellResult $r, bool $saved = false): Operation
@@ -118,8 +115,7 @@ class Reprovision
         $accept = function () use ($op,$identity,$method,$saved) {
             $cm = $this->record($op);
             $this->inspection->validate($identity,$op->mac,$cm);
-            if (($other = Cm::where('serial',$identity['serial'])->first()) && $other->mac !== $op->mac)
-                throw new RuntimeException('This hardware serial belongs to a different recorded MAC. Resolve the identity conflict before re-provisioning.');
+            $this->uniqueSerial($identity['serial'],$op->mac);
             if ($op->serial !== null && $op->serial !== $identity['serial']) throw new RuntimeException('The hardware serial changed. Check access again.');
             if (Operation::pendingTarget($op->mac,$identity['serial'])?->id !== $op->supersedes_id)
                 throw new RuntimeException('Another re-provision request is pending.');
@@ -172,6 +168,7 @@ class Reprovision
             if (!$identity || $identity !== $op->identity) throw new RuntimeException('The sensor identity or disk changed. Check access again.');
             $cm = $this->record($op); $this->inspection->validate($identity,$op->mac,$cm);
             $this->unchanged($op,$this->project(),$this->targets->resolve($op->mac,$op->address));
+            $this->uniqueSerial($identity['serial'],$op->mac);
             if ($op->expires_at->isPast()) throw new RuntimeException('The access check expired during reinspection. Check access again.');
             if ($pending) $pending->update(['state'=>'superseded']);
             // Durable intent precedes one destructive dispatch; a dead PHP process leaves an unknown guarded result.
@@ -238,6 +235,12 @@ class Reprovision
         if ($why = $p->image->notReadyReason()) throw new RuntimeException($why);
         if ($p->verify && !$p->image->uncompressed_sha256) throw new RuntimeException('Wait for the uncompressed image checksum before re-provisioning.');
         return $p;
+    }
+    private function uniqueSerial(string $serial, string $mac): void
+    {
+        $other = Cm::where('serial',$serial)->first();
+        if ($other && $other->mac !== $mac)
+            throw new RuntimeException('This hardware serial belongs to a different recorded MAC. Resolve the identity conflict before re-provisioning.');
     }
     private function record(Operation $op): ?Cm
     {

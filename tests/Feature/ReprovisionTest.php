@@ -206,7 +206,7 @@ class ReprovisionTest extends TestCase
         $this->shell->accountResults = ["second\0good-secret"=>'ok'];
         $op = $this->check();
         $this->assertSame('checked',$op->state); $this->assertSame('second',$op->username);
-        $this->assertSame(['first','second','second'],array_column($this->shell->accountAttempts,0));
+        $this->assertSame(['first','second'],array_column($this->shell->accountAttempts,0));
     }
 
     public function test_saved_expired_account_opens_password_change_without_asking_for_old_password(): void
@@ -258,6 +258,6 @@ class ReprovisionTest extends TestCase
         app(SavedAccounts::class)->toggle('wlanpi'); $this->shell->keyStatus='denied';
         $op=$this->check(['user'=>'custom','password'=>'manual-secret']);
         $this->assertSame('checked',$op->state);
-        $this->assertSame(['custom','custom'],array_column($this->shell->accountAttempts,0));
+        $this->assertSame(['custom'],array_column($this->shell->accountAttempts,0));
     }
 }

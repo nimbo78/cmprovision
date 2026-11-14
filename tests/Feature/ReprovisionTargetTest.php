@@ -93,4 +93,19 @@ class ReprovisionTargetTest extends TestCase
         $this->assertSame('http://192.168.68.237/reprovision?mac=02%3A00%3A00%3A00%3A00%3A20&address=172.20.0.20',
             $this->station->handoff('02:00:00:00:00:20','172.20.0.20'));
     }
+    public function test_manual_ip_selection_keeps_all_claims_for_its_discovered_mac(): void {
+        file_put_contents($this->leases,"0 02:00:00:00:00:20 172.20.0.20 x *\n0 02:00:00:00:00:20 172.20.0.21 x *");
+        $this->expectException(\RuntimeException::class);$this->resolver()->resolve(null,'172.20.0.20');
+    }
+    public function test_a_neighbor_cannot_override_a_lease_to_another_mac(): void {
+        file_put_contents($this->leases,'0 02:00:00:00:00:21 172.20.0.20 other *');
+        $this->expectException(\RuntimeException::class);$this->resolver()->resolve('02:00:00:00:00:20','172.20.0.20');
+    }
+
+    public function test_the_local_station_mac_is_protected_even_with_a_misleading_lease(): void {
+        file_put_contents($this->leases,'0 02:00:00:00:00:20 172.20.0.20 target *');
+        $this->mock(\App\Services\NetworkStatus::class,fn($m)=>$m->shouldReceive('serverMac')->andReturn('02:00:00:00:00:20'));
+        $this->expectException(\RuntimeException::class);$this->resolver()->resolve('02:00:00:00:00:20',null);
+    }
+
 }

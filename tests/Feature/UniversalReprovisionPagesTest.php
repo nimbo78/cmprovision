@@ -81,4 +81,12 @@ class UniversalReprovisionPagesTest extends TestCase
         $this->assertSame(0,$this->shell->wipes());
     }
 
+    public function test_registered_extended_inspection_does_not_claim_unknown_boot_is_ready(): void {
+        Cm::create(['serial'=>$this->shell->identity['serial'],'mac'=>'02:00:00:00:00:20','phase'=>'done',
+            'provisioning_storage'=>'/dev/mmcblk0','cid'=>$this->shell->identity['cid'],'storage'=>33554432]);
+        $this->shell->keyStatus='denied';$this->shell->identity['boot_order']='unknown';
+        Livewire::test(ReprovisionDialog::class,['mac'=>'02:00:00:00:00:20'])->call('begin')->call('check')
+            ->assertSee('Network boot not confirmed')->assertDontSee('Network boot ready');
+    }
+
 }

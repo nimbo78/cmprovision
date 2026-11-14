@@ -174,4 +174,43 @@ class UniversalReprovisionTest extends TestCase
         $this->assertSame(0,$this->shell->wipes());
     }
 
+    public function test_late_registration_of_the_serial_under_another_mac_blocks_dispatch(): void {
+        $op=$this->check();Cm::create(['serial'=>$op->serial,'mac'=>'02:00:00:00:00:21','phase'=>'done']);
+        $refused=false;try {$this->wipe($op);}catch(\RuntimeException $e){$refused=true;}
+        $this->assertTrue($refused);$this->assertSame(0,$this->shell->wipes());
+    }
+    public function test_registered_account_inspection_refuses_an_installed_provisioner(): void {
+        Cm::create(['serial'=>$this->shell->identity['serial'],'mac'=>'02:00:00:00:00:20','phase'=>'done',
+            'provisioning_storage'=>'/dev/mmcblk0','cid'=>$this->shell->identity['cid'],'storage'=>33554432]);
+        $this->shell->keyStatus='denied';$this->shell->identity['provisioner']='1';
+        $op=$this->check();$this->assertSame('failed',$op->state);$this->assertSame(0,$this->shell->wipes());
+    }
+
+    public function test_registered_account_cannot_downgrade_the_injected_inspector_to_v1(): void {
+        $shell=new class extends FakeSensorShell {
+            public function account(string $address,string $operation,string $user,string $password,string $command): ShellResult {
+                $i=array_slice($this->identity,0,6,true);$i['agent']='1';
+                return new ShellResult('ok',implode("\n",array_map(fn($k)=>$k.'='.$i[$k],array_keys($i))));
+            }
+        };
+        $shell->identity=$this->shell->identity;$shell->keyStatus='denied';$this->app->instance(SensorShell::class,$this->shell=$shell);
+        Cm::create(['serial'=>$shell->identity['serial'],'mac'=>'02:00:00:00:00:20','phase'=>'done','provisioning_storage'=>'/dev/mmcblk0','cid'=>$shell->identity['cid'],'storage'=>33554432]);
+        $this->assertSame('failed',$this->check()->state);$this->assertSame(0,$this->shell->wipes());
+    }
+    public function test_registered_restricted_v1_key_remains_supported(): void {
+        Cm::create(['serial'=>$this->shell->identity['serial'],'mac'=>'02:00:00:00:00:20','phase'=>'done','provisioning_storage'=>'/dev/mmcblk0','cid'=>$this->shell->identity['cid'],'storage'=>33554432]);
+        $this->shell->identity=array_slice($this->shell->identity,0,6,true);$this->shell->identity['agent']='1';
+        $op=$this->check();$this->assertSame('checked',$op->state);$this->assertSame('key',$op->method);$this->assertSame('waiting',$this->wipe($op)->state);
+    }
+
+    public function test_missing_keyed_agent_can_fall_back_to_an_authorized_account(): void {
+        $shell=new class extends FakeSensorShell {
+            public function key(string $address,string $operation,string $command): ShellResult {
+                return new ShellResult('error','/usr/local/sbin/cmprovision-agent: not found');
+            }
+        };
+        $shell->identity=$this->shell->identity;$this->app->instance(SensorShell::class,$this->shell=$shell);
+        $op=$this->check();$this->assertSame('checked',$op->state);$this->assertSame('account',$op->method);
+    }
+
 }

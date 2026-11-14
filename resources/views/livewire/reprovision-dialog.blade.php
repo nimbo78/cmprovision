@@ -52,7 +52,7 @@
                             <button @click="const a=next,b=repeat; next=''; repeat=''; $wire.changePassword(a,b)" wire:loading.attr="disabled" class="cmp-btn mt-4">Change password and check</button>
                         @elseif ($operation->state === 'checked' && !$operation->expires_at->isPast())
                             <p class="text-sm mt-4">{{ ($operation->context['cm_id'] ?? null) ? 'Serial matches our records.' : 'Identity read from device.' }} Access over {{ $operation->method === 'key' ? "the provisioner's key" : 'account '.$operation->username }}.</p>
-                            @if (($operation->identity['agent'] ?? '') === '2')<p class="text-sm mt-2">{{ $operation->identity['model'] }} · revision {{ $operation->identity['revision'] }}<br>Network boot ready · {{ $operation->identity['boot_order'] }}</p>@endif
+                            @if (($operation->identity['agent'] ?? '') === '2')<p class="text-sm mt-2">{{ $operation->identity['model'] }} · revision {{ $operation->identity['revision'] }}<br>{{ \App\Services\Sensor\TargetInspection::bootReady($operation->identity['boot_order']) ? 'Network boot ready' : 'Network boot not confirmed' }} · {{ $operation->identity['boot_order'] }}</p>@endif
                             <p class="text-sm mt-2">{{ $operation->identity['host'] }} · {{ $operation->identity['storage'] }} · {{ \App\Models\Image::size((int) $operation->identity['sectors'] * 512) }}</p>
                             <p class="text-xs font-mono text-fg-muted mt-2 break-all">Serial {{ $operation->serial }}<br>CID {{ $operation->identity['cid'] }}</p>
                             <p class="text-sm mt-3">Erases the first MiB of this disk and reboots the module for a new provisioning run.</p>

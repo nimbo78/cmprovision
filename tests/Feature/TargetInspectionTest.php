@@ -40,4 +40,18 @@ class TargetInspectionTest extends TestCase
         app(TargetInspection::class)->validate($i,'02:00:00:00:00:20',$cm);$this->addToAssertionCount(1);
         $cm->cid=str_repeat('f',32);$this->expectExceptionMessage('disk');app(TargetInspection::class)->validate($i,'02:00:00:00:00:20',$cm);
     }
+    public function test_registered_extended_identity_allows_unavailable_boot_data_and_keeps_station_protection(): void {
+        $i=$this->identity();$i['boot_order']='unknown';
+        $cm=new Cm(['serial'=>$i['serial'],'provisioning_storage'=>$i['storage'],'cid'=>$i['cid'],'storage'=>33554432]);
+        app(TargetInspection::class)->validate($i,'02:00:00:00:00:20',$cm);$this->addToAssertionCount(1);
+        $i['provisioner']='1';$this->expectExceptionMessage('cmprovision installation');
+        app(TargetInspection::class)->validate($i,'02:00:00:00:00:20',$cm);
+    }
+
+    public function test_a_registered_extended_inspector_refuses_explicitly_unusable_boot_order(): void {
+        $i=$this->identity();$i['boot_order']='0xf41';
+        $cm=new Cm(['serial'=>$i['serial'],'provisioning_storage'=>$i['storage'],'cid'=>$i['cid'],'storage'=>33554432]);
+        $this->expectExceptionMessage('Network boot');app(TargetInspection::class)->validate($i,'02:00:00:00:00:20',$cm);
+    }
+
 }

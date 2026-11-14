@@ -28,7 +28,7 @@ class TargetInspection
             throw new RuntimeException('Unsupported model: '.$identity['model'].'. Only CM4 and Raspberry Pi 4 are supported.');
         if ($identity['mac'] !== $mac)
             throw new RuntimeException('The inspected Ethernet MAC does not match the selected network device.');
-        if (!self::bootReady($identity['boot_order']))
+        if (!self::bootReady($identity['boot_order']) && (!$cm || $identity['boot_order'] !== 'unknown'))
             throw new RuntimeException('Network boot could not be confirmed. Use USB prep to configure network boot before erasing the installed system.');
     }
 

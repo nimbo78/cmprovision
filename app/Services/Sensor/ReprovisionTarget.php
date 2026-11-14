@@ -2,7 +2,7 @@
 
 namespace App\Services\Sensor;
 
-use App\Models\{Cm,EthernetSwitch};
+use App\Models\EthernetSwitch;
 use App\Services\{NetworkStatus,SensorAddress};
 use App\Services\Switch\Stand;
 use RuntimeException;
@@ -26,44 +26,65 @@ class ReprovisionTarget
 
     public function resolve(?string $mac, ?string $address): array
     {
-        $mac = $mac === null || $mac === '' ? null : strtolower($mac);
+        $mac = $this->normalizeMac($mac);
         $address = $address === '' ? null : $address;
-        if ($mac !== null && (!preg_match('/^(?:[a-f0-9]{2}:){5}[a-f0-9]{2}$/D', $mac)
-            || (hexdec(substr($mac, 0, 2)) & 1) || $mac === '00:00:00:00:00:00'))
-            throw new RuntimeException('Enter a valid unicast MAC address.');
         if ($address !== null) $this->validateAddress($address);
         $stand = $this->station->requireReady();
         $claims = $this->leases->currentLeases();
-        $matches = array_values(array_filter($claims, fn ($l) => $mac !== null ? $l['mac'] === $mac : $l['address'] === $address));
-        if ($matches) {
-            $ips = array_unique(array_column($matches, 'address'));
-            $macs = array_unique(array_column($matches, 'mac'));
-            if (count($ips) !== 1 || count($macs) !== 1
-                || count(array_unique(array_column(array_filter($claims, fn ($l) => $l['address'] === $matches[0]['address']), 'mac'))) !== 1)
-                throw new RuntimeException('The current DHCP identity is ambiguous. Resolve conflicting leases before checking access.');
-            $lease = $matches[0];
-            if ($address !== null && $address !== $lease['address'])
-                throw new RuntimeException('The address changed or conflicts with its current DHCP lease. Select the device again.');
-            $this->validateAddress($lease['address']);
-            $this->protectMac($lease['mac']);
-            return ['address'=>$lease['address'], 'mac'=>$lease['mac'], 'proof'=>'lease', 'stand'=>$stand];
+        if ($lease = $this->lease($mac,$address,$claims)) {
+            $mac = $this->normalizeMac($lease['mac']);
+            $this->validateAddress($lease['address']); $this->protectMac($mac);
+            return ['address'=>$lease['address'],'mac'=>$mac,'proof'=>'lease','stand'=>$stand];
         }
         if ($address === null) throw new RuntimeException('No unambiguous current DHCP lease. Enter the module IPv4 address to verify its stand binding.');
         // Refresh only this destination on this interface; never scan or let routing choose an uplink.
         ($this->run)(['ping','-n','-c','1','-W','1','-I',$stand['device'],$address]);
         $out = ($this->run)(['ip','-j','neigh','show','to',$address,'dev',$stand['device']]);
-        $rows = $out === null ? null : json_decode($out, true);
+        $rows = $out === null ? null : json_decode($out,true);
         $found = [];
         foreach (is_array($rows) ? $rows : [] as $row) {
             $m = strtolower((string) ($row['lladdr'] ?? ''));
             if (($row['dst'] ?? '') === $address && ($row['dev'] ?? '') === $stand['device']
-                && ($row['state'] ?? []) === ['REACHABLE'] && preg_match('/^(?:[a-f0-9]{2}:){5}[a-f0-9]{2}$/D', $m)
+                && ($row['state'] ?? []) === ['REACHABLE'] && preg_match('/^(?:[a-f0-9]{2}:){5}[a-f0-9]{2}$/D',$m)
                 && !(hexdec(substr($m,0,2)) & 1) && $m !== '00:00:00:00:00:00') $found[$m] = true;
         }
         if (count($found) !== 1 || ($mac !== null && !isset($found[$mac])))
             throw new RuntimeException('A fresh matching IP/MAC binding on the provisioning interface could not be verified. Check the cable and address.');
-        $mac = array_key_first($found); $this->protectMac($mac);
-        return ['address'=>$address, 'mac'=>$mac, 'proof'=>'neighbor', 'stand'=>$stand];
+        $mac = array_key_first($found);
+        $this->lease($mac,$address,$claims); // A learned MAC may have contradictory leases at another address.
+        $this->protectMac($mac);
+        return ['address'=>$address,'mac'=>$mac,'proof'=>'neighbor','stand'=>$stand];
+    }
+
+    private function normalizeMac(?string $mac): ?string
+    {
+        if ($mac === null || $mac === '') return null;
+        $mac = strtolower($mac);
+        if (!preg_match('/^(?:[a-f0-9]{2}:){5}[a-f0-9]{2}$/D',$mac)
+            || (hexdec(substr($mac,0,2)) & 1) || $mac === '00:00:00:00:00:00')
+            throw new RuntimeException('Enter a valid unicast MAC address.');
+        return $mac;
+    }
+
+    /** Validate the complete relevant lease graph before either DHCP or L2 can authorize a candidate. */
+    private function lease(?string $mac, ?string $address, array $claims): ?array
+    {
+        $atAddress = array_values(array_filter($claims,fn ($l) => $address !== null && $l['address'] === $address));
+        $owners = array_values(array_unique(array_column($atAddress,'mac')));
+        if (count($owners) > 1 || ($mac !== null && $owners && $owners[0] !== $mac))
+            throw new RuntimeException('The current DHCP identity is ambiguous: this address is claimed by another MAC.');
+        $mac ??= $owners[0] ?? null;
+        if ($mac === null) return null;
+        $forMac = array_values(array_filter($claims,fn ($l) => $l['mac'] === $mac));
+        if (count(array_unique(array_column($forMac,'address'))) > 1)
+            throw new RuntimeException('The current DHCP identity is ambiguous: this MAC has multiple addresses.');
+        if (!$forMac) return null;
+        $lease = $forMac[0];
+        $owners = array_unique(array_column(array_filter($claims,fn ($l) => $l['address'] === $lease['address']),'mac'));
+        if (count($owners) !== 1) throw new RuntimeException('The current DHCP identity is ambiguous. Resolve conflicting leases before checking access.');
+        if ($address !== null && $address !== $lease['address'])
+            throw new RuntimeException('The address changed or conflicts with its current DHCP lease. Select the device again.');
+        return $lease;
     }
 
     private function validateAddress(string $ip): void
@@ -83,13 +104,33 @@ class ReprovisionTarget
 
     private function protectMac(string $mac): void
     {
+        if (strtolower((string) app(NetworkStatus::class)->serverMac()) === $mac)
+            throw new RuntimeException('This MAC belongs to the local provisioner.');
+        $stand = EthernetSwitch::exists() ? Stand::current(maxAge: 5) : null;
+        // Refreshing the stand may discover switch identities that were absent before this poll.
         foreach (EthernetSwitch::all() as $switch)
-            if (in_array($mac, array_merge([$switch->base_mac], $switch->own_macs ?? []), true))
+            if (in_array($mac,array_merge([$switch->base_mac],$switch->own_macs ?? []),true))
                 throw new RuntimeException('This MAC belongs to a protected switch.');
-        $stand = EthernetSwitch::exists() ? Stand::current() : null;
-        foreach ($stand['map']['tiles'] ?? [] as $tile)
-            if (in_array($mac, $tile['macs'], true) && ($tile['state'] === 'uplink' || !empty($tile['link'])
-                || !empty($tile['server']) || !empty($tile['station']) || $tile['mac_count'] > 1))
-                throw new RuntimeException('The target is a station, uplink or a port with multiple devices. Select a single compatible module.');
+        $seen = false; $ambiguous = false; $edges = [];
+        foreach ($stand['switches'] ?? [] as $id => $state) {
+            if (!Stand::answering($state) || ($state['busy'] ?? false) || !empty($state['same_as'])
+                || $state['snapshot']['taken_at'] < now()->subSeconds(5)->timestamp) continue;
+            foreach ($state['snapshot']['ports'] as $port) {
+                if (!$port['up'] || !in_array($mac,$port['macs'],true)) continue;
+                $seen = true;
+                $key = 's'.$id.'p'.$port['ifIndex'];
+                $tile = $stand['map']['tiles'][$key] ?? null;
+                $count = $port['mac_count'] ?? count($port['macs']);
+                if (!$tile) { $ambiguous = true; continue; }
+                if ($count === 1 && (!empty($tile['server']) || !empty($tile['station'])))
+                    throw new RuntimeException('This MAC belongs to a protected provisioning station.');
+                // Upstream forwarding carries the same device MAC. It is not another access edge.
+                if (!empty($tile['link']) || ($tile['state'] === 'uplink' && $count > 1)) continue;
+                if ($tile['state'] === 'uplink' || $count !== 1) { $ambiguous = true; continue; }
+                $edges[$key] = true;
+            }
+        }
+        if ($seen && ($ambiguous || count($edges) !== 1))
+            throw new RuntimeException('The network location is ambiguous or protected. Select one compatible module on a single access port.');
     }
 }
