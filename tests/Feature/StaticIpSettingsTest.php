@@ -27,6 +27,8 @@ class StaticIpSettingsTest extends TestCase
         file_put_contents($this->conf, "port=0\nenable-tftp\ndhcp-range=172.20.0.2,172.20.255.255,255.255.0.0\n");
         config(['cmprovision.dnsmasq_conf' => $this->conf]);
         config(['cmprovision.dnsmasq_restart' => 'echo restarted >> '.escapeshellarg($this->restartLog)]);
+        $this->app->instance(\App\Services\ServiceState::class,
+            new \Tests\Support\FakeServiceState(['cmprovision-dnsmasq']));
     }
 
     protected function tearDown(): void
@@ -91,5 +93,38 @@ class StaticIpSettingsTest extends TestCase
         Livewire::test(Settings::class)->call('deleteStaticIP', $other->id);   // any change rewrites the file
 
         $this->assertStringContainsString("dhcp-host=e4:5f:01:00:00:12,set:client_is_a_pi,172.20.0.12,sensor0\n", file_get_contents($this->conf));
+    }
+
+    public function test_failed_config_read_rolls_back_add_and_delete(): void
+    {
+        $host = Host::create(['ip'=>'172.20.0.44', 'mac'=>'e4:5f:01:00:00:44']);
+        unlink($this->conf);
+        Livewire::test(Settings::class)->call('addStaticIP')->set('ip','172.20.0.45')
+            ->set('mac','e4:5f:01:00:00:45')->call('storeStaticIP');
+        $this->assertDatabaseMissing('hosts', ['ip'=>'172.20.0.45']);
+        Livewire::test(Settings::class)->call('deleteStaticIP', $host->id);
+        $this->assertDatabaseHas('hosts', ['id'=>$host->id]);
+        $this->assertSame('', file_get_contents($this->restartLog));
+    }
+
+    public function test_failed_reload_restores_both_database_and_exact_previous_config(): void
+    {
+        $before = file_get_contents($this->conf);
+        config(['cmprovision.dnsmasq_restart'=>'false']);
+        Livewire::test(Settings::class)->call('addStaticIP')->set('ip','172.20.0.45')
+            ->set('mac','e4:5f:01:00:00:45')->call('storeStaticIP');
+        $this->assertDatabaseMissing('hosts', ['ip'=>'172.20.0.45']);
+        $this->assertSame($before, file_get_contents($this->conf));
+    }
+
+    public function test_masked_secondary_dhcp_is_preserved_without_attempting_a_restart(): void
+    {
+        $this->app->instance(\App\Services\ServiceState::class,
+            new \Tests\Support\FakeServiceState([], ['cmprovision-dnsmasq']));
+        Livewire::test(Settings::class)->call('addStaticIP')->set('ip','172.20.0.45')
+            ->set('mac','e4:5f:01:00:00:45')->call('storeStaticIP');
+        $this->assertDatabaseHas('hosts', ['ip'=>'172.20.0.45']);
+        $this->assertStringContainsString('172.20.0.45', file_get_contents($this->conf));
+        $this->assertSame('', file_get_contents($this->restartLog));
     }
 }

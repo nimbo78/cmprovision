@@ -135,24 +135,22 @@ class Settings extends Component
         $this->logModalOpen = $this->staticModalOpen = false;
     }
 
-    protected function regenDnsmasqConfAndRestart()
+    protected function regenDnsmasqConfAndRestart(?callable $mutation = null): bool
     {
-        try { app(\App\Services\DhcpReservations::class)->write(); }
+        try {
+            $restarted = app(\App\Services\DhcpReservations::class)->change($mutation ?? fn () => null);
+            session()->flash('message', $restarted ? 'Restarted dnsmasq.' : 'Reservations saved. DHCP stays disabled by the station role.');
+            return true;
+        }
         catch (\RuntimeException $error) {
             session()->flash('message', $error->getMessage());
-            return;
+            return false;
         }
-
-        if ($this->restartDnsmasq() )
-            session()->flash('message', 'Restarted dnsmasq.');
-        else
-            session()->flash('message', 'Unable to restart dnsmasq automatically, please do so manually.');
     }
 
     public function deleteStaticIP($id)
     {
-        Host::destroy($id);
-        $this->regenDnsmasqConfAndRestart();
+        $this->regenDnsmasqConfAndRestart(fn () => Host::destroy($id));
     }
 
     public function addStaticIP()
@@ -197,12 +195,9 @@ class Settings extends Component
             'mac' => 'required|regex:/^([0-9A-Fa-f]{2}[:]){5}([0-9A-Fa-f]{2})$/|unique:hosts,mac'
         ]);
 
-        Host::create([
+        if ($this->regenDnsmasqConfAndRestart(fn () => Host::create([
             'ip' => $this->ip,
             'mac' => $this->mac
-        ]);
-
-        $this->regenDnsmasqConfAndRestart();
-        $this->closeModal();        
+        ]))) $this->closeModal();
     }
 }
