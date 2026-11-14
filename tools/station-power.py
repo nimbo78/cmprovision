@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Fixed delayed power executor and local FPMS bridge. Never opens application DB files."""
+"""Fixed delayed power executor and local FPMS menu bridge. Never opens application DB files."""
 import fcntl
 import json
 import os
@@ -106,13 +106,16 @@ def panel(request, run=subprocess.run):
     if not isinstance(request, dict): raise PowerError('Invalid panel request.')
     operation = request.get('operation')
     allowed = {'status': {'operation'}, 'prepare': {'operation', 'action'},
-               'confirm': {'operation', 'token', 'interrupt'}, 'cancel': {'operation', 'token'}}
+               'confirm': {'operation', 'token', 'interrupt'}, 'cancel': {'operation', 'token'},
+               'appearance': {'operation'}, 'set-appearance': {'operation', 'mode'}}
     if not isinstance(operation, str) or operation not in allowed or set(request) != allowed[operation]:
         raise PowerError('Invalid panel operation.')
     if operation == 'prepare' and request['action'] not in ACTIONS: raise PowerError('Unknown power action.')
     if operation in ('confirm', 'cancel') and (not isinstance(request['token'], str) or not re.fullmatch('[0-9a-f]{64}', request['token'])):
         raise PowerError('Invalid confirmation ticket.')
     if operation == 'confirm' and type(request['interrupt']) is not bool: raise PowerError('Invalid interruption confirmation.')
+    if operation == 'set-appearance' and (not isinstance(request['mode'], str) or request['mode'] not in ('light', 'dark', 'auto')):
+        raise PowerError('Unknown FPMS color mode.')
     # The system manager starts this short-lived command OUTSIDE the display's sandbox,
     # under www-data. Thus SQLite is never opened by root and FPMS keeps ProtectSystem/NNP.
     command = ['/usr/bin/systemd-run', '--quiet', '--pipe', '--wait', '--collect', '--uid=www-data',

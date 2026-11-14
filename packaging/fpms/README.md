@@ -41,7 +41,15 @@ screen, theme or button observations; Raspberry Pi Imager customization remains 
 A full FPMS package for WLAN Pi OS is no longer planned. The existing adapter is retained for compatibility,
 but its build, upgrade and hardware acceptance are outside the supported scope.
 
-KEY3 opens the Lite power menu; KEY1 confirms, KEY2 cancels. The joystick centre only selects.
+KEY3 opens the Lite station menu with power actions and **Appearance**. The latter
+reads and saves Light/Dark/Auto through the same bounded local bridge, under
+`www-data`; root and the display never open SQLite. The joystick centre applies
+the highlighted color mode, and KEY2 returns to the parent menu. A checked circle
+marks the saved mode. The setting is shared with the web FPMS form and applies to
+both layouts, independently of HDMI. A confirmed choice remains visible until a
+fresh snapshot arrives; later web changes can supersede it.
+
+For power actions, KEY1 confirms and KEY2 cancels; the joystick centre only selects.
 The package's fixed root bridge starts a bounded `www-data` Artisan command through systemd,
 using the same live confirmation service as the web UI. Root never reads the application database,
 and the display sandbox remains unchanged. The updated `cmprovision4` package is required;

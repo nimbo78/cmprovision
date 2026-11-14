@@ -31,6 +31,19 @@ A complete FPMS profile for WLAN Pi OS is not planned.
 The package recipes and current acceptance status are in
 [packaging/fpms](../packaging/fpms/README.md). Version 2.24.0 also provides an experimental ready-to-flash Lite image.
 
+## Change the color mode from the panel
+
+In Lite, press **KEY3 → Appearance**, select **Light**, **Dark**, or **Auto** with
+the joystick, then press its centre to apply. The filled circle marks the current
+mode; highlighting another row does not save it. **KEY2** returns to the station
+menu; press it again to close the menu.
+
+The change applies immediately to either New or Classic and persists across restarts.
+It uses the same FPMS setting as **Settings → System → FPMS display**; HDMI retains
+its own color mode. Auto continues to follow the station's sunrise/sunset calculation.
+If saving is not confirmed, reopen Appearance to read the saved mode. Restart and
+shutdown still require their separate **KEY1** confirmation.
+
 ## Enable the panel
 
 1. Install the matching FPMS package and cmprovision package on the station.

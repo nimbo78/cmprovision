@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..bb8d067
+index 0000000..317dabd
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,470 @@
+@@ -0,0 +1,493 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10234,6 +10234,7 @@ index 0000000..bb8d067
 +        self.can_leave, self.clock = can_leave, clock
 +        from .cmprovision_power import PowerMenu
 +        self.power_menu = PowerMenu(power_client, clock) if power_client else None
++        self.appearance_override = None
 +        from .cmprovision_rescue import AccessCard
 +        self.rescue_menu = AccessCard(rescue_client, clock) if rescue_client else None
 +        # button 2 on a page asks first: until this time a second press leaves (PROMPT_SECONDS)
@@ -10292,8 +10293,22 @@ index 0000000..bb8d067
 +        """new or classic (Settings → Provisioning → FPMS display); new when the server does not say."""
 +        return self._panel_setting("theme", ("new", "classic"))
 +
-+    def color_mode(self):
++    def requested_color_mode(self):
 +        mode = self._panel_setting("color_mode", ("dark", "light", "auto"))
++        if self.appearance_override:
++            chosen, observed = self.appearance_override
++            generated = number(self.data.get('generated_at'), -1)
++            # The server records generated_at before reading panel settings. A
++            # later snapshot can supersede our acknowledgement (including a web
++            # edit); an older snapshot must not undo a successfully saved choice.
++            if generated > observed or (generated >= observed and mode == chosen):
++                self.appearance_override = None
++            else:
++                return chosen
++        return mode
++
++    def color_mode(self):
++        mode = self.requested_color_mode()
 +        if mode == "auto":
 +            return "light" if self.data.get("display_auto_mode") == "light" else "dark"
 +        return mode
@@ -10372,6 +10387,9 @@ index 0000000..bb8d067
 +                close_notice()
 +            if self.power_menu and self.power_menu.open:
 +                self.power_menu.key(key)
++                if self.power_menu.appearance_observation:
++                    self.appearance_override = self.power_menu.appearance_observation
++                    self.power_menu.appearance_observation = None
 +                return True
 +            if key == "KEY3" and self.power_menu:
 +                self.prompt_until = None
@@ -10484,6 +10502,11 @@ index 0000000..bb8d067
 +
 +    def frame(self):
 +        with self.lock, PALETTE_LOCK:
++            if self.power_menu and self.power_menu.open:
++                current = self.requested_color_mode()
++                if current != self.power_menu.appearance_mode:
++                    self.power_menu.appearance_saved = False
++                self.power_menu.appearance_mode = current
 +            if self.rescue_menu:
 +                self.expire_access()
 +                if self.rescue_menu.open:
@@ -12298,17 +12321,19 @@ index 0000000..2aa966a
 +        y += step
 diff --git a/fpms/integrations/cmprovision_power.py b/fpms/integrations/cmprovision_power.py
 new file mode 100644
-index 0000000..27cf5b7
+index 0000000..9bbba61
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_power.py
-@@ -0,0 +1,127 @@
-+"""Explicit Lite-only power menu. No display snapshot authorizes an operation."""
+@@ -0,0 +1,169 @@
++"""Lite station menu: appearance preferences and separately confirmed power actions."""
 +import json
 +import re
 +import subprocess
 +
 +from PIL import Image, ImageDraw
 +from . import cmprovision_fonts as fonts
++
++COLOR_MODES = ('light', 'dark', 'auto')
 +
 +
 +def request(payload):
@@ -12331,10 +12356,13 @@ index 0000000..27cf5b7
 +        self.stage, self.index, self.action = "menu", 0, "reboot"
 +        self.token, self.deadline, self.active_count = None, 0, 0
 +        self.message = "Check station status before retrying."
++        self.appearance_mode, self.mode_index = 'dark', 1
++        self.appearance_observation, self.appearance_saved = None, False
 +
 +    def show(self):
 +        self.open, self.stage, self.index = True, "menu", 0
 +        self.token = None
++        self.appearance_observation = None
 +
 +    def expire(self):
 +        if self.stage in ("confirm", "interrupt") and self.clock() >= self.deadline:
@@ -12358,9 +12386,23 @@ index 0000000..27cf5b7
 +            raise ValueError("Changed token")
 +        self.stage, self.token, self.active_count = stage, token, count
 +
++    def _appearance_reply(self, result, expected=None):
++        if not isinstance(result, dict) or result.get('stage') != 'appearance':
++            raise ValueError('Invalid appearance response')
++        mode, observed = result.get('mode'), result.get('observed_at')
++        if mode not in COLOR_MODES or type(observed) is not int or not 0 <= observed < 2**53:
++            raise ValueError('Invalid appearance setting')
++        if expected is not None and mode != expected:
++            raise ValueError('Appearance change was not confirmed')
++        self.appearance_mode = mode
++        self.appearance_observation = (mode, observed)
++
 +    def key(self, key):
 +        self.expire()
 +        if key == "KEY2":
++            if self.stage in ('appearance', 'appearance_error'):
++                self.stage, self.index = 'menu', 3
++                return
 +            # Scheduling cannot be cancelled here. For an unused ticket this invalidates
 +            # server-side confirmation too; expiry still protects a failed cancel request.
 +            if self.token:
@@ -12371,21 +12413,33 @@ index 0000000..27cf5b7
 +        try:
 +            if self.stage == "menu":
 +                if key in ("UP", "DOWN"):
-+                    self.index = (self.index + (1 if key == "DOWN" else -1)) % 3
++                    self.index = (self.index + (1 if key == "DOWN" else -1)) % 4
 +                elif key == "CENTER":
 +                    if self.index == 0:
 +                        self.open = False
 +                        return
++                    if self.index == 3:
++                        self.stage, self.appearance_saved = 'appearance', False
++                        self._appearance_reply(self.client(dict(operation='appearance')))
++                        self.mode_index = COLOR_MODES.index(self.appearance_mode)
++                        return
 +                    self.action = ("reboot", "poweroff")[self.index - 1]
 +                    self._reply(self.client(dict(operation="prepare", action=self.action)), preparing=True)
 +                    self.deadline = self.clock() + 120
++            elif self.stage == 'appearance':
++                if key in ('UP', 'DOWN'):
++                    self.mode_index = (self.mode_index + (1 if key == 'DOWN' else -1)) % len(COLOR_MODES)
++                elif key == 'CENTER':
++                    mode = COLOR_MODES[self.mode_index]
++                    self._appearance_reply(self.client(dict(operation='set-appearance', mode=mode)), expected=mode)
++                    self.appearance_saved = True
 +            elif self.stage in ("confirm", "interrupt") and key == "KEY1":
 +                self._reply(self.client(dict(operation="confirm", token=self.token,
 +                                             interrupt=self.stage == "interrupt")))
 +        except Exception:
 +            # A lost reply may mean the action was scheduled. Never retry a confirmation
 +            # automatically, and never show private command output on the display.
-+            self.stage = "error"
++            self.stage = 'appearance_error' if self.stage == 'appearance' else 'error'
 +
 +
 +def render(menu, palette):
@@ -12399,21 +12453,31 @@ index 0000000..27cf5b7
 +    legend = fonts.font("tiny")
 +    draw.rectangle((0, 0, 17, 13), fill=p["accent"])
 +    fonts.draw_centered(small, img, (0, 0, 17, 13), "cm", p["bg"])
-+    title.draw(img, 22, 0, "Power", p["fg"])
++    caption = 'Appearance' if menu.stage in ('appearance', 'appearance_error') else ('Station' if menu.stage == 'menu' else 'Power')
++    title.draw(img, 22, 0, caption, p["fg"])
 +    draw.line((0, 16, 127, 16), fill=p["line"])
 +    action = "Restart" if menu.action == "reboot" else "Shut down"
 +    stage = menu.stage
 +    if stage == "menu":
-+        for n, word in enumerate(("Cancel", "Restart", "Shut down")):
-+            y = 25 + n * 22
++        for n, word in enumerate(("Cancel", "Restart", "Shut down", "Appearance >")):
++            y = 24 + n * 18
 +            if n == menu.index:
 +                draw.rectangle((1, y - 3, 126, y + 14), outline=p["accent"])
 +            body.draw(img, 8, y, word, p["accent"] if n == menu.index else p["fg"])
 +        lines = ["CENTER Select", "KEY2 Back"]
++    elif stage == 'appearance':
++        for n, mode in enumerate(COLOR_MODES):
++            y = 25 + n * 21
++            if n == menu.mode_index:
++                draw.rectangle((1, y - 3, 126, y + 14), outline=p['accent'])
++            draw.ellipse((8, y + 3, 13, y + 8), outline=p['accent'], fill=p['accent'] if mode == menu.appearance_mode else p['bg'])
++            body.draw(img, 22, y, mode.title(), p['accent'] if n == menu.mode_index else p['fg'])
++        small.draw(img, 2, 88, 'Saved' if menu.appearance_saved else 'Choose color mode', p['muted'])
++        lines = ['CENTER Apply', 'KEY2 Back']
 +    else:
 +        heading = {"confirm": action + "?", "interrupt": "Interrupt flashing?",
 +                   "scheduled": action + " requested", "error": "Not confirmed",
-+                   "expired": "Confirmation expired"}.get(stage, "Power")
++                   "expired": "Confirmation expired", 'appearance_error': 'Theme not confirmed'}.get(stage, "Power")
 +        body.draw(img, 2, 23, fonts.fit(body, heading, 124), p["warn"] if stage == "interrupt" else p["fg"])
 +        message = {
 +            "confirm": "This station will restart." if menu.action == "reboot" else "To start again, cycle PoE or external power.",
@@ -12421,6 +12485,7 @@ index 0000000..27cf5b7
 +            "scheduled": "Waiting for restart. No more confirmation needed." if menu.action == "reboot" else "Allow shutdown to finish. Cycle power to start again.",
 +            "error": menu.message,
 +            "expired": "Choose the action again.",
++            'appearance_error': 'Reopen Appearance to check the saved mode.',
 +        }.get(stage, "")
 +        for n, line in enumerate(fonts.wrap(small, message, 124)[:5]):
 +            small.draw(img, 2, 42 + 12 * n, line, p["muted"])
@@ -13442,6 +13507,160 @@ index 0000000..8bcfcce
 +    x, y, _ = next(c for c in classic.map_cells(panel)[4] if c[2] == 0)
 +    cx, cy = centre_of_ink(panel.frame(), (x, y, x + cmprovision.CUBE - 1, y + cmprovision.CUBE - 1), rgb("accent"))
 +    assert abs(cx - (x + (cmprovision.CUBE - 1) / 2)) <= 0.5 and abs(cy - (y + (cmprovision.CUBE - 1) / 2)) <= 0.5
+diff --git a/tests/test_cmprovision_appearance.py b/tests/test_cmprovision_appearance.py
+new file mode 100644
+index 0000000..906c696
+--- /dev/null
++++ b/tests/test_cmprovision_appearance.py
+@@ -0,0 +1,148 @@
++"""Appearance is a persisted preference, separate from destructive power confirmation."""
++import json
++
++import pytest
++
++from fpms.integrations.cmprovision import Panel
++from fpms.integrations import cmprovision_fonts as fonts
++
++MODES = ('light', 'dark', 'auto')
++
++
++class Client:
++    def __init__(self, mode='auto'):
++        self.mode, self.observed_at = mode, 100
++        self.calls, self.fail = [], None
++
++    def __call__(self, payload):
++        self.calls.append(dict(payload))
++        assert payload['operation'] in ('appearance', 'set-appearance'), 'Appearance must never request station power'
++        if payload['operation'] == self.fail:
++            raise RuntimeError('private backend error')
++        if payload['operation'] == 'set-appearance':
++            self.mode = payload['mode']
++        return dict(stage='appearance', mode=self.mode, observed_at=self.observed_at)
++
++
++def panel(tmp_path, client, layout='new', mode='auto'):
++    p = Panel(tmp_path/'config', tmp_path/'snapshot', can_leave=False, power_client=client)
++    p.data = {'panel': {'theme': layout, 'color_mode': mode}, 'generated_at': 90, 'display_auto_mode': 'dark'}
++    return p
++
++
++def open_appearance(p):
++    p.key('KEY3')
++    for _ in range(3): p.key('DOWN')
++    p.key('CENTER')
++    assert p.power_menu.stage == 'appearance'
++
++
++def choose(p, mode):
++    while MODES[p.power_menu.mode_index] != mode: p.key('DOWN')
++    p.key('CENTER')
++
++
++def test_submenu_reads_current_web_mode_and_back_never_saves(tmp_path):
++    c = Client('light')
++    p = panel(tmp_path, c)
++    open_appearance(p)
++    assert c.calls == [{'operation': 'appearance'}]
++    assert p.power_menu.appearance_mode == 'light'
++    assert p.power_menu.mode_index == 0
++    p.key('DOWN')
++    p.key('KEY2')
++    assert p.power_menu.open and p.power_menu.stage == 'menu' and p.power_menu.index == 3
++    p.key('KEY2')
++    assert not p.power_menu.open and c.calls == [{'operation': 'appearance'}]
++
++
++@pytest.mark.parametrize('layout', ['new', 'classic'])
++@pytest.mark.parametrize('mode', MODES)
++def test_apply_is_immediate_for_both_layouts_and_survives_closing_menu(tmp_path, layout, mode):
++    c = Client('auto')
++    p = panel(tmp_path, c, layout)
++    open_appearance(p)
++    choose(p, mode)
++    assert c.calls[-1] == {'operation': 'set-appearance', 'mode': mode}
++    assert p.power_menu.appearance_mode == mode
++    assert p.color_mode() == ('dark' if mode == 'auto' else mode)
++    p.key('KEY2'); p.key('KEY2')
++    assert not p.power_menu.open
++    assert p.color_mode() == ('dark' if mode == 'auto' else mode)
++    assert p.theme() == layout
++
++
++def test_auto_continues_using_the_shared_day_night_signal(tmp_path):
++    c = Client('dark')
++    p = panel(tmp_path, c, mode='dark')
++    open_appearance(p); choose(p, 'auto')
++    p.data['display_auto_mode'] = 'light'
++    assert p.color_mode() == 'light'
++    p.data['display_auto_mode'] = 'dark'
++    assert p.color_mode() == 'dark'
++
++
++def test_acknowledged_mode_is_not_undone_by_the_old_snapshot_but_later_web_changes_win(tmp_path):
++    c = Client('auto')
++    p = panel(tmp_path, c)
++    open_appearance(p); choose(p, 'light')
++    p.config.write_text(json.dumps({'enabled': True, 'open_on_start': True}))
++    def refresh(at, mode):
++        p.snapshot.write_text(json.dumps({'version': 1, 'generated_at': at, 'panel': {'color_mode': mode}, 'display_auto_mode': 'dark'}))
++        p.refresh(now=110, force=True)
++    refresh(99, 'dark')
++    assert p.color_mode() == 'light'
++    refresh(100, 'dark')
++    assert p.color_mode() == 'light'
++    refresh(101, 'auto')  # a later web edit can supersede the panel save
++    assert p.color_mode() == 'dark'
++    p.frame()
++    assert p.power_menu.appearance_mode == 'auto'
++
++
++@pytest.mark.parametrize('operation', ['appearance', 'set-appearance'])
++def test_backend_failure_keeps_confirmed_mode_and_returns_to_parent_safely(tmp_path, operation):
++    c = Client('auto')
++    p = panel(tmp_path, c)
++    if operation == 'appearance':
++        c.fail = operation
++        p.key('KEY3')
++        for _ in range(3): p.key('DOWN')
++        p.key('CENTER')
++    else:
++        open_appearance(p); c.fail = operation; choose(p, 'light')
++    assert p.power_menu.stage == 'appearance_error'
++    assert p.color_mode() == 'dark'
++    p.key('KEY1')
++    p.key('CENTER')
++    assert not any(r['operation'] in ('prepare', 'confirm') for r in c.calls)
++    p.key('KEY2')
++    assert p.power_menu.open and p.power_menu.stage == 'menu'
++
++
++@pytest.mark.parametrize('reply', [None, {}, {'stage': 'scheduled', 'mode': 'light', 'observed_at': 100},
++    {'stage': 'appearance', 'mode': 'blue', 'observed_at': 100},
++    {'stage': 'appearance', 'mode': 'light', 'observed_at': True}])
++def test_malformed_readback_does_not_claim_a_new_mode(tmp_path, reply):
++    p = panel(tmp_path, lambda _: reply)
++    p.key('KEY3')
++    for _ in range(3): p.key('DOWN')
++    p.key('CENTER')
++    assert p.power_menu.stage == 'appearance_error'
++    assert p.color_mode() == 'dark'
++
++
++@pytest.mark.parametrize('layout', ['new', 'classic'])
++@pytest.mark.parametrize('mode', MODES)
++@pytest.mark.parametrize('stage', ['menu', 'appearance', 'appearance_error'])
++def test_menu_and_submenu_fit_all_layouts_and_palettes(tmp_path, layout, mode, stage):
++    c = Client(mode)
++    p = panel(tmp_path, c, layout, mode)
++    open_appearance(p)
++    p.power_menu.stage = stage
++    fonts.start_recording()
++    img = p.frame()
++    ink, centred = fonts.stop_recording()
++    assert img.size == (128, 128)
++    assert not fonts.overlaps(ink)
++    assert not fonts.off_centre(centred)
 diff --git a/tests/test_cmprovision_fonts.py b/tests/test_cmprovision_fonts.py
 new file mode 100644
 index 0000000..d024b09
