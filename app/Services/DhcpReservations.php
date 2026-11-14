@@ -16,11 +16,12 @@ class DhcpReservations
     {
         try {
             return Cache::lock('dhcp-reservations', 120)->block(5, function () use ($mutation) {
-                return DB::transaction(function () use ($mutation) {
-                    $path = config('cmprovision.dnsmasq_conf');
-                    $old = $this->read($path);
-                    $written = $attempted = false;
-                    try {
+                $path = config('cmprovision.dnsmasq_conf');
+                $old = $this->read($path);
+                $written = $attempted = false;
+                try {
+                    // The catch must also enclose COMMIT, which happens after this callback returns.
+                    return DB::transaction(function () use ($mutation, &$written, &$attempted) {
                         $mutation();
                         $this->write();
                         $written = true;
@@ -30,15 +31,18 @@ class DhcpReservations
                             if (!$this->restart()) throw new RuntimeException('DHCP could not reload the new reservations.');
                         }
                         return $enabled;
-                    } catch (\Throwable $error) {
-                        if ($written) {
-                            $this->replace($path, $old);
-                            $restored = !$attempted || $this->restart();
-                            throw new RuntimeException('Previous reservations restored.'.($restored ? '' : ' DHCP could not restart; check Service status.'), 0, $error);
+                    });
+                } catch (\Throwable $error) {
+                    if ($written) {
+                        try { $this->replace($path, $old); }
+                        catch (\Throwable $restoreError) {
+                            throw new RuntimeException('The reservation change failed and the previous DHCP file could not be restored. Check Service status and file permissions.', 0, $restoreError);
                         }
-                        throw $error;
+                        $restored = !$attempted || $this->restart();
+                        throw new RuntimeException('Previous reservations restored.'.($restored ? '' : ' DHCP could not restart; check Service status.'), 0, $error);
                     }
-                });
+                    throw $error instanceof RuntimeException ? $error : new RuntimeException('The reservation change failed; previous settings were kept.', 0, $error);
+                }
             });
         } catch (\Illuminate\Contracts\Cache\LockTimeoutException $busy) {
             throw new RuntimeException('Another DHCP reservation change is in progress. Try again shortly.', 0, $busy);

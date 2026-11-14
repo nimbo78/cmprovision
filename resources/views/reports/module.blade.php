@@ -12,6 +12,9 @@
         </dl></section>
         <section><h2>Provisioning</h2>
             @if ($report['run'])
+                @if ($report['run']['operation'] === 'usb-prep')
+                    <p><strong>Bootloader preparation only</strong></p><p>Image not provisioned during this operation.</p>
+                @endif
                 <p class="badge">{{ \App\Models\Cm::PHASE_LABELS[$report['run']['result']] ?? 'Not recorded' }}</p>
                 <dl>@foreach (['project'=>'Project', 'image'=>'Image', 'started_at'=>'Started', 'completed_at'=>'Completed', 'os_check'=>'OS check'] as $key => $label)
                     <div><dt>{{ $label }}</dt><dd>{{ $report['run'][$key] ?? 'Unknown' }}</dd></div>

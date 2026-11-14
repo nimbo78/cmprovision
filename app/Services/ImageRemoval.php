@@ -19,16 +19,16 @@ class ImageRemoval
         if ($piecesOnly ? $image->splitNeeded() : Project::where('image_id', $image->id)->exists())
             return $piecesOnly ? 'A project uses these pieces: they stay.' : 'This image is used by a project. Change or remove that reference first.';
         if ($image->splitPreparing()) return 'The image pieces are being prepared. Wait until that job finishes.';
-        if (in_array($image->download_state, ['converting', 'checking'], true))
-            return 'This image is being repacked or checked. Wait until that job finishes.';
         return null;
     }
 
-    public function remove(int $id, bool $piecesOnly = false): bool
+    public function remove(int $id, bool $piecesOnly = false, bool $unusedOnly = false): bool
     {
-        return DB::transaction(function () use ($id, $piecesOnly) {
+        return DB::transaction(function () use ($id, $piecesOnly, $unusedOnly) {
             $image = Image::find($id);
             if (!$image) return false;
+            if ($unusedOnly && in_array($image->download_state, ImageSpace::IN_FLIGHT, true))
+                throw new RuntimeException('This image now has an active job and stays protected.');
             if ($reason = self::blocker($image, $piecesOnly)) throw new RuntimeException($reason);
             if ($piecesOnly) $image->removeSplit();
             else $image->delete();

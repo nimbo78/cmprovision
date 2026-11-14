@@ -48,7 +48,7 @@ class StationStorage extends Component
             try {
                 $image = Image::find($item['id']);
                 $size = $image ? app(ImageSpace::class)->bytes([$image]) : 0;
-                if (app(ImageRemoval::class)->remove($item['id'])) { $removed++; $bytes += $size; }
+                if (app(ImageRemoval::class)->remove($item['id'], false, true)) { $removed++; $bytes += $size; }
             } catch (\RuntimeException $claimed) { $protected++; }
         }
         $this->preview = []; $this->previewOpen = false;

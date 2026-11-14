@@ -127,4 +127,25 @@ class StaticIpSettingsTest extends TestCase
         $this->assertStringContainsString('172.20.0.45', file_get_contents($this->conf));
         $this->assertSame('', file_get_contents($this->restartLog));
     }
+
+    public function test_failure_after_the_transaction_callback_restores_config_and_reload(): void
+    {
+        $before=file_get_contents($this->conf);
+        $connection=\Illuminate\Support\Facades\DB::connection();
+        $manager=\Illuminate\Support\Facades\DB::getFacadeRoot();
+        $proxy=\Mockery::mock($manager);
+        $proxy->shouldReceive('transaction')->once()->andReturnUsing(function ($callback) use ($connection) {
+            $connection->beginTransaction();
+            try { $callback(); throw new \RuntimeException('Injected commit failure after callback'); }
+            finally { $connection->rollBack(); }
+        });
+        \Illuminate\Support\Facades\DB::swap($proxy);
+        try {
+            Livewire::test(Settings::class)->call('addStaticIP')->set('ip','172.20.0.45')
+                ->set('mac','e4:5f:01:00:00:45')->call('storeStaticIP');
+        } finally { \Illuminate\Support\Facades\DB::swap($manager); }
+        $this->assertDatabaseMissing('hosts',['ip'=>'172.20.0.45']);
+        $this->assertSame($before,file_get_contents($this->conf));
+        $this->assertSame("restarted\nrestarted\n",file_get_contents($this->restartLog));
+    }
 }

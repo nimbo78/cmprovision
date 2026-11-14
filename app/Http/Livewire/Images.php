@@ -11,6 +11,7 @@ use App\Models\Image;
 use App\Services\ImageDownloads;
 use App\Services\ImageSpace;
 use App\Services\ImageRemoval;
+use App\Services\ImageUpdates;
 use App\Support\FetchSpeed;
 use \Illuminate\Http\UploadedFile;
 
@@ -23,6 +24,7 @@ class Images extends Component
     public $isOpen = false;
     // images from the internet (2.8.0): the window, the images on their way, what each fetch runs at, the free space they have
     public $sourcesOpen = false, $fetching = false, $speeds = [], $imageSpace = 0, $unusedCount = 0, $unusedSize = 0;
+    public string $sourcesRepo = '';
     public $os32bit = false;
 
     /* The columns that sort the list by a click on their header; with none chosen the order is the name of the file */
@@ -61,7 +63,9 @@ class Images extends Component
         $this->unusedSize = app(ImageSpace::class)->bytes($unused);
         $this->splitPending = $this->images->contains(function ($image) { return $image->splitPreparing(); });
 
-        return view('livewire.images', ['sortKey' => $sort, 'sortDir' => $dir]);
+        $updates = app(ImageUpdates::class);
+        return view('livewire.images', ['sortKey' => $sort, 'sortDir' => $dir,
+            'imageUpdates'=>$this->images->mapWithKeys(fn ($image) => [$image->id=>$updates->peek($image)])->all()]);
     }
 
     public function openModal()
@@ -69,9 +73,17 @@ class Images extends Component
         $this->isOpen = true;
     }
 
-    public function openSources()
+    public function openSources($id = null)
     {
+        $source = $id === null ? [] : json_decode((string) Image::findOrFail($id)->source, true);
+        $this->sourcesRepo = is_string($source['repo'] ?? null) ? $source['repo'] : '';
         $this->sourcesOpen = true;
+    }
+
+    public function checkUpdate(int $id): void
+    {
+        abort_unless(auth()->check(), 403);
+        app(ImageUpdates::class)->check(Image::findOrFail($id));
     }
 
     #[On('image-sources-closed')]
@@ -95,7 +107,7 @@ class Images extends Component
         foreach ($unused as $image) {
             try {
                 $bytes = $space->bytes([$image]);
-                if (app(ImageRemoval::class)->remove($image->id)) { $deleted++; $size += $bytes; }
+                if (app(ImageRemoval::class)->remove($image->id, false, true)) { $deleted++; $size += $bytes; }
             }
             catch (\RuntimeException $protected) { /* A project/run may have claimed an image after the list was drawn. */ }
         }

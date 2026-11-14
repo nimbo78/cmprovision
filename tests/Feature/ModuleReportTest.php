@@ -63,4 +63,13 @@ class ModuleReportTest extends TestCase
             ->assertJsonPath('diagnostics.0.channel','usb');
         $this->assertNotNull($response->json('diagnostics.0.received_at'));
     }
+
+    public function test_usb_preparation_on_a_registered_module_is_not_presented_as_image_provisioning(): void
+    {
+        $cm=$this->module(); $cm->usb_prep_at=now(); $cm->image_filename=null; $cm->save();
+        $this->actingAs(User::factory()->create())->get('/cms/'.$cm->mac.'/report/json')->assertOk()
+            ->assertJsonPath('run.operation','usb-prep')->assertJsonPath('run.image_provisioned',false);
+        $this->get('/cms/'.$cm->mac.'/report/html')->assertOk()->assertSee('Bootloader preparation only')
+            ->assertSee('Image not provisioned');
+    }
 }

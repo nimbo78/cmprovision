@@ -51,7 +51,9 @@ class ModuleReport
         $copy = clone $cm; $copy->timeline = $timeline;
         $steps = array_map(fn ($step) => ['phase'=>$step['phase'], 'label'=>$step['label'], 'at'=>$step['at']->toIso8601String(),
             'seconds'=>$step['seconds'], 'bytes_per_second'=>$step['speed']], RunTimeline::steps($copy));
-        $data['run'] = ['result'=>array_key_exists((string) $cm->phase, Cm::PHASE_LABELS) ? $cm->phase : 'not-recorded',
+        $data['run'] = ['operation'=>$cm->usb_prep_at !== null ? 'usb-prep' : 'provisioning',
+            'image_provisioned'=>$cm->usb_prep_at !== null ? false : null,
+            'result'=>array_key_exists((string) $cm->phase, Cm::PHASE_LABELS) ? $cm->phase : 'not-recorded',
             'started_at'=>$cm->provisioning_started_at?->toIso8601String(), 'completed_at'=>$cm->provisioning_complete_at?->toIso8601String(),
             'project'=>$this->text($cm->project?->name), 'image'=>$this->text($cm->image_filename, 255),
             'image_sha256'=>preg_match('/^[0-9a-f]{64}$/iD', (string) $cm->image_sha256) ? strtolower($cm->image_sha256) : null,

@@ -35,9 +35,10 @@
                 @include('livewire.addimage')
             @endif
             @if ($sourcesOpen)
-                <livewire:image-sources key="image-sources" />
+                <livewire:image-sources :initial-repo="$sourcesRepo" :key="'image-sources-'.$sourcesRepo" />
             @endif
             <p class="text-sm text-fg-muted mb-3">Free disk space for images: {{ \App\Models\Image::size((int) $imageSpace) }}.</p>
+            <p wire:loading wire:target="checkUpdate" class="text-sm text-fg-muted mb-3" role="status">Checking release source…</p>
             <div class="cmp-card-scroll">
                 <table class="cmp-table min-w-full">
                     <thead>
@@ -54,6 +55,15 @@
                             <td><span style="word-break: break-all;">{{ $i->filename }}</span> (added {{ $i->created_at->local()->format("d-M-Y") }})
                                 @if ($i->source_type)
                                 <div class="text-xs text-fg-muted">From {{ $i->sourceLabel() }}@if ($i->checksumLabel()) · {{ $i->checksumLabel() }}@endif</div>
+                                @endif
+                                @if ($hint = $imageUpdates[$i->id] ?? null)
+                                    <div class="text-sm mt-2 {{ $hint['state'] === 'available' ? 'text-link' : 'text-fg-muted' }}">
+                                        <p>{{ $hint['message'] }}</p>
+                                        @if ($hint['candidate'])
+                                            <a href="{{ $hint['candidate']['url'] }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ $hint['candidate']['tag'] }} · {{ $hint['candidate']['asset'] }}</a>
+                                        @endif
+                                        <p class="text-xs">Checked {{ \Illuminate\Support\Carbon::createFromTimestamp($hint['checked_at'])->local()->format('d.m.Y H:i') }}. Stable releases only; projects stay unchanged.</p>
+                                    </div>
                                 @endif
                             </td>
                             <td>
@@ -82,6 +92,12 @@
                                 @endif
                             </td>
                             <td>
+                                @if ($i->source_type === 'github')
+                                    <button type="button" wire:click="checkUpdate({{ $i->id }})" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary cmp-btn-small">Check for newer image</button>
+                                    @if (($imageUpdates[$i->id]['state'] ?? null) === 'available')
+                                        <button type="button" wire:click="openSources({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Browse release images</button>
+                                    @endif
+                                @endif
                                 @if ($i->download_state === 'failed')
                                 <button wire:click="retry({{ $i->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Retry</button>
                                 @endif

@@ -2,7 +2,7 @@
 
 # Operating the provisioner
 
-[Back to the README](../README.md) · [Upgrade and restore](upgrading.md) · [LED signals](leds.md) · [USB provisioning](usb-provisioning.md) · [Local console](local-console.md)
+[Back to the README](../README.md) · [Upgrade and restore](upgrading.md) · [LED signals](leds.md) · [USB provisioning](usb-provisioning.md) · [Local console](local-console.md) · [Storage and device reports](station-operations.md)
 
 Detailed behaviour of the project options and stand controls. Start with the [installation guide](../README.md#quick-start) if this is a new server.
 

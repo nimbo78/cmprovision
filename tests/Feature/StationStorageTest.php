@@ -77,4 +77,15 @@ class StationStorageTest extends TestCase
         $page->call('refreshStatus')->assertSee('Unknown')->assertSee('5.0 GB required');
         $this->assertSame(1, $control->calls);
     }
+
+    public function test_a_retried_download_is_protected_from_an_old_cleanup_preview(): void
+    {
+        $image=$this->image('retry.img.gz');
+        $image->download_state='failed'; $image->save();
+        $page=Livewire::test(StationStorage::class)->call('previewCleanup');
+        $image->download_state='queued'; $image->save();
+        $page->call('clean')->assertSee('protected');
+        $this->assertFileExists($image->imagepath());
+        $this->assertDatabaseHas('images',['id'=>$image->id,'download_state'=>'queued']);
+    }
 }

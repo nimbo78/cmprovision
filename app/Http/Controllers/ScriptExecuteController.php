@@ -256,7 +256,8 @@ exit 1
         });
     }
 
-    protected function startLockedProvisioning(Request $req)
+    /** Select the image and record its run before another writer can retire its files. */
+    protected function claimProvisioning(Request $req)
     {
         $previous = $this->findForStart($req);
         if ($previous && $previous->serial !== $this->serial && Cm::where('serial', $this->serial)->where('id', '!=', $previous->id)->exists())
@@ -368,6 +369,16 @@ exit 1
             'durable_at' => null,
             'usb_prep_at' => $prep ? now() : null,
         ]));
+
+
+        return [$prep, $project, $image, $split];
+    }
+
+    protected function startLockedProvisioning(Request $req)
+    {
+        $claim = \Illuminate\Support\Facades\DB::transaction(fn () => $this->claimProvisioning($req));
+        if (!is_array($claim)) return $claim; // An early refusal/resume already produced a response.
+        [$prep, $project, $image, $split] = $claim;
 
         if ($prep)
             return $this->prepScript($req);

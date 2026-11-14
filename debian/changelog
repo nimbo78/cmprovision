@@ -1,3 +1,13 @@
+cmprovision4 (2.31.0~dev1) unstable; urgency=medium
+
+  * Add a Storage overview with update snapshot estimates and reviewed cleanup.
+  * Export bounded, shareable device reports as standalone HTML and JSON.
+  * Check GitHub image sources for newer matching stable release assets.
+  * Protect images used by projects, current runs and split preparation.
+  * Restore previous DHCP reservations and configuration when apply fails.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 08:00:00 +0300
+
 cmprovision4 (2.30.3~dev7) unstable; urgency=medium
 
   * Add an Appearance submenu to the FPMS station menu for Light, Dark and

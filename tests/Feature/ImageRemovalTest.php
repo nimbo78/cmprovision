@@ -70,4 +70,22 @@ class ImageRemovalTest extends TestCase
         $this->assertDatabaseMissing('images', ['id'=>$image->id]);
         $this->assertFileDoesNotExist($image->imagepath());
     }
+
+    public function test_bulk_cleanup_keeps_a_download_retried_after_candidate_selection(): void
+    {
+        $image=$this->image(); $image->download_state='failed'; $image->save();
+        $space=new class($image->id) extends \App\Services\ImageSpace {
+            public int $calls=0;
+            public function __construct(private int $id) { parent::__construct(); }
+            public function unused(): \Illuminate\Support\Collection {
+                $rows=parent::unused();
+                if (++$this->calls===2) Image::whereKey($this->id)->update(['download_state'=>'queued']);
+                return $rows;
+            }
+        };
+        $this->app->instance(\App\Services\ImageSpace::class,$space);
+        Livewire::test(Images::class)->call('deleteUnused');
+        $this->assertDatabaseHas('images',['id'=>$image->id,'download_state'=>'queued']);
+        $this->assertFileExists($image->imagepath());
+    }
 }
