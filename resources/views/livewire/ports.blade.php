@@ -212,6 +212,9 @@
                     @elseif ($tile['state'] === 'uplink')
                         <p class="mb-2">Uplink: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @endif
+                    @if ($reprovisionUrl)
+                        <div class="flex justify-end mb-3"><a href="{{ $reprovisionUrl }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Re-provision…</a></div>
+                    @endif
                     @if (!empty($tile['neighbors']))
                         {{-- what the device itself says over LLDP or CDP; the texts are the device's own and escaped --}}
                         <div class="mb-3">

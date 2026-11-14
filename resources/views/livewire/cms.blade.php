@@ -10,6 +10,7 @@
         </select>
         <input type="search" wire:model.live.debounce.300ms="search" class="cmp-field w-60" placeholder="MAC, host name or serial" aria-label="Search by MAC, host name or serial">
         <div class="ml-auto flex flex-wrap gap-2">
+            <a href="{{ route('reprovision') }}" class="cmp-btn cmp-btn-secondary">Re-provision…</a>
             {{-- a disclosure: Tab walks the files, Escape closes it and gives the focus back to the button --}}
             <div class="relative" x-data="{ open: false }" @keydown.escape.window="if (open) { open = false; $refs.netbox.focus() }" @click.outside="open = false">
                 <button type="button" x-ref="netbox" class="cmp-btn cmp-btn-secondary" @click="open = ! open" aria-controls="cms-netbox-files" :aria-expanded="open.toString()">Export for NetBox ▾</button>
