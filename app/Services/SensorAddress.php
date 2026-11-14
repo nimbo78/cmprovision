@@ -31,6 +31,20 @@ class SensorAddress
         return count($all[$target['address']]) === 1 ? $target : null;
     }
 
+    /** Current unfiltered claims, so a conflicting lease cannot fall back to weaker evidence. */
+    public function currentLeases(): array
+    {
+        $claims = [];
+        foreach (@file($this->leases ?? base_path('etc/dnsmasq.leases'), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+            $f = preg_split('/\s+/', trim($line));
+            if (count($f) < 4 || !ctype_digit($f[0]) || ((int) $f[0] !== 0 && (int) $f[0] <= now()->timestamp)) continue;
+            $mac = strtolower($f[1]);
+            if (preg_match('/^(?:[a-f0-9]{2}:){5}[a-f0-9]{2}$/D', $mac) && filter_var($f[2], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4))
+                $claims[] = ['mac'=>$mac, 'address'=>$f[2]];
+        }
+        return $claims;
+    }
+
     private function locals(): array
     {
         $ips = [];
