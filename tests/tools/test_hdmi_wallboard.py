@@ -179,6 +179,100 @@ class RescueWifiTest(unittest.TestCase):
         self.assertIn('AP WAITING / 10:00', w.frame(data, 160, 45, now=1001).plain())
 
 
+class StationLinksTest(unittest.TestCase):
+    def data(self):
+        data = snapshot()
+        data['station'] = dict(uplink=dict(state='wifi', device='wlan1', ssid='Lab 78', signal=-53,
+                                         address='192.0.2.4', rate=52), links=[
+            dict(name='eth0', kind='ethernet', role='stand', up=True, speed=1000, address='172.20.0.1'),
+            dict(name='eth1', kind='ethernet', role='other', up=True, speed=100, address='198.51.100.7'),
+            dict(name='wlan1', kind='wifi', role='uplink', up=True, ssid='Lab 78', signal=-53, address='192.0.2.4')])
+        return data
+
+    def test_connections_are_visible_in_every_full_hd_and_ultrawide_view(self):
+        for cols, rows in ((137, 38), (172, 40)):
+            for view in ('desk', 'flow', 'engineer'):
+                text = w.frame(self.data(), cols, rows, view=view, now=1001).plain()
+                for expected in ('UPLINK wlan1', 'Lab 78', '-53 dBm', '192.0.2.4', 'STAND eth0',
+                                 '1 Gb/s', '172.20.0.1', 'LINK eth1', '100 Mb/s', '198.51.100.7'):
+                    self.assertIn(expected, text, (cols, rows, view))
+                self.assertEqual(1, text.count('wlan1'), 'the primary link is not duplicated')
+                self.assertIn('PROJECT: Test project', text)
+                self.assertIn('WRITE', text)
+
+    def test_wired_uplink_tells_link_speed_and_address(self):
+        data = self.data()
+        data['station']['uplink'] = dict(state='wired', device='eth1', speed=100, address='198.51.100.7')
+        text = w.frame(data, 137, 38, now=1001).plain()
+        for expected in ('UPLINK eth1', '100 Mb/s', '198.51.100.7', 'STAND eth0'):
+            self.assertIn(expected, text)
+        self.assertEqual(1, text.count('eth1'))
+
+    def test_unknown_ethernet_speed_is_explicit(self):
+        data = self.data()
+        data['station']['uplink'] = dict(state='wired', device='eth1', speed=None, address='198.51.100.7')
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('speed ?', text)
+        self.assertNotIn('0 Mb/s', text)
+
+    def test_missing_quality_and_address_are_not_reported_as_zero_or_healthy(self):
+        data = self.data()
+        data['station']['uplink'].update(ssid=None, signal=None, address=None)
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('UPLINK wlan1', text)
+        self.assertIn('no IP', text)
+        self.assertNotIn('0 dBm', text)
+        data['station']['uplink'] = dict(state='wifi_down', device='wlan1')
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('no default route', text)
+        self.assertIn('Wi-Fi disconnected', text)
+
+    def test_active_rescue_radio_is_not_mislabeled_as_a_management_connection(self):
+        data = self.data()
+        data['station']['uplink'] = dict(state='wifi_down', device='wlan0')
+        data['station']['links'].append(dict(name='wlan0', role='other', kind='wifi', up=True, address='192.168.240.1'))
+        data['rescue_wifi'] = dict(enabled=True, active=True, state='active', device='wlan0',
+                                   ssid='demo-rescue', address='192.168.240.1', clients=0)
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('AP ACTIVE', text)
+        self.assertIn('no default route', text)
+        self.assertNotIn('UPLINK wlan0', text)
+        self.assertNotIn('LINK wlan0', text)
+
+    def test_short_console_keeps_hardware_visible_and_scrolls_connection_details(self):
+        data = self.data()
+        data['modules'][0]['hardware'] = dict(model='Compute Module 4', revision='1.1', ram='4 GiB',
+                                             emmc='32 GB', wifi='Built-in', sku='CM4104032')
+        frames = [w.frame(data, 60, 24, view='engineer', now=1001, step=step).plain() for step in range(200)]
+        for text in frames:
+            self.assertIn('CM4104032', text)
+            self.assertIn('WRITE', text)
+        all_frames = '\n'.join(frames)
+        for expected in ('Lab 78', '192.0.2.4', '172.20.0.1', '198.51.100.7'):
+            self.assertIn(expected, all_frames)
+
+    def test_full_hd_connections_keep_failure_evidence_and_next_action_visible(self):
+        data = self.data()
+        data['station']['uplink']['ssid'] = 'Wireless-network-for-office-lab'
+        data['modules'][0].update(state='fail', phase='failed', detail='MMC timeout',
+            advice='Check power and module seating', hardware=dict(model='Compute Module 4', revision='1.0',
+                ram='4 GiB', emmc='Fitted; not detected', wifi='Built-in', sku='Unknown'))
+        for raw_cols, raw_rows in ((137, 38), (172, 40)):
+            cols, rows = w.viewport(raw_cols, raw_rows)[:2]
+            text = w.frame(data, cols, rows, view='engineer', now=1001).plain()
+            for expected in ('UPLINK wlan1', 'EVIDENCE: MMC timeout', 'NEXT: Check power and module seating',
+                             'Fitted; not detected'):
+                self.assertIn(expected, text, (cols, rows))
+
+    def test_network_names_cannot_inject_terminal_controls_or_expose_credentials(self):
+        data = self.data()
+        data['station']['uplink'].update(ssid='Lab\x1b[31m\nLobby\x07\u202e', password='never-display-this', profile='private-profile')
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('Lab', text)
+        for value in ('\x1b', '\x07', '\u202e', 'never-display-this', 'private-profile'):
+            self.assertNotIn(value, text)
+
+
 class ReaderTest(unittest.TestCase):
     def test_a_replaced_file_is_read_once_and_unusable_ones_are_ignored(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -223,22 +223,28 @@ class FpmsTest extends TestCase
         $this->assertSame(200, app(WallboardSnapshot::class)->current()['batch']['left_seconds']);
     }
 
-    public function test_the_station_block_is_made_for_the_panel_only_when_fpms_is_on()
+    public function test_station_network_is_shared_with_hdmi_even_when_fpms_is_off()
     {
         Cache::forget(DisplayStation::CACHE_KEY);
         $fpms = $this->mock(Fpms::class);
         $fpms->shouldReceive('settings')->andReturn(Fpms::DEFAULTS);
         $network = $this->mock(NetworkStatus::class);
-        $network->shouldNotReceive('current');    // HDMI alone never asks NetworkManager and iw for anything
-        $this->assertNull(app(WallboardSnapshot::class)->current()['station']);
+        $network->shouldReceive('current')->once()->with(30)->andReturn([
+            'uplink' => ['name' => 'wlan1', 'kind' => 'wifi', 'addresses' => ['192.0.2.4/24'],
+                'wifi' => self::WIFI + ['psk' => 'private-key']],
+            'modules' => null, 'preferred_down' => 'private-profile',
+        ]);
+        $station = app(WallboardSnapshot::class)->current()['station'];
+        $this->assertIsArray($station);
+        $this->assertSame('192.0.2.4', $station['management']);
+        $this->assertSame('private-ssid', $station['uplink']['ssid']);
+        $this->assertSame(-61, $station['uplink']['signal']);
+        $this->assertStringNotContainsString('private-key', json_encode($station));
+        $this->assertStringNotContainsString('private-profile', json_encode($station));
 
-        Cache::forget(DisplayStation::CACHE_KEY);
         $fpms = $this->mock(Fpms::class);
         $fpms->shouldReceive('settings')->andReturn(['enabled' => true, 'open_on_start' => false]);
-        $network = $this->mock(NetworkStatus::class);
-        $network->shouldReceive('current')->once()->andReturn(['uplink' => ['addresses' => ['192.0.2.4/24']], 'modules' => null]);
-        $station = app(WallboardSnapshot::class)->current()['station'];
-        $this->assertSame('192.0.2.4', $station['management']);
+        $this->assertSame($station, app(WallboardSnapshot::class)->current()['station'], 'both displays reuse the 30-second network cache');
         $this->assertNull($station['provisioning']);
     }
 }

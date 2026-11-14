@@ -1,3 +1,10 @@
+cmprovision4 (2.31.0~dev4) unstable; urgency=medium
+
+  * Show provisioner uplinks and connected interfaces in every HDMI view.
+  * Share cached Wi-Fi quality, Ethernet speed and IP addresses with FPMS.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 16:20:00 +0000
+
 cmprovision4 (2.31.0~dev3) unstable; urgency=medium
 
   * Keep cold-spare client retries from starting the rescue AP before its delay.

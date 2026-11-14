@@ -410,6 +410,62 @@ def rescue_banner(data):
     return ' / '.join(parts)
 
 
+def link_summary(label, link):
+    parts = [label + ' ' + safe(link.get('name') or '?')]
+    if not link.get('up'):
+        parts.append('DOWN')
+    elif link.get('kind') == 'wifi':
+        ssid = link.get('ssid')
+        parts.append('Wi-Fi' + (' "' + safe(ssid) + '"' if ssid else ''))
+        signal = link.get('signal')
+        parts.append(('%g dBm' % signal) if type(signal) in (int, float) and -127 <= signal <= 0 else 'signal ?')
+    else:
+        speed = link.get('speed')
+        rate = ''
+        if type(speed) in (int, float) and 0 < speed <= 1000000:
+            rate = '%g Gb/s' % (speed / 1000) if speed >= 1000 else '%g Mb/s' % speed
+        parts.append('UP' + (' ' + rate if rate else ' / speed ?' if link.get('kind') == 'ethernet' else ''))
+    parts.append(safe(link.get('address')) if link.get('address') else 'no IP')
+    return ' / '.join(parts)
+
+
+def network_strip(c, data, y, limit=2):
+    station = data.get('station')
+    if not isinstance(station, dict):
+        return 0
+    uplink = station.get('uplink') if isinstance(station.get('uplink'), dict) else {}
+    links = [link for link in (station.get('links') or [])[:32] if isinstance(link, dict) and isinstance(link.get('name'), str)]
+    rescue = data.get('rescue_wifi')
+    ap = rescue.get('device') if isinstance(rescue, dict) and rescue.get('active') is True else None
+    device = uplink.get('device')
+    connected = uplink.get('state') in ('wifi', 'wired') and device and device != ap
+    seen, segments = set(), []
+    if connected:
+        original = next((link for link in links if link['name'] == device), {})
+        primary = dict(original, name=device, kind='wifi' if uplink['state'] == 'wifi' else 'ethernet',
+                       up=original.get('up', True), ssid=uplink.get('ssid'), signal=uplink.get('signal'),
+                       address=uplink.get('address'), speed=uplink.get('speed'))
+        segments.append(link_summary('UPLINK', primary))
+        seen.add(device)
+    else:
+        segments.append('UPLINK / no default route' + (' / Wi-Fi disconnected' if uplink.get('state') == 'wifi_down' else ''))
+    for link in sorted(links, key=lambda link: ({'stand':0, 'backup':1}.get(link.get('role'), 2), link['name'])):
+        if link['name'] in seen or link['name'] == ap or not link.get('up') and link.get('role') != 'stand':
+            continue
+        label = {'stand':'STAND', 'backup':'BACKUP'}.get(link.get('role'), 'LINK')
+        segments.append(link_summary(label, link))
+        seen.add(link['name'])
+    lines = []
+    for segment in segments:
+        if lines and (len(lines[-1]) + len(segment) + 3 <= c.cols or len(lines) == limit):
+            lines[-1] += ' | ' + segment
+        else:
+            lines.append(segment)
+    for offset, line in enumerate(lines):
+        c.marquee(0, y + offset, line, c.cols, 'fg' if connected else 'warn')
+    return len(lines)
+
+
 def header(c, data, now):
     counts = data.get('counts', {})
     rescue = rescue_banner(data)
@@ -430,8 +486,9 @@ def header(c, data, now):
             c.text(0, 3, rescue, 'accent' if data['rescue_wifi'].get('active') else 'warn')
         c.text(0, 4, 'PROJECT: ' + safe(data.get('project') or 'none active'), 'fg', c.cols - 32)
         c.text(c.cols - 30, 4, 'UPDATED ' + age(data.get('generated_at'), now), 'dim')
-        c.line(5)
-        return 7
+        height = network_strip(c, data, 5) if c.rows >= 30 else 0
+        c.line(5 + height)
+        return 7 + height
     c.text(0, 0, '[cm] cmprovision // ' + safe(data.get('host', 'HDMI')), 'accent')
     c.text(0, 1, 'PROJECT: ' + safe(data.get('project') or 'none active'), 'dim')
     local = ('LOCAL %d / OURS %d' % (len(data.get('modules', [])), len(data.get('recognized', [])))) if data.get('recognized') else ('ON STAND %d' % len(data.get('modules', [])))
@@ -439,8 +496,10 @@ def header(c, data, now):
            (counts.get('done', 0), counts.get('running', 0), counts.get('failed', 0), counts.get('stale', 0)), 'warn')
     if rescue:
         c.text(0, 3, rescue, 'accent' if data['rescue_wifi'].get('active') else 'warn')
-    c.line(4 if rescue else 3)
-    return 6 if rescue else 5
+    y = 4 if rescue else 3
+    height = network_strip(c, data, y) if c.rows >= 30 else 0
+    c.line(y + height)
+    return y + height + 2
 
 
 def port_mark(port, modules):
@@ -710,9 +769,18 @@ def engineer(c, data, module, now, tick):
     issues = (diag or {}).get('issues', [])
     evidence = issues[0].get('evidence') if issues else None
     advice = issues[0].get('advice') if issues else module.get('advice')
-    c.wrap(0, below + 4, 'EVIDENCE: ' + (evidence or module.get('detail') or 'No recognized warning in the saved snapshot.'), c.cols, 2, 'fg')
-    if below + 7 < c.rows - 5:
-        c.wrap(0, below + 7, 'NEXT: ' + (advice or 'Wait for the configured checks to complete. See the module card in the web UI.'), c.cols, min(3, c.rows - 5 - below - 7), 'warn')
+    available = c.rows - 5 - (below + 4)
+    # Keep a row for NEXT even when the connection strip fills both header rows.
+    c.wrap(0, below + 4, 'EVIDENCE: ' + (evidence or module.get('detail') or 'No recognized warning in the saved snapshot.'),
+           c.cols, min(2, max(0, available - 1 if available >= 2 else available)), 'fg')
+    if available >= 2:
+        next_y = min(below + 7, c.rows - 6)
+        text = 'NEXT: ' + (advice or 'Wait for the configured checks to complete. See the module card in the web UI.')
+        lines = min(3, c.rows - 5 - next_y)
+        if lines == 1:
+            c.marquee(0, next_y, text, c.cols, 'warn')
+        else:
+            c.wrap(0, next_y, text, c.cols, lines, 'warn')
 
 
 def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=False, step=0):
@@ -740,6 +808,9 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
     else:
         unknown = sum(p.get('state') in ('unrecognized', 'quiet') for s in data.get('switches', []) for b in s['blocks'] for p in b['ports'])
         c.text(0, rows - 4, ('! %d unrecognized/quiet ports. Open Ports in the web UI.' % unknown) if unknown else 'READ ONLY / ' + safe(data.get('clock')), 'warn' if unknown else 'dim')
+    if rows < 30:
+        # Short consoles keep their card height; the otherwise empty footer row holds scrolling links.
+        network_strip(c, data, rows - 3, limit=1)
     c.text(0, rows - 2, ('PAUSED' if paused else 'AUTO ROTATION') + ' / CARD %d/%d / %s' %
            ((selected % len(cards)) + 1 if cards else 0, len(cards), view.upper()), 'dim')
     keys = 'Alt+F1 console / Alt+F8 board / <- -> / Space pause / V view'
