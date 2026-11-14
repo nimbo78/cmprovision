@@ -44,6 +44,12 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/cms', Cms::class)->name('cms');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/cms/{mac}', CmCard::class)->name('cm');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
+    ->get('/cms/{mac}/report/{format}', [\App\Http\Controllers\ModuleReportController::class, 'module'])
+    ->whereIn('format', ['html', 'json'])->name('cm.report');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
+    ->get('/diagnostics/{id}/report/{format}', [\App\Http\Controllers\ModuleReportController::class, 'usb'])
+    ->whereNumber('id')->whereIn('format', ['html', 'json'])->name('diagnostics.report');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/ports', Ports::class)->name('ports');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/images', Images::class)->name('images');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->post('/addImage', [AddImageController::class, 'store']);

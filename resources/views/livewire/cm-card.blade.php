@@ -3,6 +3,11 @@
     <div class="contents">
         <livewire:poe-outages />
 
+        <div class="flex flex-wrap justify-end gap-2 mb-4">
+            <a href="{{ route('cm.report', ['mac'=>$cm->mac, 'format'=>'html']) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Download device report</a>
+            <a href="{{ route('cm.report', ['mac'=>$cm->mac, 'format'=>'json']) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">JSON</a>
+        </div>
+
         @if ($restartMessage)
             <div class="rounded px-4 py-2 mb-4 text-sm font-semibold {{ $restartError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $restartMessage }}</div>
         @endif

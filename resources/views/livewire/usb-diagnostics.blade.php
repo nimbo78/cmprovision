@@ -37,6 +37,8 @@
             <p class="text-sm text-fg-muted mb-2">USB connection {{ $row->usb_path }} · {{ $cm ? 'A module record exists; this report may describe another boot.' : 'No provisioning record yet.' }}</p>
             @include('livewire.diagnostics-snapshot', ['report' => $row->report, 'receivedAt' => $row->received_at, 'cm' => null])
             <button wire:click="download({{ $row->id }})" class="cmp-btn cmp-btn-secondary cmp-btn-small">Download report</button>
+            <a href="{{ route('diagnostics.report', ['id'=>$row->id, 'format'=>'html']) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Device report</a>
+            <a href="{{ route('diagnostics.report', ['id'=>$row->id, 'format'=>'json']) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">JSON</a>
             @if ($cm)<a href="{{ route('cm', $cm->mac) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Module card</a>@endif
         </section>
     @endif
