@@ -1,3 +1,13 @@
+cmprovision4 (2.31.0~dev6) unstable; urgency=medium
+
+  * Re-provision compatible CM4/Pi 4 modules without local history or an OURS mark.
+  * Inspect model, Ethernet identity, root disk and network boot before first-time reset.
+  * Share the reset wizard across Ports, module cards and manual stand addresses.
+  * Hand secondary stations to an explicitly configured current primary web address.
+  * Coordinate reset and real boot by MAC and serial, with expiring confirmation.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 15 Nov 2026 02:09:44 +0300
+
 cmprovision4 (2.31.0~dev5) unstable; urgency=medium
 
   * Refresh active shared display readers after package configuration so HDMI
