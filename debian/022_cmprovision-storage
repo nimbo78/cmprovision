@@ -1,0 +1,2 @@
+# Read-only fixed directory measurements; no path arguments and no cleanup command.
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/station-storage ""

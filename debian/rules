@@ -37,6 +37,8 @@ override_dh_install:
 	install -D -m 755 tools/station-power debian/cmprovision4/usr/lib/cmprovision/station-power
 	install -D -m 755 tools/station-power-panel debian/cmprovision4/usr/lib/cmprovision/station-power-panel
 	install -D -m 755 tools/station-time debian/cmprovision4/usr/lib/cmprovision/station-time
+	install -D -m 755 tools/station-storage debian/cmprovision4/usr/lib/cmprovision/station-storage
+	install -D -m 644 tools/station-storage.py debian/cmprovision4/usr/lib/cmprovision/station-storage.py
 	install -D -m 644 tools/station-time.py debian/cmprovision4/usr/lib/cmprovision/station-time.py
 	install -D -m 644 tools/time-backup.sh debian/cmprovision4/usr/lib/cmprovision/time-backup.sh
 	install -D -m 755 tools/station-updates debian/cmprovision4/usr/lib/cmprovision/station-updates
