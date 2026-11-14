@@ -28,6 +28,19 @@ if [ "$#" -eq 1 ] && [ "$1" = identify ]; then
     printf 'agent=1\nserial=%s\nhost=%s\nstorage=%s\ncid=%s\nsectors=%s\n' "$SERIAL" "$(hostname)" "$STORAGE" "$CID" "$SECTORS"
     exit 0
 fi
+if [ "$#" -eq 1 ] && [ "$1" = inspect ]; then
+    MODEL=$(tr -d '\000' </proc/device-tree/model 2>/dev/null) || MODEL=unknown
+    REVISION=$(awk '/^Revision[[:space:]]*:/ {print tolower($3)}' /proc/cpuinfo)
+    [ -n "$REVISION" ] || REVISION=unknown
+    MAC=$(tr 'A-F' 'a-f' </sys/class/net/eth0/address 2>/dev/null) || fail 'cannot read Ethernet MAC'
+    BOOT_ORDER=$(vcgencmd bootloader_config 2>/dev/null | sed -n 's/^BOOT_ORDER=//p' | tr 'A-F' 'a-f')
+    case "$BOOT_ORDER" in 0x[0-9a-f]*) ;; *) BOOT_ORDER=unknown;; esac
+    PROVISIONER=0
+    [ ! -f /var/lib/cmprovision/artisan ] || PROVISIONER=1
+    printf 'agent=2\nserial=%s\nhost=%s\nstorage=%s\ncid=%s\nsectors=%s\nmodel=%s\nrevision=%s\nmac=%s\nboot_order=%s\nprovisioner=%s\n' \
+        "$SERIAL" "$(hostname)" "$STORAGE" "$CID" "$SECTORS" "$MODEL" "$REVISION" "$MAC" "$BOOT_ORDER" "$PROVISIONER"
+    exit 0
+fi
 [ "$#" -eq 4 ] && [ "$1" = wipe ] || fail 'unknown command'
 [ "$2" = "$SERIAL" ] || fail "serial $SERIAL"
 [ "$3" = "$CID" ] && [ "$4" = "$SECTORS" ] || fail 'the disk changed'

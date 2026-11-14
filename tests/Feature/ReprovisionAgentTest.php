@@ -85,4 +85,22 @@ class ReprovisionAgentTest extends TestCase
         $this->assertFalse($p->isSuccessful()); $this->assertStringContainsString('running root disk',$p->getOutput());
         $this->assertSame(str_repeat('U',2*1048576),file_get_contents($this->dir.'/disk.img'));
     }
+    public function test_extended_inspection_is_read_only_and_reports_boot_and_station_readiness(): void
+    {
+        file_put_contents($this->dir.'/model', "Raspberry Pi Compute Module 4 Rev 1.1\0");
+        file_put_contents($this->dir.'/cpuinfo', 'Serial : '.self::SERIAL."\nRevision : c03141\n");
+        file_put_contents($this->dir.'/mac', '02:00:00:00:00:20');
+        $this->executable('vcgencmd', "#!/bin/sh\necho BOOT_ORDER=0xf21");
+        $script=file_get_contents($this->script);
+        $script=str_replace(['/proc/device-tree/model','/sys/class/net/eth0/address','/var/lib/cmprovision/artisan'],
+            [$this->dir.'/model',$this->dir.'/mac',$this->dir.'/station-artisan'],$script);
+        file_put_contents($this->script,$script);
+        $r=$this->runAgent('inspect');$this->assertTrue($r->isSuccessful(),$r->getOutput());
+        $i=ReprovisionAgent::parse(str_replace($this->dir.'/dev','/dev',$r->getOutput()));$this->assertNotNull($i,$r->getOutput());
+        $this->assertSame('2',$i['agent']);$this->assertSame('02:00:00:00:00:20',$i['mac']);$this->assertSame('0xf21',$i['boot_order']);
+        $this->assertSame('0',$i['provisioner']);$this->assertSame(str_repeat('U',2*1048576),file_get_contents($this->dir.'/disk.img'));
+        $this->assertFileDoesNotExist($this->dir.'/rebooted');
+        touch($this->dir.'/station-artisan');$i=ReprovisionAgent::parse(str_replace($this->dir.'/dev','/dev',$this->runAgent('inspect')->getOutput()));$this->assertSame('1',$i['provisioner']);
+    }
+
 }
