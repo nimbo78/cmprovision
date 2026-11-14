@@ -224,4 +224,10 @@ esac
 
 #DEBHELPER#
 
+# The optional shared PHP reader is --no-start: backup or a display watcher can resume it before unpacking ends.
+# Refresh active readers after debhelper has restarted their consumers, without starting an unused display.
+if [ "$1" = configure ] && [ -d /run/systemd/system ]; then
+    deb-systemd-invoke try-restart cmprovision-wallboard-data.service || true
+fi
+
 exit 0

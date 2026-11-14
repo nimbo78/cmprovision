@@ -1,3 +1,10 @@
+cmprovision4 (2.31.0~dev5) unstable; urgency=medium
+
+  * Refresh active shared display readers after package configuration so HDMI
+    and FPMS immediately use the newly installed application code.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 17:15:00 +0000
+
 cmprovision4 (2.31.0~dev4) unstable; urgency=medium
 
   * Show provisioner uplinks and connected interfaces in every HDMI view.
