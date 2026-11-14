@@ -298,8 +298,12 @@ class Controller:
                     state.update(action='stop', reason='manual_restart')
             if observed['ap_active']:
                 state['active_config'] = old.get('active_config') or config
-                if old.get('boot_id') == self.boot():
-                    state['ap_started_at'] = old.get('ap_started_at')
+                started = old.get('ap_started_at') if old.get('boot_id') == self.boot() else None
+                now = self.monotonic()
+                # An interrupted worker or external activation can leave a running AP
+                # without its QR deadline. Recover it once; polls must not extend it.
+                state['ap_started_at'] = started if type(started) in (int, float) and 0 <= started <= now else \
+                    now if observed['ap_observed'] else None
                 if observed['known'] and not observed['deferred']:
                     try:
                         choose_subnet(self.linux.networks(inactive=False, exclude_device=ap['device']), state['active_config']['subnet'])

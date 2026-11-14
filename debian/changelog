@@ -1,3 +1,10 @@
+cmprovision4 (2.31.0~dev3) unstable; urgency=medium
+
+  * Keep cold-spare client retries from starting the rescue AP before its delay.
+  * Recover a stable HDMI QR deadline when adopting an already active rescue AP.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 15:25:19 +0000
+
 cmprovision4 (2.31.0~dev2) unstable; urgency=medium
 
   * Preserve preparation and resume markers in shareable report timings.

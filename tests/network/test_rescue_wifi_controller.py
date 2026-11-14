@@ -81,6 +81,31 @@ class ControllerTest(unittest.TestCase):
         self.control.request('start')
         self.assertEqual(1100, self.control.check()['started_at'])
 
+    def test_adopted_running_ap_gets_one_stable_start_time_for_hdmi_qr(self):
+        self.configure()
+        self.linux.active = True
+        self.assertEqual(1000, self.control.check()['started_at'])
+        self.now = 1030
+        self.assertEqual(1000, self.control.check()['started_at'])
+        self.assertNotIn('start', self.linux.calls)
+
+    def test_recovered_ap_start_time_replaces_only_missing_or_invalid_values(self):
+        self.configure()
+        self.linux.active = True
+        for value in (None, False, -1, 1001, '1000'):
+            with self.subTest(started_at=value):
+                self.store.write(self.store.state, {'boot_id':'boot-a', 'ap_started_at':value})
+                self.assertEqual(1000, self.control.check()['started_at'])
+                self.now = 1030
+                self.assertEqual(1000, self.control.check()['started_at'])
+                self.now = 1000
+
+    def test_unconfirmed_ap_ownership_does_not_begin_a_qr_reveal(self):
+        self.configure()
+        self.store.write(self.store.state, {'boot_id':'boot-a', 'active_config':self.control.config()})
+        self.linux.known = False
+        self.assertIsNone(self.control.check()['started_at'])
+
     def test_ap_starts_after_ten_minutes_and_zero_clients_do_not_stop_it_offline(self):
         self.configure()
         self.control.check()
