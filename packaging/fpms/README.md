@@ -20,10 +20,17 @@ It does not include WLAN Pi network tools, Profiler, Bluetooth or their Python d
 It conflicts with `wlanpi-fpms` to prevent competing services and file ownership.
 
 The `fpms-lite` package installs `/usr/share/fpms/cmprovision.json` (protocol 1). Its display
-process writes a heartbeat to `/run/fpms/cmprovision.json`, including whether an SPI
-device for the display exists (the display itself is write-only and cannot be read back). The
+process writes a heartbeat to `/run/fpms/cmprovision.json`. Current Lite identifies a supported
+ST7735-compatible controller before initializing the display/buttons and adds its profile and ID.
+Missing SPI, busy control pins or no supported reply leave the service idle; failed identification
+is retried at most every 30 seconds. Older heartbeats without identity keep their previous semantics. The
 cmprovision watcher starts a data consumer only when enabled and that heartbeat is current. Old
 FPMS packages are not assumed compatible. Raspberry Pi OS needs `dtparam=spi=on` for the Lite package.
+
+Identification uses SPI_3WIRE half-duplex readback on the existing GPIO10 data wire. RESET stays an
+input with a weak pull-up; backlight and buttons are taken only after a positive response. An active
+DPI profile is left alone. This selects the supported Waveshare 1.44-inch layout; a controller ID does
+not uniquely identify panel dimensions. HyperPixel detection is not implemented or qualified.
 
 ## Validation status
 
@@ -33,6 +40,10 @@ confirmed physical buttons, Appearance and Light/Dark/Auto selection, reboot and
 shutdown on 14 November 2026. On 15 November the operator also confirmed Classic,
 correct Auto appearance at the appropriate times, and phone connection using the
 FPMS QR. The exact instant of the automatic day/night change was not watched.
+
+On 15 November, a separate cold-start experiment cut Gi0/7 PoE for 15 seconds and read ID
+`7c89f0` in 84 consistent requests before FPMS started. RESET input pull-up was sufficient; no LCD
+initialization or reset pulse was sent. This qualifies readback on that fixture, not arbitrary panels.
 
 For 2.31.0, the supported profile is Raspberry Pi OS Lite Trixie arm64 on CM4 with
 the Waveshare 1.44-inch ST7735 display, including New/Classic and Light/Dark/Auto.

@@ -53,11 +53,11 @@ shutdown still require their separate **KEY1** confirmation.
 1. Install the matching FPMS package and cmprovision package on the station.
 2. Open **Settings → System → FPMS display**.
 3. Check **Enable cmprovision in FPMS**, then **Save FPMS settings**.
-4. Check the displayed status. `running` means the FPMS display process is alive, an SPI device
-   for the display exists and the shared snapshot is fresh. The panel itself is write-only: nothing can
-   read back whether a screen is really connected, so `running` with a dark screen means a wiring or
-   power fault. `not installed`, `incompatible`, `no hardware` (no SPI device) and `waiting for FPMS`
-   distinguish missing support from a missing or stopped display process.
+4. Check the displayed status. With the current Lite package, `running` means the controller answered
+   identification requests, FPMS is alive and the shared snapshot is fresh. Settings also shows the
+   **Waveshare 1.44 profile** and controller ID. Older FPMS packages without identification still report
+   process/SPI availability only. `not installed`, `incompatible`, `no hardware` (SPI unavailable or no
+   supported controller response) and `waiting for FPMS` distinguish missing support from a stopped process.
 
 The default is off. On Lite the panel says the integration is off until enabled.
 The integration settings are included in normal cmprovision backups (a `--data-only` restore does not bring them back:
@@ -68,8 +68,23 @@ again. `apt remove` keeps `/etc/default/cmprovision-fpms.json`; `apt purge` remo
 
 Raspberry Pi OS ships with SPI off. Add `dtparam=spi=on` to `/boot/firmware/config.txt` and reboot, or the
 service stays idle and the status says `no hardware`. While `/dev/spidev0.0` does not exist the service
-touches no GPIO line at all. Once it exists, the service takes the display lines and pulls up the eight button
-lines (GPIO 5, 6, 13, 16, 19, 20, 21, 26): do not install it on a board where those pins serve something else.
+touches no GPIO line at all. With SPI available, it identifies the controller before taking the backlight
+and eight button lines (GPIO 5, 6, 13, 16, 19, 20, 21, 26). Do not install it on a board where those pins
+serve something else.
+
+### Automatic Waveshare identification
+
+At each Lite service start, FPMS reads the ST7735-compatible controller ID over the existing SPI data
+wire. It checks two matching samples and cross-checks individual ID bytes against the combined reply.
+Only a supported response starts the normal display and button driver. With no response it stays idle,
+keeps its heartbeat fresh, and retries at most once every 30 seconds. An active DPI configuration or
+busy control pins are left alone. No button press or station reboot is needed for detection itself.
+
+The CM4/Waveshare fixture on `wlanpi-d62` returned **7C89F0**, including before FPMS initialization
+after a 15-second PoE power cut. The ID identifies the controller; it does not uniquely establish panel
+dimensions or confirm that its backlight and pixels work. This selects the supported 1.44-inch wiring
+and layout. HyperPixel autodetection is not included and still needs its own hardware qualification.
+Always remove all power before changing a GPIO-connected panel.
 
 ## What the panel trusts
 

@@ -5,6 +5,9 @@
     </x-slot>
     <form wire:submit="save" class="space-y-4">
         <p class="text-sm text-fg-muted" role="status">FPMS: {{ $status['state'] }}</p>
+        @if(isset($status['display']))
+            <p class="text-sm text-fg-muted">Waveshare 1.44 profile · ST7735S · ID {{ strtoupper($status['display']['id']) }}</p>
+        @endif
         <label class="flex items-center gap-2"><input type="checkbox" wire:model="enabled" class="form-checkbox">Enable cmprovision in FPMS</label>
         @error('enabled') <p class="text-sm text-neg" role="alert">{{ $message }}</p> @enderror
         <div class="grid gap-4 sm:grid-cols-2">

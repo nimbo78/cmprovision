@@ -49,6 +49,28 @@ class FpmsTest extends TestCase
             ->assertHasErrors('enabled')->assertDontSee('Saved.');
     }
 
+    public function test_status_exposes_only_a_recent_validated_controller_identity()
+    {
+        $display = ['profile' => 'waveshare-1.44', 'id' => '7c89f0'];
+        $data = ['state' => 'running', 'checked_at' => time(), 'display' => $display];
+        $this->assertSame(['state' => 'running', 'display' => $display], (new StoredFpmsStatus($data))->status());
+        foreach (['display' => null, 'other' => ['profile' => 'other', 'id' => '7c89f0'],
+                  'bad-id' => ['profile' => 'waveshare-1.44', 'id' => '<script>']] as $invalid)
+            $this->assertSame(['state' => 'running'], (new StoredFpmsStatus(array_replace($data, ['display' => $invalid])))->status());
+        $this->assertSame(['state' => 'unavailable'], (new StoredFpmsStatus(array_replace($data, ['checked_at' => time() - 60])))->status());
+        $this->assertSame(['state' => 'running'], (new StoredFpmsStatus(['state' => 'running', 'checked_at' => time()]))->status());
+    }
+
+    public function test_settings_shows_the_detected_profile_and_controller_id()
+    {
+        $service = $this->mock(Fpms::class);
+        $service->shouldReceive('settings')->andReturn(Fpms::DEFAULTS);
+        $service->shouldReceive('status')->andReturn(['state' => 'running',
+            'display' => ['profile' => 'waveshare-1.44', 'id' => '7c89f0']]);
+        Livewire::actingAs(User::factory()->create())->test(FpmsSettings::class)
+            ->assertSee('Waveshare 1.44')->assertSee('7C89F0');
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -247,4 +269,10 @@ class FpmsTest extends TestCase
         $this->assertSame($station, app(WallboardSnapshot::class)->current()['station'], 'both displays reuse the 30-second network cache');
         $this->assertNull($station['provisioning']);
     }
+}
+
+class StoredFpmsStatus extends Fpms
+{
+    public function __construct(private mixed $payload) {}
+    protected function readStatus(): mixed { return $this->payload; }
 }

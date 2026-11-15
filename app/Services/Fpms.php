@@ -20,11 +20,22 @@ class Fpms
 
     public function status(): array
     {
-        $data = json_decode((string) @file_get_contents(self::STATUS), true);
+        $data = $this->readStatus();
         if (!is_array($data) || !is_numeric($data['checked_at'] ?? null) || abs(time() - $data['checked_at']) > 30)
             return ['state' => 'unavailable'];
-        return ['state' => in_array($data['state'] ?? '', ['off', 'running', 'not installed', 'incompatible', 'no hardware', 'waiting for FPMS', 'stale', 'error'], true)
+        $status = ['state' => in_array($data['state'] ?? '', ['off', 'running', 'not installed', 'incompatible', 'no hardware', 'waiting for FPMS', 'stale', 'error'], true)
             ? $data['state'] : 'unavailable'];
+        $display = $data['display'] ?? null;
+        if (in_array($status['state'], ['running', 'stale', 'error'], true) && is_array($display)
+            && ($display['profile'] ?? null) === 'waveshare-1.44' && is_string($display['id'] ?? null)
+            && preg_match('/\A7c[89a-f][0-9a-f]{3}\z/D', $display['id']))
+            $status['display'] = ['profile' => 'waveshare-1.44', 'id' => $display['id']];
+        return $status;
+    }
+
+    protected function readStatus(): mixed
+    {
+        return json_decode((string) @file_get_contents(self::STATUS), true);
     }
 
     public function save(array $settings): void
