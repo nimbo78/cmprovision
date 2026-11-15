@@ -2,12 +2,15 @@
 
 # FPMS front panel
 
-**Preview.** The optional FPMS integration and `fpms-lite` are available from cmprovision 2.23.0.
-A cold boot on Raspberry Pi OS Lite and all five pages were checked on a CM4 with the
-Waveshare display. The user confirmed physical buttons, the Appearance menu and Light/Dark/Auto selection,
-reboot and shutdown on 14 November 2026. Auto operation in the current layout was
-reported on 13 November 2026. The Classic layout and day/night Auto transitions
-still need acceptance, as does scanning the rescue QR from the physical display with a phone.
+**Supported profile for 2.31.0.** `fpms-lite` on Raspberry Pi OS Lite Trixie arm64,
+CM4 and a Waveshare 1.44-inch ST7735 display. Both New and Classic layouts and
+Light/Dark/Auto color modes are included. The integration has been available since 2.23.0.
+
+Cold boot, the five New pages, physical buttons, Appearance, reboot and shutdown
+were confirmed on hardware. On 15 November 2026 the operator confirmed Classic,
+correct Auto appearance at the appropriate times, and phone connection using the
+QR on the FPMS display. The exact instant of the automatic day/night change was
+not observed continuously.
 
 The ready image **2.30.3~dev6** passed CM4 hardware acceptance on 14 November 2026:
 image writing and SHA256, the first-boot OS check, and a cold PoE boot after restoring

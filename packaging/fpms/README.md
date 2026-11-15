@@ -1,6 +1,6 @@
 # FPMS builds for cmprovision
 
-The FPMS preview uses WLAN-Pi/wlanpi-fpms at
+The supported `fpms-lite` profile uses WLAN-Pi/wlanpi-fpms at
 `8beeba40a0f9d4f8045ac556a5b0780a1ce9028e` plus `portable-cmprovision.patch`.
 The patch contains the portable GPIO discovery, unchanged ST7735 driving logic,
 shared cmprovision panel, full-menu adapter, Lite entry point, tests and packaging.
@@ -30,8 +30,12 @@ FPMS packages are not assumed compatible. Raspberry Pi OS needs `dtparam=spi=on`
 The Lite image passed a cold PoE boot on the CM4 station wlanpi-d62. Photos confirmed
 Overview, Ports, Devices, Errors and Station on its Waveshare display. The operator
 confirmed physical buttons, Appearance and Light/Dark/Auto selection, reboot and
-shutdown on 14 November 2026. Classic and day/night Auto transitions still need
-acceptance; physical phone scanning of the rescue QR is tracked below. FPMS remains preview.
+shutdown on 14 November 2026. On 15 November the operator also confirmed Classic,
+correct Auto appearance at the appropriate times, and phone connection using the
+FPMS QR. The exact instant of the automatic day/night change was not watched.
+
+For 2.31.0, the supported profile is Raspberry Pi OS Lite Trixie arm64 on CM4 with
+the Waveshare 1.44-inch ST7735 display, including New/Classic and Light/Dark/Auto.
 
 The ready image 2.30.3~dev6 passed writing, SHA256 and its first-boot OS check on CM4
 on 14 November 2026. Update recovery initialized without manual repair. After restoring
@@ -61,7 +65,8 @@ On Station, OK on an active rescue AP opens a Wi-Fi QR; another OK shows its SSI
 KEY2 closes the card. A private root-owned runtime file shares the running credentials
 with the HDMI display user for 60 seconds, after which both displays return to normal.
 The existing service sandbox is unchanged; no credentials enter the public snapshot.
-Physical phone scanning from both displays still needs acceptance.
+Phone scanning and connection from the physical FPMS display were confirmed by
+the operator on 15 November 2026. Phone scanning from HDMI remains separately unconfirmed.
 
 HDMI also opens its own 60-second card at AP activation, without requiring FPMS.
 Closing the FPMS card publishes a root-owned timestamp-only marker so HDMI dismisses
