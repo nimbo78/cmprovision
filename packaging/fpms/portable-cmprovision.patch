@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..317dabd
+index 0000000..fed0ebd
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,493 @@
+@@ -0,0 +1,500 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10151,15 +10151,22 @@ index 0000000..317dabd
 +    return data
 +
 +
-+def heartbeat(hardware, path=HEARTBEAT):
++def heartbeat(hardware, path=HEARTBEAT, *, display=None):
 +    """Only the display owner writes this bounded liveness record."""
++    record = {"protocol": 1, "at": int(time.time()), "hardware": bool(hardware)}
++    if hardware and isinstance(display, dict):
++        identity = display.get("id")
++        if (display.get("profile") == "waveshare-1.44" and isinstance(identity, str)
++                and len(identity) == 6 and identity.startswith("7c")
++                and all(c in "0123456789abcdef" for c in identity) and int(identity[2:4], 16) >= 0x80):
++            record["display"] = {"profile": "waveshare-1.44", "id": identity}
 +    try:
 +        path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
 +        fd, name = tempfile.mkstemp(prefix=".cmprovision-", dir=path.parent)
 +        try:
 +            with os.fdopen(fd, "w") as out:
 +                json.dump(
-+                    {"protocol": 1, "at": int(time.time()), "hardware": bool(hardware)},
++                    record,
 +                    out,
 +                )
 +                os.fchmod(out.fileno(), 0o644)
@@ -12717,10 +12724,10 @@ index 0000000..b348bf3
 +    return result
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..1390bc4
+index 0000000..5fe7c90
 --- /dev/null
 +++ b/fpms/lite.py
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,172 @@
 +"""Compact station menu. No imports from the WLAN Pi application/provider."""
 +
 +import argparse
@@ -12734,6 +12741,7 @@ index 0000000..1390bc4
 +from .integrations.cmprovision import CONFIG, SNAPSHOT, Panel, heartbeat
 +from .integrations.cmprovision_power import request as power_request
 +from .integrations.cmprovision_rescue import request as rescue_request
++from .modules.screen.st7735_probe import probe_st7735
 +
 +BUTTONS = {
 +    6: "UP",
@@ -12745,6 +12753,26 @@ index 0000000..1390bc4
 +    20: "KEY2",
 +    16: "KEY3",
 +}
++
++
++def wait_for_display(stopping, until=None):
++    """Stay cheap and interruptible while the panel is absent or unrecognized."""
++    next_probe = 0.0
++    while not stopping():
++        now = time.monotonic()
++        if until is not None and now >= until:
++            return None
++        if Path("/dev/spidev0.0").exists():
++            if now >= next_probe:
++                display = probe_st7735()
++                if display:
++                    return display
++                next_probe = now + 30
++        else:
++            next_probe = 0.0
++        heartbeat(False)
++        time.sleep(min(3, max(0, until - now)) if until is not None else 3)
++    return None
 +
 +
 +def main():
@@ -12773,7 +12801,7 @@ index 0000000..1390bc4
 +        panel.frame().save(args.preview)
 +        return
 +
-+    # Headless installations stay idle and report the absence of the SPI device.
++    # Identify the controller before taking backlight or button GPIOs.
 +    stop = False
 +
 +    def stopping(*_):
@@ -12783,11 +12811,10 @@ index 0000000..1390bc4
 +    for sig in (signal.SIGINT, signal.SIGTERM):
 +        signal.signal(sig, stopping)
 +    started = time.monotonic()
-+    while not Path("/dev/spidev0.0").exists():
-+        heartbeat(False)
-+        if stop or (args.seconds and time.monotonic() - started >= args.seconds):
-+            return
-+        time.sleep(3)
++    display = wait_for_display(lambda: stop, until=started + args.seconds if args.seconds else None)
++    if display is None or stop:
++        return
++    print("FPMS_DISPLAY_DETECTED ST7735S " + display['id'], flush=True)
 +
 +    import gpiod
 +    from gpiod.line import Bias, Edge
@@ -12816,7 +12843,7 @@ index 0000000..1390bc4
 +            ):
 +                now = time.monotonic()
 +                if now - last_heartbeat >= 3:
-+                    heartbeat(True)
++                    heartbeat(True, display=display)
 +                    last_heartbeat = now
 +                try:
 +                    panel.refresh()
@@ -12976,6 +13003,141 @@ index f502532..d351ad7 100644
              consumer="fpms-st7735",
              config={
                  (rst, dc, bl): gpiod.LineSettings(
+diff --git a/fpms/modules/screen/st7735_probe.py b/fpms/modules/screen/st7735_probe.py
+new file mode 100755
+index 0000000..5786841
+--- /dev/null
++++ b/fpms/modules/screen/st7735_probe.py
+@@ -0,0 +1,129 @@
++"""Read a supported ST7735 controller before claiming its display and buttons.
++
++The Waveshare wiring uses a bidirectional SDA on GPIO10. Linux SPI_3WIRE
++releases that wire during the receive transfer; it does not change the LCD's
++four-line D/C protocol. ID bytes identify the controller, not panel dimensions.
++"""
++import array
++from contextlib import contextmanager
++import ctypes
++import fcntl
++import os
++from pathlib import Path
++import time
++
++SPI_DEVICE = Path('/dev/spidev0.0')
++DPI_STATUS = Path('/proc/device-tree/soc/dpi@7e208000/status')
++
++
++class _Transfer(ctypes.Structure):
++    _fields_ = [('tx_buf', ctypes.c_uint64), ('rx_buf', ctypes.c_uint64),
++                ('length', ctypes.c_uint32), ('speed_hz', ctypes.c_uint32),
++                ('delay_usecs', ctypes.c_uint16), ('bits_per_word', ctypes.c_uint8),
++                ('cs_change', ctypes.c_uint8), ('tx_nbits', ctypes.c_uint8),
++                ('rx_nbits', ctypes.c_uint8), ('word_delay_usecs', ctypes.c_uint8),
++                ('pad', ctypes.c_uint8)]
++
++
++def identify(read_register):
++    """Two matching ID reads, cross-checked against RDDID's dummy clock."""
++    previous = None
++    for _ in range(2):
++        parts = [read_register(command, 1) for command in (0xDA, 0xDB, 0xDC)]
++        combined = read_register(0x04, 4)
++        pixel_format = read_register(0x0C, 1)
++        if (any(not isinstance(p, (bytes, bytearray)) or len(p) != 1 for p in parts)
++                or not isinstance(combined, (bytes, bytearray)) or len(combined) != 4
++                or not isinstance(pixel_format, (bytes, bytearray)) or len(pixel_format) != 1):
++            return None
++        identity = b''.join(parts)
++        if identity[0] != 0x7C or identity[1] < 0x80 or pixel_format[0] not in (3, 5, 6):
++            return None
++        # 0x04 returns one dummy clock, then 24 ID bits, then an undriven wire.
++        if (int.from_bytes(combined, 'big') >> 7) & 0xFFFFFF != int.from_bytes(identity, 'big'):
++            return None
++        if previous is not None and identity != previous:
++            return None
++        previous = identity
++    return previous.hex()
++
++
++def _read(fd, command, count):
++    tx = ctypes.create_string_buffer(bytes([command]))
++    rx = ctypes.create_string_buffer(count)
++    transfers = (_Transfer * 2)()
++    transfers[0].tx_buf = ctypes.addressof(tx)
++    transfers[0].length = 1
++    transfers[0].speed_hz = 100000
++    transfers[0].bits_per_word = 8
++    transfers[0].delay_usecs = 5
++    transfers[1].rx_buf = ctypes.addressof(rx)
++    transfers[1].length = count
++    transfers[1].speed_hz = 100000
++    transfers[1].bits_per_word = 8
++    # One message keeps CS asserted through the direction change.
++    fcntl.ioctl(fd, 0x40406B00, bytes(transfers))
++    return bytes(rx)
++
++
++@contextmanager
++def _spi_reader():
++    fd = os.open(SPI_DEVICE, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
++    old_mode = None
++    try:
++        mode = array.array('I', [0])
++        fcntl.ioctl(fd, 0x80046B05, mode, True)
++        old_mode = mode[0]
++        if old_mode not in (0, 0x10):
++            raise ValueError('SPI belongs to a different mode')
++        fcntl.ioctl(fd, 0x40046B05, array.array('I', [old_mode | 0x10]))
++        yield lambda command, count: _read(fd, command, count)
++    finally:
++        try:
++            if old_mode is not None:
++                fcntl.ioctl(fd, 0x40046B05, array.array('I', [old_mode]))
++        finally:
++            os.close(fd)
++
++
++def _dpi_configured():
++    try:
++        return DPI_STATUS.read_bytes().rstrip(b'\0') in (b'okay', b'ok')
++    except FileNotFoundError:
++        return False
++    except OSError:
++        return True
++
++
++def probe_st7735():
++    """Return a profile/ID on a positive response, otherwise leave controls idle."""
++    if not SPI_DEVICE.exists() or _dpi_configured():
++        return None
++    try:
++        import gpiod
++        from gpiod.line import Bias, Direction, Value
++        from ..gpiochip import get_gpiochip
++
++        chip_path = get_gpiochip()
++        with gpiod.Chip(chip_path) as chip:
++            before = {pin: chip.get_line_info(pin) for pin in (25, 27)}
++        if any(info.used for info in before.values()):
++            return None
++        restore = {pin: gpiod.LineSettings(direction=Direction.INPUT,
++                    bias=info.bias if info.bias in (Bias.PULL_UP, Bias.PULL_DOWN, Bias.DISABLED) else Bias.AS_IS)
++                   for pin, info in before.items()}
++        with _spi_reader() as read_register:
++            with gpiod.request_lines(chip_path, consumer='fpms-display-probe', config={
++                25: gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE),
++                # Shared with other panels' IRQ: only a weak pull-up, never output HIGH.
++                27: gpiod.LineSettings(direction=Direction.INPUT, bias=Bias.PULL_UP),
++            }) as lines:
++                try:
++                    time.sleep(0.15)
++                    identity = identify(read_register)
++                finally:
++                    lines.reconfigure_lines(restore)
++        return {'profile': 'waveshare-1.44', 'id': identity} if identity else None
++    except (ImportError, OSError, ValueError):
++        # Missing/occupied hardware must not start the legacy GPIO/button driver.
++        return None
 diff --git a/packaging/cmprovision.json b/packaging/cmprovision.json
 new file mode 100644
 index 0000000..16d547c
@@ -13931,10 +14093,10 @@ index 0000000..b458119
 +    assert not fonts.off_centre(centred)
 diff --git a/tests/test_cmprovision_rescue_qr.py b/tests/test_cmprovision_rescue_qr.py
 new file mode 100644
-index 0000000..f48c3e9
+index 0000000..0b60e8f
 --- /dev/null
 +++ b/tests/test_cmprovision_rescue_qr.py
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,215 @@
 +import json
 +from pathlib import Path
 +from types import SimpleNamespace
@@ -14097,7 +14259,8 @@ index 0000000..f48c3e9
 +    p.page = 4; p.key('CENTER')
 +    p.refresh = lambda **kw: None
 +    monkeypatch.setattr(lite, 'Panel', lambda *a, **kw: p)
-+    monkeypatch.setattr(lite, 'heartbeat', lambda *a: None)
++    monkeypatch.setattr(lite, 'heartbeat', lambda *a, **kw: None)
++    monkeypatch.setattr(lite, 'probe_st7735', lambda: dict(profile='waveshare-1.44', id='7c89f0'))
 +    monkeypatch.setattr(lite.time, 'monotonic', clock)
 +    monkeypatch.setattr(lite.signal, 'signal', lambda *a: None)
 +    monkeypatch.setattr(lite.Path, 'exists', lambda path: True)
@@ -15680,14 +15843,15 @@ index 0000000..d1d97f6
 +    assert station_rows(p, p.data["station"])[0] == ("bad", None, "queue stopped")
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
-index 0000000..2ecec08
+index 0000000..0fa51a4
 --- /dev/null
 +++ b/tests/test_portable_display.py
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,40 @@
 +"""The hardware backend must work without the full WLAN Pi application."""
 +
 +import subprocess
 +import sys
++from pathlib import Path
 +
 +
 +def test_st7735_import_does_not_load_application_state():
@@ -15720,8 +15884,251 @@ index 0000000..2ecec08
 +"""],
 +        capture_output=True,
 +        text=True,
++        cwd=Path(__file__).resolve().parents[1],
 +    )
 +    assert result.returncode == 0, result.stdout + result.stderr
+diff --git a/tests/test_st7735_probe.py b/tests/test_st7735_probe.py
+new file mode 100755
+index 0000000..ec087dc
+--- /dev/null
++++ b/tests/test_st7735_probe.py
+@@ -0,0 +1,236 @@
++"""Identify the fitted controller, not the existence of an SPI device."""
++import ctypes
++import importlib
++import struct
++import sys
++from enum import Enum
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++REPLIES = {0xDA: bytes.fromhex('7c'), 0xDB: bytes.fromhex('89'),
++           0xDC: bytes.fromhex('f0'), 0x04: bytes.fromhex('3e44f800'),
++           0x0C: bytes.fromhex('06')}
++
++
++def module():
++    return importlib.import_module('fpms.modules.screen.st7735_probe')
++
++
++def reader(replies):
++    return lambda command, count: replies[command]
++
++
++def test_identifies_real_cold_and_initialized_captured_replies():
++    p = module()
++    assert p.identify(reader(REPLIES)) == '7c89f0'
++    assert p.identify(reader(dict(REPLIES, **{} ) | {0x0C: b'\x05'})) == '7c89f0'
++
++
++def test_accepts_documented_nv_id_variation_instead_of_one_specimen_only():
++    replies = REPLIES | {0xDB: b'\x90', 0xDC: b'\xa1', 0x04: bytes.fromhex('3e485080')}
++    assert module().identify(reader(replies)) == '7c90a1'
++
++
++@pytest.mark.parametrize('replies', [
++    {k: b'\x00' * len(v) for k,v in REPLIES.items()},
++    {k: b'\xff' * len(v) for k,v in REPLIES.items()},
++    REPLIES | {0xDA: b'\x12'},
++    REPLIES | {0xDB: b'\x01'},
++    REPLIES | {0x04: bytes.fromhex('7c89f000')},  # missing dummy-clock decoding
++    REPLIES | {0x04: bytes.fromhex('3e44f880')},  # combined and separate IDs disagree
++    REPLIES | {0x0C: b'\xff'},
++    REPLIES | {0xDA: b''},
++    REPLIES | {0x04: b'\x3e'},
++    REPLIES | {0xDA: None},
++])
++def test_unrecognized_floating_or_malformed_reply_cannot_identify_a_panel(replies):
++    assert module().identify(reader(replies)) is None
++
++
++def test_a_single_plausible_sample_does_not_accept_an_unstable_wire():
++    seen = 0
++    def read(command, count):
++        nonlocal seen
++        if command == 0xDA:
++            seen += 1
++            if seen == 2: return b'\x00'
++        return REPLIES[command]
++    assert module().identify(read) is None
++
++
++class Direction(Enum):
++    AS_IS = 1
++    INPUT = 2
++    OUTPUT = 3
++
++class Bias(Enum):
++    AS_IS = 1
++    UNKNOWN = 2
++    DISABLED = 3
++    PULL_UP = 4
++    PULL_DOWN = 5
++
++class Value(Enum):
++    INACTIVE = 0
++    ACTIVE = 1
++
++
++def wire_env(monkeypatch, tmp_path, *, busy=False, fail_read=False, fail_mode=False):
++    p = module()
++    device = tmp_path/'spidev0.0'; device.touch()
++    monkeypatch.setattr(p, 'SPI_DEVICE', device)
++    monkeypatch.setattr(p, 'DPI_STATUS', tmp_path/'dpi-status')
++    state = SimpleNamespace(mode=0, opened=False, closed=False, requested=False, released=False,
++                            configs=[], reads=0)
++    class Chip:
++        def __init__(self, path): pass
++        def __enter__(self): return self
++        def __exit__(self, *args): pass
++        def get_line_info(self, pin):
++            return SimpleNamespace(used=busy, bias=Bias.PULL_DOWN, direction=Direction.INPUT)
++    class Lines:
++        def __enter__(self): return self
++        def __exit__(self, *args): state.released=True
++        def reconfigure_lines(self, config): state.configs.append(config)
++    def request_lines(path, *, consumer, config):
++        state.requested=True; state.configs.append(config)
++        return Lines()
++    gpio = SimpleNamespace(Chip=Chip, request_lines=request_lines,
++                           LineSettings=lambda **kw: SimpleNamespace(**kw))
++    monkeypatch.setitem(sys.modules, 'gpiod', gpio)
++    monkeypatch.setitem(sys.modules, 'gpiod.line', SimpleNamespace(Direction=Direction, Bias=Bias, Value=Value))
++    monkeypatch.setitem(sys.modules, 'fpms.modules.gpiochip', SimpleNamespace(get_gpiochip=lambda: '/fake/gpiochip'))
++    def open_device(path, flags):
++        assert path == device
++        state.opened=True
++        return 101
++    def close_device(fd):
++        assert fd==101
++        state.closed=True
++    def ioctl(fd, request, value, *args):
++        assert fd==101
++        if request==0x80046b05:
++            value[0]=state.mode
++        elif request==0x40046b05:
++            requested=int(value[0])
++            if fail_mode and requested==0x10: raise OSError('3-wire not supported')
++            state.mode=requested
++        elif request==0x40406b00:
++            if fail_read: raise OSError('transfer failed')
++            assert state.mode==0x10, 'read must release MOSI using SPI_3WIRE'
++            data=bytes(value)
++            assert len(data)==64
++            tx=struct.unpack('=QQIIHBBBBBB',data[:32])
++            rx=struct.unpack('=QQIIHBBBBBB',data[32:])
++            assert tx[0] and not tx[1] and tx[2]==1 and tx[3]==100000 and tx[5]==8 and tx[6]==0
++            assert not rx[0] and rx[1] and rx[3]==100000 and rx[5]==8 and rx[6]==0
++            command=ctypes.string_at(tx[0],1)[0]
++            reply=REPLIES[command]
++            assert rx[2]==len(reply)
++            ctypes.memmove(rx[1], reply, len(reply))
++            state.reads+=1
++        else:
++            raise AssertionError('unexpected SPI ioctl '+hex(request))
++        return 0
++    monkeypatch.setattr(p.os, 'open', open_device)
++    monkeypatch.setattr(p.os, 'close', close_device)
++    monkeypatch.setattr(p.fcntl, 'ioctl', ioctl)
++    monkeypatch.setattr(p.time, 'sleep', lambda *_: None)
++    return p,state
++
++
++def test_probe_returns_real_identity_and_restores_bus_and_gpio(monkeypatch, tmp_path):
++    p,s=wire_env(monkeypatch,tmp_path)
++    assert p.probe_st7735()=={'profile':'waveshare-1.44','id':'7c89f0'}
++    assert s.reads==10 and s.mode==0 and s.closed and s.released
++    first=s.configs[0]
++    assert set(first)=={25,27}, 'backlight and buttons must remain untouched during identification'
++    assert first[27].direction is Direction.INPUT and first[27].bias is Bias.PULL_UP
++    assert not hasattr(first[27],'output_value'), 'RESET must not be actively driven HIGH on unknown hardware'
++    assert s.configs[-1][27].bias is Bias.PULL_DOWN
++    assert s.configs[-1][25].direction is Direction.INPUT
++
++
++@pytest.mark.parametrize('case',['busy','read','mode'])
++def test_probe_failure_releases_resources_without_initializing_controls(monkeypatch,tmp_path,case):
++    p,s=wire_env(monkeypatch,tmp_path,busy=case=='busy',fail_read=case=='read',fail_mode=case=='mode')
++    assert p.probe_st7735() is None
++    assert s.mode==0 and (not s.opened or s.closed)
++    assert not s.requested or s.released
++    if case=='busy': assert not s.requested
++
++
++def test_no_spi_device_never_touches_gpio_or_opens_a_bus(monkeypatch,tmp_path):
++    p,s=wire_env(monkeypatch,tmp_path)
++    p.SPI_DEVICE.unlink()
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
++
++
++def test_active_dpi_configuration_is_left_alone(monkeypatch,tmp_path):
++    p,s=wire_env(monkeypatch,tmp_path)
++    p.DPI_STATUS.write_bytes(b'okay\0')
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
++
++
++class Clock:
++    def __init__(self): self.now=0.
++    def __call__(self): return self.now
++    def sleep(self,seconds): self.now+=seconds
++
++
++def test_detection_wait_keeps_heartbeat_fresh_and_retries_without_spinning(monkeypatch):
++    from fpms import lite
++    clock=Clock(); calls=[]; beats=[]
++    def detect():
++        calls.append(clock.now)
++        return {'profile':'waveshare-1.44','id':'7c89f0'} if clock.now>=30 else None
++    monkeypatch.setattr(lite,'probe_st7735',detect,raising=False)
++    monkeypatch.setattr(lite.Path,'exists',lambda *_:True)
++    monkeypatch.setattr(lite.time,'monotonic',clock)
++    monkeypatch.setattr(lite.time,'sleep',clock.sleep)
++    monkeypatch.setattr(lite,'heartbeat',lambda value,**kw:beats.append((clock.now,value)))
++    assert lite.wait_for_display(lambda:False,until=40)=={'profile':'waveshare-1.44','id':'7c89f0'}
++    assert calls==[0.,30.]
++    assert len(beats)>=10 and all(not v for _,v in beats)
++    assert max(b[0]-a[0] for a,b in zip(beats,beats[1:]))<=3
++
++
++def test_a_stopped_wait_returns_without_display_or_button_initialization(monkeypatch):
++    from fpms import lite
++    clock=Clock()
++    monkeypatch.setattr(lite,'probe_st7735',lambda:None,raising=False)
++    monkeypatch.setattr(lite.Path,'exists',lambda *_:True)
++    monkeypatch.setattr(lite.time,'monotonic',clock)
++    monkeypatch.setattr(lite.time,'sleep',clock.sleep)
++    monkeypatch.setattr(lite,'heartbeat',lambda *a,**k:None)
++    assert lite.wait_for_display(lambda:clock.now>=3,until=50) is None
++    assert clock.now==3
++
++
++def test_lite_does_not_import_hardware_driver_if_no_panel_was_identified(tmp_path,monkeypatch):
++    from fpms import lite
++    clock=Clock()
++    monkeypatch.setattr(lite,'probe_st7735',lambda:None,raising=False)
++    monkeypatch.setattr(lite.Path,'exists',lambda *_:True)
++    monkeypatch.setattr(lite.time,'monotonic',clock)
++    monkeypatch.setattr(lite.time,'sleep',clock.sleep)
++    monkeypatch.setattr(lite.signal,'signal',lambda *a:None)
++    monkeypatch.setattr(lite,'heartbeat',lambda *a,**k:None)
++    monkeypatch.setattr(sys,'argv',['fpms','--seconds','3'])
++    monkeypatch.setitem(sys.modules,'gpiod',None)
++    monkeypatch.setitem(sys.modules,'fpms.modules.screen.st7735',None)
++    lite.main()
++
++
++def test_heartbeat_adds_identity_only_when_it_belongs_to_live_hardware(tmp_path):
++    from fpms.integrations.cmprovision import heartbeat
++    import json
++    path=tmp_path/'beat.json'; display={'profile':'waveshare-1.44','id':'7c89f0'}
++    heartbeat(True,path,display=display)
++    assert json.loads(path.read_text())['display']==display
++    heartbeat(False,path,display=display)
++    assert 'display' not in json.loads(path.read_text())
 diff --git a/tools/PORTABILITY-PROBE.md b/tools/PORTABILITY-PROBE.md
 new file mode 100644
 index 0000000..c62edce
