@@ -14324,10 +14324,10 @@ index 0000000..0b60e8f
 +    assert result.stdout.decode('utf-8').rstrip('\n') == r.wifi_payload(ssid, password)
 diff --git a/tests/test_cmprovision_rescue_wifi.py b/tests/test_cmprovision_rescue_wifi.py
 new file mode 100644
-index 0000000..db0ace8
+index 0000000..e3e2077
 --- /dev/null
 +++ b/tests/test_cmprovision_rescue_wifi.py
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,107 @@
 +import copy
 +from PIL import ImageDraw
 +import pytest
@@ -14422,6 +14422,7 @@ index 0000000..db0ace8
 +    code = '''import json,sys
 +from pathlib import Path
 +sys.path.insert(0, sys.argv[1])
++from fpms import lite  # exercise the installed service entry point imports
 +from fpms.integrations.cmprovision import Panel
 +directory = Path(sys.argv[2])
 +data = json.loads((directory/'snapshot.json').read_text())
@@ -16248,7 +16249,7 @@ index 0000000..c62edce
 +of Raspberry Pi OS Lite. Those require booting a clean target image later.
 diff --git a/tools/build-lite-deb.sh b/tools/build-lite-deb.sh
 new file mode 100644
-index 0000000..6281f5d
+index 0000000..d0c6d4f
 --- /dev/null
 +++ b/tools/build-lite-deb.sh
 @@ -0,0 +1,62 @@
@@ -16263,7 +16264,7 @@ index 0000000..6281f5d
 +trap 'rm -rf "$WORK"' EXIT
 +DEST=$WORK/pkg
 +mkdir -p "$DEST/DEBIAN" "$DEST/usr/lib/fpms-lite/fpms/integrations" "$DEST/usr/lib/fpms-lite/fpms/modules/screen" "$DEST/usr/lib/fpms-lite/fpms/fonts/cmprovision" "$DEST/usr/share/doc/fpms-lite/fonts" "$DEST/usr/share/fpms" "$DEST/usr/lib/systemd/system" "$OUT"
-+for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py integrations/cmprovision_power.py integrations/cmprovision_rescue.py; do
++for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py modules/screen/st7735_probe.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py integrations/cmprovision_power.py integrations/cmprovision_rescue.py; do
 +    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
 +done
 +install -m 644 "$ROOT/LICENSE" "$DEST/usr/share/doc/fpms-lite/copyright"

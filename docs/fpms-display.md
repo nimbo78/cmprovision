@@ -78,7 +78,8 @@ At each Lite service start, FPMS reads the ST7735-compatible controller ID over 
 wire. It checks two matching samples and cross-checks individual ID bytes against the combined reply.
 Only a supported response starts the normal display and button driver. With no response it stays idle,
 keeps its heartbeat fresh, and retries at most once every 30 seconds. An active DPI configuration or
-busy control pins are left alone. No button press or station reboot is needed for detection itself.
+busy control pins are left alone. Each attempt restores the SPI mode and previous control-pin state;
+configurations that cannot be safely restored are not probed. No button press or station reboot is needed for detection itself.
 
 The CM4/Waveshare fixture on `wlanpi-d62` returned **7C89F0**, including before FPMS initialization
 after a 15-second PoE power cut. The ID identifies the controller; it does not uniquely establish panel
