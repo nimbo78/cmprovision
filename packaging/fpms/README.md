@@ -29,7 +29,8 @@ FPMS packages are not assumed compatible. Raspberry Pi OS needs `dtparam=spi=on`
 
 Identification uses SPI_3WIRE half-duplex readback on the existing GPIO10 data wire. RESET stays an
 input with a weak pull-up; backlight and buttons are taken only after a positive response. An active
-DPI profile is left alone. This selects the supported Waveshare 1.44-inch layout; a controller ID does
+DPI profile is left alone. `raspi-utils-core` supplies read-only `pinctrl get` for kernels that report
+unknown GPIO bias; missing or ambiguous configuration is not guessed. This selects the supported Waveshare 1.44-inch layout; a controller ID does
 not uniquely identify panel dimensions. HyperPixel detection is not implemented or qualified.
 
 ## Validation status

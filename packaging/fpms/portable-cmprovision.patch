@@ -13005,10 +13005,10 @@ index f502532..d351ad7 100644
                  (rst, dc, bl): gpiod.LineSettings(
 diff --git a/fpms/modules/screen/st7735_probe.py b/fpms/modules/screen/st7735_probe.py
 new file mode 100755
-index 0000000..714f3c8
+index 0000000..ba201a1
 --- /dev/null
 +++ b/fpms/modules/screen/st7735_probe.py
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,169 @@
 +"""Read a supported ST7735 controller before claiming its display and buttons.
 +
 +The Waveshare wiring uses a bidirectional SDA on GPIO10. Linux SPI_3WIRE
@@ -13021,6 +13021,7 @@ index 0000000..714f3c8
 +import fcntl
 +import os
 +from pathlib import Path
++import subprocess
 +import time
 +
 +SPI_DEVICE = Path('/dev/spidev0.0')
@@ -13106,6 +13107,28 @@ index 0000000..714f3c8
 +        return True
 +
 +
++def _read_biases(directions):
++    # The kernel forgets bias flags when a request is released. Read the actual
++    # Raspberry Pi pin configuration; 'get' performs no configuration changes.
++    reply = subprocess.run(['/usr/bin/pinctrl', 'get', ','.join(map(str, directions))],
++                           check=True, capture_output=True, text=True, timeout=2)
++    lines = reply.stdout.splitlines()
++    if len(lines) != len(directions):
++        raise ValueError('Incomplete pin configuration')
++    biases = {}
++    for line in lines:
++        head, separator, _ = line.partition('|')
++        fields = head.split()
++        if not separator or len(fields) not in (3, 4):
++            raise ValueError('Unknown pin configuration')
++        pin = int(fields[0].removesuffix(':'))
++        if (fields[0] != f'{pin}:' or pin not in directions or pin in biases
++                or fields[1] != directions[pin] or fields[-1] not in ('pu', 'pd', 'pn')):
++            raise ValueError('Pin configuration changed or cannot be restored')
++        biases[pin] = fields[-1]
++    return biases
++
++
 +def probe_st7735():
 +    """Return a profile/ID on a positive response, otherwise leave controls idle."""
 +    if not SPI_DEVICE.exists() or _dpi_configured():
@@ -13120,9 +13143,16 @@ index 0000000..714f3c8
 +            before = {pin: chip.get_line_info(pin) for pin in (25, 27)}
 +        if any(info.used or info.direction not in (Direction.INPUT, Direction.OUTPUT)
 +               or (info.direction is Direction.OUTPUT and info.drive is not Drive.PUSH_PULL)
-+               or info.bias not in (Bias.PULL_UP, Bias.PULL_DOWN, Bias.DISABLED)
++               or info.bias not in (Bias.PULL_UP, Bias.PULL_DOWN, Bias.DISABLED, Bias.UNKNOWN)
 +               for info in before.values()):
 +            return None
++        biases = {pin: info.bias for pin, info in before.items()}
++        if Bias.UNKNOWN in biases.values():
++            pull = _read_biases({pin: 'ip' if info.direction is Direction.INPUT else 'op'
++                                 for pin, info in before.items()})
++            known = {'pu': Bias.PULL_UP, 'pd': Bias.PULL_DOWN, 'pn': Bias.DISABLED}
++            biases = {pin: known[pull[pin]] if bias is Bias.UNKNOWN else bias
++                      for pin, bias in biases.items()}
 +        with _spi_reader() as read_register:
 +            # AS_IS permits reading an existing output without changing its level.
 +            # Keep the original polarity so saved values remain logical values.
@@ -13131,7 +13161,7 @@ index 0000000..714f3c8
 +                for pin, info in before.items()
 +            }) as lines:
 +                levels = dict(zip(before, lines.get_values(list(before))))
-+                restore = {pin: gpiod.LineSettings(direction=info.direction, bias=info.bias,
++                restore = {pin: gpiod.LineSettings(direction=info.direction, bias=biases[pin],
 +                           drive=info.drive, active_low=info.active_low, output_value=levels[pin])
 +                           for pin, info in before.items()}
 +                try:
@@ -13145,7 +13175,7 @@ index 0000000..714f3c8
 +                finally:
 +                    lines.reconfigure_lines(restore)
 +        return {'profile': 'waveshare-1.44', 'id': identity} if identity else None
-+    except (ImportError, OSError, ValueError):
++    except (ImportError, OSError, ValueError, subprocess.SubprocessError):
 +        # Missing/occupied hardware must not start the legacy GPIO/button driver.
 +        return None
 diff --git a/packaging/cmprovision.json b/packaging/cmprovision.json
@@ -15900,10 +15930,10 @@ index 0000000..0fa51a4
 +    assert result.returncode == 0, result.stdout + result.stderr
 diff --git a/tests/test_st7735_probe.py b/tests/test_st7735_probe.py
 new file mode 100755
-index 0000000..2a28580
+index 0000000..69fae52
 --- /dev/null
 +++ b/tests/test_st7735_probe.py
-@@ -0,0 +1,276 @@
+@@ -0,0 +1,308 @@
 +"""Identify the fitted controller, not the existence of an SPI device."""
 +import ctypes
 +import importlib
@@ -15988,13 +16018,13 @@ index 0000000..2a28580
 +    ACTIVE = 1
 +
 +
-+def wire_env(monkeypatch, tmp_path, *, busy=False, fail_read=False, fail_mode=False, output=False, level=Value.ACTIVE, active_low=False, bias=Bias.PULL_DOWN, drive=Drive.PUSH_PULL):
++def wire_env(monkeypatch, tmp_path, *, busy=False, fail_read=False, fail_mode=False, output=False, level=Value.ACTIVE, active_low=False, bias=Bias.PULL_DOWN, drive=Drive.PUSH_PULL, pinctrl_reply=None, fail_pinctrl=False):
 +    p = module()
 +    device = tmp_path/'spidev0.0'; device.touch()
 +    monkeypatch.setattr(p, 'SPI_DEVICE', device)
 +    monkeypatch.setattr(p, 'DPI_STATUS', tmp_path/'dpi-status')
 +    state = SimpleNamespace(mode=0, opened=False, closed=False, requested=False, released=False,
-+                            configs=[], reads=0)
++                            configs=[], reads=0, pinctrl_reads=0)
 +    class Chip:
 +        def __init__(self, path): pass
 +        def __enter__(self): return self
@@ -16047,6 +16077,15 @@ index 0000000..2a28580
 +        else:
 +            raise AssertionError('unexpected SPI ioctl '+hex(request))
 +        return 0
++    def pinctrl(args, **kwargs):
++        assert args==['/usr/bin/pinctrl','get','25,27']
++        state.pinctrl_reads+=1
++        if fail_pinctrl: raise OSError('pinctrl unavailable')
++        direction='op' if output else 'ip'
++        reply=pinctrl_reply if pinctrl_reply is not None else ''.join(
++            f'{pin}: {direction} -- pd | lo // GPIO{pin}\n' for pin in [25,27])
++        return SimpleNamespace(stdout=reply)
++    monkeypatch.setattr(p, 'subprocess', SimpleNamespace(run=pinctrl, SubprocessError=__import__('subprocess').SubprocessError), raising=False)
 +    monkeypatch.setattr(p.os, 'open', open_device)
 +    monkeypatch.setattr(p.os, 'close', close_device)
 +    monkeypatch.setattr(p.fcntl, 'ioctl', ioctl)
@@ -16093,8 +16132,31 @@ index 0000000..2a28580
 +    assert not s.opened and not s.requested
 +
 +
-+def test_probe_declines_bias_that_cannot_be_restored(monkeypatch,tmp_path):
-+    p,s=wire_env(monkeypatch,tmp_path,bias=Bias.UNKNOWN)
++@pytest.mark.parametrize('output',[False,True])
++def test_kernel_unknown_bias_is_read_without_altering_it_and_restored(monkeypatch,tmp_path,output):
++    p,s=wire_env(monkeypatch,tmp_path,bias=Bias.UNKNOWN,output=output)
++    assert p.probe_st7735()=={'profile':'waveshare-1.44','id':'7c89f0'}
++    assert s.pinctrl_reads==1 and s.mode==0 and s.released
++    assert all(c.bias is Bias.PULL_DOWN for c in s.configs[-1].values())
++    assert all(c.direction is (Direction.OUTPUT if output else Direction.INPUT)
++               for c in s.configs[-1].values())
++
++
++@pytest.mark.parametrize('reply',[
++    '',
++    '25: ip pd | lo',  # missing second line
++    '25: ip pd | lo\n27: a0 -- pu | hi',  # alternate function is not a free GPIO
++    '25: op -- pd | lo\n27: op -- pd | hi',  # direction changed since line-info snapshot
++    '25: ip ?? | lo\n27: ip pd | lo',
++])
++def test_unreadable_or_changed_bias_is_not_probed(monkeypatch,tmp_path,reply):
++    p,s=wire_env(monkeypatch,tmp_path,bias=Bias.UNKNOWN,pinctrl_reply=reply)
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
++
++
++def test_missing_pinctrl_does_not_guess_bias(monkeypatch,tmp_path):
++    p,s=wire_env(monkeypatch,tmp_path,bias=Bias.UNKNOWN,fail_pinctrl=True)
 +    assert p.probe_st7735() is None
 +    assert not s.opened and not s.requested
 +
@@ -16249,7 +16311,7 @@ index 0000000..c62edce
 +of Raspberry Pi OS Lite. Those require booting a clean target image later.
 diff --git a/tools/build-lite-deb.sh b/tools/build-lite-deb.sh
 new file mode 100644
-index 0000000..d0c6d4f
+index 0000000..b453f57
 --- /dev/null
 +++ b/tools/build-lite-deb.sh
 @@ -0,0 +1,62 @@
@@ -16278,7 +16340,7 @@ index 0000000..d0c6d4f
 +Version: $VERSION
 +Architecture: all
 +Maintainer: cmprovision contributors
-+Depends: init-system-helpers, python3 (>= 3.13), python3-pil (>= 10.1), python3-qrcode, python3-libgpiod (>= 2), python3-spidev
++Depends: init-system-helpers, python3 (>= 3.13), python3-pil (>= 10.1), python3-qrcode, python3-libgpiod (>= 2), python3-spidev, raspi-utils-core
 +Conflicts: wlanpi-fpms
 +Description: Compact FPMS station panel for cmprovision
 + Portable subset of WLAN Pi FPMS for a dedicated provisioning station.

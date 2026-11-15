@@ -69,7 +69,9 @@ again. `apt remove` keeps `/etc/default/cmprovision-fpms.json`; `apt purge` remo
 Raspberry Pi OS ships with SPI off. Add `dtparam=spi=on` to `/boot/firmware/config.txt` and reboot, or the
 service stays idle and the status says `no hardware`. While `/dev/spidev0.0` does not exist the service
 touches no GPIO line at all. With SPI available, it identifies the controller before taking the backlight
-and eight button lines (GPIO 5, 6, 13, 16, 19, 20, 21, 26). Do not install it on a board where those pins
+and eight button lines (GPIO 5, 6, 13, 16, 19, 20, 21, 26). The Lite package includes a dependency on
+`raspi-utils-core`: when the kernel cannot report a control pin’s pull resistor, its read-only `pinctrl get`
+command supplies the value needed for restoration. Do not install it on a board where those pins
 serve something else.
 
 ### Automatic Waveshare identification

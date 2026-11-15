@@ -1,3 +1,10 @@
+cmprovision4 (2.31.0~dev8) trixie; urgency=medium
+
+  * Read Raspberry Pi pin pulls when the kernel reports unknown bias, keeping
+    display identification and GPIO restoration safe across warm and cold boots.
+
+ -- cmprovision contributors <cmprovision@localhost>  Mon, 16 Nov 2026 00:20:00 +0300
+
 cmprovision4 (2.31.0~dev7) unstable; urgency=medium
 
   * Identify supported Waveshare controllers before starting display and button GPIO.
