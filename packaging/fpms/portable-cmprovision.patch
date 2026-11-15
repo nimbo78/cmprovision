@@ -13005,10 +13005,10 @@ index f502532..d351ad7 100644
                  (rst, dc, bl): gpiod.LineSettings(
 diff --git a/fpms/modules/screen/st7735_probe.py b/fpms/modules/screen/st7735_probe.py
 new file mode 100755
-index 0000000..5786841
+index 0000000..714f3c8
 --- /dev/null
 +++ b/fpms/modules/screen/st7735_probe.py
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,139 @@
 +"""Read a supported ST7735 controller before claiming its display and buttons.
 +
 +The Waveshare wiring uses a bidirectional SDA on GPIO10. Linux SPI_3WIRE
@@ -13112,24 +13112,34 @@ index 0000000..5786841
 +        return None
 +    try:
 +        import gpiod
-+        from gpiod.line import Bias, Direction, Value
++        from gpiod.line import Bias, Direction, Drive, Value
 +        from ..gpiochip import get_gpiochip
 +
 +        chip_path = get_gpiochip()
 +        with gpiod.Chip(chip_path) as chip:
 +            before = {pin: chip.get_line_info(pin) for pin in (25, 27)}
-+        if any(info.used for info in before.values()):
++        if any(info.used or info.direction not in (Direction.INPUT, Direction.OUTPUT)
++               or (info.direction is Direction.OUTPUT and info.drive is not Drive.PUSH_PULL)
++               or info.bias not in (Bias.PULL_UP, Bias.PULL_DOWN, Bias.DISABLED)
++               for info in before.values()):
 +            return None
-+        restore = {pin: gpiod.LineSettings(direction=Direction.INPUT,
-+                    bias=info.bias if info.bias in (Bias.PULL_UP, Bias.PULL_DOWN, Bias.DISABLED) else Bias.AS_IS)
-+                   for pin, info in before.items()}
 +        with _spi_reader() as read_register:
++            # AS_IS permits reading an existing output without changing its level.
++            # Keep the original polarity so saved values remain logical values.
 +            with gpiod.request_lines(chip_path, consumer='fpms-display-probe', config={
-+                25: gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE),
-+                # Shared with other panels' IRQ: only a weak pull-up, never output HIGH.
-+                27: gpiod.LineSettings(direction=Direction.INPUT, bias=Bias.PULL_UP),
++                pin: gpiod.LineSettings(direction=Direction.AS_IS, active_low=info.active_low)
++                for pin, info in before.items()
 +            }) as lines:
++                levels = dict(zip(before, lines.get_values(list(before))))
++                restore = {pin: gpiod.LineSettings(direction=info.direction, bias=info.bias,
++                           drive=info.drive, active_low=info.active_low, output_value=levels[pin])
++                           for pin, info in before.items()}
 +                try:
++                    lines.reconfigure_lines({
++                        25: gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE),
++                        # Shared with other panels' IRQ: only a weak pull-up during the probe.
++                        27: gpiod.LineSettings(direction=Direction.INPUT, bias=Bias.PULL_UP),
++                    })
 +                    time.sleep(0.15)
 +                    identity = identify(read_register)
 +                finally:
@@ -15889,10 +15899,10 @@ index 0000000..0fa51a4
 +    assert result.returncode == 0, result.stdout + result.stderr
 diff --git a/tests/test_st7735_probe.py b/tests/test_st7735_probe.py
 new file mode 100755
-index 0000000..ec087dc
+index 0000000..2a28580
 --- /dev/null
 +++ b/tests/test_st7735_probe.py
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,276 @@
 +"""Identify the fitted controller, not the existence of an SPI device."""
 +import ctypes
 +import importlib
@@ -15920,7 +15930,7 @@ index 0000000..ec087dc
 +def test_identifies_real_cold_and_initialized_captured_replies():
 +    p = module()
 +    assert p.identify(reader(REPLIES)) == '7c89f0'
-+    assert p.identify(reader(dict(REPLIES, **{} ) | {0x0C: b'\x05'})) == '7c89f0'
++    assert p.identify(reader(REPLIES | {0x0C: b'\x05'})) == '7c89f0'
 +
 +
 +def test_accepts_documented_nv_id_variation_instead_of_one_specimen_only():
@@ -15967,12 +15977,17 @@ index 0000000..ec087dc
 +    PULL_UP = 4
 +    PULL_DOWN = 5
 +
++class Drive(Enum):
++    PUSH_PULL = 1
++    OPEN_DRAIN = 2
++    OPEN_SOURCE = 3
++
 +class Value(Enum):
 +    INACTIVE = 0
 +    ACTIVE = 1
 +
 +
-+def wire_env(monkeypatch, tmp_path, *, busy=False, fail_read=False, fail_mode=False):
++def wire_env(monkeypatch, tmp_path, *, busy=False, fail_read=False, fail_mode=False, output=False, level=Value.ACTIVE, active_low=False, bias=Bias.PULL_DOWN, drive=Drive.PUSH_PULL):
 +    p = module()
 +    device = tmp_path/'spidev0.0'; device.touch()
 +    monkeypatch.setattr(p, 'SPI_DEVICE', device)
@@ -15984,18 +15999,20 @@ index 0000000..ec087dc
 +        def __enter__(self): return self
 +        def __exit__(self, *args): pass
 +        def get_line_info(self, pin):
-+            return SimpleNamespace(used=busy, bias=Bias.PULL_DOWN, direction=Direction.INPUT)
++            return SimpleNamespace(used=busy, bias=bias, direction=Direction.OUTPUT if output else Direction.INPUT,
++                                   drive=drive, active_low=active_low)
 +    class Lines:
 +        def __enter__(self): return self
 +        def __exit__(self, *args): state.released=True
 +        def reconfigure_lines(self, config): state.configs.append(config)
++        def get_values(self, pins): return [level for _ in pins]
 +    def request_lines(path, *, consumer, config):
 +        state.requested=True; state.configs.append(config)
 +        return Lines()
 +    gpio = SimpleNamespace(Chip=Chip, request_lines=request_lines,
 +                           LineSettings=lambda **kw: SimpleNamespace(**kw))
 +    monkeypatch.setitem(sys.modules, 'gpiod', gpio)
-+    monkeypatch.setitem(sys.modules, 'gpiod.line', SimpleNamespace(Direction=Direction, Bias=Bias, Value=Value))
++    monkeypatch.setitem(sys.modules, 'gpiod.line', SimpleNamespace(Direction=Direction, Bias=Bias, Value=Value, Drive=Drive))
 +    monkeypatch.setitem(sys.modules, 'fpms.modules.gpiochip', SimpleNamespace(get_gpiochip=lambda: '/fake/gpiochip'))
 +    def open_device(path, flags):
 +        assert path == device
@@ -16040,12 +16057,45 @@ index 0000000..ec087dc
 +    p,s=wire_env(monkeypatch,tmp_path)
 +    assert p.probe_st7735()=={'profile':'waveshare-1.44','id':'7c89f0'}
 +    assert s.reads==10 and s.mode==0 and s.closed and s.released
-+    first=s.configs[0]
++    initial=s.configs[0]
++    assert all(c.direction is Direction.AS_IS for c in initial.values())
++    assert all(not hasattr(c, 'output_value') for c in initial.values())
++    first=s.configs[1]
 +    assert set(first)=={25,27}, 'backlight and buttons must remain untouched during identification'
 +    assert first[27].direction is Direction.INPUT and first[27].bias is Bias.PULL_UP
 +    assert not hasattr(first[27],'output_value'), 'RESET must not be actively driven HIGH on unknown hardware'
 +    assert s.configs[-1][27].bias is Bias.PULL_DOWN
 +    assert s.configs[-1][25].direction is Direction.INPUT
++
++
++@pytest.mark.parametrize('level', [Value.INACTIVE, Value.ACTIVE])
++@pytest.mark.parametrize('fail_read', [False, True])
++def test_probe_restores_unrequested_outputs_including_level_drive_and_polarity(monkeypatch,tmp_path,level,fail_read):
++    p,s=wire_env(monkeypatch,tmp_path,output=True,level=level,active_low=True,fail_read=fail_read)
++    result=p.probe_st7735()
++    assert (result is None) == fail_read
++    assert s.requested and s.released and s.mode==0 and s.closed
++    initial=s.configs[0]
++    assert all(c.direction is Direction.AS_IS and c.active_low for c in initial.values())
++    assert all(not hasattr(c,'output_value') for c in initial.values())
++    restored=s.configs[-1]
++    assert all(c.direction is Direction.OUTPUT and c.active_low and c.output_value is level
++               and c.bias is Bias.PULL_DOWN for c in restored.values())
++    assert restored[25].drive is Drive.PUSH_PULL
++    assert restored[27].drive is Drive.PUSH_PULL
++
++
++@pytest.mark.parametrize('drive', [Drive.OPEN_DRAIN, Drive.OPEN_SOURCE])
++def test_probe_declines_outputs_whose_latched_level_cannot_be_read(monkeypatch,tmp_path,drive):
++    p,s=wire_env(monkeypatch,tmp_path,output=True,drive=drive)
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
++
++
++def test_probe_declines_bias_that_cannot_be_restored(monkeypatch,tmp_path):
++    p,s=wire_env(monkeypatch,tmp_path,bias=Bias.UNKNOWN)
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
 +
 +
 +@pytest.mark.parametrize('case',['busy','read','mode'])
