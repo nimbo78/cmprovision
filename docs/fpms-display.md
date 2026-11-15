@@ -4,9 +4,10 @@
 
 **Preview.** The optional FPMS integration and `fpms-lite` are available from cmprovision 2.23.0.
 A cold boot on Raspberry Pi OS Lite and all five pages were checked on a CM4 with the
-Waveshare display. The user confirmed physical button checks on 14 November 2026.
-Auto operation in the current layout was reported on 13 November 2026.
-Classic, Dark and day/night Auto transitions still need acceptance.
+Waveshare display. The user confirmed physical buttons, the Appearance menu and Light/Dark/Auto selection,
+reboot and shutdown on 14 November 2026. Auto operation in the current layout was
+reported on 13 November 2026. The Classic layout and day/night Auto transitions
+still need acceptance, as does scanning the rescue QR from the physical display with a phone.
 
 The ready image **2.30.3~dev6** passed CM4 hardware acceptance on 14 November 2026:
 image writing and SHA256, the first-boot OS check, and a cold PoE boot after restoring
