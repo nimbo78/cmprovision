@@ -39,4 +39,30 @@ class AppVersionTest extends TestCase
         config(['version.describe' => 'v2.4.1', 'version.commit' => '3f3b4bf']);
         $this->actingAs(User::factory()->create())->get('/dashboard')->assertOk()->assertSee('cmprovision 2.4.1 · 3f3b4bf');
     }
+
+    public function test_installed_package_version_takes_priority_over_an_older_ancestor_tag()
+    {
+        config(['version.package'=>'2.31.0~dev2','version.describe'=>'v2.26.0-108-gee2d0d4','version.commit'=>'ee2d0d4']);
+        $this->assertSame('2.31.0~dev2 · ee2d0d4',AppVersion::text());
+    }
+
+    public function test_a_package_built_without_git_metadata_still_names_its_package_version()
+    {
+        config(['version.package'=>'2.31.0~dev2','version.describe'=>'$Format:%(describe)$','version.commit'=>'$Format:%h$']);
+        $this->assertSame('2.31.0~dev2',AppVersion::text());
+    }
+
+    public function test_package_stamp_keeps_the_archived_commit()
+    {
+        $path=tempnam(sys_get_temp_dir(),'cmprovision-version-');
+        try {
+            file_put_contents($path,"<?php return ['describe'=>'v2.26.0-108-gee2d0d4','commit'=>'ee2d0d4'];");
+            $process=new \Symfony\Component\Process\Process([PHP_BINARY,base_path('tools/package-version.php'),$path,'2.31.0~dev2']);
+            $process->run();
+            $this->assertSame(0,$process->getExitCode(),$process->getErrorOutput());
+            $version=require $path;
+            $this->assertSame('2.31.0~dev2',$version['package']);
+            $this->assertSame('ee2d0d4',$version['commit']);
+        } finally { @unlink($path); }
+    }
 }

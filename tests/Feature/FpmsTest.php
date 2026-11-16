@@ -49,6 +49,28 @@ class FpmsTest extends TestCase
             ->assertHasErrors('enabled')->assertDontSee('Saved.');
     }
 
+    public function test_status_exposes_only_a_recent_validated_controller_identity()
+    {
+        $display = ['profile' => 'waveshare-1.44', 'id' => '7c89f0'];
+        $data = ['state' => 'running', 'checked_at' => time(), 'display' => $display];
+        $this->assertSame(['state' => 'running', 'display' => $display], (new StoredFpmsStatus($data))->status());
+        foreach (['display' => null, 'other' => ['profile' => 'other', 'id' => '7c89f0'],
+                  'bad-id' => ['profile' => 'waveshare-1.44', 'id' => '<script>']] as $invalid)
+            $this->assertSame(['state' => 'running'], (new StoredFpmsStatus(array_replace($data, ['display' => $invalid])))->status());
+        $this->assertSame(['state' => 'unavailable'], (new StoredFpmsStatus(array_replace($data, ['checked_at' => time() - 60])))->status());
+        $this->assertSame(['state' => 'running'], (new StoredFpmsStatus(['state' => 'running', 'checked_at' => time()]))->status());
+    }
+
+    public function test_settings_shows_the_detected_profile_and_controller_id()
+    {
+        $service = $this->mock(Fpms::class);
+        $service->shouldReceive('settings')->andReturn(Fpms::DEFAULTS);
+        $service->shouldReceive('status')->andReturn(['state' => 'running',
+            'display' => ['profile' => 'waveshare-1.44', 'id' => '7c89f0']]);
+        Livewire::actingAs(User::factory()->create())->test(FpmsSettings::class)
+            ->assertSee('Waveshare 1.44')->assertSee('7C89F0');
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -223,22 +245,34 @@ class FpmsTest extends TestCase
         $this->assertSame(200, app(WallboardSnapshot::class)->current()['batch']['left_seconds']);
     }
 
-    public function test_the_station_block_is_made_for_the_panel_only_when_fpms_is_on()
+    public function test_station_network_is_shared_with_hdmi_even_when_fpms_is_off()
     {
         Cache::forget(DisplayStation::CACHE_KEY);
         $fpms = $this->mock(Fpms::class);
         $fpms->shouldReceive('settings')->andReturn(Fpms::DEFAULTS);
         $network = $this->mock(NetworkStatus::class);
-        $network->shouldNotReceive('current');    // HDMI alone never asks NetworkManager and iw for anything
-        $this->assertNull(app(WallboardSnapshot::class)->current()['station']);
+        $network->shouldReceive('current')->once()->with(30)->andReturn([
+            'uplink' => ['name' => 'wlan1', 'kind' => 'wifi', 'addresses' => ['192.0.2.4/24'],
+                'wifi' => self::WIFI + ['psk' => 'private-key']],
+            'modules' => null, 'preferred_down' => 'private-profile',
+        ]);
+        $station = app(WallboardSnapshot::class)->current()['station'];
+        $this->assertIsArray($station);
+        $this->assertSame('192.0.2.4', $station['management']);
+        $this->assertSame('private-ssid', $station['uplink']['ssid']);
+        $this->assertSame(-61, $station['uplink']['signal']);
+        $this->assertStringNotContainsString('private-key', json_encode($station));
+        $this->assertStringNotContainsString('private-profile', json_encode($station));
 
-        Cache::forget(DisplayStation::CACHE_KEY);
         $fpms = $this->mock(Fpms::class);
         $fpms->shouldReceive('settings')->andReturn(['enabled' => true, 'open_on_start' => false]);
-        $network = $this->mock(NetworkStatus::class);
-        $network->shouldReceive('current')->once()->andReturn(['uplink' => ['addresses' => ['192.0.2.4/24']], 'modules' => null]);
-        $station = app(WallboardSnapshot::class)->current()['station'];
-        $this->assertSame('192.0.2.4', $station['management']);
+        $this->assertSame($station, app(WallboardSnapshot::class)->current()['station'], 'both displays reuse the 30-second network cache');
         $this->assertNull($station['provisioning']);
     }
+}
+
+class StoredFpmsStatus extends Fpms
+{
+    public function __construct(private mixed $payload) {}
+    protected function readStatus(): mixed { return $this->payload; }
 }

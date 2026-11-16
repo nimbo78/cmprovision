@@ -227,8 +227,7 @@ class ConfigurationTransfer extends Component
                 abort_unless($row->status === 'applied' && !empty($row->result['followups']['dhcp']), 409);
                 if (\App\Models\Cm::whereIn('phase', \App\Models\Cm::ACTIVE_PHASES)->exists()) throw new \RuntimeException('Wait until running devices finish before restarting DHCP.');
                 $dhcp = app(\App\Services\DhcpReservations::class);
-                $dhcp->write();
-                if (!$dhcp->restart()) throw new \RuntimeException('DHCP configuration was saved, but the service could not restart. Retry or check Service status.');
+                $dhcp->change(fn () => null);
                 $result = $row->result;
                 unset($result['followups']['dhcp']);
                 $row->update(['result' => $result]);

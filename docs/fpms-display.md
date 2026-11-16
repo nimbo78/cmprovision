@@ -2,17 +2,30 @@
 
 # FPMS front panel
 
-**Preview.** The optional FPMS integration and `fpms-lite` are available from cmprovision 2.23.0.
-A cold boot on Raspberry Pi OS Lite, all five pages and KEY2 were checked on a CM4 with the
-Waveshare display. The remaining physical controls and both themes still need acceptance.
+**Supported profile for 2.30.3.** `fpms-lite` on Raspberry Pi OS Lite Trixie arm64,
+CM4 and a Waveshare 1.44-inch ST7735 display. Both New and Classic layouts and
+Light/Dark/Auto color modes are included. The integration has been available since 2.23.0.
+
+Cold boot, the five New pages, physical buttons, Appearance, reboot and shutdown
+were confirmed on hardware. On 15 November 2026 the operator confirmed Classic,
+correct Auto appearance at the appropriate times, and phone connection using the
+QR on the FPMS display. The exact instant of the automatic day/night change was
+not observed continuously.
+
+The ready image **2.30.3~dev6** passed CM4 hardware acceptance on 14 November 2026:
+image writing and SHA256, the first-boot OS check, and a cold PoE boot after restoring
+station data and networking. Update recovery started without manual repair; FPMS
+reported `running` after SPI restoration. Raspberry Pi Imager customization remains untested.
 
 FPMS shows a compact read-only view on a Waveshare 1.44-inch 128×128 display.
 
-The Station page in Classic and New also shows [rescue Wi-Fi](rescue-wifi.md): its search countdown or active SSID, gateway and associated-client count. Passwords are never drawn on the display.
+The Station page in Classic and New also shows [rescue Wi-Fi](rescue-wifi.md): its search countdown or active SSID, gateway and associated-client count. In Lite, press **OK** while the AP is active to open its Wi-Fi QR code. Press **OK** again to see the SSID and password; up/down scrolls long credentials. **KEY2** closes the card. The same QR and connection details appear temporarily on HDMI. Both screens return to their normal view after **60 seconds**, or when the card is closed. A normal status page never shows the password.
 The first hardware target is CM4. A display is optional: web provisioning works
 without it, and HDMI and FPMS can be used at the same time.
 
 ## Choose the installation profile
+
+HDMI also opens an automatic 60-second QR card when the rescue AP starts, including on stations without FPMS. FPMS retains explicit OK access; KEY2 dismisses both cards.
 
 - **Raspberry Pi OS Lite Trixie arm64:** `fpms-lite` supplies the compact station menu
   and hardware driver, without WLAN Pi applications or service dependencies.
@@ -22,16 +35,29 @@ A complete FPMS profile for WLAN Pi OS is not planned.
 The package recipes and current acceptance status are in
 [packaging/fpms](../packaging/fpms/README.md). Version 2.24.0 also provides an experimental ready-to-flash Lite image.
 
+## Change the color mode from the panel
+
+In Lite, press **KEY3 → Appearance**, select **Light**, **Dark**, or **Auto** with
+the joystick, then press its centre to apply. The filled circle marks the current
+mode; highlighting another row does not save it. **KEY2** returns to the station
+menu; press it again to close the menu.
+
+The change applies immediately to either New or Classic and persists across restarts.
+It uses the same FPMS setting as **Settings → System → FPMS display**; HDMI retains
+its own color mode. Auto continues to follow the station's sunrise/sunset calculation.
+If saving is not confirmed, reopen Appearance to read the saved mode. Restart and
+shutdown still require their separate **KEY1** confirmation.
+
 ## Enable the panel
 
 1. Install the matching FPMS package and cmprovision package on the station.
 2. Open **Settings → System → FPMS display**.
 3. Check **Enable cmprovision in FPMS**, then **Save FPMS settings**.
-4. Check the displayed status. `running` means the FPMS display process is alive, an SPI device
-   for the display exists and the shared snapshot is fresh. The panel itself is write-only: nothing can
-   read back whether a screen is really connected, so `running` with a dark screen means a wiring or
-   power fault. `not installed`, `incompatible`, `no hardware` (no SPI device) and `waiting for FPMS`
-   distinguish missing support from a missing or stopped display process.
+4. Check the displayed status. With the current Lite package, `running` means the controller answered
+   identification requests, FPMS is alive and the shared snapshot is fresh. Settings also shows the
+   **Waveshare 1.44 profile** and controller ID. Older FPMS packages without identification still report
+   process/SPI availability only. `not installed`, `incompatible`, `no hardware` (SPI unavailable or no
+   supported controller response) and `waiting for FPMS` distinguish missing support from a stopped process.
 
 The default is off. On Lite the panel says the integration is off until enabled.
 The integration settings are included in normal cmprovision backups (a `--data-only` restore does not bring them back:
@@ -42,8 +68,33 @@ again. `apt remove` keeps `/etc/default/cmprovision-fpms.json`; `apt purge` remo
 
 Raspberry Pi OS ships with SPI off. Add `dtparam=spi=on` to `/boot/firmware/config.txt` and reboot, or the
 service stays idle and the status says `no hardware`. While `/dev/spidev0.0` does not exist the service
-touches no GPIO line at all. Once it exists, the service takes the display lines and pulls up the eight button
-lines (GPIO 5, 6, 13, 16, 19, 20, 21, 26): do not install it on a board where those pins serve something else.
+touches no GPIO line at all. With SPI available, it identifies the controller before taking the backlight
+and eight button lines (GPIO 5, 6, 13, 16, 19, 20, 21, 26). The Lite package includes a dependency on
+`raspi-utils-core`: when the kernel cannot report a control pin’s pull resistor, its read-only `pinctrl get`
+command supplies the value needed for restoration. Do not install it on a board where those pins
+serve something else.
+
+### Automatic Waveshare identification
+
+At each Lite service start, FPMS reads the ST7735-compatible controller ID over the existing SPI data
+wire. It checks two matching samples and cross-checks individual ID bytes against the combined reply.
+Only a supported response starts the normal display and button driver. With no response it stays idle,
+keeps its heartbeat fresh, and retries at most once every 30 seconds. An active DPI configuration or
+busy control pins are left alone. Each attempt restores the SPI mode and previous control-pin state;
+configurations that cannot be safely restored are not probed. No button press or station reboot is needed for detection itself.
+
+The CM4/Waveshare fixture on `wlanpi-d62` returned **7C89F0**, including before FPMS initialization
+after a 15-second PoE power cut. The ID identifies the controller; it does not uniquely establish panel
+dimensions or confirm that its backlight and pixels work. This selects the supported 1.44-inch wiring
+and layout. HyperPixel autodetection is not included and still needs its own hardware qualification.
+
+Headless startup was checked on `wlanpi-da2` using the packaged Lite code: with SPI disabled,
+no GPIO requests occurred; with SPI temporarily enabled and no panel fitted, three probes over
+66 seconds returned no ID. In that run, all 22 heartbeats reported `hardware=false`; buttons and backlight
+were never requested. The original SPI/GPIO state was restored and provisioning/HDMI service
+PIDs stayed unchanged.
+
+Always remove all power before changing a GPIO-connected panel.
 
 ## What the panel trusts
 
@@ -54,6 +105,8 @@ value it cannot read as missing: a bad snapshot shows `Waiting for data` or `Inv
 snapshot at all: it judges the data by the age of the file.
 
 ## Look
+
+Layout and color mode are selected in the web settings; the panel buttons do not change them.
 
 **Settings → System → FPMS display** has two choices that reach the panel with its data (no restart, no
 root helper):
@@ -112,7 +165,7 @@ installation (buttons 1 and 3 swap with the screen; button 2 stays in the middle
 
 ## Data freshness and resource use
 
-FPMS reads a local JSON snapshot; it has no access to cmprovision's database or secrets.
+FPMS reads a local JSON snapshot; it has no access to cmprovision's database. The snapshot contains no passwords. Only an explicit OK on the active rescue AP asks the installed local helper for that AP's running credentials, including when different settings are staged. A separate root-owned runtime file, readable only by root and the HDMI display user, shares them for at most 60 seconds. The file is removed when the card closes; expired files are ignored.
 It shares the existing HDMI producer, including the switch polling cache. Closing HDMI
 does not stop data needed by FPMS, and collection stops when the last consumer stops.
 
@@ -124,8 +177,8 @@ message, without freezing the menu.
 
 On a 128×128 panel some list labels are shortened (a cut is shown with `...`); a cause from the server never is, and
 the selected device's card wraps everything. The station page is a summary; network configuration remains
-in the web interface or installer. The Wi-Fi network's name is shown; NetworkManager profile names and keys never
-reach the panel.
+in the web interface or installer. The Wi-Fi network's name is shown; NetworkManager profile names and management Wi-Fi keys never
+reach the panel. The explicitly opened rescue access card is the only password display.
 
 ## Disabled boot services
 

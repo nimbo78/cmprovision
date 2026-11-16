@@ -49,9 +49,10 @@ class ImageSources extends Component
     #[Locked]
     public $catalog = [];
 
-    public function mount()
+    public function mount(string $initialRepo = '')
     {
         $this->repos = $this->savedRepos();
+        if (preg_match(GitHubReleases::REPO, $initialRepo) && !str_contains($initialRepo, '..')) $this->repo = $initialRepo;
     }
 
     public function updatedTab()

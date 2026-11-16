@@ -26,6 +26,7 @@ class LinuxTest(unittest.TestCase):
         self.calls, self.fail_up = [], False
         self.tables, self.collision, self.backend = [], False, 'nftables'
         self.nat_ready = True
+        self.saved, self.available = [], []
         self.linux = Linux(self.store, runner=self.run_command)
         self.cfg = dict(DEFAULTS, enabled=True, ssid='cmprovision-test', password='secret-safe-12345678',
                         ap_mac='02:00:00:00:00:01', client_mac='02:00:00:00:00:02', subnet='192.168.240.0/24')
@@ -53,6 +54,14 @@ class LinuxTest(unittest.TestCase):
         elif argv[-4:-1] == ['connection','up','uuid'] and self.nat_ready:
             self.tables.append({'table':{'family':'ip', 'name':'nm-shared-wlan0'}})
             self.tables.append({'rule':{'expr':[{'masquerade':None}]}})
+        elif 'UUID,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY,TIMESTAMP,DBUS-PATH' in argv:
+            output = '\n'.join(':'.join(str(p[k]) for k in ('uuid', 'type', 'auto', 'priority', 'timestamp'))+
+                               ':/org/freedesktop/NetworkManager/Settings/'+str(i+1) for i, p in enumerate(self.saved))
+        elif 'CONNECTIONS.AVAILABLE-CONNECTION-PATHS' in argv:
+            output = ','.join('/org/freedesktop/NetworkManager/Settings/'+str(i+1) for i, p in enumerate(self.saved)
+                              if p['uuid'] in self.available)+'\n'
+        elif '802-11-wireless.mode' in argv and argv[-1] in {p['uuid'] for p in self.saved}:
+            output = next(p['mode'] for p in self.saved if p['uuid'] == argv[-1])+'\n'
         elif 'connection' in argv and 'show' in argv:
             output = ''
         return subprocess.CompletedProcess(argv, code, stdout=output, stderr='do not expose raw diagnostics')
@@ -120,6 +129,40 @@ class LinuxTest(unittest.TestCase):
         self.linux.stop()
         self.assertTrue(any(argv[-5:] == ['device', 'set', 'wlan0', 'autoconnect', 'yes'] for argv, _ in self.calls))
         self.assertFalse(any('wlan1' in argv for argv, _ in self.calls))
+
+    def test_cold_spare_activates_only_an_available_automatic_client_profile(self):
+        client, foreign_ap, other_radio, manual = ['00000000-0000-0000-0000-%012d' % i for i in range(1, 5)]
+        self.saved = [dict(uuid=identity, type='802-11-wireless', auto=auto, priority=priority, timestamp=1, mode=mode)
+                      for identity, auto, priority, mode in [(self.uuid, 'no', 100, 'ap'), (foreign_ap, 'yes', 90, 'ap'),
+                          (other_radio, 'yes', 80, 'infrastructure'), (manual, 'no', 70, 'infrastructure'),
+                          (client, 'yes', 20, 'infrastructure')]]
+        self.available = [self.uuid, foreign_ap, manual, client]
+        self.linux.spare('wlan0', True)
+        activations = [argv for argv, _ in self.calls if 'up' in argv or 'connect' in argv]
+        self.assertEqual([['/usr/bin/nmcli', '--escape', 'no', '-w', '10', 'connection', 'up', 'uuid', client,
+                           'ifname', 'wlan0']], activations)
+
+    def test_cold_spare_with_only_hotspots_does_not_activate_an_ap(self):
+        self.saved = [dict(uuid=self.uuid, type='802-11-wireless', auto='no', priority=0, timestamp=1, mode='ap')]
+        self.available = [self.uuid]
+        self.linux.spare('wlan0', True)
+        self.assertFalse(any('up' in argv or 'connect' in argv for argv, _ in self.calls))
+
+    def test_cold_spare_preserves_saved_network_priority_then_recency(self):
+        low, older, preferred = ['00000000-0000-0000-0000-%012d' % i for i in range(1, 4)]
+        self.saved = [dict(uuid=identity, type='802-11-wireless', auto='yes', priority=priority,
+                           timestamp=stamp, mode='infrastructure')
+                      for identity, priority, stamp in [(low, 0, 999), (older, 20, 100), (preferred, 20, 200)]]
+        self.available = [low, older, preferred]
+        self.linux.spare('wlan0', True)
+        self.assertEqual([preferred], [argv[argv.index('uuid')+1] for argv, _ in self.calls if 'up' in argv])
+
+    def test_cold_spare_profile_limit_fails_before_changing_radio_state(self):
+        self.saved = [dict(uuid='00000000-0000-0000-0000-%012d' % i, type='802-11-wireless', auto='yes',
+                           priority=0, timestamp=1, mode='infrastructure') for i in range(129)]
+        with self.assertRaises(self.Error):
+            self.linux.spare('wlan0', True)
+        self.assertFalse(any('set' in argv or 'up' in argv or 'connect' in argv for argv, _ in self.calls))
 
     def test_failed_start_restores_client_autoconnect_after_confirmed_down(self):
         self.fail_up = True

@@ -114,6 +114,6 @@ class ImageSpace
             $query->whereNull('download_state')->orWhere('download_state', 'failed');
         })->get()->reject(function (Image $image) use ($taken, $ids, $names) {
             return in_array($image->id, $taken, true) || in_array($image->id, $ids, true) || in_array($image->filename, $names, true);
-        })->values();
+        })->reject(fn (Image $image) => ImageRemoval::blocker($image) !== null)->values();
     }
 }

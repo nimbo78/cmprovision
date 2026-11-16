@@ -1,3 +1,127 @@
+cmprovision4 (2.30.3) trixie; urgency=medium
+
+  * Finalize compatible-device re-provisioning without local history or OURS marks.
+  * Add protected image cleanup, storage measurements, device reports and image hints.
+  * Restore DHCP reservations if applying their configuration fails.
+  * Fix no-link PoE restart, peer-station tiles, HDMI uplinks and rescue QR timing.
+  * Support the qualified FPMS Lite profile, appearance controls and safe Waveshare detection.
+  * Verify station-image recovery setup and document Wi-Fi/AP lifecycles in English and Russian.
+
+ -- cmprovision contributors <cmprovision@localhost>  Mon, 16 Nov 2026 20:52:58 +0300
+
+cmprovision4 (2.31.0~dev8) trixie; urgency=medium
+
+  * Read Raspberry Pi pin pulls when the kernel reports unknown bias, keeping
+    display identification and GPIO restoration safe across warm and cold boots.
+
+ -- cmprovision contributors <cmprovision@localhost>  Mon, 16 Nov 2026 00:20:00 +0300
+
+cmprovision4 (2.31.0~dev7) unstable; urgency=medium
+
+  * Identify supported Waveshare controllers before starting display and button GPIO.
+  * Show the verified controller ID in FPMS settings and retain legacy heartbeat support.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 15 Nov 2026 23:35:00 +0300
+
+cmprovision4 (2.31.0~dev6) unstable; urgency=medium
+
+  * Re-provision compatible CM4/Pi 4 modules without local history or an OURS mark.
+  * Inspect model, Ethernet identity, root disk and network boot before first-time reset.
+  * Share the reset wizard across Ports, module cards and manual stand addresses.
+  * Hand secondary stations to an explicitly configured current primary web address.
+  * Coordinate reset and real boot by MAC and serial, with expiring confirmation.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sun, 15 Nov 2026 02:09:44 +0300
+
+cmprovision4 (2.31.0~dev5) unstable; urgency=medium
+
+  * Refresh active shared display readers after package configuration so HDMI
+    and FPMS immediately use the newly installed application code.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 17:15:00 +0000
+
+cmprovision4 (2.31.0~dev4) unstable; urgency=medium
+
+  * Show provisioner uplinks and connected interfaces in every HDMI view.
+  * Share cached Wi-Fi quality, Ethernet speed and IP addresses with FPMS.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 16:20:00 +0000
+
+cmprovision4 (2.31.0~dev3) unstable; urgency=medium
+
+  * Keep cold-spare client retries from starting the rescue AP before its delay.
+  * Recover a stable HDMI QR deadline when adopting an already active rescue AP.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 15:25:19 +0000
+
+cmprovision4 (2.31.0~dev2) unstable; urgency=medium
+
+  * Preserve preparation and resume markers in shareable report timings.
+  * Stamp the actual package version while retaining the source commit.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 13:02:06 +0000
+
+cmprovision4 (2.31.0~dev1) unstable; urgency=medium
+
+  * Add a Storage overview with update snapshot estimates and reviewed cleanup.
+  * Export bounded, shareable device reports as standalone HTML and JSON.
+  * Check GitHub image sources for newer matching stable release assets.
+  * Protect images used by projects, current runs and split preparation.
+  * Restore previous DHCP reservations and configuration when apply fails.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 08:00:00 +0300
+
+cmprovision4 (2.30.3~dev7) unstable; urgency=medium
+
+  * Add an Appearance submenu to the FPMS station menu for Light, Dark and
+    Auto, persisting the same setting as the web UI without changing layout.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 04:17:00 +0300
+
+cmprovision4 (2.30.3~dev6) unstable; urgency=medium
+
+  * Normalize pi-gen's temporary runtime directory before package setup so
+    the image initializes update recovery with production permission checks.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Sat, 14 Nov 2026 01:05:00 +0300
+
+cmprovision4 (2.30.3~dev5) unstable; urgency=medium
+
+  * Use a Terminus console map containing the half-block glyphs required
+    for scannable HDMI QR codes, preserving ASCII metrics and scaling.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 23:16:48 +0300
+
+cmprovision4 (2.30.3~dev4) unstable; urgency=medium
+
+  * Automatically show the rescue AP connection QR on HDMI for one minute
+    after each activation, including stations without FPMS.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 22:54:13 +0300
+
+cmprovision4 (2.30.3~dev3) unstable; urgency=medium
+
+  * Show a temporary rescue Wi-Fi connection QR on FPMS and HDMI after
+    explicit front-panel confirmation, using running AP credentials.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 22:22:39 +0300
+
+cmprovision4 (2.30.3~dev2) unstable; urgency=medium
+
+  * Initialize update recovery after image package installation and reject
+    exported images with a missing, insecure or outdated boot dispatcher.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 20:59:20 +0300
+
+cmprovision4 (2.30.3~dev1) unstable; urgency=medium
+
+  * Allow an explicit PoE restart of powered devices without an Ethernet link,
+    retaining station, switch-link and EEPROM-write protections.
+  * Render neighbouring cmprovision stations with a neutral cm mark on HDMI,
+    matching the web and FPMS distinction from the local station.
+
+ -- nimbo78 <igor.sin.78@gmail.com>  Fri, 13 Nov 2026 18:34:31 +0300
+
 cmprovision4 (2.30.2) unstable; urgency=medium
 
   * Expire updater recovery points seven days after successful completion,

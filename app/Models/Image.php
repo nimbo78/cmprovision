@@ -228,20 +228,25 @@ class Image extends Model
 
     function delete()
     {
-        // Delete image from filesystem, if it is still there
-        if (is_file($this->imagepath()))
-            unlink($this->imagepath());
-        // and what an unfinished fetch left (App\Jobs\DownloadImage)
-        if (is_file($this->imagepath().'.part'))
-            unlink($this->imagepath().'.part');
-        // and the half-made .gz of an archive being repacked (App\Jobs\ConvertImageArchive)
-        if (is_file($this->imagepath().'.gz.part'))
-            unlink($this->imagepath().'.gz.part');
-        // and its pieces copy
-        if ($this->splitPath() && is_file($this->splitPath()))
-            unlink($this->splitPath());
+        return \Illuminate\Support\Facades\DB::transaction(function () {
+            $fresh = static::find($this->id);
+            if (!$fresh) return false;
+            if ($reason = \App\Services\ImageRemoval::blocker($fresh)) throw new \RuntimeException($reason);
+            // Delete image from filesystem, if it is still there
+            if (is_file($fresh->imagepath()))
+                unlink($fresh->imagepath());
+            // and what an unfinished fetch left (App\Jobs\DownloadImage)
+            if (is_file($fresh->imagepath().'.part'))
+                unlink($fresh->imagepath().'.part');
+            // and the half-made .gz of an archive being repacked (App\Jobs\ConvertImageArchive)
+            if (is_file($fresh->imagepath().'.gz.part'))
+                unlink($fresh->imagepath().'.gz.part');
+            // and its pieces copy
+            if ($fresh->splitPath() && is_file($fresh->splitPath()))
+                unlink($fresh->splitPath());
 
-        // Delete from database
-        parent::delete();
+            // Delete from database
+            return parent::delete();
+        });
     }
 }

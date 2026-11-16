@@ -1,6 +1,9 @@
 #!/bin/bash -e
 
 export DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8
+# pi-gen mounts this temporary tmpfs with default 1777 permissions. Match the
+# production /run before package scripts initialize privileged controllers.
+chmod 0755 /run
 apt-get -o Acquire::Retries=3 update
 apt-get -o Acquire::Retries=3 install --no-install-recommends -y network-manager wpasupplicant iw nftables
 if [ -f /opt/cmprovision-image-fpms.deb ]; then
@@ -10,6 +13,9 @@ if [ -f /opt/cmprovision-image-fpms.deb ]; then
 else
     apt-get -o Acquire::Retries=3 install --no-install-recommends -y firmware-iwlwifi lldpd /opt/cmprovision-image.deb
 fi
+# postinst can only warn about initialization while dpkg is still configuring dependencies.
+# Retry after apt completes, and refuse to export an image with a missing boot recovery program.
+python3 -B -I /usr/lib/cmprovision/station-updates.py --initialize >/dev/null
 systemctl enable lldpd.service
 rm -f /opt/cmprovision-image.deb
 rm -f /opt/cmprovision-image-fpms.deb

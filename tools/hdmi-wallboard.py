@@ -9,12 +9,14 @@ import argparse
 import curses
 import fcntl
 import glob
+import grp
 import json
 import math
 import os
 from pathlib import Path
 import re
 import signal
+import stat
 import struct
 import subprocess
 import sys
@@ -28,6 +30,10 @@ UNIT = 'cmprovision-wallboard-display.service'
 TTY = '/dev/tty8'
 SNAPSHOT = Path('/run/cmprovision-wallboard-data/snapshot.json')
 MAX_SNAPSHOT = 2097152
+RESCUE_ACCESS = Path('/run/fpms/rescue-wifi-qr.json')
+RESCUE_AUTO = RUNTIME / 'rescue-wifi-qr.json'
+RESCUE_CLOSED = Path('/run/fpms/rescue-wifi-qr-closed.json')
+RESCUE_STATUS = Path('/run/cmprovision/rescue-wifi.json')
 DEBOUNCE = 2   # readings in a row before a connector change counts
 CONSOLEBLANK = Path('/sys/module/kernel/parameters/consoleblank')
 FONTS = Path('/usr/share/consolefonts')
@@ -64,7 +70,7 @@ def read_config(path=CONFIG):
         return dict(DEFAULTS)  # malformed settings fail closed
 
 
-def atomic_json(path, data):
+def atomic_json(path, data, private=False):
     # Both directories are root-owned. Never open a writable application path as root.
     fd, name = tempfile.mkstemp(prefix='.wallboard-', dir=path.parent)
     try:
@@ -73,7 +79,9 @@ def atomic_json(path, data):
             out.write('\n')
             out.flush()
             os.fsync(out.fileno())
-            os.fchmod(out.fileno(), 0o644)
+            os.fchmod(out.fileno(), 0o640 if private else 0o644)
+            if private:
+                os.fchown(out.fileno(), 0, grp.getgrnam('cmprovision-wallboard').gr_gid)
         os.replace(name, path)
     finally:
         if os.path.exists(name):
@@ -111,6 +119,7 @@ def watch():
     candidate, count = connected, 0
     fresh = True            # the next start is a new connection (or boot), not a retry: only that may take the console
     failures, retry_at = 0, 0.0
+    rescue_qr = AutomaticRescueQr()
     try:
         while not STOP:
             config = read_config()
@@ -124,6 +133,7 @@ def watch():
                 if count >= DEBOUNCE:
                     connected, count = reading, 0
             desired = wanted(config, connected)
+            rescue_qr.poll(desired)
             now = time.monotonic()
             if desired != active or now - last_check >= 10:
                 active = systemctl('is-active', '--quiet')
@@ -154,6 +164,7 @@ def watch():
                 last_state = state
             time.sleep(2)
     finally:
+        rescue_qr.close()
         systemctl('stop')
         atomic_json(RUNTIME / 'status.json', dict(state='stopped', connected=hdmi_connected()))
 
@@ -183,7 +194,9 @@ def font_candidates(pixels):
     base = [(6, 12), (8, 14), (8, 16), (10, 18), (10, 20), (11, 22), (12, 24), (14, 28), (16, 32)]
     choices = []
     for width, height in base:
-        name = 'Lat15-Terminus%d%s.psf.gz' % (height, ('x%d' % width) if height not in (14, 16) else '')
+        # Same Terminus ASCII glyphs/metrics; this map also has U+2580/U+2584 for QR.
+        # Lat15 and Uni2 omit those two half-blocks even though they have U+2588.
+        name = 'CyrKoi-Terminus%d%s.psf.gz' % (height, ('x%d' % width) if height not in (14, 16) else '')
         for scale in (1, 2):
             fw, fh = width * scale, height * scale
             if (pixels and pixels[0] // fw >= 100 and pixels[1] // fh >= 38) or (not pixels and fh <= 28):
@@ -197,11 +210,11 @@ def configure_console(pixels, force=False):
     path = RUNTIME / 'layout.json'
     try:
         previous = json.loads(path.read_text())
-        if not force and isinstance(previous, dict) and previous.get('resolution') == resolution:
+        if not force and isinstance(previous, dict) and previous.get('resolution') == resolution and previous.get('format') == 2:
             return previous
     except (OSError, ValueError):
         pass
-    result = dict(resolution=resolution, font='system default')
+    result = dict(resolution=resolution, font='system default', format=2)
     for font in font_candidates(pixels):
         file = FONTS / font['name']
         if not file.is_file():
@@ -397,6 +410,62 @@ def rescue_banner(data):
     return ' / '.join(parts)
 
 
+def link_summary(label, link):
+    parts = [label + ' ' + safe(link.get('name') or '?')]
+    if not link.get('up'):
+        parts.append('DOWN')
+    elif link.get('kind') == 'wifi':
+        ssid = link.get('ssid')
+        parts.append('Wi-Fi' + (' "' + safe(ssid) + '"' if ssid else ''))
+        signal = link.get('signal')
+        parts.append(('%g dBm' % signal) if type(signal) in (int, float) and -127 <= signal <= 0 else 'signal ?')
+    else:
+        speed = link.get('speed')
+        rate = ''
+        if type(speed) in (int, float) and 0 < speed <= 1000000:
+            rate = '%g Gb/s' % (speed / 1000) if speed >= 1000 else '%g Mb/s' % speed
+        parts.append('UP' + (' ' + rate if rate else ' / speed ?' if link.get('kind') == 'ethernet' else ''))
+    parts.append(safe(link.get('address')) if link.get('address') else 'no IP')
+    return ' / '.join(parts)
+
+
+def network_strip(c, data, y, limit=2):
+    station = data.get('station')
+    if not isinstance(station, dict):
+        return 0
+    uplink = station.get('uplink') if isinstance(station.get('uplink'), dict) else {}
+    links = [link for link in (station.get('links') or [])[:32] if isinstance(link, dict) and isinstance(link.get('name'), str)]
+    rescue = data.get('rescue_wifi')
+    ap = rescue.get('device') if isinstance(rescue, dict) and rescue.get('active') is True else None
+    device = uplink.get('device')
+    connected = uplink.get('state') in ('wifi', 'wired') and device and device != ap
+    seen, segments = set(), []
+    if connected:
+        original = next((link for link in links if link['name'] == device), {})
+        primary = dict(original, name=device, kind='wifi' if uplink['state'] == 'wifi' else 'ethernet',
+                       up=original.get('up', True), ssid=uplink.get('ssid'), signal=uplink.get('signal'),
+                       address=uplink.get('address'), speed=uplink.get('speed'))
+        segments.append(link_summary('UPLINK', primary))
+        seen.add(device)
+    else:
+        segments.append('UPLINK / no default route' + (' / Wi-Fi disconnected' if uplink.get('state') == 'wifi_down' else ''))
+    for link in sorted(links, key=lambda link: ({'stand':0, 'backup':1}.get(link.get('role'), 2), link['name'])):
+        if link['name'] in seen or link['name'] == ap or not link.get('up') and link.get('role') != 'stand':
+            continue
+        label = {'stand':'STAND', 'backup':'BACKUP'}.get(link.get('role'), 'LINK')
+        segments.append(link_summary(label, link))
+        seen.add(link['name'])
+    lines = []
+    for segment in segments:
+        if lines and (len(lines[-1]) + len(segment) + 3 <= c.cols or len(lines) == limit):
+            lines[-1] += ' | ' + segment
+        else:
+            lines.append(segment)
+    for offset, line in enumerate(lines):
+        c.marquee(0, y + offset, line, c.cols, 'fg' if connected else 'warn')
+    return len(lines)
+
+
 def header(c, data, now):
     counts = data.get('counts', {})
     rescue = rescue_banner(data)
@@ -417,8 +486,9 @@ def header(c, data, now):
             c.text(0, 3, rescue, 'accent' if data['rescue_wifi'].get('active') else 'warn')
         c.text(0, 4, 'PROJECT: ' + safe(data.get('project') or 'none active'), 'fg', c.cols - 32)
         c.text(c.cols - 30, 4, 'UPDATED ' + age(data.get('generated_at'), now), 'dim')
-        c.line(5)
-        return 7
+        height = network_strip(c, data, 5) if c.rows >= 30 else 0
+        c.line(5 + height)
+        return 7 + height
     c.text(0, 0, '[cm] cmprovision // ' + safe(data.get('host', 'HDMI')), 'accent')
     c.text(0, 1, 'PROJECT: ' + safe(data.get('project') or 'none active'), 'dim')
     local = ('LOCAL %d / OURS %d' % (len(data.get('modules', [])), len(data.get('recognized', [])))) if data.get('recognized') else ('ON STAND %d' % len(data.get('modules', [])))
@@ -426,8 +496,10 @@ def header(c, data, now):
            (counts.get('done', 0), counts.get('running', 0), counts.get('failed', 0), counts.get('stale', 0)), 'warn')
     if rescue:
         c.text(0, 3, rescue, 'accent' if data['rescue_wifi'].get('active') else 'warn')
-    c.line(4 if rescue else 3)
-    return 6 if rescue else 5
+    y = 4 if rescue else 3
+    height = network_strip(c, data, y) if c.rows >= 30 else 0
+    c.line(y + height)
+    return y + height + 2
 
 
 def port_mark(port, modules):
@@ -438,8 +510,11 @@ def port_mark(port, modules):
                 ('DONE' if m['state'] == 'ok' else (str(m['percent']) + '%' if m.get('percent') is not None else phase(m)[:4])))
         return mark, INK.get(m['state'], 'dim')
     # A free port stays a quiet empty frame, with its number: the panel keeps its shape and nothing flickers on it
-    if port.get('state') == 'uplink' and port.get('server'):
-        return ' cm', 'accent'   # the provisioner itself; one space more than the other marks, so it does not crowd the number
+    if port.get('state') == 'uplink':
+        if port.get('server'):
+            return ' cm', 'accent'   # this station uses its web accent; a neighbour keeps the neutral palette
+        if port.get('station'):
+            return ' cm', 'dim'
     return {'free': ('', 'dim'), 'uplink': ('UP', 'dim'), 'unrecognized': ('UNR', 'warn'),
             'quiet': ('LNK', 'warn'), 'boot': ('BOOT', 'run'), 'recognized': ('OURS', 'accent')}.get(port.get('state'), ('?', 'dim'))
 
@@ -694,9 +769,18 @@ def engineer(c, data, module, now, tick):
     issues = (diag or {}).get('issues', [])
     evidence = issues[0].get('evidence') if issues else None
     advice = issues[0].get('advice') if issues else module.get('advice')
-    c.wrap(0, below + 4, 'EVIDENCE: ' + (evidence or module.get('detail') or 'No recognized warning in the saved snapshot.'), c.cols, 2, 'fg')
-    if below + 7 < c.rows - 5:
-        c.wrap(0, below + 7, 'NEXT: ' + (advice or 'Wait for the configured checks to complete. See the module card in the web UI.'), c.cols, min(3, c.rows - 5 - below - 7), 'warn')
+    available = c.rows - 5 - (below + 4)
+    # Keep a row for NEXT even when the connection strip fills both header rows.
+    c.wrap(0, below + 4, 'EVIDENCE: ' + (evidence or module.get('detail') or 'No recognized warning in the saved snapshot.'),
+           c.cols, min(2, max(0, available - 1 if available >= 2 else available)), 'fg')
+    if available >= 2:
+        next_y = min(below + 7, c.rows - 6)
+        text = 'NEXT: ' + (advice or 'Wait for the configured checks to complete. See the module card in the web UI.')
+        lines = min(3, c.rows - 5 - next_y)
+        if lines == 1:
+            c.marquee(0, next_y, text, c.cols, 'warn')
+        else:
+            c.wrap(0, next_y, text, c.cols, lines, 'warn')
 
 
 def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=False, step=0):
@@ -724,6 +808,9 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
     else:
         unknown = sum(p.get('state') in ('unrecognized', 'quiet') for s in data.get('switches', []) for b in s['blocks'] for p in b['ports'])
         c.text(0, rows - 4, ('! %d unrecognized/quiet ports. Open Ports in the web UI.' % unknown) if unknown else 'READ ONLY / ' + safe(data.get('clock')), 'warn' if unknown else 'dim')
+    if rows < 30:
+        # Short consoles keep their card height; the otherwise empty footer row holds scrolling links.
+        network_strip(c, data, rows - 3, limit=1)
     c.text(0, rows - 2, ('PAUSED' if paused else 'AUTO ROTATION') + ' / CARD %d/%d / %s' %
            ((selected % len(cards)) + 1 if cards else 0, len(cards), view.upper()), 'dim')
     keys = 'Alt+F1 console / Alt+F8 board / <- -> / Space pause / V view'
@@ -797,14 +884,155 @@ def web_palette(palette, path=WEB_CSS):
     return dict(result, bg=bg, board=result['accent'])
 
 
-def colors(palette):
+def root_json(path):
+    """A fixed small root-owned status/close marker; never a link, pipe or app-owned file."""
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'r', encoding='utf-8') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or info.st_mode & 0o022 or info.st_size > 65536:
+                return {}
+            value = json.loads(source.read(65537))
+            return value if isinstance(value, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def rescue_closed(started, now):
+    closed = root_json(RESCUE_CLOSED).get('closed_at')
+    return type(closed) in (int, float) and started <= closed <= now
+
+
+def publish_rescue_qr(status):
+    """Root watcher reveals the running AP only; the renderer gains no privilege."""
+    import qrcode
+    result = subprocess.run(['/usr/lib/cmprovision/rescue-wifi', 'reveal'], capture_output=True,
+                            text=True, timeout=5, check=False)
+    if result.returncode or len(result.stdout) > 8192:
+        raise ValueError('Rescue credentials unavailable')
+    value = json.loads(result.stdout).get('active')
+    if not isinstance(value, dict) or value.get('ssid') != status.get('ssid'):
+        raise ValueError('Rescue credentials unavailable')
+    ssid, password = value.get('ssid'), value.get('password')
+    if not isinstance(ssid, str) or not 1 <= len(ssid.encode('utf-8')) <= 32 or \
+            any(ord(c) < 32 or ord(c) == 127 for c in ssid) or not isinstance(password, str) or \
+            not 12 <= len(password) <= 63 or any(not 32 <= ord(c) <= 126 for c in password):
+        raise ValueError('Rescue credentials unavailable')
+    def escape(text):
+        return ''.join(('\\' if c in '\\;,:"' else '') + c for c in text)
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=1, border=4)
+    qr.add_data(f'WIFI:T:WPA;S:{escape(ssid)};P:{escape(password)};;', optimize=0)
+    qr.make(fit=True)
+    atomic_json(RESCUE_AUTO, dict(version=1, created_at=status['started_at'], expires_at=status['started_at']+60,
+                                ssid=ssid, password=password, matrix=qr.get_matrix()), private=True)
+
+
+class AutomaticRescueQr:
+    def __init__(self, path=RESCUE_AUTO):
+        self.path, self.activation = path, None
+        self.retry_at = 0
+
+    def close(self):
+        self.activation = None
+        try: self.path.unlink(missing_ok=True)
+        except OSError: pass
+
+    def poll(self, enabled, now=None, wallclock=None):
+        now = time.monotonic() if now is None else now
+        wallclock = time.time() if wallclock is None else wallclock
+        status = root_json(RESCUE_STATUS)
+        started, checked = status.get('started_at'), status.get('checked_at')
+        valid = enabled and status.get('schema') == 1 and status.get('active') is True and status.get('state') in ('active', 'recovery')
+        try:
+            valid = valid and type(started) in (int, float) and math.isfinite(started) and 0 <= now-started < 60
+            valid = valid and type(checked) in (int, float) and math.isfinite(checked) and 0 <= wallclock-checked <= 90
+        except (OverflowError, ValueError):
+            valid = False
+        if not valid or rescue_closed(started, now):
+            self.close()
+            return
+        activation = (started, status.get('ssid'))
+        if (activation != self.activation or not self.path.exists()) and now >= self.retry_at:
+            self.activation = activation
+            try:
+                publish_rescue_qr(status)
+            except (OSError, ValueError, TypeError, ImportError, KeyError, subprocess.SubprocessError):
+                # Never include credentials or helper output in journal errors.
+                self.close()
+                self.retry_at = now + 10
+                print('HDMI rescue QR unavailable', flush=True)
+
+
+def rescue_access(path=RESCUE_ACCESS, now=None):
+    """An explicit FPMS reveal, shared only with this display user for at most 60 seconds."""
+    now = time.monotonic() if now is None else now
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'r', encoding='utf-8') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or info.st_mode & 0o037 or info.st_size > 32768:
+                return None
+            value = json.loads(source.read(32769))
+        if value.get('version') != 1:
+            return None
+        start, end = value.get('created_at'), value.get('expires_at')
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in (start, end)) or not start <= now < end or end - start != 60:
+            return None
+        matrix, ssid, password = value.get('matrix'), value.get('ssid'), value.get('password')
+        if not isinstance(ssid, str) or not 1 <= len(ssid.encode('utf-8')) <= 32 or not isinstance(password, str) or \
+                not 12 <= len(password) <= 63 or any(not 32 <= ord(c) <= 126 for c in password):
+            return None
+        if not isinstance(matrix, list) or not 29 <= len(matrix) <= 65 or (len(matrix)-29) % 4 or \
+                any(not isinstance(row, list) or len(row) != len(matrix) or any(type(c) is not bool for c in row) for row in matrix):
+            return None
+        return value
+    except (OSError, ValueError, TypeError, AttributeError, OverflowError):
+        return None
+
+
+def access_frame(value, cols, rows, now=None):
+    """Pack two square QR modules into each 1:2 console cell, including the quiet zone."""
+    now = time.monotonic() if now is None else now
+    c = Canvas(cols, rows)
+    c.text(2, 0, 'RESCUE WI-FI / Scan to connect', 'accent')
+    matrix = value['matrix']
+    size, height = len(matrix), (len(matrix) + 1)//2
+    if cols < size + 4 or rows < height + 3:
+        c.text(2, 3, 'QR needs a larger console. Use the FPMS screen.', 'accent')
+        return c
+    top, left = max(2, (rows-height)//2), 2
+    glyphs = {(False, False):(' ', 'qr00'), (True, True):(' ', 'qr11'),
+              (True, False):('\u2580', 'qr10'), (False, True):('\u2584', 'qr01')}
+    for y in range(height):
+        for x in range(size):
+            upper = matrix[y*2][x]
+            lower = matrix[y*2+1][x] if y*2+1 < size else False
+            c.cells[top+y][left+x] = glyphs[upper, lower]
+    x, width = left+size+4, cols-(left+size+4)
+    if width >= 15:
+        y = top + 1
+        for label, text in (('SSID', value['ssid']), ('PASSWORD', value['password'])):
+            if label == 'SSID' and any(not 32 <= ord(c) < 127 for c in text):
+                text = 'Scan QR for SSID'
+            c.text(x, y, label, 'accent', width)
+            lines = textwrap.wrap(text, width=width, replace_whitespace=False, drop_whitespace=False) or ['']
+            for i, line in enumerate(lines): c.text(x, y+1+i, line, width=width)
+            y += len(lines)+3
+        c.text(x, y, 'Closes in %ds' % max(0, math.ceil(value['expires_at']-now)), 'accent', width)
+    c.text(2, rows-1, 'FPMS: OK QR/password / KEY2 close', 'accent')
+    return c
+
+
+def colors(palette, qr=False):
     if not curses.has_colors():
-        return dict.fromkeys(['fg', 'dim', 'accent', 'good', 'run', 'fail', 'warn', 'board'], 0)
+        result = dict.fromkeys(['fg', 'dim', 'accent', 'good', 'run', 'fail', 'warn', 'board', 'qr11'], 0)
+        result.update(qr00=curses.A_REVERSE, qr10=curses.A_REVERSE, qr01=curses.A_REVERSE)
+        return result
     curses.start_color()
     slots = dict(fg=7, dim=6, accent=3, good=2, run=4, fail=1, warn=5, board=3)
     custom = curses.can_change_color()
     if custom:
         rgb = web_palette(palette)
+        if qr:
+            rgb.update(dim=(0, 0, 0), warn=(255, 255, 255))
         for name, slot in dict(slots, bg=0).items():
             if name == 'board':
                 continue
@@ -818,6 +1046,12 @@ def colors(palette):
         curses.init_pair(index, color, 0)
         # A_BOLD selects a different, bright palette entry on Linux consoles.
         result[name] = curses.color_pair(index) | (curses.A_BOLD if not custom and name != 'dim' else 0)
+    if qr:
+        black, white = (6, 5) if custom else (curses.COLOR_BLACK, curses.COLOR_WHITE)
+        for index, (name, fg, bg) in enumerate((('qr00', white, white), ('qr11', black, black),
+                                               ('qr10', black, white), ('qr01', black, white)), 9):
+            curses.init_pair(index, fg, bg)
+            result[name] = curses.color_pair(index)
     return result
 
 
@@ -856,11 +1090,21 @@ def display(screen):
             width, height, ox, oy = viewport(cols, rows)
             canvas = frame(data, width, height, selected, view_override or config['view'], tick=tick, paused=paused,
                            step=int(time.monotonic() / SCROLL_SECONDS))
+            access = rescue_access()
+            if access is None:
+                access = rescue_access(RESCUE_AUTO)
+                if access and rescue_closed(access['created_at'], time.monotonic()):
+                    access = None
+            ap = data.get('rescue_wifi', {})
+            if access and ap.get('active') is True and ap.get('ssid') == access['ssid'] and time.time()-data.get('generated_at', 0) <= 20:
+                canvas = access_frame(access, width, height)
+            else:
+                access = None
             screen.timeout(int(SCROLL_SECONDS * 1000) if canvas.scrolls else 1000)   # faster only while a text runs
             palette = resolved_palette(config['palette'], data)
-            if palette != palette_name:
-                inks = colors(palette)
-                palette_name = palette
+            if (palette, bool(access)) != palette_name:
+                inks = colors(palette, qr=bool(access))
+                palette_name = (palette, bool(access))
                 screen.bkgd(' ', inks['fg'])
                 screen.clearok(True)
             screen.erase()

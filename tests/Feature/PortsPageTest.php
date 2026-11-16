@@ -637,7 +637,8 @@ class PortsPageTest extends TestCase
             ->assertDontSee('Unrecognized device')
             ->assertSee('Flashed by cmprovision on wlanpi-da2')
             ->assertSee('boot 3 of the 20 it marks itself for')
-            ->assertSee('The mark is genuine: it matches the mark key of this provisioner.');
+            ->assertSee('The mark is genuine: it matches the mark key of this provisioner.')
+            ->assertSee(route('reprovision',['mac'=>'00:0a:95:dd:ee:ff']),false);
 
         app(\App\Services\Sensor\ModuleMark::class)->set(str_repeat('00', 32));
         Livewire::test(Ports::class)->call('select', 's1p6')
@@ -685,4 +686,14 @@ class PortsPageTest extends TestCase
         $this->switchWithModule();
         Livewire::test(Ports::class)->assertSee('no LLDP/CDP data')->assertDontSee('Says about itself');
     }
+    public function test_an_unrecognized_single_device_has_the_shared_reprovision_entry(): void
+    {
+        $cm=$this->switchWithModule();$cm->delete();
+        $id=EthernetSwitch::first()->id;
+        Livewire::test(Ports::class)->call('select','s'.$id.'p8')
+            ->assertSee(route('reprovision',['mac'=>self::MODULE_MAC]),false);
+        Livewire::test(Ports::class)->call('select','s'.$id.'p30')
+            ->assertDontSee(route('reprovision',['mac'=>'2c:cf:67:30:7d:a2']),false);
+    }
+
 }

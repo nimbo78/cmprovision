@@ -59,7 +59,7 @@ class Stand
             if (!$state['same_as'])
                 $parts[] = ['id' => $id, 'name' => $state['switch']->hostname(), 'snapshot' => $state['snapshot'],
                             'answering' => self::answering($state), 'own_macs' => $state['switch']->own_macs ?? [],
-                            'links' => $state['switch']->links ?? []];
+                            'links' => $state['switch']->links ?? [], 'powered_links' => self::poweredLinks($state)];
         $snapshots = array_values(array_filter(array_column($parts, 'snapshot')));
         $extra = is_array($extra) ? $extra : iterator_to_array($extra, false);
         $map = $snapshots
@@ -131,6 +131,38 @@ class Stand
         ksort($links);
         if ($links != ($switch->links ?? []))
             $switch->forceFill(['links' => $links])->save();
+    }
+
+    /* Safety-only memory: keep a known switch protected while it draws PoE without Ethernet. Unlike topology
+       links, this evidence never classifies an up port or claims ownership of a module after a replacement. */
+    protected static function poweredLinks(array $state): array
+    {
+        $key = 'switch-powered-links:'.$state['switch']->id;
+        try
+        {
+            return Cache::lock($key.':lock', 5)->block(1, function () use ($state, $key) {
+                $saved = Cache::get($key, ['taken_at' => -1, 'links' => []]);
+                $takenAt = (int) ($state['snapshot']['taken_at'] ?? -1);
+                // Readers finish out of order; an old up snapshot must not forget a newer powered-down link.
+                if (!self::answering($state) || $takenAt <= $saved['taken_at'])
+                    return $saved['links'];
+                $links = [];
+                foreach ($state['snapshot']['ports'] as $port)
+                    if (!$port['up'] && ($port['poe']['state'] ?? null) === 'delivering')
+                    {
+                        $neighbour = $saved['links'][$port['ifIndex']] ?? ($state['switch']->links[$port['ifIndex']] ?? null);
+                        if ($neighbour !== null)
+                            $links[$port['ifIndex']] = (int) $neighbour;
+                    }
+                Cache::forever($key, ['taken_at' => $takenAt, 'links' => $links]);
+                return $links;
+            });
+        }
+        catch (\Illuminate\Contracts\Cache\LockTimeoutException $e)
+        {
+            // Contention cannot make a known switch eligible for a power cut.
+            return (Cache::get($key)['links'] ?? []) + ($state['switch']->links ?? []);
+        }
     }
 
     /* What the switch said about itself; a base MAC another row holds already stays unset (two rows for one switch) */

@@ -30,4 +30,11 @@ class FpmsPanelSettings
         Setting::updateOrCreate(['key' => 'fpms_ports_map'], ['value' => $portsMap]);
         Setting::updateOrCreate(['key' => 'fpms_color_mode'], ['value' => $colorMode]);
     }
+
+    /** A physical-panel choice must not replace layout/Ports changes made in the web UI. */
+    public static function saveColorMode(string $mode): void
+    {
+        if (!in_array($mode, self::COLOR_MODES, true)) throw new \InvalidArgumentException('Unknown FPMS color mode.');
+        Setting::updateOrCreate(['key' => 'fpms_color_mode'], ['value' => $mode]);
+    }
 }

@@ -23,4 +23,11 @@ class SensorShellResultTest extends TestCase
         $this->assertTrue($r->acknowledges('10000000abcdef01'));
         $this->assertFalse($r->acknowledges('1000000000000000'));
     }
+    public function test_authenticated_sudo_refusal_is_distinct_from_a_wrong_login(): void
+    {
+        $r=ShellResult::from(1,'wlanpi is not in the sudoers file.');
+        $this->assertSame('no_sudo',$r->status);
+        $this->assertSame('denied',ShellResult::from(255,'Permission denied (password).')->status);
+    }
+
 }

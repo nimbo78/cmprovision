@@ -1,8 +1,9 @@
 <?php
 
-// git archive fills these in (.gitattributes: export-subst), so a package built from a tag knows its version and
-// commit (App\Support\AppVersion); a working copy keeps the placeholders and the web UI says "dev"
+// git archive supplies ancestry and commit (.gitattributes: export-subst). debian/rules stamps the
+// installed package version; an ordinary working copy keeps placeholders and says "dev".
 return [
+    'package' => null, // stamped by debian/rules with the actual .deb version
     'describe' => '$Format:%(describe)$',
     'commit' => '$Format:%h$',
 ];

@@ -263,7 +263,8 @@ class Controller:
                   'state':state.get('state', 'off'), 'reason':state.get('reason', 'disabled'),
                   'ssid':effective['ssid'], 'address':address, 'device':ap['device'] if ap else None,
                   'clients':observed.get('clients'), 'remaining':state.get('remaining'), 'active':active,
-                  'pending_settings':active and effective != config}
+                  'pending_settings':active and effective != config,
+                  'started_at':state.get('ap_started_at') if active else None}
         self.store.write(self.store.status, public, public=True)
         if ap and observed.get('known') and (config['enabled'] or active or state.get('action') == 'stop'):
             legacy_path = self.store.runtime/'uplink-spare'
@@ -297,6 +298,12 @@ class Controller:
                     state.update(action='stop', reason='manual_restart')
             if observed['ap_active']:
                 state['active_config'] = old.get('active_config') or config
+                started = old.get('ap_started_at') if old.get('boot_id') == self.boot() else None
+                now = self.monotonic()
+                # An interrupted worker or external activation can leave a running AP
+                # without its QR deadline. Recover it once; polls must not extend it.
+                state['ap_started_at'] = started if type(started) in (int, float) and 0 <= started <= now else \
+                    now if observed['ap_observed'] else None
                 if observed['known'] and not observed['deferred']:
                     try:
                         choose_subnet(self.linux.networks(inactive=False, exclude_device=ap['device']), state['active_config']['subnet'])
@@ -309,6 +316,7 @@ class Controller:
                 self._publish(config, state, observed, ap)
                 try:
                     self.linux.start(config, ap)
+                    state['ap_started_at'] = self.monotonic()
                     observed.update(ap_active=True, clients=0)
                     state.update(state='active', reason='management_unavailable', failures=0)
                     state.pop('retry_after', None)
@@ -331,6 +339,7 @@ class Controller:
                     pass  # keep observing; inability to join a client SSID is the reason this feature exists
             if not observed['ap_active'] and action != 'start':
                 state.pop('active_config', None)
+                state.pop('ap_started_at', None)
             self.store.write(self.store.state, state)
             return self._publish(config, state, observed, ap)
 

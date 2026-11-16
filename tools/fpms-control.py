@@ -8,6 +8,7 @@ capability of the FPMS package, its heartbeat) must be regular files of root, op
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import stat
 import subprocess
@@ -89,6 +90,20 @@ def fresh(value, now, age):
         return False
 
 
+def display_identity(heartbeat, now):
+    """Only a fresh positive controller response can identify the optional panel."""
+    if (type(heartbeat.get('protocol')) is not int or heartbeat['protocol'] != 1
+            or heartbeat.get('hardware') is not True or not fresh(heartbeat.get('at'), now, HEARTBEAT_FRESH)):
+        return None
+    display = heartbeat.get('display')
+    if not isinstance(display, dict) or display.get('profile') != 'waveshare-1.44':
+        return None
+    identity = display.get('id')
+    if not isinstance(identity, str) or not re.fullmatch(r'7c[89a-f][0-9a-f]{3}', identity):
+        return None
+    return dict(profile='waveshare-1.44', id=identity)
+
+
 def snapshot_age(now):
     """Seconds since the shared snapshot was written, from its modification time alone; None when it is not a regular file."""
     try:
@@ -129,9 +144,14 @@ class Watcher:
         self.retry_at = 0.0     # a start that failed is tried again after half a minute, not every cycle
         self.next_look = 0.0
         self.active = False
+        self.display = None
 
     def step(self, now, monotonic):
-        wanted, state = desired(config(), read_json(CAPABILITY), read_json(HEARTBEAT), now)
+        self.display = None
+        heartbeat = read_json(HEARTBEAT)
+        wanted, state = desired(config(), read_json(CAPABILITY), heartbeat, now)
+        if wanted:
+            self.display = display_identity(heartbeat, now)
         # With FPMS off and nothing running the unit is looked at seldom: no process every three seconds for nothing.
         if wanted or self.active or monotonic >= self.next_look:
             self.active = systemctl('is-active')
@@ -166,7 +186,10 @@ def watch():
                 print('cmprovision-fpms: %s: %s' % (type(error).__name__, error), file=sys.stderr, flush=True)
                 state = 'error'
             try:
-                atomic_json(STATUS, dict(state=state, checked_at=int(now)))
+                status = dict(state=state, checked_at=int(now))
+                if watcher.display:
+                    status['display'] = watcher.display
+                atomic_json(STATUS, status)
             except OSError as error:
                 print('cmprovision-fpms: status not written: %s' % error, file=sys.stderr, flush=True)
             time.sleep(3)

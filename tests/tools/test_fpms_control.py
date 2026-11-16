@@ -181,6 +181,31 @@ class WatcherTest(unittest.TestCase):
         states, _ = self.run_steps(control.Watcher(), [(101, 1)], beat=dict(BEAT, at=10**400), systemctl=lambda action: False)
         self.assertEqual(['waiting for FPMS'], states)
 
+    def test_only_a_fresh_enabled_positive_identity_reaches_status(self):
+        watcher = control.Watcher()
+        display = dict(profile='waveshare-1.44', id='7c89f0')
+        self.run_steps(watcher, [(101, 1)], beat=dict(BEAT, display=display))
+        self.assertEqual(display, watcher.display)
+        self.run_steps(watcher, [(116, 16)], beat=dict(BEAT, display=display))
+        self.assertIsNone(watcher.display)
+        self.run_steps(watcher, [(101, 1)], settings=control.DEFAULTS, beat=dict(BEAT, display=display))
+        self.assertIsNone(watcher.display)
+
+
+class DisplayIdentityTest(unittest.TestCase):
+    def test_identity_is_allowlisted_without_breaking_legacy_heartbeats(self):
+        display = dict(profile='waveshare-1.44', id='7c89f0')
+        self.assertEqual(display, control.display_identity(dict(BEAT, display=display), 101))
+        self.assertIsNone(control.display_identity(BEAT, 101))
+        for data in (dict(BEAT, at=200, display=display), dict(BEAT, at=80, display=display),
+                     dict(BEAT, hardware=False, display=display), dict(BEAT, protocol=True, display=display),
+                     dict(BEAT, display=dict(profile='other', id='7c89f0')),
+                     dict(BEAT, display=dict(profile='waveshare-1.44', id='<script>')),
+                     dict(BEAT, display=dict(profile='waveshare-1.44', id='120000')),
+                     dict(BEAT, display=dict(profile='waveshare-1.44', id=['7c89f0']))):
+            with self.subTest(data=data):
+                self.assertIsNone(control.display_identity(data, 101))
+
 
 if __name__ == '__main__':
     unittest.main()

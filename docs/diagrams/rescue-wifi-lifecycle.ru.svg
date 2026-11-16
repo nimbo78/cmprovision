@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="710" viewBox="0 0 1200 710" role="img" aria-labelledby="title desc">
+<title id="title">Wi-Fi и резервная точка доступа</title>
+<desc id="desc">Автоматический цикл: сеть доступна, поиск, работа AP, восстановление, ожидание. Управление и AP показаны раздельно.</desc>
+<metadata>{&quot;manual&quot;: 900, &quot;qr&quot;: 60, &quot;quiet&quot;: 60, &quot;recovery&quot;: 120, &quot;search&quot;: 600, &quot;spare&quot;: 30, &quot;stable&quot;: 60}</metadata>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#725B42"/></marker></defs>
+<rect width="1200" height="710" rx="20" fill="#FFF7E8"/>
+<text x="48" y="65" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="40" font-weight="700" fill="#2A1A0C" text-anchor="start" data-max-width="1104">Wi-Fi и резервная точка доступа</text>
+<rect x="48" y="82" width="56" height="4" rx="2" fill="#E2681C"/>
+<text x="48" y="119" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="22" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="1104">Одна карта ищет сеть управления, другая раздаёт Rescue AP.</text>
+<text x="48" y="151" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#725B42" text-anchor="start">Автоматический режим включён · типичный сценарий</text>
+<line x1="88" y1="185" x2="266" y2="185" stroke="#D8C7A8" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="48" y="170" width="36" height="30" rx="8" fill="#FFE4CC"/>
+<text x="66" y="192" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="700" fill="#8A3C0C" text-anchor="middle">01</text>
+<rect x="48" y="218" width="208" height="304" rx="10" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<rect x="64" y="236" width="176" height="34" rx="8" fill="#F0EBE3"/>
+<text x="152" y="259" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="20" font-weight="700" fill="#746A5F" text-anchor="middle" data-max-width="168">AP STANDBY</text>
+<text x="72" y="305" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">Сеть</text>
+<text x="72" y="333" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">доступна</text>
+<text x="72" y="385" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="42" font-weight="700" fill="#746A5F" text-anchor="start" data-max-width="164">Выкл</text>
+<text x="72" y="414" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="164">AP не раздаётся</text>
+<circle cx="72" cy="474" r="5" fill="#177C32"/>
+<text x="86" y="481" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#177C32" text-anchor="start" data-max-width="152">Wi-Fi: есть</text>
+<circle cx="72" cy="500" r="5" fill="#746A5F"/>
+<text x="86" y="507" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#746A5F" text-anchor="start" data-max-width="152">AP: выключен</text>
+<line x1="312" y1="185" x2="490" y2="185" stroke="#D8C7A8" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="272" y="170" width="36" height="30" rx="8" fill="#FFE4CC"/>
+<text x="290" y="192" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="700" fill="#8A3C0C" text-anchor="middle">02</text>
+<rect x="272" y="218" width="208" height="304" rx="10" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<rect x="288" y="236" width="176" height="34" rx="8" fill="#F0EBE3"/>
+<text x="376" y="259" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="20" font-weight="700" fill="#746A5F" text-anchor="middle" data-max-width="168">AP WAITING</text>
+<text x="296" y="305" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">Поиск сетей</text>
+<text x="296" y="333" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">управления</text>
+<text x="296" y="385" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="42" font-weight="700" fill="#E2681C" text-anchor="start" data-max-width="164">10 мин</text>
+<text x="296" y="414" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="164">Тайм-аут</text>
+<text x="296" y="438" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="164">по умолчанию</text>
+<circle cx="296" cy="474" r="5" fill="#746A5F"/>
+<text x="310" y="481" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#746A5F" text-anchor="start" data-max-width="152">Wi-Fi: поиск</text>
+<circle cx="296" cy="500" r="5" fill="#746A5F"/>
+<text x="310" y="507" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#746A5F" text-anchor="start" data-max-width="152">AP: выключен</text>
+<line x1="536" y1="185" x2="714" y2="185" stroke="#D8C7A8" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="496" y="170" width="36" height="30" rx="8" fill="#FFE4CC"/>
+<text x="514" y="192" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="700" fill="#8A3C0C" text-anchor="middle">03</text>
+<rect x="496" y="218" width="208" height="304" rx="10" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<rect x="512" y="236" width="176" height="34" rx="8" fill="#FFE4CC"/>
+<text x="600" y="259" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="20" font-weight="700" fill="#8A3C0C" text-anchor="middle" data-max-width="168">AP ACTIVE</text>
+<text x="520" y="305" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">Rescue AP</text>
+<text x="520" y="333" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">работает</text>
+<text x="520" y="385" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="42" font-weight="700" fill="#E2681C" text-anchor="start" data-max-width="164">Вкл</text>
+<text x="520" y="414" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="164">Пока нет</text>
+<text x="520" y="438" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="164">управления</text>
+<circle cx="520" cy="474" r="5" fill="#746A5F"/>
+<text x="534" y="481" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#746A5F" text-anchor="start" data-max-width="152">Wi-Fi: поиск</text>
+<circle cx="520" cy="500" r="5" fill="#E2681C"/>
+<text x="534" y="507" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#8A3C0C" text-anchor="start" data-max-width="152">AP: включён</text>
+<line x1="760" y1="185" x2="938" y2="185" stroke="#D8C7A8" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="720" y="170" width="36" height="30" rx="8" fill="#FFE4CC"/>
+<text x="738" y="192" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="700" fill="#8A3C0C" text-anchor="middle">04</text>
+<rect x="720" y="218" width="208" height="304" rx="10" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<rect x="736" y="236" width="176" height="34" rx="8" fill="#FFE4CC"/>
+<text x="824" y="259" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="20" font-weight="700" fill="#8A3C0C" text-anchor="middle" data-max-width="168">AP RECOVERY</text>
+<text x="744" y="305" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">Управление</text>
+<text x="744" y="333" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">вернулось</text>
+<text x="744" y="385" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="36" font-weight="700" fill="#E2681C" text-anchor="start" data-max-width="164">60 + 60 с</text>
+<text x="744" y="414" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="164">Плюс ожидание</text>
+<text x="744" y="438" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="164">ухода клиентов</text>
+<circle cx="744" cy="474" r="5" fill="#177C32"/>
+<text x="758" y="481" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#177C32" text-anchor="start" data-max-width="152">Wi-Fi: есть</text>
+<circle cx="744" cy="500" r="5" fill="#E2681C"/>
+<text x="758" y="507" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#8A3C0C" text-anchor="start" data-max-width="152">AP: включён</text>
+<rect x="944" y="170" width="36" height="30" rx="8" fill="#FFE4CC"/>
+<text x="962" y="192" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="700" fill="#8A3C0C" text-anchor="middle">05</text>
+<rect x="944" y="218" width="208" height="304" rx="10" fill="#FFFDF8" stroke="#D8C7A8" stroke-width="1.5"/>
+<rect x="960" y="236" width="176" height="34" rx="8" fill="#F0EBE3"/>
+<text x="1048" y="259" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="20" font-weight="700" fill="#746A5F" text-anchor="middle" data-max-width="168">AP STANDBY</text>
+<text x="968" y="305" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">Обычная</text>
+<text x="968" y="333" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="160">работа Wi-Fi</text>
+<text x="968" y="385" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="42" font-weight="700" fill="#746A5F" text-anchor="start" data-max-width="164">Выкл</text>
+<text x="968" y="414" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="164">AP не раздаётся</text>
+<circle cx="968" cy="474" r="5" fill="#177C32"/>
+<text x="982" y="481" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#177C32" text-anchor="start" data-max-width="152">Wi-Fi: есть</text>
+<circle cx="968" cy="500" r="5" fill="#746A5F"/>
+<text x="982" y="507" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="20" font-weight="400" fill="#746A5F" text-anchor="start" data-max-width="152">AP: выключен</text>
+<rect x="48" y="548" width="1104" height="66" rx="12" fill="#FFE4CC"/>
+<text x="72" y="589" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="24" font-weight="700" fill="#8A3C0C" text-anchor="start" data-max-width="340">Wi-Fi + AP RECOVERY</text>
+<text x="446" y="589" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="24" font-weight="600" fill="#2A1A0C" text-anchor="start" data-max-width="680">Оба подключения могут работать одновременно.</text>
+<text x="48" y="655" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="22" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="1104">Сеть найдена до тайм-аута → AP не запускается.</text>
+<text x="48" y="687" font-family="'Segoe UI', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif" font-size="22" font-weight="400" fill="#725B42" text-anchor="start" data-max-width="1104">Связь пропала во время Recovery → AP остаётся доступным.</text>
+</svg>

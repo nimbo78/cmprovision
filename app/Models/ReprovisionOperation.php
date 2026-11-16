@@ -11,11 +11,18 @@ class ReprovisionOperation extends Model
     protected $guarded = [];
     protected $attributes = ['state' => 'checking', 'password_changed' => false];
     protected $hidden = ['session_hash'];
-    protected $casts = ['identity' => 'array', 'password_changed' => 'boolean', 'expires_at' => 'datetime', 'user_id' => 'integer', 'project_id' => 'integer'];
+    protected $casts = ['context' => 'array', 'identity' => 'array', 'password_changed' => 'boolean', 'expires_at' => 'datetime', 'user_id' => 'integer', 'project_id' => 'integer'];
     const PENDING = ['dispatching', 'waiting', 'unknown'];
 
     public static function pending(string $serial): ?self
     {
         return static::where('serial', $serial)->whereIn('state', self::PENDING)->latest('created_at')->first();
     }
+    public static function pendingTarget(string $mac, ?string $serial = null): ?self
+    {
+        return static::whereIn('state', self::PENDING)->where(function ($q) use ($mac, $serial) {
+            $q->where('mac', $mac); if ($serial !== null) $q->orWhere('serial', $serial);
+        })->latest('created_at')->first();
+    }
+
 }

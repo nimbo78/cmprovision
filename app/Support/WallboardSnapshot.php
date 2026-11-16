@@ -6,7 +6,6 @@ use App\Models\Cm;
 use App\Models\Project;
 use App\Models\Setting;
 use App\Models\UsbDiagnosticReport;
-use App\Services\Fpms;
 use App\Services\OuiVendors;
 use App\Services\Switch\Stand;
 
@@ -99,8 +98,8 @@ class WallboardSnapshot
             'hdmi_auto_mode' => Setting::find('hdmi_color_mode')?->value === 'auto',
             // Independent of FPMS enablement: HDMI and either panel layout consume the same secret-free status.
             'rescue_wifi' => app(\App\Services\RescueWifi::class)->status(),
-            // for the FPMS panel only: the address and the interface come from NetworkManager and iw, which HDMI never needed
-            'station' => app(Fpms::class)->settings()['enabled'] ? DisplayStation::current() : null];
+            // Both displays share the bounded, secret-free 30-second network snapshot, independently of FPMS enablement.
+            'station' => DisplayStation::current()];
     }
 
     /* A port with a device that is not a module and is not booting: what it says about itself over LLDP or CDP, or else

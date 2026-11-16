@@ -2,7 +2,7 @@
 
 # Operating the provisioner
 
-[Back to the README](../README.md) · [Upgrade and restore](upgrading.md) · [LED signals](leds.md) · [USB provisioning](usb-provisioning.md) · [Local console](local-console.md)
+[Back to the README](../README.md) · [Upgrade and restore](upgrading.md) · [LED signals](leds.md) · [USB provisioning](usb-provisioning.md) · [Local console](local-console.md) · [Storage and device reports](station-operations.md)
 
 Detailed behaviour of the project options and stand controls. Start with the [installation guide](../README.md#quick-start) if this is a new server.
 
@@ -170,20 +170,40 @@ Identify after the OS check lasts **until the next reboot**. Only the LED helper
 
 ## Re-provision an installed sensor
 
-Use **CMs → module → Re-provision…** when a sensor has booted its installed OS and needs a new image. The first implementation supports eMMC/SD, an MBR partition table and an ext4 root on partition 2. SSH must be running; the bootloader must fall back to network boot when the disk is no longer bootable. A module still in the utility OS can be restarted through PoE instead.
+Use **Ports → device → Re-provision…**, **CMs → module → Re-provision…**, or the **Re-provision…** action on CMs to enter an IPv4 address. The same wizard handles a local module, **OURS** from another station and an unrecognized compatible board. Ownership and the previous provisioner are informational; neither must be present or online.
 
-1. Select the active project and open the module card. The module needs a current DHCP lease on the stand network and must not be writing an image or running its first-boot check.
-2. Choose **Check access**. The provisioner tries its restricted SSH key first, then enabled accounts from **Settings → Provisioning → Re-provision (sensor accounts)**, in their listed order. If none provides access, enter the sensor login and password manually; the account needs sudo access. If a saved or manually entered account requires a password change, enter and repeat a new password. The server verifies the new login before continuing.
-3. Review the matched serial, address, disk, CID and next project. Choose **Wipe and re-provision** and confirm. This erases the first MiB of that disk and requests a reboot; it is not a full secure erase.
-4. The card waits for the module to return to network boot, then its normal provisioning run starts from the beginning. If SSH disconnects without a confirmed result, the command is not repeated automatically. Wait for boot or perform a fresh access check after 30 seconds if the installed system is still running.
+Only **CM4 / Raspberry Pi 4**, a whole eMMC/SD disk, **MBR** and an **ext4 root on partition 2** are supported. SSH and privileged access are required. CM3, CM5, Pi 5, GPT, encrypted roots and USB/NVMe roots are refused. A module already in the utility OS normally needs a PoE restart instead.
 
-To enable key access for future runs, turn on **Re-provision from the web UI** in the project editor. After the image's verification and post-install scripts, the provisioner adds its public key and `/usr/local/sbin/cmprovision-agent` to the written root. The key uses a forced command and cannot provide an ordinary shell or forwarding. The option defaults to off and does not change the image's SSH login policy: files can be installed while root key login is disabled. Installation failures are nonfatal and appear as `agent skipped` in the post-install log.
+```mermaid
+flowchart LR
+    A[Ports / module / IPv4] --> B[Check access]
+    B --> C[Inspect hardware and disk]
+    C --> D[Review current project]
+    D --> E[Confirm erase and reboot]
+    E --> F[Network boot and real new run]
+```
 
-**Settings → Provisioning → Re-provision (provisioner key)** shows the public key. Its private part stays in `storage/app/ssh/id_ed25519`; backups and `restore --data-only` preserve it. Protect those backups as server credentials. Manual key installation requires the matching agent and a restricted `authorized_keys` entry, not a plain unrestricted key.
+1. On the **current primary** station, select the active project and image. A secondary offers **Open current primary**, using the primary web address explicitly saved under **Settings → Network**. The destination asks for its normal login and repeats every check; no credentials or checked-operation tickets are transferred. This is the server serving the next boot, independent of where the board was flashed before. Roles, boot services and the global project are never changed automatically.
+2. Choose **Check access**. The resolver accepts a unique current DHCP lease, or verifies a manually entered address against a fresh matching neighbor on the current stand interface. An LLDP address is only a hint. Local stations, reserved infrastructure, switches, uplinks and ambiguous shared ports are excluded. Rendering the page never tries sensor passwords.
+3. Access tries the restricted provisioner key, enabled saved accounts from **Settings → Provisioning → Re-provision (sensor accounts)**, then a manual sensor login/password. A first-time board does not need our agent installed: an authorized account runs a read-only inspector. An expired password can be changed explicitly before continuing. Check/Back/Cancel never erase the disk or register a module.
+4. Review the actual model, serial, Ethernet MAC, root disk, capacity, CID, network-boot readiness and the **next project/image**. For a first-time board, the wizard says **Identity read from device**. Previously registered boards must still match their recorded serial and disk. Extended inspection refuses an explicitly unusable BOOT_ORDER; unavailable boot data on an existing record retains the previous path with a warning. A serial already associated with another MAC is a conflict, not a new registration.
+5. Choose **Wipe and re-provision** and confirm. The server rechecks identity, address/interface, service role and project before sending one erase command. The agent erases exactly the **first MiB** and requests reboot; this is not a full secure erase. A new local module/history row appears only after the utility OS actually starts a run.
+6. Wait for network boot and follow the normal dashboard. If SSH disconnects without acknowledgement, the outcome is **unknown** and the command is never retried automatically. Wait for boot, or check access afresh after at least 30 seconds if the installed system is still running.
 
-An access check lasts two minutes and is tied to the operator's web session. Passwords are kept encrypted on the server for that interval and are cleared when the dialog is cancelled or the command is dispatched. The SSH host key is remembered for the operation, so changing devices between its steps is refused; the initial connection relies on the isolated stand network.
+| Check result | Next step |
+| --- | --- |
+| Ready | Review the current disk and project, then confirm explicitly. |
+| Account required | Enter an authorized sensor account with sudo access. |
+| Network boot unavailable or unknown | Use [USB prep](usb-provisioning.md#set-a-board-to-boot-from-the-network-usb-prep), then check again. No EEPROM changes are made by this wizard. |
+| Unsupported, protected or busy | Resolve the reported cause. A cmprovision station uses the separate [station reimage procedure](station-project-setup.md), including its backup and restore steps. |
 
-If the active project or its configuration changes, the previous confirmation no longer authorizes that project. A module returning after the erase waits instead of receiving an unexpected configuration. Review the new active project, use **Confirm current project for next boot** on its card, then restart it through PoE if it is waiting in the utility OS. Existing records with no stored disk path are accepted only when the sensor's root disk can be determined and matched to its recorded identity; no disk path is guessed.
+The check lasts **two minutes** and belongs to the operator's session; an expired confirmation offers **Check access again**. Passwords remain transient and encrypted in the server cache and are cleared on cancellation/dispatch. The operation pins the SSH host key. A fresh connection relies on the isolated stand and its IP/MAC evidence, rather than cryptographic authentication of a previously unknown board.
+
+A reset intent lasts **30 minutes**. If its project changes or the intent expires before the module returns, provisioning waits. Review the new project, use **Confirm current project for next boot** in the wizard/card, then restart the module if it is waiting in the utility OS.
+
+To enable key access for future runs, turn on **Re-provision from the web UI** in the project editor. After verification and post-install scripts, the provisioner adds its public key and a restricted agent to the written root. It cannot provide an ordinary shell or forwarding, does not change the image's SSH login policy and defaults to off. Agent installation failures are nonfatal and appear as **agent skipped**. Existing registered v1 agents keep their serial/CID/size-bound flow; a first-time v1 response needs the extended account-based inspection.
+
+**Settings → Provisioning → Re-provision (provisioner key)** shows the public key. Its private part stays in `storage/app/ssh/id_ed25519`; backups and `restore --data-only` preserve it. Protect these backups as server credentials.
 
 ### Saved sensor accounts
 
@@ -394,7 +414,9 @@ Settings → Network → Ethernet switches lists the switches of the stand; **Ad
 
 Verified switch models use the physical positions and printed port numbers of their front panel. On a phone, scroll the panel sideways to keep that order. Other models show **Automatic port order**. Supported panels and manufacturer references: [Switch front panels](switch-front-panels.md).
 
-Write access is optional, set for each switch, and only used to restart modules over PoE: a write community for v2c, or a user of its own for v3. **Check write access** writes one PoE port's current value back, so it changes nothing. With write access, the module card, the Ports page and the dashboard get a **Restart** button: the switch turns the port's PoE off for 5 seconds and on again. It is offered only on ports with one of the provisioner's modules (or a Raspberry Pi still booting) and nothing else, and not while the module writes its bootloader EEPROM. A port that does not come back on is listed on the dashboard, the Ports page and the module card with **Power on** until it does.
+Write access is optional and configured per switch: a write community for v2c, or a separate user for v3. **Check write access** writes one PoE port's current value back without cycling it. With write access, the module card, Ports and dashboard offer **Restart** for module/booting-Pi ports: PoE goes off for five seconds and then on. Ports leading to another switch or provisioner remain protected, as does a module currently writing its bootloader EEPROM. A port which fails to come back on is listed with **Power on**.
+
+On **Ports**, an explicitly selected port with Ethernet down also offers **Restart** when the switch reports PoE **delivering**. The confirmation names the port and explains that the connected device cannot be identified. No MAC or module record is required; disconnected historical modules are not added to batch restart selection. Merely enabled/searching PoE, a fault or deliberately disabled power does not qualify. Write access, fresh switch state and the last-moment EEPROM check still apply.
 
 A device on a port that announces itself over LLDP or CDP (switches, access points, phones, WLAN Pi OS) is described on the port's details under **Says about itself**, and the line of each switch tells how many neighbors it knows; for a device that says nothing the details name the maker of its MAC address. See [what the device says about itself](unrecognized-devices.md#what-the-device-says-about-itself-lldp-and-cdp).
 

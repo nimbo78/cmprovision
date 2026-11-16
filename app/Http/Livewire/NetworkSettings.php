@@ -26,14 +26,32 @@ class NetworkSettings extends Component
     public $notice = null, $noticeIsError = false;
     #[Locked] public $importSource = null;
     public $importTarget = '';
+    public string $primaryWebUrl = '';
 
     public function mount(): void
     {
+        $this->primaryWebUrl = (string) \App\Models\Setting::find('reprovision_primary_url')?->value;
         $source = session('configuration_transfer_draft');
         if (is_array($source) && isset($source['operation'], $source['ref'])) {
             $this->importSource = $source;
             $this->importedDraft(); // Validate ownership and expiry before showing an imported draft.
         }
+    }
+
+    public function savePrimaryUrl(): void
+    {
+        $this->ensurePasswordIsConfirmed();
+        $this->resetValidation('primaryWebUrl');
+        $url = trim($this->primaryWebUrl);
+        $origin = $url === '' ? '' : \App\Services\Sensor\ReprovisionStation::validateOrigin($url);
+        if ($origin === null) {
+            $this->addError('primaryWebUrl','Enter an HTTP or HTTPS base address, with an optional port and no path, login, query or fragment.');
+            return;
+        }
+        if ($origin === '') \App\Models\Setting::whereKey('reprovision_primary_url')->delete();
+        else \App\Models\Setting::updateOrCreate(['key'=>'reprovision_primary_url'],['value'=>$origin]);
+        $this->primaryWebUrl = $origin;
+        $this->flash('Current primary web address saved. Network roles and boot services were not changed.');
     }
 
     private function importedDraft(): ?array

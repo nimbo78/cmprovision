@@ -28,6 +28,7 @@
         'backup': 'system',
         'station-power': 'system',
         'time': 'system',
+        'storage': 'system',
         'wifi': 'network',
         'rescue-wifi': 'network',
         'switches': 'network',

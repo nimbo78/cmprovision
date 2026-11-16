@@ -23,6 +23,54 @@ class PackagingTest extends TestCase
             'the owners are right before artisan writes as the web user');
     }
 
+    public function test_configure_refreshes_a_running_display_reader_without_starting_an_inactive_one()
+    {
+        if (!is_executable('/bin/sh'))
+            $this->markTestSkipped('POSIX package script');
+        $tmp = sys_get_temp_dir().'/cmprovision-display-refresh-'.bin2hex(random_bytes(8));
+        mkdir($tmp, 0700);
+        $state = $tmp.'/reader';
+        $runtime = $tmp.'/systemd';
+        $helper = $tmp.'/deb-systemd-invoke';
+        file_put_contents($helper, <<<'SH'
+#!/bin/sh
+set -eu
+[ "$#" -eq 2 ] && [ "$2" = cmprovision-wallboard-data.service ] || exit 64
+case "$1" in
+    try-restart) [ "$(cat "$READER_STATE")" = active:old ] || exit 0 ;;
+    restart) ;;
+    *) exit 65 ;;
+esac
+printf 'active:new\n' > "$READER_STATE"
+SH
+        );
+        chmod($helper, 0700);
+        $postinst = $this->file('debian/postinst');
+        $tail = substr($postinst, strpos($postinst, '#DEBHELPER#') + strlen('#DEBHELPER#'));
+        $tail = str_replace('/run/systemd/system', $runtime, $tail);
+        try
+        {
+            foreach ([[true, 'active:old', 'configure', 'active:new'], [true, 'inactive', 'configure', 'inactive'],
+                [true, 'active:old', 'triggered', 'active:old'], [false, 'active:old', 'configure', 'active:old']] as [$running, $before, $action, $after])
+            {
+                if ($running && !is_dir($runtime)) mkdir($runtime, 0700);
+                if (!$running && is_dir($runtime)) rmdir($runtime);
+                file_put_contents($state, $before);
+                $process = new \Symfony\Component\Process\Process(['/bin/sh', '-c', $tail, 'postinst-test', $action], $tmp,
+                    ['PATH' => $tmp.':'.getenv('PATH'), 'READER_STATE' => $state]);
+                $process->mustRun();
+                $this->assertSame($after, trim(file_get_contents($state)), json_encode([$running, $before, $action]));
+            }
+        }
+        finally
+        {
+            if (is_dir($runtime)) rmdir($runtime);
+            @unlink($state);
+            unlink($helper);
+            rmdir($tmp);
+        }
+    }
+
     public function test_restore_runs_artisan_as_the_web_user()
     {
         $restore = $this->file('tools/restore.sh');

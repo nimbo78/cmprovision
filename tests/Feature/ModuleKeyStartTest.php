@@ -73,9 +73,11 @@ class ModuleKeyStartTest extends TestCase
         $held = \Illuminate\Support\Facades\Cache::lock('module-operation:'.hash('sha256', self::SERIAL), 60);
         $this->assertTrue($held->get());   // a PoE restart or a re-provision is working on the first module
 
-        $this->start('10000000aaaa0002', self::MAC)->assertSee('Another operation is running');   // the start of the same board is refused, not run beside it
-
-        $held->release();
+        try {
+            $this->get('/scriptexecute?serial=10000000aaaa0002&model=CM4&storagesize=62500000&mac='.self::MAC)
+                ->assertStatus(503)->assertHeader('Retry-After','10')->assertSee('Another operation is running');
+            $this->assertSame(2,Cm::count());
+        } finally { $held->release(); }
     }
 
     public function test_what_is_not_a_mac_is_not_taken_for_one()

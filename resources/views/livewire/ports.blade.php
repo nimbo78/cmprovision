@@ -201,6 +201,8 @@
                         <p class="mb-2">Link up, nothing has talked to the server from this port yet.</p>
                     @elseif ($tile['state'] === 'quiet')
                         <p class="mb-2">Link up for {{ \Carbon\CarbonInterval::seconds($tile['changed'])->cascade()->forHumans(['parts' => 1]) }}, and nothing has talked from this port: a quiet device, a member of a link aggregation, or the provisioner's own port after a long idle time.</p>
+                    @elseif ($tile['state'] === 'free' && ($tile['poe']['state'] ?? null) === 'delivering')
+                        <p class="mb-2">PoE is delivering power without an Ethernet link. The connected device cannot be identified.</p>
                     @elseif ($tile['link'])
                         <p class="mb-2">The link to {{ $tile['link'] }}: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
                     @elseif ($tile['state'] === 'uplink' && !empty($tile['server']))
@@ -209,6 +211,9 @@
                         <p class="mb-2">{{ $tile['station']['provisioner'] ? 'The provisioner of the stand' : 'Another cmprovision station' }} is on this port: {{ implode(' ', array_filter([$tile['station']['name'], $tile['station']['address'] ? '('.$tile['station']['address'].')' : ''])) }}, cmprovision {{ $tile['station']['version'] }}.</p>
                     @elseif ($tile['state'] === 'uplink')
                         <p class="mb-2">Uplink: {{ $tile['mac_count'] }} MAC {{ $tile['mac_count'] === 1 ? 'address' : 'addresses' }} behind it.</p>
+                    @endif
+                    @if ($reprovisionUrl)
+                        <div class="flex justify-end mb-3"><a href="{{ $reprovisionUrl }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Re-provision…</a></div>
                     @endif
                     @if (!empty($tile['neighbors']))
                         {{-- what the device itself says over LLDP or CDP; the texts are the device's own and escaped --}}

@@ -25,7 +25,8 @@ class ReprovisionIntent
     /* Called under the module lock before the old run can be resumed or replaced. A failed guard keeps the intent. */
     public static function guard(string $serial, ?Project $project, ?string $mac): ?string
     {
-        $op = ReprovisionOperation::pending($serial);
+        $op = ReprovisionOperation::pendingTarget(strtolower((string) $mac), $serial);
+        if ($op && $op->serial !== $serial) return 'The re-provision serial does not match this network device.';
         if (!$op) return null;
         if (!$project || !$project->image || $op->project_id != $project->id
             || !hash_equals($op->project_hash, self::fingerprint($project)))
@@ -39,7 +40,7 @@ class ReprovisionIntent
 
     public static function started(Cm $cm): void
     {
-        ReprovisionOperation::where('serial', $cm->serial)->whereIn('state', ReprovisionOperation::PENDING)
+        ReprovisionOperation::where('serial', $cm->serial)->where('mac', $cm->mac)->whereIn('state', ReprovisionOperation::PENDING)
             ->update(['state' => 'booted', 'message' => 'The module returned to network boot; a new run started.', 'updated_at' => now()]);
     }
 }

@@ -265,6 +265,31 @@ method=disabled
     def spare(self, device, connect):
         if not IFNAME.fullmatch(device):
             raise RescueError('Invalid Wi-Fi interface name.')
-        if connect:
+        if not connect:
+            self.nm('-w', '10', 'device', 'disconnect', device, timeout=15)
+            return
+        # `device connect` also selects autoconnect=no profiles, including our AP.
+        # Bind an eligible client UUID explicitly so only the policy can start rescue.
+        listing = self.nm('-t', '-f', 'UUID,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY,TIMESTAMP,DBUS-PATH',
+                          'connection', 'show').stdout.splitlines()
+        if len(listing) > 128:
+            raise RescueError('Too many network profiles to select a cold-spare connection safely.')
+        paths = self.nm('-g', 'CONNECTIONS.AVAILABLE-CONNECTION-PATHS', 'device', 'show', device).stdout.strip()
+        available = {path for path in paths.split(',') if re.fullmatch(r'/org/freedesktop/NetworkManager/Settings/\d+', path)}
+        candidates = []
+        for line in listing:
+            fields = line.split(':')
+            if len(fields) != 6:
+                continue
+            identity, kind, auto, priority, timestamp, path = fields
+            if identity == PROFILE_UUID or path not in available or not re.fullmatch(r'[0-9a-f-]{36}', identity) or \
+                    kind != '802-11-wireless' or auto != 'yes' or not re.fullmatch(r'-?\d+', priority) or not timestamp.isdigit():
+                continue
+            candidates.append((int(priority), int(timestamp), identity))
+        for _, _, identity in sorted(candidates, reverse=True):
+            mode = self.nm('-g', '802-11-wireless.mode', 'connection', 'show', 'uuid', identity).stdout.strip()
+            if mode not in ('', 'infrastructure'):
+                continue
             self.nm('device', 'set', device, 'autoconnect', 'yes')
-        self.nm('-w', '10', 'device', 'connect' if connect else 'disconnect', device, timeout=15)
+            self.nm('-w', '10', 'connection', 'up', 'uuid', identity, 'ifname', device, timeout=15)
+            return

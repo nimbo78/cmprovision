@@ -96,12 +96,28 @@ class Ports extends Component
                 ? array_filter(OuiVendors::names(array_slice($tile['macs'], 0, 8))) : [],
             'usbReport' => $tile && $tile['macs'] ? \App\Models\UsbDiagnosticReport::whereIn('mac', $tile['macs'])
                 ->where('received_at', '>', now()->subMinutes(15))->orderByDesc('received_at')->first() : null,
+            'reprovisionUrl' => self::reprovisionUrl($tile),
             'now' => $now,
             'writable' => $writable,
             'failed' => $writable && $stand['map'] ? count(self::failedOnStand($stand)) : 0,
             'restart' => $tile ? ['blocker' => PoeRestart::switchBlocker($stand['switches'][$tile['switch_id']] ?? null) ?? StandMap::restartBlocker($tile),
-                                  'confirm' => PoeRestart::confirm($tile['modules'][0] ?? null, $tile['label'])] : null,
+                                  'confirm' => PoeRestart::confirmPort($tile)] : null,
         ]);
+    }
+
+    private static function reprovisionUrl(?array $tile): ?string
+    {
+        if (!$tile || !$tile['up'] || $tile['state'] === 'uplink' || !empty($tile['link']) || !empty($tile['server'])
+            || !empty($tile['station']) || $tile['mac_count'] !== 1 || count($tile['macs']) !== 1) return null;
+        $hints = ['mac'=>$tile['macs'][0]];
+        $ips = [];
+        foreach ($tile['neighbors'] ?? [] as $neighbor) {
+            $ip = $neighbor['address'] ?? null;
+            if (is_string($ip) && filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)
+                && \Symfony\Component\HttpFoundation\IpUtils::checkIp($ip,\App\Services\NetworkStatus::STAND_NETWORK)) $ips[$ip] = true;
+        }
+        if (count($ips) === 1) $hints['address'] = array_key_first($ips);
+        return route('reprovision',$hints);
     }
 
     /* One switch's block: its line, what it says while silent, a placeholder before its first answer or instead of the

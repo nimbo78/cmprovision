@@ -10,6 +10,8 @@ use Livewire\Component;
 use App\Models\Image;
 use App\Services\ImageDownloads;
 use App\Services\ImageSpace;
+use App\Services\ImageRemoval;
+use App\Services\ImageUpdates;
 use App\Support\FetchSpeed;
 use \Illuminate\Http\UploadedFile;
 
@@ -22,6 +24,7 @@ class Images extends Component
     public $isOpen = false;
     // images from the internet (2.8.0): the window, the images on their way, what each fetch runs at, the free space they have
     public $sourcesOpen = false, $fetching = false, $speeds = [], $imageSpace = 0, $unusedCount = 0, $unusedSize = 0;
+    public string $sourcesRepo = '';
     public $os32bit = false;
 
     /* The columns that sort the list by a click on their header; with none chosen the order is the name of the file */
@@ -60,7 +63,9 @@ class Images extends Component
         $this->unusedSize = app(ImageSpace::class)->bytes($unused);
         $this->splitPending = $this->images->contains(function ($image) { return $image->splitPreparing(); });
 
-        return view('livewire.images', ['sortKey' => $sort, 'sortDir' => $dir]);
+        $updates = app(ImageUpdates::class);
+        return view('livewire.images', ['sortKey' => $sort, 'sortDir' => $dir,
+            'imageUpdates'=>$this->images->mapWithKeys(fn ($image) => [$image->id=>$updates->peek($image)])->all()]);
     }
 
     public function openModal()
@@ -68,9 +73,17 @@ class Images extends Component
         $this->isOpen = true;
     }
 
-    public function openSources()
+    public function openSources($id = null)
     {
+        $source = $id === null ? [] : json_decode((string) Image::findOrFail($id)->source, true);
+        $this->sourcesRepo = is_string($source['repo'] ?? null) ? $source['repo'] : '';
         $this->sourcesOpen = true;
+    }
+
+    public function checkUpdate(int $id): void
+    {
+        abort_unless(auth()->check(), 403);
+        app(ImageUpdates::class)->check(Image::findOrFail($id));
     }
 
     #[On('image-sources-closed')]
@@ -89,10 +102,16 @@ class Images extends Component
             session()->flash('message', 'Nothing unused to delete.');
             return;
         }
-        $size = $space->bytes($unused);
-        foreach ($unused as $image)
-            $image->delete();
-        session()->flash('message', 'Deleted '.$unused->count().' unused '.($unused->count() === 1 ? 'image' : 'images').' ('.Image::size($size).').');
+        $size = 0;
+        $deleted = 0;
+        foreach ($unused as $image) {
+            try {
+                $bytes = $space->bytes([$image]);
+                if (app(ImageRemoval::class)->remove($image->id, false, true)) { $deleted++; $size += $bytes; }
+            }
+            catch (\RuntimeException $protected) { /* A project/run may have claimed an image after the list was drawn. */ }
+        }
+        session()->flash('message', 'Deleted '.$deleted.' unused '.($deleted === 1 ? 'image' : 'images').' ('.Image::size($size).').');
     }
 
     /* a failed fetch goes on from what is there */
@@ -108,21 +127,19 @@ class Images extends Component
     
     public function delete($id)
     {
-        Image::destroy($id);
-        session()->flash('message', 'Image deleted.');
+        try {
+            app(ImageRemoval::class)->remove((int) $id);
+            session()->flash('message', 'Image deleted.');
+        } catch (\RuntimeException $error) { session()->flash('message', $error->getMessage()); }
     }
 
     /* The pieces copy (2.6.1) that no project with "Split the image into pieces" needs */
     public function removeSplit($id)
     {
-        $image = Image::findOrFail($id);
-        if ($image->splitNeeded())
-        {
-            session()->flash('message', 'A project with "Split the image into pieces" writes this image: its pieces stay.');
-            return;
-        }
-        $image->removeSplit();
-        session()->flash('message', 'Pieces removed.');
+        try {
+            app(ImageRemoval::class)->remove((int) $id, true);
+            session()->flash('message', 'Pieces removed.');
+        } catch (\RuntimeException $error) { session()->flash('message', $error->getMessage()); }
     }
 
     public function retrySplit($id)

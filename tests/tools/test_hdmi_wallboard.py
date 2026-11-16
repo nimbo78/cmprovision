@@ -24,6 +24,141 @@ def snapshot():
 
 
 class RescueWifiTest(unittest.TestCase):
+    def test_automatic_qr_uses_activation_deadline_without_extending_on_poll(self):
+        status = dict(schema=1, active=True, state='active', ssid='Lab rescue', started_at=100, checked_at=1000)
+        calls = []
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'auto.json'
+            def publish(status):
+                calls.append(status['started_at'])
+                path.write_text('demo')
+            with patch.object(w, 'root_json', return_value=status), patch.object(w, 'publish_rescue_qr', side_effect=publish):
+                qr = w.AutomaticRescueQr(path)
+                qr.poll(True, now=101, wallclock=1001)
+                qr.poll(True, now=130, wallclock=1001)
+                self.assertEqual(calls, [100])
+                qr.poll(True, now=160, wallclock=1001)
+                self.assertFalse(path.exists())
+                qr.poll(True, now=200, wallclock=1001)
+                self.assertEqual(calls, [100])
+                status['started_at'] = 210
+                qr.poll(True, now=211, wallclock=1001)
+                self.assertEqual(calls, [100, 210])
+
+    def test_no_automatic_qr_for_disabled_hdmi_inactive_or_stale_ap(self):
+        good = dict(schema=1, active=True, state='active', ssid='Lab', started_at=100, checked_at=1000)
+        for enabled, change, now in ((False, {}, 101), (True, dict(active=False), 101),
+                                    (True, dict(checked_at=800), 101), (True, dict(started_at=None), 101),
+                                    (True, {}, 99), (True, dict(started_at=10**500), 101),
+                                    (True, dict(checked_at=float('nan')), 101)):
+            with self.subTest(enabled=enabled, change=change), tempfile.TemporaryDirectory() as folder:
+                with patch.object(w, 'root_json', return_value=dict(good, **change)), patch.object(w, 'publish_rescue_qr') as publish:
+                    w.AutomaticRescueQr(Path(folder)/'auto.json').poll(enabled, now=now, wallclock=1001)
+                    publish.assert_not_called()
+
+    def test_automatic_qr_retries_and_reconnects_with_original_activation_time(self):
+        status = dict(schema=1, active=True, state='active', ssid='Lab', started_at=100, checked_at=1000)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'auto.json'
+            calls = []
+            def publish(value):
+                calls.append(value['started_at'])
+                if len(calls) == 1: raise ValueError('temporary helper failure')
+                path.write_text('demo')
+            with patch.object(w, 'root_json', return_value=status), patch.object(w, 'publish_rescue_qr', side_effect=publish):
+                qr = w.AutomaticRescueQr(path)
+                qr.poll(True, now=101, wallclock=1001)
+                qr.poll(True, now=102, wallclock=1001)
+                self.assertEqual(calls, [100])
+                qr.poll(True, now=111, wallclock=1001)
+                self.assertTrue(path.exists())
+                qr.poll(False, now=120, wallclock=1001)
+                self.assertFalse(path.exists())
+                qr.poll(True, now=130, wallclock=1001)
+                self.assertTrue(path.exists())
+                self.assertEqual(calls, [100, 100, 100])
+                qr.poll(True, now=160, wallclock=1001)
+                self.assertFalse(path.exists())
+
+    def test_manual_fpms_close_suppresses_auto_card_for_this_activation_only(self):
+        status = dict(schema=1, active=True, state='active', ssid='Lab', started_at=100, checked_at=1000)
+        marker = dict(closed_at=120)
+        def read(path): return marker if path == w.RESCUE_CLOSED else status
+        with tempfile.TemporaryDirectory() as folder, patch.object(w, 'root_json', side_effect=read), \
+                patch.object(w, 'publish_rescue_qr') as publish:
+            qr = w.AutomaticRescueQr(Path(folder)/'auto.json')
+            qr.poll(True, now=121, wallclock=1001)
+            publish.assert_not_called()
+            status['started_at'] = 130
+            qr.poll(True, now=131, wallclock=1001)
+            publish.assert_called_once()
+
+    def test_auto_publisher_uses_running_credentials_and_original_expiry(self):
+        with patch.object(w.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=json.dumps(dict(
+                ssid='STAGED', password='staged-secret', active=dict(ssid='Lab;:test', password='real;secret:123'))))), \
+                patch.object(w, 'atomic_json') as write:
+            w.publish_rescue_qr(dict(ssid='Lab;:test', started_at=100))
+            args, options = write.call_args
+            value = args[1]
+            self.assertEqual(value['created_at'], 100)
+            self.assertEqual(value['expires_at'], 160)
+            self.assertEqual(value['password'], 'real;secret:123')
+            self.assertTrue(options['private'])
+            self.assertNotIn('staged-secret', json.dumps(value))
+            self.assertLessEqual(len(value['matrix']), 64)
+
+    def test_temporary_access_card_keeps_qr_quiet_zone_and_hides_after_expiry(self):
+        value = dict(version=1, created_at=100, expires_at=160, ssid='Lab rescue', password='example-pass-123',
+                     matrix=[[False]*37 for _ in range(37)])
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'qr.json'
+            path.write_text(json.dumps(value))
+            path.chmod(0o640)
+            real_fstat = os.fstat
+            def root_stat(fd):
+                value = real_fstat(fd)
+                return SimpleNamespace(st_mode=value.st_mode, st_uid=0, st_nlink=value.st_nlink, st_size=value.st_size)
+            with patch.object(w.os, 'fstat', side_effect=root_stat):
+                self.assertIsNotNone(w.rescue_access(path, now=120))
+            self.assertIsNone(w.rescue_access(path, now=160))
+            self.assertIsNone(w.rescue_access(path, now=99))
+            for cols, rows in ((100, 35), (160, 45), (240, 60)):
+                canvas = w.access_frame(value, cols, rows, now=120)
+                self.assertIn('Lab rescue', canvas.plain())
+                self.assertIn('example-pass-123', canvas.plain())
+                self.assertIn('40s', canvas.plain())
+                qr = [(x, y) for y, row in enumerate(canvas.cells) for x, (_, ink) in enumerate(row) if ink.startswith('qr')]
+                self.assertEqual(len(qr), 37*19)
+            path.chmod(0o644)
+            self.assertIsNone(w.rescue_access(path, now=120))
+
+    def test_qr_console_cells_reconstruct_the_exact_original_modules(self):
+        matrix = [[(x + y) % 3 == 0 for x in range(37)] for y in range(37)]
+        value = dict(matrix=matrix, ssid='Lab', password='example-pass-123', expires_at=160)
+        canvas = w.access_frame(value, 100, 35, now=120)
+        packed = [[(char, ink) for char, ink in row if ink.startswith('qr')] for row in canvas.cells]
+        packed = [row for row in packed if row]
+        restored = []
+        for row in packed:
+            restored.append([ink in ('qr11', 'qr10') for char, ink in row])
+            restored.append([ink in ('qr11', 'qr01') for char, ink in row])
+        self.assertEqual(restored[:len(matrix)], matrix)
+
+    def test_access_reader_rejects_links_oversize_and_invalid_matrix(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'qr.json'
+            target = Path(folder)/'target.json'
+            target.write_text('{}')
+            path.symlink_to(target)
+            self.assertIsNone(w.rescue_access(path, now=120))
+            path.unlink()
+            path.write_text('x'*32769)
+            path.chmod(0o640)
+            self.assertIsNone(w.rescue_access(path, now=120))
+            path.write_text(json.dumps(dict(version=1, created_at=100, expires_at=160,
+                                          ssid='Lab', password='secret-123456', matrix=[[1]])))
+            self.assertIsNone(w.rescue_access(path, now=120))
+
     def test_active_ap_shows_its_ssid_ip_and_clients_in_every_view(self):
         data = snapshot()
         data['rescue_wifi'] = dict(enabled=True, active=True, state='active', ssid='cmprovision-rescue',
@@ -42,6 +177,100 @@ class RescueWifiTest(unittest.TestCase):
         self.assertNotIn('RESCUE AP', w.frame(data, 160, 45, now=1001).plain())
         data['rescue_wifi'] = dict(enabled=True, active=False, state='waiting', remaining=600)
         self.assertIn('AP WAITING / 10:00', w.frame(data, 160, 45, now=1001).plain())
+
+
+class StationLinksTest(unittest.TestCase):
+    def data(self):
+        data = snapshot()
+        data['station'] = dict(uplink=dict(state='wifi', device='wlan1', ssid='Lab 78', signal=-53,
+                                         address='192.0.2.4', rate=52), links=[
+            dict(name='eth0', kind='ethernet', role='stand', up=True, speed=1000, address='172.20.0.1'),
+            dict(name='eth1', kind='ethernet', role='other', up=True, speed=100, address='198.51.100.7'),
+            dict(name='wlan1', kind='wifi', role='uplink', up=True, ssid='Lab 78', signal=-53, address='192.0.2.4')])
+        return data
+
+    def test_connections_are_visible_in_every_full_hd_and_ultrawide_view(self):
+        for cols, rows in ((137, 38), (172, 40)):
+            for view in ('desk', 'flow', 'engineer'):
+                text = w.frame(self.data(), cols, rows, view=view, now=1001).plain()
+                for expected in ('UPLINK wlan1', 'Lab 78', '-53 dBm', '192.0.2.4', 'STAND eth0',
+                                 '1 Gb/s', '172.20.0.1', 'LINK eth1', '100 Mb/s', '198.51.100.7'):
+                    self.assertIn(expected, text, (cols, rows, view))
+                self.assertEqual(1, text.count('wlan1'), 'the primary link is not duplicated')
+                self.assertIn('PROJECT: Test project', text)
+                self.assertIn('WRITE', text)
+
+    def test_wired_uplink_tells_link_speed_and_address(self):
+        data = self.data()
+        data['station']['uplink'] = dict(state='wired', device='eth1', speed=100, address='198.51.100.7')
+        text = w.frame(data, 137, 38, now=1001).plain()
+        for expected in ('UPLINK eth1', '100 Mb/s', '198.51.100.7', 'STAND eth0'):
+            self.assertIn(expected, text)
+        self.assertEqual(1, text.count('eth1'))
+
+    def test_unknown_ethernet_speed_is_explicit(self):
+        data = self.data()
+        data['station']['uplink'] = dict(state='wired', device='eth1', speed=None, address='198.51.100.7')
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('speed ?', text)
+        self.assertNotIn('0 Mb/s', text)
+
+    def test_missing_quality_and_address_are_not_reported_as_zero_or_healthy(self):
+        data = self.data()
+        data['station']['uplink'].update(ssid=None, signal=None, address=None)
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('UPLINK wlan1', text)
+        self.assertIn('no IP', text)
+        self.assertNotIn('0 dBm', text)
+        data['station']['uplink'] = dict(state='wifi_down', device='wlan1')
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('no default route', text)
+        self.assertIn('Wi-Fi disconnected', text)
+
+    def test_active_rescue_radio_is_not_mislabeled_as_a_management_connection(self):
+        data = self.data()
+        data['station']['uplink'] = dict(state='wifi_down', device='wlan0')
+        data['station']['links'].append(dict(name='wlan0', role='other', kind='wifi', up=True, address='192.168.240.1'))
+        data['rescue_wifi'] = dict(enabled=True, active=True, state='active', device='wlan0',
+                                   ssid='demo-rescue', address='192.168.240.1', clients=0)
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('AP ACTIVE', text)
+        self.assertIn('no default route', text)
+        self.assertNotIn('UPLINK wlan0', text)
+        self.assertNotIn('LINK wlan0', text)
+
+    def test_short_console_keeps_hardware_visible_and_scrolls_connection_details(self):
+        data = self.data()
+        data['modules'][0]['hardware'] = dict(model='Compute Module 4', revision='1.1', ram='4 GiB',
+                                             emmc='32 GB', wifi='Built-in', sku='CM4104032')
+        frames = [w.frame(data, 60, 24, view='engineer', now=1001, step=step).plain() for step in range(200)]
+        for text in frames:
+            self.assertIn('CM4104032', text)
+            self.assertIn('WRITE', text)
+        all_frames = '\n'.join(frames)
+        for expected in ('Lab 78', '192.0.2.4', '172.20.0.1', '198.51.100.7'):
+            self.assertIn(expected, all_frames)
+
+    def test_full_hd_connections_keep_failure_evidence_and_next_action_visible(self):
+        data = self.data()
+        data['station']['uplink']['ssid'] = 'Wireless-network-for-office-lab'
+        data['modules'][0].update(state='fail', phase='failed', detail='MMC timeout',
+            advice='Check power and module seating', hardware=dict(model='Compute Module 4', revision='1.0',
+                ram='4 GiB', emmc='Fitted; not detected', wifi='Built-in', sku='Unknown'))
+        for raw_cols, raw_rows in ((137, 38), (172, 40)):
+            cols, rows = w.viewport(raw_cols, raw_rows)[:2]
+            text = w.frame(data, cols, rows, view='engineer', now=1001).plain()
+            for expected in ('UPLINK wlan1', 'EVIDENCE: MMC timeout', 'NEXT: Check power and module seating',
+                             'Fitted; not detected'):
+                self.assertIn(expected, text, (cols, rows))
+
+    def test_network_names_cannot_inject_terminal_controls_or_expose_credentials(self):
+        data = self.data()
+        data['station']['uplink'].update(ssid='Lab\x1b[31m\nLobby\x07\u202e', password='never-display-this', profile='private-profile')
+        text = w.frame(data, 137, 38, now=1001).plain()
+        self.assertIn('Lab', text)
+        for value in ('\x1b', '\x07', '\u202e', 'never-display-this', 'private-profile'):
+            self.assertNotIn(value, text)
 
 
 class ReaderTest(unittest.TestCase):
@@ -220,7 +449,7 @@ class ScalingTest(unittest.TestCase):
     def test_tall_font_rejection_falls_back_without_retries_or_changing_active_console(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ['Lat15-Terminus28x14.psf.gz', 'Lat15-Terminus32x16.psf.gz']:
+            for name in ['CyrKoi-Terminus28x14.psf.gz', 'CyrKoi-Terminus32x16.psf.gz']:
                 (root / name).touch()
             with patch.object(w, 'RUNTIME', root), patch.object(w, 'FONTS', root), \
                     patch.object(w.subprocess, 'run', side_effect=lambda args, **kw: SimpleNamespace(returncode=int('-d' in args))) as run:
@@ -233,6 +462,17 @@ class ScalingTest(unittest.TestCase):
                 w.configure_console((1920, 1080))
                 self.assertGreater(run.call_count, calls, 'a resolution change must select a new font')
                 self.assertTrue(all(c.args[0][:3] == ['/usr/bin/setfont', '-C', '/dev/tty8'] for c in run.call_args_list))
+
+    def test_upgrade_replaces_cached_font_missing_qr_half_blocks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'CyrKoi-Terminus28x14.psf.gz').touch()
+            (root/'layout.json').write_text(json.dumps(dict(resolution='1920x1080', font='Lat15-Terminus28x14.psf.gz')))
+            with patch.object(w, 'RUNTIME', root), patch.object(w, 'FONTS', root), \
+                    patch.object(w.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as run:
+                layout = w.configure_console((1920, 1080))
+                run.assert_called_once()
+                self.assertEqual(layout['font'], 'CyrKoi-Terminus28x14.psf.gz')
 
     def test_framebuffer_uses_visible_geometry_instead_of_virtual_buffer(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -529,6 +769,19 @@ class QuietPortsTest(unittest.TestCase):
     def test_cm_fits_beside_a_two_digit_port_number(self):
         text = self.panel([dict(number=10, name='Gi0/10', serials=[], state='uplink', server=True)])
         self.assertIn('|10  cm |', text)
+
+    def test_another_station_has_a_neutral_cm_mark_instead_of_up(self):
+        port = dict(number=7, name='Gi0/7', serials=[], state='uplink', server=False,
+                    station=dict(name='wlanpi-d62', address='172.20.0.2', version='2.30.2', provisioner=False))
+        self.assertEqual((' cm', 'dim'), w.port_mark(port, []))
+        self.assertIn('|7  cm  |', self.panel([port]))
+        self.assertEqual((' cm', 'accent'), w.port_mark(dict(port, server=True), []))
+
+    def test_a_stale_station_record_on_a_disconnected_port_keeps_its_empty_frame(self):
+        port = dict(number=7, name='Gi0/7', serials=[], state='free', server=False,
+                    station=dict(name='wlanpi-d62'))
+        self.assertEqual(('', 'dim'), w.port_mark(port, []))
+        self.assertNotIn('cm', self.panel([port]))
 
     def test_the_provisioner_flag_means_nothing_on_a_port_that_is_not_an_uplink(self):
         self.assertEqual('', w.port_mark(dict(state='free', server=True), [])[0])

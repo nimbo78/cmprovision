@@ -121,5 +121,25 @@ class PowerControlTest(unittest.TestCase):
             with self.subTest(request=request), self.assertRaises(power.PowerError): power.panel(request, self.run)
         self.run.assert_not_called()
 
+    def test_appearance_requests_use_the_same_fixed_unprivileged_app_bridge(self):
+        self.run.return_value = subprocess.CompletedProcess([], 0, '{"ok":true,"result":{"stage":"appearance","mode":"auto","observed_at":100}}', '')
+        for request in ({'operation': 'appearance'}, {'operation': 'set-appearance', 'mode': 'auto'}):
+            with self.subTest(request=request):
+                self.assertTrue(power.panel(request, self.run)['ok'])
+                command = self.run.call_args.args[0]
+                self.assertIn('--uid=www-data', command)
+                self.assertEqual(['station:power', '--json'], command[-2:])
+                self.assertEqual(request, json.loads(self.run.call_args.kwargs['input']))
+                self.assertNotIn('auto', command)
+
+    def test_malformed_appearance_payloads_never_start_a_service(self):
+        requests = [{'operation': 'set-appearance', 'mode': value} for value in ('', 'blue', 'light;id', None, True, [], {})]
+        requests += [{'operation': 'appearance', 'mode': 'dark'}, {'operation': 'set-appearance'},
+                     {'operation': 'set-appearance', 'mode': 'light', 'action': 'poweroff'}]
+        for request in requests:
+            with self.subTest(request=request), self.assertRaises(power.PowerError):
+                power.panel(request, self.run)
+        self.run.assert_not_called()
+
 
 if __name__ == '__main__': unittest.main()

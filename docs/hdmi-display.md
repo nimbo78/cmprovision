@@ -2,6 +2,8 @@
 
 # HDMI stand display
 
+When the rescue Wi-Fi AP starts, HDMI automatically shows a Wi-Fi QR plus SSID/password for 60 seconds, even without FPMS. The timer starts at AP activation and does not reset on dashboard polling or renderer restart. The normal view returns automatically; FPMS KEY2 also dismisses the card.
+
 Connect a monitor or TV to the **provisioner** to follow the bench without a browser. The optional terminal display
 shows the active project, connected modules, switch ports, progress, failures and saved diagnostic snapshots. It runs
 on a Linux virtual console; it does not need a graphical desktop, Chromium or an internet connection.
@@ -9,6 +11,20 @@ on a Linux virtual console; it does not need a graphical desktop, Chromium or an
 This is separate from the target module's [tty2 troubleshooting console](local-console.md).
 
 When [rescue Wi-Fi](rescue-wifi.md) is enabled, the header also shows its countdown or active SSID, gateway and associated-client count. It does not display the AP password.
+
+The connection strip is visible in every normal screen. **UPLINK** identifies the default-route interface: Wi-Fi shows
+its SSID, signal in dBm and IPv4 address; Ethernet shows link speed and IPv4 address. **STAND** identifies the flashing
+network, **BACKUP** another default-route interface, and **LINK** other connected interfaces. For example:
+
+```text
+UPLINK wlan1 / Wi-Fi "Lab 78" / -53 dBm / 192.0.2.4
+STAND eth0 / UP 1 Gb/s / 172.20.0.1 | LINK eth1 / UP 100 Mb/s / 198.51.100.7
+```
+
+These are the same secret-free network readings as FPMS, cached for 30 seconds, including when FPMS is disabled.
+Missing addresses show `no IP`; an absent default route is explicit. An active rescue AP keeps its separate status
+instead of appearing as a management uplink. The strip fits into one or two header rows; long details scroll. Short
+consoles use the spare footer row to preserve device-card height.
 
 ## Enable it
 

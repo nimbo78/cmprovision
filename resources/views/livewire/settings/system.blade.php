@@ -1,5 +1,7 @@
 <livewire:station-time-settings />
 
+<livewire:station-storage />
+
 <livewire:station-power />
 
 <livewire:wallboard-settings />

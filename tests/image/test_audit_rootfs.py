@@ -27,6 +27,8 @@ class RootfsAuditTest(unittest.TestCase):
         self.write('etc/shadow', 'root:!:1:0:99999:7:::\npi:*:1:0:99999:7:::\n')
         self.write('etc/passwd', 'root:x:0:0:root:/root:/bin/bash\npi:x:1000:1000:pi:/home/pi:/bin/bash\n')
         self.write('var/lib/cmprovision/.env', 'APP_ENV=production\nAPP_KEY=\n')
+        self.write('usr/lib/cmprovision/update_recovery.py', '# stable recovery dispatcher\n')
+        self.write('var/lib/cmprovision-updates/recover.py', '# stable recovery dispatcher\n')
         (self.root / 'etc/ssh').mkdir(parents=True)
         self.units = self.root / 'etc/systemd/system'
         self.units.mkdir(parents=True)
@@ -57,6 +59,23 @@ class RootfsAuditTest(unittest.TestCase):
         path.write_text(text)
 
     def test_safe_image_passes(self):
+        audit.audit(self.root)
+
+    def test_missing_insecure_or_mismatched_boot_recovery_dispatcher_is_rejected(self):
+        dispatcher = self.root / 'var/lib/cmprovision-updates/recover.py'
+        original = dispatcher.read_bytes()
+        dispatcher.unlink()
+        with self.assertRaisesRegex(ValueError, 'recovery dispatcher'):
+            audit.audit(self.root)
+        dispatcher.write_bytes(original)
+        dispatcher.chmod(0o666)
+        with self.assertRaisesRegex(ValueError, 'recovery dispatcher'):
+            audit.audit(self.root)
+        dispatcher.chmod(0o600)
+        dispatcher.write_bytes(b'# stale dispatcher\n')
+        with self.assertRaisesRegex(ValueError, 'recovery dispatcher'):
+            audit.audit(self.root)
+        dispatcher.write_bytes(original)
         audit.audit(self.root)
 
     def test_missing_or_unconfigured_intel_firmware_is_rejected(self):

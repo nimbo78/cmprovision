@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..1fc12f4
+index 0000000..fed0ebd
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,435 @@
+@@ -0,0 +1,500 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10151,15 +10151,22 @@ index 0000000..1fc12f4
 +    return data
 +
 +
-+def heartbeat(hardware, path=HEARTBEAT):
++def heartbeat(hardware, path=HEARTBEAT, *, display=None):
 +    """Only the display owner writes this bounded liveness record."""
++    record = {"protocol": 1, "at": int(time.time()), "hardware": bool(hardware)}
++    if hardware and isinstance(display, dict):
++        identity = display.get("id")
++        if (display.get("profile") == "waveshare-1.44" and isinstance(identity, str)
++                and len(identity) == 6 and identity.startswith("7c")
++                and all(c in "0123456789abcdef" for c in identity) and int(identity[2:4], 16) >= 0x80):
++            record["display"] = {"profile": "waveshare-1.44", "id": identity}
 +    try:
 +        path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
 +        fd, name = tempfile.mkstemp(prefix=".cmprovision-", dir=path.parent)
 +        try:
 +            with os.fdopen(fd, "w") as out:
 +                json.dump(
-+                    {"protocol": 1, "at": int(time.time()), "hardware": bool(hardware)},
++                    record,
 +                    out,
 +                )
 +                os.fchmod(out.fileno(), 0o644)
@@ -10228,12 +10235,15 @@ index 0000000..1fc12f4
 +
 +
 +class Panel:
-+    def __init__(self, config=CONFIG, snapshot=SNAPSHOT, can_leave=True, clock=time.monotonic, power_client=None):
++    def __init__(self, config=CONFIG, snapshot=SNAPSHOT, can_leave=True, clock=time.monotonic, power_client=None, rescue_client=None):
 +        """can_leave: there is a menu to go back to (WLAN Pi); on Lite the panel is the whole screen.
 +        clock: monotonic seconds, for the leave prompt (the tests turn it)."""
 +        self.can_leave, self.clock = can_leave, clock
 +        from .cmprovision_power import PowerMenu
 +        self.power_menu = PowerMenu(power_client, clock) if power_client else None
++        self.appearance_override = None
++        from .cmprovision_rescue import AccessCard
++        self.rescue_menu = AccessCard(rescue_client, clock) if rescue_client else None
 +        # button 2 on a page asks first: until this time a second press leaves (PROMPT_SECONDS)
 +        self.prompt_until = None
 +        self.config, self.snapshot = Path(config), Path(snapshot)
@@ -10290,8 +10300,22 @@ index 0000000..1fc12f4
 +        """new or classic (Settings → Provisioning → FPMS display); new when the server does not say."""
 +        return self._panel_setting("theme", ("new", "classic"))
 +
-+    def color_mode(self):
++    def requested_color_mode(self):
 +        mode = self._panel_setting("color_mode", ("dark", "light", "auto"))
++        if self.appearance_override:
++            chosen, observed = self.appearance_override
++            generated = number(self.data.get('generated_at'), -1)
++            # The server records generated_at before reading panel settings. A
++            # later snapshot can supersede our acknowledgement (including a web
++            # edit); an older snapshot must not undo a successfully saved choice.
++            if generated > observed or (generated >= observed and mode == chosen):
++                self.appearance_override = None
++            else:
++                return chosen
++        return mode
++
++    def color_mode(self):
++        mode = self.requested_color_mode()
 +        if mode == "auto":
 +            return "light" if self.data.get("display_auto_mode") == "light" else "dark"
 +        return mode
@@ -10359,8 +10383,20 @@ index 0000000..1fc12f4
 +        its KEY3 menu uses KEY1 to confirm, never the centre used to open/select."""
 +        with self.lock:
 +            now = self.clock()
++            if self.rescue_menu:
++                self.rescue_menu.expire()
++                if self.rescue_menu.open:
++                    self.rescue_menu.key(key)
++                    if key == 'KEY1': self.page, self.scroll = 0, 0
++                    if key != 'KEY3': return True
++            if key == 'KEY2' and self.rescue_available():
++                from .cmprovision_rescue import close_notice
++                close_notice()
 +            if self.power_menu and self.power_menu.open:
 +                self.power_menu.key(key)
++                if self.power_menu.appearance_observation:
++                    self.appearance_override = self.power_menu.appearance_observation
++                    self.power_menu.appearance_observation = None
 +                return True
 +            if key == "KEY3" and self.power_menu:
 +                self.prompt_until = None
@@ -10397,6 +10433,8 @@ index 0000000..1fc12f4
 +                self.index = (self.index + (1 if key == "DOWN" else -1)) % max(
 +                    1, len(self.rows())
 +                )
++            elif key == 'CENTER' and self.page == 4 and self.rescue_available():
++                self.rescue_menu.show()
 +            elif key == "CENTER" and self.page == 0:
 +                if self.error_count():
 +                    self.page, self.index = 3, 0
@@ -10454,8 +10492,35 @@ index 0000000..1fc12f4
 +            views.append(view)
 +        return views
 +
++    def rescue_available(self):
++        from .cmprovision_rescue import info
++        value = info(self.data)
++        return bool(self.rescue_menu and value and value['active'] and self.age is not None and self.age <= 20
++                    and self.data['rescue_wifi'].get('state') in ('active', 'recovery'))
++
++    def expire_access(self):
++        # Also called while the LCD sleeps, so its credential lease does not outlive the card.
++        with self.lock:
++            if self.rescue_menu:
++                self.rescue_menu.expire()
++                if self.rescue_menu.open and (not self.rescue_available() or self.rescue_menu.credentials and
++                        self.rescue_menu.credentials['ssid'] != self.data['rescue_wifi'].get('ssid')):
++                    self.rescue_menu.close()
++
 +    def frame(self):
 +        with self.lock, PALETTE_LOCK:
++            if self.power_menu and self.power_menu.open:
++                current = self.requested_color_mode()
++                if current != self.power_menu.appearance_mode:
++                    self.power_menu.appearance_saved = False
++                self.power_menu.appearance_mode = current
++            if self.rescue_menu:
++                self.expire_access()
++                if self.rescue_menu.open:
++                    from .cmprovision_rescue import render
++                    from . import cmprovision_new
++                    palette = cmprovision_new.LIGHT if self.color_mode() == 'light' else cmprovision_new.DARK
++                    return render(self.rescue_menu, palette)
 +            if self.theme() == "new":
 +                from . import cmprovision_new
 +
@@ -10481,10 +10546,10 @@ index 0000000..1fc12f4
 +                COLORS.update(old)
 diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
 new file mode 100644
-index 0000000..9fed72a
+index 0000000..0389398
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_classic.py
-@@ -0,0 +1,370 @@
+@@ -0,0 +1,371 @@
 +"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
 +the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
@@ -10842,7 +10907,8 @@ index 0000000..9fed72a
 +                117,
 +                ("Up/down scroll   2 Back" if scrollable else "2 Back")
 +                if panel.detail
-+                else (f"< > Page   OK  2 {leave}" if panel.page in (1, 2, 3) else f"< > Page   2 {leave}"),
++                else ('OK Wi-Fi QR  2 Back' if panel.page == 4 and panel.rescue_available() else
++                      f"< > Page   OK  2 {leave}" if panel.page in (1, 2, 3) else f"< > Page   2 {leave}"),
 +                "muted",
 +                panel.small,
 +            )
@@ -11234,10 +11300,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..3d7f9ae
+index 0000000..2aa966a
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,1019 @@
+@@ -0,0 +1,1022 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -12111,6 +12177,9 @@ index 0000000..3d7f9ae
 +            f = code if value == rescue['address'] else body
 +            f.draw(img, 2, y, fonts.fit(f, value, LINE_W), P['fg'])
 +            y += f.h + 1
++        if panel.rescue_available():
++            body.draw(img, 2, y, 'OK Wi-Fi QR', P['accent'])
++            y += body.h + 1
 +        d.line((0, y, 127, y), fill=P['line'])
 +        health_rows(img, d, panel, st or {}, y + 3)
 +        return
@@ -12259,17 +12328,19 @@ index 0000000..3d7f9ae
 +        y += step
 diff --git a/fpms/integrations/cmprovision_power.py b/fpms/integrations/cmprovision_power.py
 new file mode 100644
-index 0000000..27cf5b7
+index 0000000..9bbba61
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_power.py
-@@ -0,0 +1,127 @@
-+"""Explicit Lite-only power menu. No display snapshot authorizes an operation."""
+@@ -0,0 +1,169 @@
++"""Lite station menu: appearance preferences and separately confirmed power actions."""
 +import json
 +import re
 +import subprocess
 +
 +from PIL import Image, ImageDraw
 +from . import cmprovision_fonts as fonts
++
++COLOR_MODES = ('light', 'dark', 'auto')
 +
 +
 +def request(payload):
@@ -12292,10 +12363,13 @@ index 0000000..27cf5b7
 +        self.stage, self.index, self.action = "menu", 0, "reboot"
 +        self.token, self.deadline, self.active_count = None, 0, 0
 +        self.message = "Check station status before retrying."
++        self.appearance_mode, self.mode_index = 'dark', 1
++        self.appearance_observation, self.appearance_saved = None, False
 +
 +    def show(self):
 +        self.open, self.stage, self.index = True, "menu", 0
 +        self.token = None
++        self.appearance_observation = None
 +
 +    def expire(self):
 +        if self.stage in ("confirm", "interrupt") and self.clock() >= self.deadline:
@@ -12319,9 +12393,23 @@ index 0000000..27cf5b7
 +            raise ValueError("Changed token")
 +        self.stage, self.token, self.active_count = stage, token, count
 +
++    def _appearance_reply(self, result, expected=None):
++        if not isinstance(result, dict) or result.get('stage') != 'appearance':
++            raise ValueError('Invalid appearance response')
++        mode, observed = result.get('mode'), result.get('observed_at')
++        if mode not in COLOR_MODES or type(observed) is not int or not 0 <= observed < 2**53:
++            raise ValueError('Invalid appearance setting')
++        if expected is not None and mode != expected:
++            raise ValueError('Appearance change was not confirmed')
++        self.appearance_mode = mode
++        self.appearance_observation = (mode, observed)
++
 +    def key(self, key):
 +        self.expire()
 +        if key == "KEY2":
++            if self.stage in ('appearance', 'appearance_error'):
++                self.stage, self.index = 'menu', 3
++                return
 +            # Scheduling cannot be cancelled here. For an unused ticket this invalidates
 +            # server-side confirmation too; expiry still protects a failed cancel request.
 +            if self.token:
@@ -12332,21 +12420,33 @@ index 0000000..27cf5b7
 +        try:
 +            if self.stage == "menu":
 +                if key in ("UP", "DOWN"):
-+                    self.index = (self.index + (1 if key == "DOWN" else -1)) % 3
++                    self.index = (self.index + (1 if key == "DOWN" else -1)) % 4
 +                elif key == "CENTER":
 +                    if self.index == 0:
 +                        self.open = False
 +                        return
++                    if self.index == 3:
++                        self.stage, self.appearance_saved = 'appearance', False
++                        self._appearance_reply(self.client(dict(operation='appearance')))
++                        self.mode_index = COLOR_MODES.index(self.appearance_mode)
++                        return
 +                    self.action = ("reboot", "poweroff")[self.index - 1]
 +                    self._reply(self.client(dict(operation="prepare", action=self.action)), preparing=True)
 +                    self.deadline = self.clock() + 120
++            elif self.stage == 'appearance':
++                if key in ('UP', 'DOWN'):
++                    self.mode_index = (self.mode_index + (1 if key == 'DOWN' else -1)) % len(COLOR_MODES)
++                elif key == 'CENTER':
++                    mode = COLOR_MODES[self.mode_index]
++                    self._appearance_reply(self.client(dict(operation='set-appearance', mode=mode)), expected=mode)
++                    self.appearance_saved = True
 +            elif self.stage in ("confirm", "interrupt") and key == "KEY1":
 +                self._reply(self.client(dict(operation="confirm", token=self.token,
 +                                             interrupt=self.stage == "interrupt")))
 +        except Exception:
 +            # A lost reply may mean the action was scheduled. Never retry a confirmation
 +            # automatically, and never show private command output on the display.
-+            self.stage = "error"
++            self.stage = 'appearance_error' if self.stage == 'appearance' else 'error'
 +
 +
 +def render(menu, palette):
@@ -12360,21 +12460,31 @@ index 0000000..27cf5b7
 +    legend = fonts.font("tiny")
 +    draw.rectangle((0, 0, 17, 13), fill=p["accent"])
 +    fonts.draw_centered(small, img, (0, 0, 17, 13), "cm", p["bg"])
-+    title.draw(img, 22, 0, "Power", p["fg"])
++    caption = 'Appearance' if menu.stage in ('appearance', 'appearance_error') else ('Station' if menu.stage == 'menu' else 'Power')
++    title.draw(img, 22, 0, caption, p["fg"])
 +    draw.line((0, 16, 127, 16), fill=p["line"])
 +    action = "Restart" if menu.action == "reboot" else "Shut down"
 +    stage = menu.stage
 +    if stage == "menu":
-+        for n, word in enumerate(("Cancel", "Restart", "Shut down")):
-+            y = 25 + n * 22
++        for n, word in enumerate(("Cancel", "Restart", "Shut down", "Appearance >")):
++            y = 24 + n * 18
 +            if n == menu.index:
 +                draw.rectangle((1, y - 3, 126, y + 14), outline=p["accent"])
 +            body.draw(img, 8, y, word, p["accent"] if n == menu.index else p["fg"])
 +        lines = ["CENTER Select", "KEY2 Back"]
++    elif stage == 'appearance':
++        for n, mode in enumerate(COLOR_MODES):
++            y = 25 + n * 21
++            if n == menu.mode_index:
++                draw.rectangle((1, y - 3, 126, y + 14), outline=p['accent'])
++            draw.ellipse((8, y + 3, 13, y + 8), outline=p['accent'], fill=p['accent'] if mode == menu.appearance_mode else p['bg'])
++            body.draw(img, 22, y, mode.title(), p['accent'] if n == menu.mode_index else p['fg'])
++        small.draw(img, 2, 88, 'Saved' if menu.appearance_saved else 'Choose color mode', p['muted'])
++        lines = ['CENTER Apply', 'KEY2 Back']
 +    else:
 +        heading = {"confirm": action + "?", "interrupt": "Interrupt flashing?",
 +                   "scheduled": action + " requested", "error": "Not confirmed",
-+                   "expired": "Confirmation expired"}.get(stage, "Power")
++                   "expired": "Confirmation expired", 'appearance_error': 'Theme not confirmed'}.get(stage, "Power")
 +        body.draw(img, 2, 23, fonts.fit(body, heading, 124), p["warn"] if stage == "interrupt" else p["fg"])
 +        message = {
 +            "confirm": "This station will restart." if menu.action == "reboot" else "To start again, cycle PoE or external power.",
@@ -12382,6 +12492,7 @@ index 0000000..27cf5b7
 +            "scheduled": "Waiting for restart. No more confirmation needed." if menu.action == "reboot" else "Allow shutdown to finish. Cycle power to start again.",
 +            "error": menu.message,
 +            "expired": "Choose the action again.",
++            'appearance_error': 'Reopen Appearance to check the saved mode.',
 +        }.get(stage, "")
 +        for n, line in enumerate(fonts.wrap(small, message, 124)[:5]):
 +            small.draw(img, 2, 42 + 12 * n, line, p["muted"])
@@ -12392,12 +12503,183 @@ index 0000000..27cf5b7
 +    return img
 diff --git a/fpms/integrations/cmprovision_rescue.py b/fpms/integrations/cmprovision_rescue.py
 new file mode 100644
-index 0000000..012eb82
+index 0000000..b348bf3
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_rescue.py
-@@ -0,0 +1,44 @@
-+"""Secret-free rescue Wi-Fi presentation shared by Classic and New."""
+@@ -0,0 +1,215 @@
++"""Public AP summary and an explicitly opened, short-lived local access card."""
++import grp
 +import ipaddress
++import json
++import os
++from pathlib import Path
++import stat
++import subprocess
++import tempfile
++import time
++
++STATUS = Path('/run/cmprovision/rescue-wifi.json')
++LEASE = Path('/run/fpms/rescue-wifi-qr.json')
++CLOSED = Path('/run/fpms/rescue-wifi-qr-closed.json')
++SECONDS = 60
++
++
++def wifi_payload(ssid, password):
++    if not isinstance(ssid, str) or not 1 <= len(ssid.encode('utf-8')) <= 32 or any(ord(c) < 32 or ord(c) == 127 for c in ssid):
++        raise ValueError('Invalid SSID')
++    if not isinstance(password, str) or not 12 <= len(password) <= 63 or any(not 32 <= ord(c) <= 126 for c in password):
++        raise ValueError('Invalid password')
++    def escape(value):
++        return ''.join(('\\' if c in '\\;,:"' else '') + c for c in value)
++    return f'WIFI:T:WPA;S:{escape(ssid)};P:{escape(password)};;'
++
++
++def qr_matrix(ssid, password):
++    import qrcode
++    code = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=1, border=4)
++    code.add_data(wifi_payload(ssid, password), optimize=0)
++    code.make(fit=True)
++    return code.get_matrix()
++
++
++def request():
++    """Lite is root, inside its unchanged sandbox. Never expose credentials in the public snapshot.
++
++    The only shared secret file is root-owned, readable by the HDMI user, in Lite's
++    own runtime directory. Readers enforce the same monotonic 60-second expiry.
++    """
++    with os.fdopen(os.open(STATUS, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'r', encoding='utf-8') as source:
++        st = os.fstat(source.fileno())
++        if not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or st.st_mode & 0o022 or st.st_size > 65536:
++            raise ValueError('AP status unavailable')
++        status = json.loads(source.read(65537))
++    if status.get('active') is not True or status.get('state') not in ('active', 'recovery') or \
++            type(status.get('checked_at')) not in (int, float) or not 0 <= time.time() - status['checked_at'] <= 90:
++        raise ValueError('AP is not active')
++    result = subprocess.run(['/usr/lib/cmprovision/rescue-wifi', 'reveal'],
++                            capture_output=True, text=True, timeout=5, check=False)
++    if result.returncode or len(result.stdout) > 8192:
++        raise ValueError('AP credentials unavailable')
++    value = json.loads(result.stdout).get('active')
++    if not isinstance(value, dict) or value.get('ssid') != status.get('ssid'):
++        raise ValueError('AP credentials unavailable')
++    ssid, password = value.get('ssid'), value.get('password')
++    now = time.monotonic()
++    value = dict(version=1, created_at=now, expires_at=now + SECONDS, ssid=ssid,
++                 password=password, matrix=qr_matrix(ssid, password))
++    directory = LEASE.parent.lstat()
++    if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != 0 or directory.st_mode & 0o022:
++        raise ValueError('Display directory unavailable')
++    fd, name = tempfile.mkstemp(prefix='.rescue-qr-', dir=LEASE.parent)
++    try:
++        with os.fdopen(fd, 'w', encoding='utf-8') as destination:
++            json.dump(value, destination, ensure_ascii=False)
++            os.fchmod(destination.fileno(), 0o640)
++            os.fchown(destination.fileno(), 0, grp.getgrnam('cmprovision-wallboard').gr_gid)
++        os.replace(name, LEASE)
++    finally:
++        if os.path.exists(name): os.unlink(name)
++    return value
++
++
++def clear_lease():
++    try: LEASE.unlink(missing_ok=True)
++    except OSError: pass
++
++
++def close_notice():
++    # Public timestamp only: lets HDMI dismiss its automatic AP-start card too.
++    try:
++        fd, name = tempfile.mkstemp(prefix='.rescue-closed-', dir=CLOSED.parent)
++        try:
++            with os.fdopen(fd, 'w', encoding='utf-8') as destination:
++                json.dump(dict(closed_at=time.monotonic()), destination)
++                os.fchmod(destination.fileno(), 0o644)
++            os.replace(name, CLOSED)
++        finally:
++            if os.path.exists(name): os.unlink(name)
++    except OSError:
++        pass
++
++
++class AccessCard:
++    def __init__(self, client, clock):
++        self.client, self.clock = client, clock
++        self.open, self.credentials, self.deadline = False, None, 0
++        self.stage, self.scroll = 'qr', 0
++
++    def show(self):
++        self.open, self.stage, self.scroll = True, 'qr', 0
++        self.deadline = self.clock() + SECONDS
++        try:
++            value = self.client()
++            wifi_payload(value['ssid'], value['password'])
++            self.credentials = value
++        except Exception:
++            self.credentials, self.stage = None, 'error'
++            clear_lease()
++
++    def close(self):
++        was_open = self.open
++        self.open, self.credentials = False, None
++        clear_lease()
++        if was_open: close_notice()
++
++    def expire(self):
++        if self.open and self.clock() >= self.deadline:
++            self.close()
++
++    def key(self, key):
++        if key in ('KEY1', 'KEY2', 'LEFT', 'KEY3'):
++            self.close()
++        elif key in ('CENTER', 'RIGHT') and self.credentials:
++            self.stage = 'text' if self.stage == 'qr' else 'qr'
++            self.scroll = 0
++        elif key in ('UP', 'DOWN'):
++            self.scroll = max(0, self.scroll + (1 if key == 'DOWN' else -1))
++
++
++def render(card, palette):
++    from PIL import Image, ImageDraw
++    from . import cmprovision_fonts as fonts
++    if card.stage == 'qr' and card.credentials:
++        # Black/white, full quiet zone, integer pixels: independent of the UI theme.
++        matrix = card.credentials['matrix']
++        scale = 128 // len(matrix)
++        image = Image.new('RGB', (128, 128), 'white')
++        draw = ImageDraw.Draw(image)
++        offset = (128 - len(matrix) * scale) // 2
++        for y, row in enumerate(matrix):
++            for x, dark in enumerate(row):
++                if dark:
++                    left, top = offset + x * scale, offset + y * scale
++                    draw.rectangle((left, top, left + scale - 1, top + scale - 1), fill='black')
++        return image
++    image = Image.new('RGB', (128, 128), palette['bg'])
++    fg = palette.get('fg', palette.get('text'))
++    body, code, tiny = fonts.font('body'), fonts.font('code'), fonts.font('tiny')
++    body.draw(image, 2, 2, 'Rescue Wi-Fi', palette['accent'])
++    if card.credentials:
++        ssid = card.credentials['ssid']
++        # These compact bitmap fonts intentionally have limited Unicode coverage.
++        # Do not present substituted '?' glyphs as the network's actual name.
++        ssid = ssid if all(c in code.glyphs for c in ssid) else 'Scan QR for SSID'
++        lines = ['SSID', ssid, 'Password', card.credentials['password']]
++    else:
++        lines = ['QR unavailable', 'Check AP / package']
++    wrapped = []
++    for line in lines:
++        part = ''
++        for char in line:
++            if part and code.width(part + char) > 124:
++                wrapped.append(part); part = ''
++            part += char
++        wrapped.append(part)
++    card.scroll = min(card.scroll, max(0, len(wrapped) - 7))
++    for i, line in enumerate(wrapped[card.scroll:card.scroll + 7]):
++        code.draw(image, 2, 18 + i * (code.h + 1), line, fg)
++    tiny.draw(image, 2, 116, 'OK QR  2 Back  ' + str(max(0, int(card.deadline-card.clock()))) + 's', palette['muted'])
++    return image
 +
 +
 +def info(data):
@@ -12442,10 +12724,10 @@ index 0000000..012eb82
 +    return result
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..5e02f1e
+index 0000000..5fe7c90
 --- /dev/null
 +++ b/fpms/lite.py
-@@ -0,0 +1,147 @@
+@@ -0,0 +1,172 @@
 +"""Compact station menu. No imports from the WLAN Pi application/provider."""
 +
 +import argparse
@@ -12458,6 +12740,8 @@ index 0000000..5e02f1e
 +
 +from .integrations.cmprovision import CONFIG, SNAPSHOT, Panel, heartbeat
 +from .integrations.cmprovision_power import request as power_request
++from .integrations.cmprovision_rescue import request as rescue_request
++from .modules.screen.st7735_probe import probe_st7735
 +
 +BUTTONS = {
 +    6: "UP",
@@ -12469,6 +12753,26 @@ index 0000000..5e02f1e
 +    20: "KEY2",
 +    16: "KEY3",
 +}
++
++
++def wait_for_display(stopping, until=None):
++    """Stay cheap and interruptible while the panel is absent or unrecognized."""
++    next_probe = 0.0
++    while not stopping():
++        now = time.monotonic()
++        if until is not None and now >= until:
++            return None
++        if Path("/dev/spidev0.0").exists():
++            if now >= next_probe:
++                display = probe_st7735()
++                if display:
++                    return display
++                next_probe = now + 30
++        else:
++            next_probe = 0.0
++        heartbeat(False)
++        time.sleep(min(3, max(0, until - now)) if until is not None else 3)
++    return None
 +
 +
 +def main():
@@ -12490,13 +12794,14 @@ index 0000000..5e02f1e
 +    args = parser.parse_args()
 +    # the panel is the whole screen here: button 2 goes back to Overview instead of leaving
 +    panel = Panel(args.config, args.snapshot, can_leave=False,
-+                  power_client=None if args.preview else power_request)
++                  power_client=None if args.preview else power_request,
++                  rescue_client=None if args.preview else rescue_request)
 +    panel.refresh(force=True)
 +    if args.preview:
 +        panel.frame().save(args.preview)
 +        return
 +
-+    # Headless installations stay idle and report the absence of the SPI device.
++    # Identify the controller before taking backlight or button GPIOs.
 +    stop = False
 +
 +    def stopping(*_):
@@ -12506,11 +12811,10 @@ index 0000000..5e02f1e
 +    for sig in (signal.SIGINT, signal.SIGTERM):
 +        signal.signal(sig, stopping)
 +    started = time.monotonic()
-+    while not Path("/dev/spidev0.0").exists():
-+        heartbeat(False)
-+        if stop or (args.seconds and time.monotonic() - started >= args.seconds):
-+            return
-+        time.sleep(3)
++    display = wait_for_display(lambda: stop, until=started + args.seconds if args.seconds else None)
++    if display is None or stop:
++        return
++    print("FPMS_DISPLAY_DETECTED ST7735S " + display['id'], flush=True)
 +
 +    import gpiod
 +    from gpiod.line import Bias, Edge
@@ -12539,12 +12843,13 @@ index 0000000..5e02f1e
 +            ):
 +                now = time.monotonic()
 +                if now - last_heartbeat >= 3:
-+                    heartbeat(True)
++                    heartbeat(True, display=display)
 +                    last_heartbeat = now
 +                try:
 +                    panel.refresh()
 +                except Exception:
 +                    logging.getLogger(__name__).exception("snapshot not usable")
++                panel.expire_access()
 +                if args.sleep and now - last_key >= args.sleep and not sleeping:
 +                    screen.sleep()
 +                    sleeping = True
@@ -12585,6 +12890,8 @@ index 0000000..5e02f1e
 +                                )
 +                        last_frame = 0
 +        finally:
++            if panel.rescue_menu:
++                panel.rescue_menu.close()
 +            if hasattr(screen, "device"):
 +                screen.sleep()
 +                screen.device.module_exit()
@@ -12696,6 +13003,181 @@ index f502532..d351ad7 100644
              consumer="fpms-st7735",
              config={
                  (rst, dc, bl): gpiod.LineSettings(
+diff --git a/fpms/modules/screen/st7735_probe.py b/fpms/modules/screen/st7735_probe.py
+new file mode 100755
+index 0000000..ba201a1
+--- /dev/null
++++ b/fpms/modules/screen/st7735_probe.py
+@@ -0,0 +1,169 @@
++"""Read a supported ST7735 controller before claiming its display and buttons.
++
++The Waveshare wiring uses a bidirectional SDA on GPIO10. Linux SPI_3WIRE
++releases that wire during the receive transfer; it does not change the LCD's
++four-line D/C protocol. ID bytes identify the controller, not panel dimensions.
++"""
++import array
++from contextlib import contextmanager
++import ctypes
++import fcntl
++import os
++from pathlib import Path
++import subprocess
++import time
++
++SPI_DEVICE = Path('/dev/spidev0.0')
++DPI_STATUS = Path('/proc/device-tree/soc/dpi@7e208000/status')
++
++
++class _Transfer(ctypes.Structure):
++    _fields_ = [('tx_buf', ctypes.c_uint64), ('rx_buf', ctypes.c_uint64),
++                ('length', ctypes.c_uint32), ('speed_hz', ctypes.c_uint32),
++                ('delay_usecs', ctypes.c_uint16), ('bits_per_word', ctypes.c_uint8),
++                ('cs_change', ctypes.c_uint8), ('tx_nbits', ctypes.c_uint8),
++                ('rx_nbits', ctypes.c_uint8), ('word_delay_usecs', ctypes.c_uint8),
++                ('pad', ctypes.c_uint8)]
++
++
++def identify(read_register):
++    """Two matching ID reads, cross-checked against RDDID's dummy clock."""
++    previous = None
++    for _ in range(2):
++        parts = [read_register(command, 1) for command in (0xDA, 0xDB, 0xDC)]
++        combined = read_register(0x04, 4)
++        pixel_format = read_register(0x0C, 1)
++        if (any(not isinstance(p, (bytes, bytearray)) or len(p) != 1 for p in parts)
++                or not isinstance(combined, (bytes, bytearray)) or len(combined) != 4
++                or not isinstance(pixel_format, (bytes, bytearray)) or len(pixel_format) != 1):
++            return None
++        identity = b''.join(parts)
++        if identity[0] != 0x7C or identity[1] < 0x80 or pixel_format[0] not in (3, 5, 6):
++            return None
++        # 0x04 returns one dummy clock, then 24 ID bits, then an undriven wire.
++        if (int.from_bytes(combined, 'big') >> 7) & 0xFFFFFF != int.from_bytes(identity, 'big'):
++            return None
++        if previous is not None and identity != previous:
++            return None
++        previous = identity
++    return previous.hex()
++
++
++def _read(fd, command, count):
++    tx = ctypes.create_string_buffer(bytes([command]))
++    rx = ctypes.create_string_buffer(count)
++    transfers = (_Transfer * 2)()
++    transfers[0].tx_buf = ctypes.addressof(tx)
++    transfers[0].length = 1
++    transfers[0].speed_hz = 100000
++    transfers[0].bits_per_word = 8
++    transfers[0].delay_usecs = 5
++    transfers[1].rx_buf = ctypes.addressof(rx)
++    transfers[1].length = count
++    transfers[1].speed_hz = 100000
++    transfers[1].bits_per_word = 8
++    # One message keeps CS asserted through the direction change.
++    fcntl.ioctl(fd, 0x40406B00, bytes(transfers))
++    return bytes(rx)
++
++
++@contextmanager
++def _spi_reader():
++    fd = os.open(SPI_DEVICE, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
++    old_mode = None
++    try:
++        mode = array.array('I', [0])
++        fcntl.ioctl(fd, 0x80046B05, mode, True)
++        old_mode = mode[0]
++        if old_mode not in (0, 0x10):
++            raise ValueError('SPI belongs to a different mode')
++        fcntl.ioctl(fd, 0x40046B05, array.array('I', [old_mode | 0x10]))
++        yield lambda command, count: _read(fd, command, count)
++    finally:
++        try:
++            if old_mode is not None:
++                fcntl.ioctl(fd, 0x40046B05, array.array('I', [old_mode]))
++        finally:
++            os.close(fd)
++
++
++def _dpi_configured():
++    try:
++        return DPI_STATUS.read_bytes().rstrip(b'\0') in (b'okay', b'ok')
++    except FileNotFoundError:
++        return False
++    except OSError:
++        return True
++
++
++def _read_biases(directions):
++    # The kernel forgets bias flags when a request is released. Read the actual
++    # Raspberry Pi pin configuration; 'get' performs no configuration changes.
++    reply = subprocess.run(['/usr/bin/pinctrl', 'get', ','.join(map(str, directions))],
++                           check=True, capture_output=True, text=True, timeout=2)
++    lines = reply.stdout.splitlines()
++    if len(lines) != len(directions):
++        raise ValueError('Incomplete pin configuration')
++    biases = {}
++    for line in lines:
++        head, separator, _ = line.partition('|')
++        fields = head.split()
++        if not separator or len(fields) not in (3, 4):
++            raise ValueError('Unknown pin configuration')
++        pin = int(fields[0].removesuffix(':'))
++        if (fields[0] != f'{pin}:' or pin not in directions or pin in biases
++                or fields[1] != directions[pin] or fields[-1] not in ('pu', 'pd', 'pn')):
++            raise ValueError('Pin configuration changed or cannot be restored')
++        biases[pin] = fields[-1]
++    return biases
++
++
++def probe_st7735():
++    """Return a profile/ID on a positive response, otherwise leave controls idle."""
++    if not SPI_DEVICE.exists() or _dpi_configured():
++        return None
++    try:
++        import gpiod
++        from gpiod.line import Bias, Direction, Drive, Value
++        from ..gpiochip import get_gpiochip
++
++        chip_path = get_gpiochip()
++        with gpiod.Chip(chip_path) as chip:
++            before = {pin: chip.get_line_info(pin) for pin in (25, 27)}
++        if any(info.used or info.direction not in (Direction.INPUT, Direction.OUTPUT)
++               or (info.direction is Direction.OUTPUT and info.drive is not Drive.PUSH_PULL)
++               or info.bias not in (Bias.PULL_UP, Bias.PULL_DOWN, Bias.DISABLED, Bias.UNKNOWN)
++               for info in before.values()):
++            return None
++        biases = {pin: info.bias for pin, info in before.items()}
++        if Bias.UNKNOWN in biases.values():
++            pull = _read_biases({pin: 'ip' if info.direction is Direction.INPUT else 'op'
++                                 for pin, info in before.items()})
++            known = {'pu': Bias.PULL_UP, 'pd': Bias.PULL_DOWN, 'pn': Bias.DISABLED}
++            biases = {pin: known[pull[pin]] if bias is Bias.UNKNOWN else bias
++                      for pin, bias in biases.items()}
++        with _spi_reader() as read_register:
++            # AS_IS permits reading an existing output without changing its level.
++            # Keep the original polarity so saved values remain logical values.
++            with gpiod.request_lines(chip_path, consumer='fpms-display-probe', config={
++                pin: gpiod.LineSettings(direction=Direction.AS_IS, active_low=info.active_low)
++                for pin, info in before.items()
++            }) as lines:
++                levels = dict(zip(before, lines.get_values(list(before))))
++                restore = {pin: gpiod.LineSettings(direction=info.direction, bias=biases[pin],
++                           drive=info.drive, active_low=info.active_low, output_value=levels[pin])
++                           for pin, info in before.items()}
++                try:
++                    lines.reconfigure_lines({
++                        25: gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE),
++                        # Shared with other panels' IRQ: only a weak pull-up during the probe.
++                        27: gpiod.LineSettings(direction=Direction.INPUT, bias=Bias.PULL_UP),
++                    })
++                    time.sleep(0.15)
++                    identity = identify(read_register)
++                finally:
++                    lines.reconfigure_lines(restore)
++        return {'profile': 'waveshare-1.44', 'id': identity} if identity else None
++    except (ImportError, OSError, ValueError, subprocess.SubprocessError):
++        # Missing/occupied hardware must not start the legacy GPIO/button driver.
++        return None
 diff --git a/packaging/cmprovision.json b/packaging/cmprovision.json
 new file mode 100644
 index 0000000..16d547c
@@ -13227,6 +13709,160 @@ index 0000000..8bcfcce
 +    x, y, _ = next(c for c in classic.map_cells(panel)[4] if c[2] == 0)
 +    cx, cy = centre_of_ink(panel.frame(), (x, y, x + cmprovision.CUBE - 1, y + cmprovision.CUBE - 1), rgb("accent"))
 +    assert abs(cx - (x + (cmprovision.CUBE - 1) / 2)) <= 0.5 and abs(cy - (y + (cmprovision.CUBE - 1) / 2)) <= 0.5
+diff --git a/tests/test_cmprovision_appearance.py b/tests/test_cmprovision_appearance.py
+new file mode 100644
+index 0000000..906c696
+--- /dev/null
++++ b/tests/test_cmprovision_appearance.py
+@@ -0,0 +1,148 @@
++"""Appearance is a persisted preference, separate from destructive power confirmation."""
++import json
++
++import pytest
++
++from fpms.integrations.cmprovision import Panel
++from fpms.integrations import cmprovision_fonts as fonts
++
++MODES = ('light', 'dark', 'auto')
++
++
++class Client:
++    def __init__(self, mode='auto'):
++        self.mode, self.observed_at = mode, 100
++        self.calls, self.fail = [], None
++
++    def __call__(self, payload):
++        self.calls.append(dict(payload))
++        assert payload['operation'] in ('appearance', 'set-appearance'), 'Appearance must never request station power'
++        if payload['operation'] == self.fail:
++            raise RuntimeError('private backend error')
++        if payload['operation'] == 'set-appearance':
++            self.mode = payload['mode']
++        return dict(stage='appearance', mode=self.mode, observed_at=self.observed_at)
++
++
++def panel(tmp_path, client, layout='new', mode='auto'):
++    p = Panel(tmp_path/'config', tmp_path/'snapshot', can_leave=False, power_client=client)
++    p.data = {'panel': {'theme': layout, 'color_mode': mode}, 'generated_at': 90, 'display_auto_mode': 'dark'}
++    return p
++
++
++def open_appearance(p):
++    p.key('KEY3')
++    for _ in range(3): p.key('DOWN')
++    p.key('CENTER')
++    assert p.power_menu.stage == 'appearance'
++
++
++def choose(p, mode):
++    while MODES[p.power_menu.mode_index] != mode: p.key('DOWN')
++    p.key('CENTER')
++
++
++def test_submenu_reads_current_web_mode_and_back_never_saves(tmp_path):
++    c = Client('light')
++    p = panel(tmp_path, c)
++    open_appearance(p)
++    assert c.calls == [{'operation': 'appearance'}]
++    assert p.power_menu.appearance_mode == 'light'
++    assert p.power_menu.mode_index == 0
++    p.key('DOWN')
++    p.key('KEY2')
++    assert p.power_menu.open and p.power_menu.stage == 'menu' and p.power_menu.index == 3
++    p.key('KEY2')
++    assert not p.power_menu.open and c.calls == [{'operation': 'appearance'}]
++
++
++@pytest.mark.parametrize('layout', ['new', 'classic'])
++@pytest.mark.parametrize('mode', MODES)
++def test_apply_is_immediate_for_both_layouts_and_survives_closing_menu(tmp_path, layout, mode):
++    c = Client('auto')
++    p = panel(tmp_path, c, layout)
++    open_appearance(p)
++    choose(p, mode)
++    assert c.calls[-1] == {'operation': 'set-appearance', 'mode': mode}
++    assert p.power_menu.appearance_mode == mode
++    assert p.color_mode() == ('dark' if mode == 'auto' else mode)
++    p.key('KEY2'); p.key('KEY2')
++    assert not p.power_menu.open
++    assert p.color_mode() == ('dark' if mode == 'auto' else mode)
++    assert p.theme() == layout
++
++
++def test_auto_continues_using_the_shared_day_night_signal(tmp_path):
++    c = Client('dark')
++    p = panel(tmp_path, c, mode='dark')
++    open_appearance(p); choose(p, 'auto')
++    p.data['display_auto_mode'] = 'light'
++    assert p.color_mode() == 'light'
++    p.data['display_auto_mode'] = 'dark'
++    assert p.color_mode() == 'dark'
++
++
++def test_acknowledged_mode_is_not_undone_by_the_old_snapshot_but_later_web_changes_win(tmp_path):
++    c = Client('auto')
++    p = panel(tmp_path, c)
++    open_appearance(p); choose(p, 'light')
++    p.config.write_text(json.dumps({'enabled': True, 'open_on_start': True}))
++    def refresh(at, mode):
++        p.snapshot.write_text(json.dumps({'version': 1, 'generated_at': at, 'panel': {'color_mode': mode}, 'display_auto_mode': 'dark'}))
++        p.refresh(now=110, force=True)
++    refresh(99, 'dark')
++    assert p.color_mode() == 'light'
++    refresh(100, 'dark')
++    assert p.color_mode() == 'light'
++    refresh(101, 'auto')  # a later web edit can supersede the panel save
++    assert p.color_mode() == 'dark'
++    p.frame()
++    assert p.power_menu.appearance_mode == 'auto'
++
++
++@pytest.mark.parametrize('operation', ['appearance', 'set-appearance'])
++def test_backend_failure_keeps_confirmed_mode_and_returns_to_parent_safely(tmp_path, operation):
++    c = Client('auto')
++    p = panel(tmp_path, c)
++    if operation == 'appearance':
++        c.fail = operation
++        p.key('KEY3')
++        for _ in range(3): p.key('DOWN')
++        p.key('CENTER')
++    else:
++        open_appearance(p); c.fail = operation; choose(p, 'light')
++    assert p.power_menu.stage == 'appearance_error'
++    assert p.color_mode() == 'dark'
++    p.key('KEY1')
++    p.key('CENTER')
++    assert not any(r['operation'] in ('prepare', 'confirm') for r in c.calls)
++    p.key('KEY2')
++    assert p.power_menu.open and p.power_menu.stage == 'menu'
++
++
++@pytest.mark.parametrize('reply', [None, {}, {'stage': 'scheduled', 'mode': 'light', 'observed_at': 100},
++    {'stage': 'appearance', 'mode': 'blue', 'observed_at': 100},
++    {'stage': 'appearance', 'mode': 'light', 'observed_at': True}])
++def test_malformed_readback_does_not_claim_a_new_mode(tmp_path, reply):
++    p = panel(tmp_path, lambda _: reply)
++    p.key('KEY3')
++    for _ in range(3): p.key('DOWN')
++    p.key('CENTER')
++    assert p.power_menu.stage == 'appearance_error'
++    assert p.color_mode() == 'dark'
++
++
++@pytest.mark.parametrize('layout', ['new', 'classic'])
++@pytest.mark.parametrize('mode', MODES)
++@pytest.mark.parametrize('stage', ['menu', 'appearance', 'appearance_error'])
++def test_menu_and_submenu_fit_all_layouts_and_palettes(tmp_path, layout, mode, stage):
++    c = Client(mode)
++    p = panel(tmp_path, c, layout, mode)
++    open_appearance(p)
++    p.power_menu.stage = stage
++    fonts.start_recording()
++    img = p.frame()
++    ink, centred = fonts.stop_recording()
++    assert img.size == (128, 128)
++    assert not fonts.overlaps(ink)
++    assert not fonts.off_centre(centred)
 diff --git a/tests/test_cmprovision_fonts.py b/tests/test_cmprovision_fonts.py
 new file mode 100644
 index 0000000..d024b09
@@ -13495,12 +14131,233 @@ index 0000000..b458119
 +    assert img.size == (128, 128)
 +    assert not fonts.overlaps(ink)
 +    assert not fonts.off_centre(centred)
+diff --git a/tests/test_cmprovision_rescue_qr.py b/tests/test_cmprovision_rescue_qr.py
+new file mode 100644
+index 0000000..0b60e8f
+--- /dev/null
++++ b/tests/test_cmprovision_rescue_qr.py
+@@ -0,0 +1,215 @@
++import json
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++from fpms.integrations import cmprovision_rescue as r
++from test_cmprovision_v2 import Clock, demo_snapshot, panel_with
++
++
++def active_data():
++    data = demo_snapshot()
++    data['rescue_wifi'] = dict(enabled=True, active=True, state='active', ssid='Rescue;lab',
++                               address='192.168.240.1', clients=0)
++    return data
++
++
++@pytest.mark.parametrize('theme', ['classic', 'new'])
++@pytest.mark.parametrize('mode', ['light', 'dark', 'auto'])
++def test_ok_on_active_station_opens_qr_then_credentials_for_one_minute(tmp_path, theme, mode):
++    clock, calls = Clock(), []
++    data = active_data()
++    data['panel'].update(theme=theme, color_mode=mode)
++    def client():
++        calls.append(True)
++        return dict(ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)])
++    p = panel_with(tmp_path, data, clock=clock, rescue_client=client)
++    p.page = 4
++    p.key('CENTER')
++    assert calls == [True] and p.rescue_menu.open
++    assert p.rescue_menu.stage == 'qr'
++    assert p.frame().size == (128, 128)
++    p.key('CENTER')
++    assert p.rescue_menu.stage == 'text'
++    assert p.frame().size == (128, 128)
++    assert 'pass:word;123' not in json.dumps(p.data)
++    clock.now += 60
++    p.frame()
++    assert not p.rescue_menu.open and p.rescue_menu.credentials is None
++    assert calls == [True]
++
++
++@pytest.mark.parametrize('change', [dict(active=False), dict(state='unavailable')])
++def test_inactive_or_stale_ap_never_requests_password(tmp_path, change):
++    data = active_data()
++    data['rescue_wifi'].update(change)
++    calls = []
++    p = panel_with(tmp_path, data, rescue_client=lambda: calls.append(True))
++    p.page = 4
++    p.key('CENTER')
++    assert calls == [] and not p.rescue_menu.open
++
++
++def test_back_clears_credentials_and_power_key_keeps_existing_menu(tmp_path):
++    p = panel_with(tmp_path, active_data(), rescue_client=lambda: dict(
++        ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)]))
++    p.page = 4
++    p.key('CENTER'); p.key('KEY2')
++    assert not p.rescue_menu.open and p.rescue_menu.credentials is None
++    assert p.page == 4
++
++
++def test_back_publishes_only_close_time_for_automatic_hdmi_qr(tmp_path, monkeypatch):
++    marker = tmp_path/'closed.json'
++    monkeypatch.setattr(r, 'CLOSED', marker)
++    monkeypatch.setattr(r.time, 'monotonic', lambda:123)
++    p = panel_with(tmp_path, active_data(), rescue_client=lambda: dict(
++        ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)]))
++    p.page = 4; p.key('CENTER'); p.key('KEY2')
++    assert json.loads(marker.read_text()) == dict(closed_at=123)
++
++
++@pytest.mark.parametrize('with_power', [False, True])
++def test_back_dismisses_automatic_hdmi_card_without_opening_manual_card(tmp_path, monkeypatch, with_power):
++    marker = tmp_path/'closed.json'
++    monkeypatch.setattr(r, 'CLOSED', marker)
++    monkeypatch.setattr(r.time, 'monotonic', lambda:123)
++    calls = []
++    p = panel_with(tmp_path, active_data(), can_leave=False, rescue_client=lambda: calls.append(True),
++                   power_client=(lambda payload: None) if with_power else None)
++    p.page = 4
++    if with_power: p.key('KEY3')
++    p.key('KEY2')
++    assert json.loads(marker.read_text()) == dict(closed_at=123)
++    assert not p.rescue_menu.open and calls == [] and p.page == (4 if with_power else 0)
++
++
++def test_wifi_payload_escapes_delimiters_without_changing_password():
++    assert r.wifi_payload('Lab;:known,\\"', 'a:b;c,d\\e"123') == (
++        'WIFI:T:WPA;S:Lab\\;\\:known\\,\\\\\\";P:a\\:b\\;c\\,d\\\\e\\"123;;')
++
++
++def test_largest_supported_credentials_keep_integer_two_pixel_qr_and_quiet_zone():
++    matrix = r.qr_matrix(';'*32, ':'*63)
++    assert len(matrix) <= 64
++    assert all(len(row) == len(matrix) for row in matrix)
++    assert all(not cell for row in matrix[:4] + matrix[-4:] for cell in row)
++    assert all(not cell for row in matrix for cell in row[:4] + row[-4:])
++
++
++def test_request_uses_running_credentials_and_private_hdmi_lease(tmp_path, monkeypatch):
++    # Model the installed root-owned status/runtime directory on an unprivileged CI runner.
++    real_fstat, real_lstat, chowns = r.os.fstat, Path.lstat, []
++    def root_stat(info):
++        return SimpleNamespace(st_mode=info.st_mode, st_uid=0, st_size=info.st_size)
++    monkeypatch.setattr(r.os, 'fstat', lambda fd: root_stat(real_fstat(fd)))
++    monkeypatch.setattr(Path, 'lstat', lambda path: root_stat(real_lstat(path)))
++    monkeypatch.setattr(r.os, 'fchown', lambda fd, uid, gid: chowns.append((uid, gid)))
++    status, lease = tmp_path/'status.json', tmp_path/'lease.json'
++    status.write_text(json.dumps(dict(active=True, state='recovery', checked_at=100, ssid='Running')))
++    status.chmod(0o644)
++    monkeypatch.setattr(r, 'STATUS', status)
++    monkeypatch.setattr(r, 'LEASE', lease)
++    monkeypatch.setattr(r.time, 'time', lambda: 101)
++    monkeypatch.setattr(r.time, 'monotonic', lambda: 20)
++    monkeypatch.setattr(r.grp, 'getgrnam', lambda name: SimpleNamespace(gr_gid=0))
++    monkeypatch.setattr(r.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=json.dumps(
++        dict(ssid='Staged', password='staged-secret', active=dict(ssid='Running', password='actual-secret')))))
++    value = r.request()
++    assert value['ssid'] == 'Running' and value['password'] == 'actual-secret'
++    saved = json.loads(lease.read_text())
++    assert saved['expires_at'] == 80 and saved['created_at'] == 20
++    assert lease.stat().st_mode & 0o777 == 0o640
++    assert chowns == [(0, 0)]
++    assert 'staged-secret' not in lease.read_text()
++    status.write_text(json.dumps(dict(active=False, state='standby', checked_at=101)))
++    with pytest.raises(Exception):
++        r.request()
++
++
++def test_secret_helper_failure_is_generic_on_screen(tmp_path):
++    def fail():
++        raise RuntimeError('never-print-this-secret')
++    p = panel_with(tmp_path, active_data(), rescue_client=fail)
++    p.page = 4; p.key('CENTER')
++    assert p.rescue_menu.stage == 'error'
++    assert p.rescue_menu.credentials is None
++    assert 'never-print' not in repr(p.rescue_menu.__dict__)
++    assert p.frame().size == (128, 128)
++
++
++def test_ap_change_closes_the_access_card(tmp_path):
++    p = panel_with(tmp_path, active_data(), rescue_client=lambda: dict(
++        ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)]))
++    p.page = 4; p.key('CENTER')
++    p.data['rescue_wifi']['ssid'] = 'Another AP'
++    p.frame()
++    assert not p.rescue_menu.open and p.rescue_menu.credentials is None
++
++
++def test_lite_expires_secrets_even_when_lcd_is_sleeping(tmp_path, monkeypatch):
++    import sys
++    from fpms import lite
++    clock = Clock(now=0)
++    lease = tmp_path/'lease.json'
++    lease.write_text('test-secret')
++    monkeypatch.setattr(r, 'LEASE', lease)
++    p = panel_with(tmp_path, active_data(), clock=clock, rescue_client=lambda: dict(
++        ssid='Rescue;lab', password='pass:word;123', matrix=[[False]*29 for _ in range(29)]))
++    p.page = 4; p.key('CENTER')
++    p.refresh = lambda **kw: None
++    monkeypatch.setattr(lite, 'Panel', lambda *a, **kw: p)
++    monkeypatch.setattr(lite, 'heartbeat', lambda *a, **kw: None)
++    monkeypatch.setattr(lite, 'probe_st7735', lambda: dict(profile='waveshare-1.44', id='7c89f0'))
++    monkeypatch.setattr(lite.time, 'monotonic', clock)
++    monkeypatch.setattr(lite.signal, 'signal', lambda *a: None)
++    monkeypatch.setattr(lite.Path, 'exists', lambda path: True)
++    monkeypatch.setattr(sys, 'argv', ['fpms', '--sleep', '1', '--seconds', '70'])
++    observations = []
++    class Buttons:
++        def __enter__(self): return self
++        def __exit__(self, *a): pass
++        def wait_edge_events(self, timeout):
++            clock.now += 1
++            if clock.now > 61:
++                observations.append(True)
++                assert p.rescue_menu.credentials is None and not lease.is_file()
++            return False
++    class Screen:
++        def init(self): pass
++        def drawImage(self, image): pass
++        def sleep(self): pass
++    monkeypatch.setitem(sys.modules, 'gpiod', SimpleNamespace(request_lines=lambda *a, **kw: Buttons(), LineSettings=lambda **kw: None))
++    monkeypatch.setitem(sys.modules, 'gpiod.line', SimpleNamespace(Bias=SimpleNamespace(PULL_UP=1), Edge=SimpleNamespace(FALLING=1)))
++    monkeypatch.setitem(sys.modules, 'fpms.modules.gpiochip', SimpleNamespace(get_gpiochip=lambda: 'fake'))
++    monkeypatch.setitem(sys.modules, 'fpms.modules.screen.st7735', SimpleNamespace(ST7735=Screen))
++    lite.main()
++    assert observations
++
++
++def test_unsupported_ssid_text_explicitly_points_to_exact_qr(tmp_path):
++    from fpms.integrations import cmprovision_fonts as fonts
++    card = r.AccessCard(None, Clock())
++    card.stage, card.deadline = 'text', 1060
++    card.credentials = dict(ssid='\u30c6\u30b9\u30c8', password='example-pass-123')
++    fonts.start_recording()
++    r.render(card, dict(bg='black', fg='white', accent='orange', muted='grey'))
++    ink, _ = fonts.stop_recording()
++    assert 'Scan QR for SSID' in [box[4] for box in ink]
++
++
++@pytest.mark.parametrize('ssid,password', [('cmprovision-wlanpi-d62-rescue', 'Demo-only-123456'), (';'*32, ':'*63)])
++def test_rendered_128_pixel_qr_decodes_to_exact_wifi_payload(tmp_path, ssid, password):
++    import shutil
++    import subprocess
++    if not shutil.which('zbarimg'):
++        pytest.skip('Optional independent QR decoder')
++    card = r.AccessCard(None, Clock())
++    card.stage = 'qr'
++    card.credentials = dict(ssid=ssid, password=password, matrix=r.qr_matrix(ssid, password))
++    image = r.render(card, {})
++    path = tmp_path/'qr.png'
++    image.save(path)
++    result = subprocess.run(['zbarimg', '--quiet', '--raw', str(path)], capture_output=True, check=True)
++    assert result.stdout.decode('utf-8').rstrip('\n') == r.wifi_payload(ssid, password)
 diff --git a/tests/test_cmprovision_rescue_wifi.py b/tests/test_cmprovision_rescue_wifi.py
-new file mode 100755
-index 0000000..db0ace8
+new file mode 100644
+index 0000000..e3e2077
 --- /dev/null
 +++ b/tests/test_cmprovision_rescue_wifi.py
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,107 @@
 +import copy
 +from PIL import ImageDraw
 +import pytest
@@ -13595,6 +14452,7 @@ index 0000000..db0ace8
 +    code = '''import json,sys
 +from pathlib import Path
 +sys.path.insert(0, sys.argv[1])
++from fpms import lite  # exercise the installed service entry point imports
 +from fpms.integrations.cmprovision import Panel
 +directory = Path(sys.argv[2])
 +data = json.loads((directory/'snapshot.json').read_text())
@@ -15026,14 +15884,15 @@ index 0000000..d1d97f6
 +    assert station_rows(p, p.data["station"])[0] == ("bad", None, "queue stopped")
 diff --git a/tests/test_portable_display.py b/tests/test_portable_display.py
 new file mode 100644
-index 0000000..2ecec08
+index 0000000..0fa51a4
 --- /dev/null
 +++ b/tests/test_portable_display.py
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,40 @@
 +"""The hardware backend must work without the full WLAN Pi application."""
 +
 +import subprocess
 +import sys
++from pathlib import Path
 +
 +
 +def test_st7735_import_does_not_load_application_state():
@@ -15066,8 +15925,323 @@ index 0000000..2ecec08
 +"""],
 +        capture_output=True,
 +        text=True,
++        cwd=Path(__file__).resolve().parents[1],
 +    )
 +    assert result.returncode == 0, result.stdout + result.stderr
+diff --git a/tests/test_st7735_probe.py b/tests/test_st7735_probe.py
+new file mode 100755
+index 0000000..69fae52
+--- /dev/null
++++ b/tests/test_st7735_probe.py
+@@ -0,0 +1,308 @@
++"""Identify the fitted controller, not the existence of an SPI device."""
++import ctypes
++import importlib
++import struct
++import sys
++from enum import Enum
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++REPLIES = {0xDA: bytes.fromhex('7c'), 0xDB: bytes.fromhex('89'),
++           0xDC: bytes.fromhex('f0'), 0x04: bytes.fromhex('3e44f800'),
++           0x0C: bytes.fromhex('06')}
++
++
++def module():
++    return importlib.import_module('fpms.modules.screen.st7735_probe')
++
++
++def reader(replies):
++    return lambda command, count: replies[command]
++
++
++def test_identifies_real_cold_and_initialized_captured_replies():
++    p = module()
++    assert p.identify(reader(REPLIES)) == '7c89f0'
++    assert p.identify(reader(REPLIES | {0x0C: b'\x05'})) == '7c89f0'
++
++
++def test_accepts_documented_nv_id_variation_instead_of_one_specimen_only():
++    replies = REPLIES | {0xDB: b'\x90', 0xDC: b'\xa1', 0x04: bytes.fromhex('3e485080')}
++    assert module().identify(reader(replies)) == '7c90a1'
++
++
++@pytest.mark.parametrize('replies', [
++    {k: b'\x00' * len(v) for k,v in REPLIES.items()},
++    {k: b'\xff' * len(v) for k,v in REPLIES.items()},
++    REPLIES | {0xDA: b'\x12'},
++    REPLIES | {0xDB: b'\x01'},
++    REPLIES | {0x04: bytes.fromhex('7c89f000')},  # missing dummy-clock decoding
++    REPLIES | {0x04: bytes.fromhex('3e44f880')},  # combined and separate IDs disagree
++    REPLIES | {0x0C: b'\xff'},
++    REPLIES | {0xDA: b''},
++    REPLIES | {0x04: b'\x3e'},
++    REPLIES | {0xDA: None},
++])
++def test_unrecognized_floating_or_malformed_reply_cannot_identify_a_panel(replies):
++    assert module().identify(reader(replies)) is None
++
++
++def test_a_single_plausible_sample_does_not_accept_an_unstable_wire():
++    seen = 0
++    def read(command, count):
++        nonlocal seen
++        if command == 0xDA:
++            seen += 1
++            if seen == 2: return b'\x00'
++        return REPLIES[command]
++    assert module().identify(read) is None
++
++
++class Direction(Enum):
++    AS_IS = 1
++    INPUT = 2
++    OUTPUT = 3
++
++class Bias(Enum):
++    AS_IS = 1
++    UNKNOWN = 2
++    DISABLED = 3
++    PULL_UP = 4
++    PULL_DOWN = 5
++
++class Drive(Enum):
++    PUSH_PULL = 1
++    OPEN_DRAIN = 2
++    OPEN_SOURCE = 3
++
++class Value(Enum):
++    INACTIVE = 0
++    ACTIVE = 1
++
++
++def wire_env(monkeypatch, tmp_path, *, busy=False, fail_read=False, fail_mode=False, output=False, level=Value.ACTIVE, active_low=False, bias=Bias.PULL_DOWN, drive=Drive.PUSH_PULL, pinctrl_reply=None, fail_pinctrl=False):
++    p = module()
++    device = tmp_path/'spidev0.0'; device.touch()
++    monkeypatch.setattr(p, 'SPI_DEVICE', device)
++    monkeypatch.setattr(p, 'DPI_STATUS', tmp_path/'dpi-status')
++    state = SimpleNamespace(mode=0, opened=False, closed=False, requested=False, released=False,
++                            configs=[], reads=0, pinctrl_reads=0)
++    class Chip:
++        def __init__(self, path): pass
++        def __enter__(self): return self
++        def __exit__(self, *args): pass
++        def get_line_info(self, pin):
++            return SimpleNamespace(used=busy, bias=bias, direction=Direction.OUTPUT if output else Direction.INPUT,
++                                   drive=drive, active_low=active_low)
++    class Lines:
++        def __enter__(self): return self
++        def __exit__(self, *args): state.released=True
++        def reconfigure_lines(self, config): state.configs.append(config)
++        def get_values(self, pins): return [level for _ in pins]
++    def request_lines(path, *, consumer, config):
++        state.requested=True; state.configs.append(config)
++        return Lines()
++    gpio = SimpleNamespace(Chip=Chip, request_lines=request_lines,
++                           LineSettings=lambda **kw: SimpleNamespace(**kw))
++    monkeypatch.setitem(sys.modules, 'gpiod', gpio)
++    monkeypatch.setitem(sys.modules, 'gpiod.line', SimpleNamespace(Direction=Direction, Bias=Bias, Value=Value, Drive=Drive))
++    monkeypatch.setitem(sys.modules, 'fpms.modules.gpiochip', SimpleNamespace(get_gpiochip=lambda: '/fake/gpiochip'))
++    def open_device(path, flags):
++        assert path == device
++        state.opened=True
++        return 101
++    def close_device(fd):
++        assert fd==101
++        state.closed=True
++    def ioctl(fd, request, value, *args):
++        assert fd==101
++        if request==0x80046b05:
++            value[0]=state.mode
++        elif request==0x40046b05:
++            requested=int(value[0])
++            if fail_mode and requested==0x10: raise OSError('3-wire not supported')
++            state.mode=requested
++        elif request==0x40406b00:
++            if fail_read: raise OSError('transfer failed')
++            assert state.mode==0x10, 'read must release MOSI using SPI_3WIRE'
++            data=bytes(value)
++            assert len(data)==64
++            tx=struct.unpack('=QQIIHBBBBBB',data[:32])
++            rx=struct.unpack('=QQIIHBBBBBB',data[32:])
++            assert tx[0] and not tx[1] and tx[2]==1 and tx[3]==100000 and tx[5]==8 and tx[6]==0
++            assert not rx[0] and rx[1] and rx[3]==100000 and rx[5]==8 and rx[6]==0
++            command=ctypes.string_at(tx[0],1)[0]
++            reply=REPLIES[command]
++            assert rx[2]==len(reply)
++            ctypes.memmove(rx[1], reply, len(reply))
++            state.reads+=1
++        else:
++            raise AssertionError('unexpected SPI ioctl '+hex(request))
++        return 0
++    def pinctrl(args, **kwargs):
++        assert args==['/usr/bin/pinctrl','get','25,27']
++        state.pinctrl_reads+=1
++        if fail_pinctrl: raise OSError('pinctrl unavailable')
++        direction='op' if output else 'ip'
++        reply=pinctrl_reply if pinctrl_reply is not None else ''.join(
++            f'{pin}: {direction} -- pd | lo // GPIO{pin}\n' for pin in [25,27])
++        return SimpleNamespace(stdout=reply)
++    monkeypatch.setattr(p, 'subprocess', SimpleNamespace(run=pinctrl, SubprocessError=__import__('subprocess').SubprocessError), raising=False)
++    monkeypatch.setattr(p.os, 'open', open_device)
++    monkeypatch.setattr(p.os, 'close', close_device)
++    monkeypatch.setattr(p.fcntl, 'ioctl', ioctl)
++    monkeypatch.setattr(p.time, 'sleep', lambda *_: None)
++    return p,state
++
++
++def test_probe_returns_real_identity_and_restores_bus_and_gpio(monkeypatch, tmp_path):
++    p,s=wire_env(monkeypatch,tmp_path)
++    assert p.probe_st7735()=={'profile':'waveshare-1.44','id':'7c89f0'}
++    assert s.reads==10 and s.mode==0 and s.closed and s.released
++    initial=s.configs[0]
++    assert all(c.direction is Direction.AS_IS for c in initial.values())
++    assert all(not hasattr(c, 'output_value') for c in initial.values())
++    first=s.configs[1]
++    assert set(first)=={25,27}, 'backlight and buttons must remain untouched during identification'
++    assert first[27].direction is Direction.INPUT and first[27].bias is Bias.PULL_UP
++    assert not hasattr(first[27],'output_value'), 'RESET must not be actively driven HIGH on unknown hardware'
++    assert s.configs[-1][27].bias is Bias.PULL_DOWN
++    assert s.configs[-1][25].direction is Direction.INPUT
++
++
++@pytest.mark.parametrize('level', [Value.INACTIVE, Value.ACTIVE])
++@pytest.mark.parametrize('fail_read', [False, True])
++def test_probe_restores_unrequested_outputs_including_level_drive_and_polarity(monkeypatch,tmp_path,level,fail_read):
++    p,s=wire_env(monkeypatch,tmp_path,output=True,level=level,active_low=True,fail_read=fail_read)
++    result=p.probe_st7735()
++    assert (result is None) == fail_read
++    assert s.requested and s.released and s.mode==0 and s.closed
++    initial=s.configs[0]
++    assert all(c.direction is Direction.AS_IS and c.active_low for c in initial.values())
++    assert all(not hasattr(c,'output_value') for c in initial.values())
++    restored=s.configs[-1]
++    assert all(c.direction is Direction.OUTPUT and c.active_low and c.output_value is level
++               and c.bias is Bias.PULL_DOWN for c in restored.values())
++    assert restored[25].drive is Drive.PUSH_PULL
++    assert restored[27].drive is Drive.PUSH_PULL
++
++
++@pytest.mark.parametrize('drive', [Drive.OPEN_DRAIN, Drive.OPEN_SOURCE])
++def test_probe_declines_outputs_whose_latched_level_cannot_be_read(monkeypatch,tmp_path,drive):
++    p,s=wire_env(monkeypatch,tmp_path,output=True,drive=drive)
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
++
++
++@pytest.mark.parametrize('output',[False,True])
++def test_kernel_unknown_bias_is_read_without_altering_it_and_restored(monkeypatch,tmp_path,output):
++    p,s=wire_env(monkeypatch,tmp_path,bias=Bias.UNKNOWN,output=output)
++    assert p.probe_st7735()=={'profile':'waveshare-1.44','id':'7c89f0'}
++    assert s.pinctrl_reads==1 and s.mode==0 and s.released
++    assert all(c.bias is Bias.PULL_DOWN for c in s.configs[-1].values())
++    assert all(c.direction is (Direction.OUTPUT if output else Direction.INPUT)
++               for c in s.configs[-1].values())
++
++
++@pytest.mark.parametrize('reply',[
++    '',
++    '25: ip pd | lo',  # missing second line
++    '25: ip pd | lo\n27: a0 -- pu | hi',  # alternate function is not a free GPIO
++    '25: op -- pd | lo\n27: op -- pd | hi',  # direction changed since line-info snapshot
++    '25: ip ?? | lo\n27: ip pd | lo',
++])
++def test_unreadable_or_changed_bias_is_not_probed(monkeypatch,tmp_path,reply):
++    p,s=wire_env(monkeypatch,tmp_path,bias=Bias.UNKNOWN,pinctrl_reply=reply)
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
++
++
++def test_missing_pinctrl_does_not_guess_bias(monkeypatch,tmp_path):
++    p,s=wire_env(monkeypatch,tmp_path,bias=Bias.UNKNOWN,fail_pinctrl=True)
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
++
++
++@pytest.mark.parametrize('case',['busy','read','mode'])
++def test_probe_failure_releases_resources_without_initializing_controls(monkeypatch,tmp_path,case):
++    p,s=wire_env(monkeypatch,tmp_path,busy=case=='busy',fail_read=case=='read',fail_mode=case=='mode')
++    assert p.probe_st7735() is None
++    assert s.mode==0 and (not s.opened or s.closed)
++    assert not s.requested or s.released
++    if case=='busy': assert not s.requested
++
++
++def test_no_spi_device_never_touches_gpio_or_opens_a_bus(monkeypatch,tmp_path):
++    p,s=wire_env(monkeypatch,tmp_path)
++    p.SPI_DEVICE.unlink()
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
++
++
++def test_active_dpi_configuration_is_left_alone(monkeypatch,tmp_path):
++    p,s=wire_env(monkeypatch,tmp_path)
++    p.DPI_STATUS.write_bytes(b'okay\0')
++    assert p.probe_st7735() is None
++    assert not s.opened and not s.requested
++
++
++class Clock:
++    def __init__(self): self.now=0.
++    def __call__(self): return self.now
++    def sleep(self,seconds): self.now+=seconds
++
++
++def test_detection_wait_keeps_heartbeat_fresh_and_retries_without_spinning(monkeypatch):
++    from fpms import lite
++    clock=Clock(); calls=[]; beats=[]
++    def detect():
++        calls.append(clock.now)
++        return {'profile':'waveshare-1.44','id':'7c89f0'} if clock.now>=30 else None
++    monkeypatch.setattr(lite,'probe_st7735',detect,raising=False)
++    monkeypatch.setattr(lite.Path,'exists',lambda *_:True)
++    monkeypatch.setattr(lite.time,'monotonic',clock)
++    monkeypatch.setattr(lite.time,'sleep',clock.sleep)
++    monkeypatch.setattr(lite,'heartbeat',lambda value,**kw:beats.append((clock.now,value)))
++    assert lite.wait_for_display(lambda:False,until=40)=={'profile':'waveshare-1.44','id':'7c89f0'}
++    assert calls==[0.,30.]
++    assert len(beats)>=10 and all(not v for _,v in beats)
++    assert max(b[0]-a[0] for a,b in zip(beats,beats[1:]))<=3
++
++
++def test_a_stopped_wait_returns_without_display_or_button_initialization(monkeypatch):
++    from fpms import lite
++    clock=Clock()
++    monkeypatch.setattr(lite,'probe_st7735',lambda:None,raising=False)
++    monkeypatch.setattr(lite.Path,'exists',lambda *_:True)
++    monkeypatch.setattr(lite.time,'monotonic',clock)
++    monkeypatch.setattr(lite.time,'sleep',clock.sleep)
++    monkeypatch.setattr(lite,'heartbeat',lambda *a,**k:None)
++    assert lite.wait_for_display(lambda:clock.now>=3,until=50) is None
++    assert clock.now==3
++
++
++def test_lite_does_not_import_hardware_driver_if_no_panel_was_identified(tmp_path,monkeypatch):
++    from fpms import lite
++    clock=Clock()
++    monkeypatch.setattr(lite,'probe_st7735',lambda:None,raising=False)
++    monkeypatch.setattr(lite.Path,'exists',lambda *_:True)
++    monkeypatch.setattr(lite.time,'monotonic',clock)
++    monkeypatch.setattr(lite.time,'sleep',clock.sleep)
++    monkeypatch.setattr(lite.signal,'signal',lambda *a:None)
++    monkeypatch.setattr(lite,'heartbeat',lambda *a,**k:None)
++    monkeypatch.setattr(sys,'argv',['fpms','--seconds','3'])
++    monkeypatch.setitem(sys.modules,'gpiod',None)
++    monkeypatch.setitem(sys.modules,'fpms.modules.screen.st7735',None)
++    lite.main()
++
++
++def test_heartbeat_adds_identity_only_when_it_belongs_to_live_hardware(tmp_path):
++    from fpms.integrations.cmprovision import heartbeat
++    import json
++    path=tmp_path/'beat.json'; display={'profile':'waveshare-1.44','id':'7c89f0'}
++    heartbeat(True,path,display=display)
++    assert json.loads(path.read_text())['display']==display
++    heartbeat(False,path,display=display)
++    assert 'display' not in json.loads(path.read_text())
 diff --git a/tools/PORTABILITY-PROBE.md b/tools/PORTABILITY-PROBE.md
 new file mode 100644
 index 0000000..c62edce
@@ -15137,7 +16311,7 @@ index 0000000..c62edce
 +of Raspberry Pi OS Lite. Those require booting a clean target image later.
 diff --git a/tools/build-lite-deb.sh b/tools/build-lite-deb.sh
 new file mode 100644
-index 0000000..417db80
+index 0000000..b453f57
 --- /dev/null
 +++ b/tools/build-lite-deb.sh
 @@ -0,0 +1,62 @@
@@ -15152,7 +16326,7 @@ index 0000000..417db80
 +trap 'rm -rf "$WORK"' EXIT
 +DEST=$WORK/pkg
 +mkdir -p "$DEST/DEBIAN" "$DEST/usr/lib/fpms-lite/fpms/integrations" "$DEST/usr/lib/fpms-lite/fpms/modules/screen" "$DEST/usr/lib/fpms-lite/fpms/fonts/cmprovision" "$DEST/usr/share/doc/fpms-lite/fonts" "$DEST/usr/share/fpms" "$DEST/usr/lib/systemd/system" "$OUT"
-+for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py integrations/cmprovision_power.py integrations/cmprovision_rescue.py; do
++for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py modules/screen/st7735_probe.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py integrations/cmprovision_power.py integrations/cmprovision_rescue.py; do
 +    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
 +done
 +install -m 644 "$ROOT/LICENSE" "$DEST/usr/share/doc/fpms-lite/copyright"
@@ -15166,7 +16340,7 @@ index 0000000..417db80
 +Version: $VERSION
 +Architecture: all
 +Maintainer: cmprovision contributors
-+Depends: init-system-helpers, python3 (>= 3.13), python3-pil (>= 10.1), python3-libgpiod (>= 2), python3-spidev
++Depends: init-system-helpers, python3 (>= 3.13), python3-pil (>= 10.1), python3-qrcode, python3-libgpiod (>= 2), python3-spidev, raspi-utils-core
 +Conflicts: wlanpi-fpms
 +Description: Compact FPMS station panel for cmprovision
 + Portable subset of WLAN Pi FPMS for a dedicated provisioning station.

@@ -229,4 +229,14 @@
             @endif
         </div>
     @endif
+    <div id="reprovision-primary" class="border-t border-pline mt-4 pt-4">
+        <h3 class="font-bold mb-2">Current primary web address</h3>
+        <p class="text-sm text-fg-muted mb-3">Optional on a secondary station: Re-provision opens this server, which supplies its active project at the next network boot. This does not change roles or enable DHCP/TFTP.</p>
+        <div class="flex flex-wrap items-end gap-2">
+            <div class="flex-1"><label for="primary-web-url" class="block text-sm font-bold mb-1">Primary HTTP/HTTPS address</label>
+                <input id="primary-web-url" type="url" wire:model="primaryWebUrl" maxlength="512" placeholder="http://primary.local" class="cmp-field w-full"></div>
+            <x-confirms-password wire:then="savePrimaryUrl"><button type="button" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Save primary address</button></x-confirms-password>
+        </div>
+        @error('primaryWebUrl') <p class="text-neg text-sm mt-2">{{ $message }}</p> @enderror
+    </div>
 </x-settings-card>

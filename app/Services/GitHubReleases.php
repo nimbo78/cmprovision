@@ -109,6 +109,7 @@ class GitHubReleases
                 'tag' => (string) ($release['tag_name'] ?? ''),
                 'name' => (string) ($release['name'] ?? ''),
                 'published' => isset($release['published_at']) ? substr($release['published_at'], 0, 10) : null,
+                'published_at' => $release['published_at'] ?? null,
                 'prerelease' => !empty($release['prerelease']),
                 'assets' => $this->assets($repo, (array) ($release['assets'] ?? [])),
             ];
