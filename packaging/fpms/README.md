@@ -46,6 +46,11 @@ On 15 November, a separate cold-start experiment cut Gi0/7 PoE for 15 seconds an
 `7c89f0` in 84 consistent requests before FPMS started. RESET input pull-up was sufficient; no LCD
 initialization or reset pulse was sent. This qualifies readback on that fixture, not arbitrary panels.
 
+On 16 November, the packaged Lite code passed physical headless startup on `wlanpi-da2`: no GPIO
+requests with SPI disabled, and three rejected ID probes over 66 seconds with temporary SPI enabled.
+In the SPI-enabled run, all 22 heartbeats stayed `hardware=false`; GPIO event monitoring confirmed no button/backlight
+requests. SPI/GPIO and configuration were restored, provisioning/HDMI PIDs stayed unchanged.
+
 For 2.31.0, the supported profile is Raspberry Pi OS Lite Trixie arm64 on CM4 with
 the Waveshare 1.44-inch ST7735 display, including New/Classic and Light/Dark/Auto.
 

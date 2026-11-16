@@ -87,6 +87,13 @@ The CM4/Waveshare fixture on `wlanpi-d62` returned **7C89F0**, including before 
 after a 15-second PoE power cut. The ID identifies the controller; it does not uniquely establish panel
 dimensions or confirm that its backlight and pixels work. This selects the supported 1.44-inch wiring
 and layout. HyperPixel autodetection is not included and still needs its own hardware qualification.
+
+Headless startup was checked on `wlanpi-da2` using the packaged Lite code: with SPI disabled,
+no GPIO requests occurred; with SPI temporarily enabled and no panel fitted, three probes over
+66 seconds returned no ID. In that run, all 22 heartbeats reported `hardware=false`; buttons and backlight
+were never requested. The original SPI/GPIO state was restored and provisioning/HDMI service
+PIDs stayed unchanged.
+
 Always remove all power before changing a GPIO-connected panel.
 
 ## What the panel trusts
