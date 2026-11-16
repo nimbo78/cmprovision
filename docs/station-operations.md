@@ -1,6 +1,6 @@
 # Storage, device reports and image update hints
 
-These features are being prepared for 2.31.0. They do not install station or sensor updates automatically.
+These features are being prepared for 2.30.3. They do not install station or sensor updates automatically.
 
 ## Storage
 

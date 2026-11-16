@@ -2,7 +2,7 @@
 
 # FPMS front panel
 
-**Supported profile for 2.31.0.** `fpms-lite` on Raspberry Pi OS Lite Trixie arm64,
+**Supported profile for 2.30.3.** `fpms-lite` on Raspberry Pi OS Lite Trixie arm64,
 CM4 and a Waveshare 1.44-inch ST7735 display. Both New and Classic layouts and
 Light/Dark/Auto color modes are included. The integration has been available since 2.23.0.
 

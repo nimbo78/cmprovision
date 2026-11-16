@@ -51,7 +51,7 @@ requests with SPI disabled, and three rejected ID probes over 66 seconds with te
 In the SPI-enabled run, all 22 heartbeats stayed `hardware=false`; GPIO event monitoring confirmed no button/backlight
 requests. SPI/GPIO and configuration were restored, provisioning/HDMI PIDs stayed unchanged.
 
-For 2.31.0, the supported profile is Raspberry Pi OS Lite Trixie arm64 on CM4 with
+For 2.30.3, the supported profile is Raspberry Pi OS Lite Trixie arm64 on CM4 with
 the Waveshare 1.44-inch ST7735 display, including New/Classic and Light/Dark/Auto.
 
 The ready image 2.30.3~dev6 passed writing, SHA256 and its first-boot OS check on CM4
