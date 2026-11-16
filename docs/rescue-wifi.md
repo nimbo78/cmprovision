@@ -4,15 +4,12 @@
 
 An optional protected hotspot gives engineers access when saved management Wi-Fi networks cannot be reached. It is disabled by default. The normal management radio keeps trying saved networks while a separate radio provides the AP.
 
-```mermaid
-flowchart LR
-    E[Engineer laptop / phone] -->|WPA2 Wi-Fi| A[Rescue AP]
-    A --> W[cmprovision web / SSH]
-    A --> N[Station routing and NAT]
-    N --> S[Ethernet sensors]
-    N --> V[Management VLANs]
-    N --> I[Internet when upstream is available]
-```
+## The Wi-Fi and Rescue AP cycle
+
+![Automatic cycle: management available, 10-minute search, active AP, recovery with management and AP together, then standby.](diagrams/rescue-wifi-lifecycle.svg)
+
+> [!NOTE]
+> **AP STANDBY** means automatic rescue is enabled but the AP is not broadcasting. **AP RECOVERY** means management has returned while the AP is still running. Seeing a normal Wi-Fi connection and AP RECOVERY together is expected: they use separate radios.
 
 ## Enable it before losing management access
 
@@ -28,15 +25,43 @@ flowchart LR
 
 ## What happens automatically
 
+![AP shutdown timing: 60 seconds of stable management, then 60 seconds without clients. Connected clients keep the AP running. The 60-second QR card has its own timer.](diagrams/rescue-wifi-recovery.svg)
+
+1. Management returns: keep the AP running and wait for **60 seconds of stable connectivity**.
+2. After that, wait until **no clients are connected**, then count **another 60 seconds**.
+3. Stop the AP and return to **AP STANDBY**. With no clients throughout, this takes about **2 minutes**, plus polling and radio transition time.
+
+> [!IMPORTANT]
+> The two intervals run **one after the other**. A new client resets the client-free interval. Losing management again resets recovery while keeping the AP available. If the client count is unknown, the AP stays on.
+
+This is the **automatic** cycle. **Start now** requests at least 15 minutes of AP availability. Management means a usable address on Wi-Fi or a selected wired/VLAN profile; internet access is not required. The flashing interface does not count.
+
+<details>
+<summary>All automatic rules</summary>
+
 | Situation | Result |
 |---|---|
-| Saved management networks disappear | Try normal client connections; the enabled cold spare gets its normal 30-second opportunity. |
+| Saved management networks disappear | Continue trying normal client connections; if the cold spare is enabled, also try it after 30 seconds. This is part of the 10-minute window, not extra time. |
 | Management remains unavailable for 10 minutes | Start the protected AP on the idle selected radio. |
 | Engineer joins | Open the IP shown in Settings, HDMI or FPMS; normal web/SSH authentication still applies. |
 | Management returns | Wait for 60 seconds of stability, then keep the AP while any client is associated. |
 | No clients remain | Wait a further 60 seconds, then stop the AP and return the radio to client use. |
 | A new route overlaps the AP subnet | Stop the owned AP; select another subnet before restarting. |
 | NetworkManager status or client count is unavailable | Preserve existing AP access and report the uncertainty. |
+
+</details>
+
+## How access reaches sensors
+
+```mermaid
+flowchart LR
+    E[Engineer laptop / phone] -->|WPA2 Wi-Fi| A[Rescue AP]
+    A --> W[cmprovision web / SSH]
+    A --> N[Station routing and NAT]
+    N --> S[Ethernet sensors]
+    N --> V[Management VLANs]
+    N --> I[Internet when upstream is available]
+```
 
 The AP is routed, with NetworkManager providing DHCP, DNS and NAT. Engineers can reach attached sensor addresses and routed VLAN networks without adding return routes to sensors. Internet access follows the station's available upstream routes. Layer-2 discovery broadcasts and network boot are not relayed through the AP. IPv6 is disabled on the AP. Other station firewall rules still apply.
 
@@ -64,3 +89,14 @@ sudo /usr/lib/cmprovision/rescue-wifi status
 ```
 
 An encrypted full backup includes the AP configuration and its NetworkManager profile as **network settings**. Migration preserves the destination station's network by default. Explicit network restoration may require selecting replacement radios on different hardware; a missing source MAC prevents activation rather than selecting an arbitrary card. See [full backups](backups.md).
+
+## Updating the figures
+
+The SVGs use the same warm palette as the LED guide. Their generator checks timing and client-retention behavior against the actual policy. Run from the repository root after changing that policy:
+
+```sh
+python docs/diagrams/build_rescue_wifi.py
+python docs/diagrams/build_rescue_wifi.py --check
+```
+
+Open either figure on its own to zoom in. The steps above remain readable text on narrow screens.
