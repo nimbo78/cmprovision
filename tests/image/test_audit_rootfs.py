@@ -2,7 +2,9 @@
 """Check that image export rejects shared credentials and missing startup gates."""
 
 import importlib.util
+from contextlib import closing
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -47,6 +49,11 @@ class RootfsAuditTest(unittest.TestCase):
         self.write('usr/lib/cmprovision/image-firstboot', '#!/bin/sh\nexit 0\n')
         (self.root / 'usr/lib/cmprovision/image-firstboot').chmod(0o755)
         self.write('usr/lib/cmprovision/image-setup-schema', '1\n')
+        self.write('usr/lib/cmprovision/image-setup-capabilities', '2\n')
+        self.web_db = self.root / 'var/lib/cmprovision/database/database.sqlite'
+        self.web_db.parent.mkdir(parents=True)
+        with closing(sqlite3.connect(self.web_db)) as db, db:
+            db.executescript('CREATE TABLE users (id INTEGER); CREATE TABLE first_admin_receipts (id INTEGER);')
         self.write('usr/lib/cmprovision/image-setup', '#!/usr/bin/python3\n')
         (self.root / 'usr/lib/cmprovision/image-setup').chmod(0o755)
 
@@ -128,6 +135,22 @@ class RootfsAuditTest(unittest.TestCase):
 
     def test_build_time_ssh_host_key_is_rejected(self):
         self.write('etc/ssh/ssh_host_ed25519_key', 'not a real key')
+        with self.assertRaises(ValueError):
+            audit.audit(self.root)
+
+    def test_generic_image_rejects_a_web_claim_or_saved_code(self):
+        with closing(sqlite3.connect(self.web_db)) as db, db:
+            db.execute('INSERT INTO first_admin_receipts VALUES (1)')
+        with self.assertRaises(ValueError):
+            audit.audit(self.root)
+        with closing(sqlite3.connect(self.web_db)) as db, db:
+            db.execute('DELETE FROM first_admin_receipts')
+            db.execute('INSERT INTO users VALUES (1)')
+        with self.assertRaises(ValueError):
+            audit.audit(self.root)
+        with closing(sqlite3.connect(self.web_db)) as db, db:
+            db.execute('DELETE FROM users')
+        self.write('var/lib/cmprovision-bootstrap/state.json', '{}')
         with self.assertRaises(ValueError):
             audit.audit(self.root)
 

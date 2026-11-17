@@ -92,6 +92,7 @@ def initialize(app, state, run):
         run(app, 'ssh-host-keys')
         run(app, 'config:clear')
         _verify_application_key(app)
+        run(app, 'first-admin')
         fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         try:
             os.write(fd, b'ready\n')
@@ -111,6 +112,8 @@ def initialize(app, state, run):
 def artisan(app, command):
     if command == 'ssh-host-keys':
         args = ['/usr/bin/ssh-keygen', '-A']
+    elif command == 'first-admin':
+        args = ['/usr/sbin/cmprovision-first-admin', 'image-fresh']
     else:
         args = ['runuser', '-u', 'www-data', '--', 'php', str(app / 'artisan'), command]
         if command == 'key:generate':

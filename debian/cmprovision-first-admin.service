@@ -1,0 +1,13 @@
+[Unit]
+Description=Restore the station first-setup display and finish an interrupted claim
+After=local-fs.target cmprovision-image-firstboot.service
+Before=cmprovision-wallboard.service fpms-lite.service
+ConditionPathExists=/var/lib/cmprovision-bootstrap/state.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/cmprovision-first-admin resume
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -55,9 +55,9 @@ def save(path, value, group=None):
         Path(name).unlink(missing_ok=True)
 
 
-def artisan(payload):
+def artisan(payload, app=Path('/var/lib/cmprovision')):
     proc = subprocess.run(
-        ['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/php', '/var/lib/cmprovision/artisan',
+        ['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/php', str(app / 'artisan'),
          'auth:first-admin-receipt', '--no-interaction'], cwd='/', input=json.dumps(payload).encode(),
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15, check=True,
         env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/var/www', 'LANG': 'C.UTF-8'})

@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 import pwd
 import shutil
+import sys
+import time
 import subprocess
 import tempfile
 import unittest
@@ -21,6 +23,8 @@ spec = importlib.util.spec_from_file_location('image_firstboot', ROOT / 'image/f
 firstboot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(firstboot)
 LARAVEL = os.environ.get('CMP_IMAGE_LARAVEL_SOURCE')
+sys.path.insert(0, str(ROOT / 'tools'))
+import first_admin
 
 
 @unittest.skipUnless(os.geteuid() == 0 and LARAVEL and shutil.which('ssh-keygen') and shutil.which('php'),
@@ -34,7 +38,7 @@ class RealFirstBootTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='cmp-image-real-') as tmp:
             root = Path(tmp)
             root.chmod(0o755)
-            application_keys, ssh_keys = [], []
+            application_keys, ssh_keys, web_codes = [], [], []
             for name in ('a', 'b'):
                 station = root / name
                 station.mkdir(mode=0o755)
@@ -45,16 +49,28 @@ class RealFirstBootTest(unittest.TestCase):
                 env = app / '.env'
                 lines = (ROOT / 'debian/env.example').read_text().splitlines()
                 self.assertEqual(1, sum(line.startswith('APP_KEY=') for line in lines))
-                env.write_text('\n'.join('APP_KEY=' if x.startswith('APP_KEY=') else x for x in lines) + '\n')
+                db = app / 'database/database.sqlite'
+                db.unlink(missing_ok=True)
+                db.touch(mode=0o600)
+                os.chown(db.parent, uid, gid)
+                os.chown(db, uid, gid)
+                env.write_text('\n'.join('APP_KEY=' if x.startswith('APP_KEY=') else
+                    'DB_DATABASE='+str(db) if x.startswith('DB_DATABASE=') else x for x in lines) + '\n')
                 os.chown(env, uid, gid)
                 env.chmod(0o600)
                 subprocess.run(['chown', '-R', 'www-data:www-data', str(app / 'bootstrap/cache'), str(app / 'storage')], check=True)
                 sshroot = station / 'ssh-root'
                 (sshroot / 'etc/ssh').mkdir(parents=True)
+                broker = first_admin.Bootstrap(station/'bootstrap', station/'display',
+                    lambda data: first_admin.artisan(data, app), 0, 0, time.monotonic, 'test-boot')
+                subprocess.run(['runuser', '-u', 'www-data', '--', 'php', str(app/'artisan'), 'migrate', '--force'],
+                               cwd=app, check=True, stdout=subprocess.DEVNULL)
                 def run(path, operation):
                     if operation == 'ssh-host-keys':
                         subprocess.run(['ssh-keygen', '-A', '-f', str(sshroot)], check=True,
                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    elif operation == 'first-admin':
+                        broker.local('fresh')
                     else:
                         firstboot.artisan(path, operation)
                 state = station / 'state'
@@ -66,8 +82,15 @@ class RealFirstBootTest(unittest.TestCase):
                 self.assertEqual(host_key, (sshroot / 'etc/ssh/ssh_host_ed25519_key.pub').read_text())
                 application_keys.append(app_key)
                 ssh_keys.append(host_key)
+                code = broker.local('show')['code']
+                web_codes.append(code)
+                digest = subprocess.check_output(['php', '-r', 'echo password_hash("test-only", PASSWORD_BCRYPT);'], text=True)
+                claim = dict(action='claim', code=code, name='Operator', email='op@example.org', password_hash=digest)
+                self.assertEqual({'state': 'claimed', 'id': 1}, broker.web(claim))
+                self.assertEqual({'state': 'closed'}, broker.web(claim))
             self.assertNotEqual(*application_keys)
             self.assertNotEqual(*ssh_keys)
+            self.assertNotEqual(*web_codes)
 
 
 if __name__ == '__main__':

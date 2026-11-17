@@ -72,6 +72,9 @@ fi
 # the old files into the restored database. Everything is started again at the end.
 stop_readers
 
+# A restored empty database must never reopen first registration.
+if [ -x /usr/sbin/cmprovision-first-admin ]; then /usr/sbin/cmprovision-first-admin close >/dev/null; fi
+
 if [ "$DATA_ONLY" = 1 ]; then
     echo "restoring the data into $APP"
     # only files: tar creates their directories, and the ownership is set below

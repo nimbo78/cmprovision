@@ -1,0 +1,2 @@
+# No arguments. The root-only console entrypoint is separately installed in /usr/sbin.
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/first-admin ""
