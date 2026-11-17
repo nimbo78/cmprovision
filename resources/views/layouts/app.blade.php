@@ -17,6 +17,7 @@
         <script src="{{ asset('js/tab-status.js') }}?v={{ @filemtime(public_path('js/tab-status.js')) }}" defer></script>
         <script src="{{ asset('js/station-updates.js') }}?v={{ @filemtime(public_path('js/station-updates.js')) }}" defer></script>
         <script src="{{ asset('js/station-backups.js') }}?v={{ @filemtime(public_path('js/station-backups.js')) }}" defer></script>
+        <script src="{{ asset('js/station-wizard.js') }}?v={{ @filemtime(public_path('js/station-wizard.js')) }}" defer></script>
 
         @livewireStyles
     </head>

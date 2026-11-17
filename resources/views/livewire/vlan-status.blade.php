@@ -1,4 +1,4 @@
-<x-settings-card title="Tagged VLANs" id="vlan" description="Tagged networks sharing a physical Ethernet port.">
+<x-settings-card title="Tagged VLANs" id="vlan" description="Tagged networks sharing a physical Ethernet port." data-wizard-form data-wizard-editor="{{ $form ? 'open' : 'closed' }}" wire:loading.attr="data-wizard-saving">
     @if ($available && !$form)
         <x-slot name="actions"><button type="button" wire:click="$set('form', true)" class="cmp-btn">Add VLAN</button></x-slot>
     @endif

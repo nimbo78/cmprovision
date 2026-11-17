@@ -84,10 +84,17 @@ class NetworkProfiles
     /** The local primary (.1) or secondary (.2) stand address, when unique and on an active profile. */
     public function stand(?array $profiles): ?array
     {
-        if ($profiles === null) return null;
+        return $this->standState($profiles)['stand'];
+    }
+
+    /** A failed/ambiguous read must not look like a station with provisioning disabled. */
+    public function standState(?array $profiles): array
+    {
+        $unknown = ['known' => false, 'stand' => null];
+        if ($profiles === null) return $unknown;
         $output = $this->call(['timeout', '3', 'ip', '-j', '-4', 'address', 'show']);
         $devices = $output === null ? null : json_decode($output, true);
-        if (!is_array($devices)) return null;
+        if (!is_array($devices)) return $unknown;
         $holders = [];
         foreach ($devices as $device) {
             foreach ($device['addr_info'] ?? [] as $address) {
@@ -96,11 +103,12 @@ class NetworkProfiles
                 }
             }
         }
-        if (count($holders) !== 1) return null;
+        if (!$holders) return ['known' => true, 'stand' => null];
+        if (count($holders) !== 1) return $unknown;
         foreach ($profiles as $profile) {
-            if ($profile['device'] === $holders[0]['device']) return $profile + ['address' => $holders[0]['address']];
+            if ($profile['device'] === $holders[0]['device']) return ['known' => true, 'stand' => $profile + ['address' => $holders[0]['address']]];
         }
-        return null;
+        return $unknown;
     }
 
     public function detail(string $device, string $uuid, bool $saved = false): ?array

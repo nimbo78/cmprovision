@@ -156,6 +156,7 @@ sudo apt install ./cmprovision4_*_all.deb
 | Вывод статуса стенда на HDMI-монитор провижинера | [HDMI-дисплей](docs/ru/hdmi-display.md) |
 | Компактная передняя панель FPMS (preview) | [Дисплей FPMS](docs/ru/fpms-display.md) |
 | Часовой пояс и NTP-серверы провижинера | [Системное время](docs/ru/system-time.md) |
+| Пошагово настроить станцию и её web/SSH-доступ | [Мастер настройки станции](docs/ru/station-setup.md) |
 | Готовый образ станции и подключение через VLAN | [Варианты развёртывания](docs/ru/deployment-options.md) |
 | Задать логин Linux, пароль или SSH-ключи прошиваемой ОС | [SSH-доступ из проекта](docs/ru/image-access.md) |
 | Диагностика модуля по Ethernet и USB fallback | [Диагностика модуля](docs/ru/module-diagnostics.md) |

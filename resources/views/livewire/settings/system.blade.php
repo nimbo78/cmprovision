@@ -1,3 +1,7 @@
+<x-settings-card title="Station setup" id="station-setup" description="Guided network, switch, access, project and stand-role configuration.">
+    <a href="{{ route('settings.setup') }}" class="cmp-btn cmp-btn-secondary">{{ session('station_wizard_step') ? 'Resume station setup' : 'Open setup wizard' }}</a>
+</x-settings-card>
+
 <livewire:station-time-settings />
 
 <livewire:station-access-settings />

@@ -1,6 +1,7 @@
 <x-settings-card title="Station access" id="station-access" description="Your web account and the existing Linux administrator of this provisioner. Sensor accounts are separate."
-    data-wizard-editor="{{ $plan ? 'open' : 'closed' }}">
+    data-wizard-form data-wizard-editor="{{ $plan ? 'open' : 'closed' }}" wire:loading.attr="data-wizard-saving">
     <div x-data x-on:station-access-clear-secrets.window="$el.querySelectorAll('[data-access-secret]').forEach(input => input.value = '')" class="space-y-5">
+        @if (!$plan)<button type="button" class="cmp-btn cmp-btn-secondary cmp-btn-small" wire:click="discardEdits" wire:loading.attr="disabled">Discard unsaved edits</button>@endif
         @if ($notice)<p class="cmp-flash text-sm" role="status">{{ $notice }}</p>@endif
         @if ($error)<p class="cmp-flash text-neg text-sm" role="alert">{{ $error }}</p>@endif
         <form class="space-y-3" x-on:submit.prevent="$wire.saveWeb($refs.webCurrent.value, $refs.webNew.value, $refs.webConfirm.value)">

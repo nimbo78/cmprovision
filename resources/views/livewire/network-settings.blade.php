@@ -1,4 +1,5 @@
-<x-settings-card title="Ethernet and VLAN profiles" id="network-profiles" description="Connections, addressing, DNS and routes.">
+<x-settings-card :title="$section === 'role' ? 'Stand role' : 'Ethernet and VLAN profiles'" id="network-profiles" description="Connections, addressing, DNS and routes."
+    data-wizard-form data-wizard-editor="{{ $device !== null || $roleForm ? 'open' : 'closed' }}" wire:loading.attr="data-wizard-saving">
     <x-slot name="help">
         Changes are temporary until confirmed. If access is lost, the provisioner restores the previous profile automatically.
         The interface carrying the provisioning network is protected and cannot be edited here.
@@ -106,11 +107,11 @@
             <x-confirms-password wire:then="apply"><button type="button" class="cmp-btn" wire:loading.attr="disabled">{{ $editingSaved ? 'Apply and connect temporarily' : 'Apply temporarily' }}</button></x-confirms-password>
             <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="close">Cancel</button>
         </div>
-    @elseif ($profiles === null)
+    @elseif ($section !== 'role' && $profiles === null)
         <p class="text-sm text-fg-muted">NetworkManager information is unavailable.</p>
-    @elseif (!$profiles)
+    @elseif ($section !== 'role' && !$profiles)
         <p class="text-sm text-fg-muted">No active Ethernet or VLAN profiles.</p>
-    @else
+    @elseif ($section !== 'role')
         <div class="cmp-card-scroll"><table class="cmp-table">
             <thead><tr><th>Interface</th><th>Type</th><th>Profile</th><th></th></tr></thead>
             <tbody>
@@ -129,7 +130,7 @@
             </tbody>
         </table></div>
     @endif
-    @if ($available && !$statusError && !($pending['pending'] ?? false) && $device === null && $savedProfiles !== null)
+    @if ($section !== 'role' && $available && !$statusError && !($pending['pending'] ?? false) && $device === null && $savedProfiles !== null)
         @php($inactiveProfiles = collect($savedProfiles)->reject(fn ($p) => in_array($p['uuid'], array_column($profiles ?? [], 'uuid'), true)))
         @if ($inactiveProfiles->isNotEmpty())
             <div class="border-t border-pline mt-4 pt-4">
@@ -174,7 +175,7 @@
             @error('name') <p class="text-neg text-sm">{{ $message }}</p> @enderror
         </div>
     @endif
-    @if ($available && !$statusError && !($pending['pending'] ?? false) && $device === null && $stand !== null)
+    @if ($section !== 'management' && $available && !$statusError && !($pending['pending'] ?? false) && $device === null && $stand !== null)
         <div class="border-t border-pline mt-4 pt-4">
             <h3 class="font-bold">Provisioning network</h3>
             <p class="text-sm text-fg-muted mt-1 mb-3">{{ $stand['address'] }}/16 is on {{ $stand['device'] }}. Move it to another active interface on the same Ethernet port. Configure the corresponding tagged or untagged VLAN on the switch first.</p>
@@ -193,7 +194,7 @@
             <p class="text-sm text-fg-muted mt-2">DHCP/TFTP stays enabled or disabled as it was. Confirm the move after checking connectivity; otherwise it rolls back.</p>
         </div>
     @endif
-    @if ($available && !$statusError && !($pending['pending'] ?? false) && $device === null)
+    @if ($section !== 'management' && $available && !$statusError && !($pending['pending'] ?? false) && $device === null)
         <div class="border-t border-pline mt-4 pt-4">
             @if (!$roleForm)
                 <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="prepareStand" wire:loading.attr="disabled">Configure station role</button>
@@ -229,6 +230,7 @@
             @endif
         </div>
     @endif
+    @if ($section !== 'management')
     <div id="reprovision-primary" class="border-t border-pline mt-4 pt-4">
         <h3 class="font-bold mb-2">Current primary web address</h3>
         <p class="text-sm text-fg-muted mb-3">Optional on a secondary station: Re-provision opens this server, which supplies its active project at the next network boot. This does not change roles or enable DHCP/TFTP.</p>
@@ -239,4 +241,5 @@
         </div>
         @error('primaryWebUrl') <p class="text-neg text-sm mt-2">{{ $message }}</p> @enderror
     </div>
+    @endif
 </x-settings-card>

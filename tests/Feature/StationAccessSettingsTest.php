@@ -79,4 +79,14 @@ class StationAccessSettingsTest extends TestCase
         Livewire::test(StationAccessSettings::class)->set('linuxUser', 'operator')->call('prepareSsh', 'new-password12', '')
             ->assertSee('The local Linux password record is unavailable.')->assertDontSee('SSH access updated.');
     }
+
+    public function test_discarding_unsaved_fields_restores_the_account_without_changing_it(): void
+    {
+        $this->controller();
+        $user = User::factory()->create();
+        $this->actingAs($user);
+        Livewire::test(StationAccessSettings::class)->set('name', 'Unsaved name')->set('enableSsh', true)
+            ->call('discardEdits')->assertSet('name', $user->name)->assertSet('enableSsh', false)->assertDispatched('station-wizard-saved');
+        $this->assertSame($user->name, $user->fresh()->name);
+    }
 }

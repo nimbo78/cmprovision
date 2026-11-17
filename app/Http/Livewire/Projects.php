@@ -25,6 +25,7 @@ use App\Services\Configuration\Definitions;
 #[Title('Projects')]
 class Projects extends Component
 {
+    #[Locked] public bool $embedded = false;
     use SortsColumns;
     use \App\Http\Livewire\Concerns\CreatesWithWizard;
     use \Laravel\Jetstream\ConfirmsPasswords;

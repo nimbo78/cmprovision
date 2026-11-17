@@ -1,7 +1,7 @@
-<div class="cmp-page">
+<div class="{{ $embedded ? 'space-y-4' : 'cmp-page' }}" data-wizard-form data-wizard-editor="{{ $isOpen ? 'open' : 'closed' }}" wire:loading.attr="data-wizard-saving">
     <div class="contents">
         <div class="cmp-title">
-            <h1>Projects</h1>
+            @if ($embedded)<h2 class="font-bold">Provisioning projects</h2>@else<h1>Projects</h1>@endif
             <div class="flex flex-wrap items-center gap-2 ml-auto">
                 <button type="button" wire:click="createWizard" class="cmp-btn">Create with wizard</button>
                 <button wire:click="create()" class="cmp-btn cmp-btn-secondary">Add project</button>

@@ -152,6 +152,7 @@ The [upgrade and restore guide](docs/upgrading.md) covers snapshots, rollback, P
 | Task | Guide |
 | --- | --- |
 | Tour every tab, theme and UI mode | [Screenshot gallery](docs/gallery.md) |
+| Configure a station step by step, including web/SSH access | [Station setup wizard](docs/station-setup.md) |
 | First-boot checks, packages and scripts | [OS check](docs/operations.md#first-boot-os-check) |
 | Fetch an image from GitHub, Raspberry Pi OS or a link | [Images from the internet](docs/operations.md#images-from-the-internet) |
 | Interrupted downloads and power loss | [Image recovery](docs/operations.md#image-download-and-write-recovery) |

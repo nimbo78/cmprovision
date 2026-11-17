@@ -1,7 +1,7 @@
 @php($input = 'cmp-field w-full')
 @php($label = 'block text-fg text-sm font-bold mb-2')
 @php($small = 'cmp-btn cmp-btn-secondary cmp-btn-small')
-<x-settings-card title="Wi-Fi networks" id="wifi" description="The networks the provisioner connects to, the preferred first.">
+<x-settings-card title="Wi-Fi networks" id="wifi" description="The networks the provisioner connects to, the preferred first." data-wizard-form data-wizard-editor="{{ $form ? 'open' : 'closed' }}" wire:loading.attr="data-wizard-saving">
     @if ($available && !$form)
         <x-slot name="actions">
             <button type="button" wire:click="showLog" class="cmp-btn cmp-btn-secondary">Changes log</button>

@@ -27,9 +27,11 @@ class NetworkSettings extends Component
     #[Locked] public $importSource = null;
     public $importTarget = '';
     public string $primaryWebUrl = '';
+    #[Locked] public string $section = 'all';
 
-    public function mount(): void
+    public function mount(string $section = 'all'): void
     {
+        $this->section = in_array($section, ['all', 'management', 'role'], true) ? $section : 'all';
         $this->primaryWebUrl = (string) \App\Models\Setting::find('reprovision_primary_url')?->value;
         $source = session('configuration_transfer_draft');
         if (is_array($source) && isset($source['operation'], $source['ref'])) {
@@ -51,6 +53,7 @@ class NetworkSettings extends Component
         if ($origin === '') \App\Models\Setting::whereKey('reprovision_primary_url')->delete();
         else \App\Models\Setting::updateOrCreate(['key'=>'reprovision_primary_url'],['value'=>$origin]);
         $this->primaryWebUrl = $origin;
+        $this->dispatch('station-wizard-saved');
         $this->flash('Current primary web address saved. Network roles and boot services were not changed.');
     }
 
@@ -152,6 +155,7 @@ class NetworkSettings extends Component
         $this->uuid = null;
         $this->editingSaved = false;
         $this->resetErrorBag();
+        $this->dispatch('station-wizard-saved');
     }
 
     public function apply(): void
@@ -236,7 +240,7 @@ class NetworkSettings extends Component
         $result = app(NetworkChanges::class)->createProfile($this->newDevice, $this->newProfileName);
         $this->flash(($result['ok'] ?? false) ? 'Profile created and left disconnected. Edit it to configure addresses and connect.'
             : ($result['error'] ?? 'Could not create profile.'), !($result['ok'] ?? false));
-        if ($result['ok'] ?? false) $this->newProfileName = '';
+        if ($result['ok'] ?? false) { $this->newProfileName = ''; $this->dispatch('station-wizard-saved'); }
     }
 
     public function deleteProfile(string $uuid): void
@@ -274,6 +278,10 @@ class NetworkSettings extends Component
     public function configureStand(): void
     {
         $this->ensurePasswordIsConfirmed();
+        if ($this->section === 'role' && $this->stationRole === 'primary' && !app(\App\Services\StationWizardState::class)->projectReady()['ready']) {
+            $this->flash('Prepare and activate a ready project before enabling the primary station.', true);
+            return;
+        }
         Validator::make(['role' => $this->stationRole, 'usb' => $this->standUsb, 'isolated' => $this->standIsolated], [
             'role' => 'required|in:primary,secondary,disabled', 'usb' => 'required|boolean', 'isolated' => 'required|boolean',
         ])->validate();

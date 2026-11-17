@@ -11,11 +11,11 @@ class StationAccessControl
 
     public function available(): bool { return is_file(self::HELPER); }
     public function status(): array { return $this->request(['action' => 'status']); }
-    public function prepare(array $input): array { return $this->request(['action' => 'prepare'] + array_intersect_key($input, array_flip(['user', 'password', 'keys', 'enable_ssh']))); }
-    public function apply(string $id, string $code): array { return $this->request(['action' => 'apply', 'id' => $id, 'code' => $code]); }
+    public function prepare(#[\SensitiveParameter] array $input): array { return $this->request(['action' => 'prepare'] + array_intersect_key($input, array_flip(['user', 'password', 'keys', 'enable_ssh']))); }
+    public function apply(string $id, #[\SensitiveParameter] string $code): array { return $this->request(['action' => 'apply', 'id' => $id, 'code' => $code]); }
     public function cancel(string $id): array { return $this->request(['action' => 'cancel', 'id' => $id]); }
 
-    protected function request(array $input): array
+    protected function request(#[\SensitiveParameter] array $input): array
     {
         if (!$this->available()) return ['ok' => false, 'error' => 'Station SSH access control is unavailable. Use the existing SSH session or local console.'];
         $process = new Process(['sudo', '-n', self::HELPER]);

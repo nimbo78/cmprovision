@@ -1,5 +1,7 @@
 # Illustrated guide assets
 
+`station-setup.png` shows the station wizard Overview at 1440 px, using an isolated demonstration database and the real Blade/Livewire page. Network and SSH controllers are test doubles for this capture; no station or credentials were changed. Captured for 2.30.4.
+
 These captures show the actual cmprovision UI using a disposable local database. The USB and transfer captures come from the configuration-transfer implementation (b271451); the image-access capture comes from its SSH-access follow-up. The EEPROM and image fixtures are demo data; no hardware was flashed. UI labels remain English in both guide languages; captions and diagrams are localized.
 
 - `usb-prep-start.png` and `usb-prep-ready.png`: Dashboard tile at a narrow viewport.

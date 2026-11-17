@@ -14,6 +14,7 @@ import time
 import uuid
 
 from acceptance_version import candidate_version
+from acceptance_wait import wait_worker_idle
 
 sys.path.insert(0, '/usr/lib/cmprovision')
 from update_manifest import UpdateError, canonical_bytes
@@ -185,6 +186,8 @@ def run():
         time.sleep(2)
     assert result['state'] == 'rolled-back', result
     assert not store.snapshot()['pending']
+    # A terminal record precedes final pruning. Do not race the retained recovery worker.
+    wait_worker_idle(lambda: store.lock('worker', blocking=False), UpdateError)
     assert system.package('cmprovision4') == original
     assert Path('/etc/cmprovision-updates/publisher.pub').read_bytes() == public.read_bytes()
     print('PASS: interrupted real install recovered through retained Python runner despite damaged live helper/key.')

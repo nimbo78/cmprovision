@@ -41,7 +41,7 @@ class StationAccessSettings extends Component
         if ($this->linuxUser === '') $this->linuxUser = $this->status['users'][0]['user'] ?? '';
     }
 
-    public function saveWeb(string $current = '', string $password = '', string $confirmation = ''): void
+    public function saveWeb(#[\SensitiveParameter] string $current = '', #[\SensitiveParameter] string $password = '', #[\SensitiveParameter] string $confirmation = ''): void
     {
         abort_unless(auth()->check(), 403);
         $this->resetValidation(); $this->error = $this->notice = null;
@@ -64,7 +64,7 @@ class StationAccessSettings extends Component
         } finally { $this->dispatch('station-access-clear-secrets'); }
     }
 
-    public function prepareSsh(string $password = '', string $keys = ''): void
+    public function prepareSsh(#[\SensitiveParameter] string $password = '', #[\SensitiveParameter] string $keys = ''): void
     {
         $this->ensurePasswordIsConfirmed();
         $this->error = $this->notice = null;
@@ -77,7 +77,7 @@ class StationAccessSettings extends Component
         } finally { $this->dispatch('station-access-clear-secrets'); }
     }
 
-    public function applySsh(string $code = ''): void
+    public function applySsh(#[\SensitiveParameter] string $code = ''): void
     {
         $this->ensurePasswordIsConfirmed();
         if ($this->plan === null) { $this->error = 'Prepare an SSH access request first.'; return; }
@@ -98,6 +98,16 @@ class StationAccessSettings extends Component
             if (!($result['ok'] ?? false)) { $this->error = $result['error'] ?? 'Could not cancel the request.'; return; }
         }
         $this->plan = null; session()->forget('station_access_request');
+        $this->dispatch('station-access-clear-secrets'); $this->dispatch('station-wizard-saved');
+    }
+
+    public function discardEdits(): void
+    {
+        abort_unless(auth()->check(), 403);
+        if ($this->plan) { $this->error = 'Apply or cancel the prepared SSH request first.'; return; }
+        $this->name = auth()->user()->fresh()->name; $this->email = auth()->user()->fresh()->email;
+        $this->enableSsh = false; $this->error = $this->notice = null;
+        $this->resetValidation();
         $this->dispatch('station-access-clear-secrets'); $this->dispatch('station-wizard-saved');
     }
 
