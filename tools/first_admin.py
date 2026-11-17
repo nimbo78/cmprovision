@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import re
 import secrets
+import select
+import signal
 import socket
 import stat
 import subprocess
@@ -57,14 +59,40 @@ def save(path, value, group=None):
 
 
 def artisan(payload, app=Path('/var/lib/cmprovision')):
-    proc = subprocess.run(
-        ['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/php', str(app / 'artisan'),
-         'auth:first-admin-receipt', '--no-interaction'], cwd='/', input=json.dumps(payload).encode(),
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15, check=True,
-        env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/var/www', 'LANG': 'C.UTF-8'})
-    if len(proc.stdout) > 256:
-        raise ValueError('Invalid database response')
-    return json.loads(proc.stdout)
+    return bounded_reply(['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/php', str(app / 'artisan'),
+                          'auth:first-admin-receipt', '--no-interaction'], payload)
+
+
+def bounded_reply(args, payload, timeout=15):
+    # The unprivileged command may keep the pipe open after writing its reply.
+    deadline = time.monotonic() + timeout
+    with os.fdopen(os.memfd_create('first-admin-request'), 'w+b') as request:
+        request.write(json.dumps(payload).encode())
+        request.seek(0)
+        with subprocess.Popen(args, cwd='/', stdin=request, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              start_new_session=True, env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin',
+                              'HOME': '/var/www', 'LANG': 'C.UTF-8'}) as proc:
+            output = bytearray()
+            try:
+                while len(output) <= 256:
+                    if not select.select([proc.stdout], [], [], max(0, deadline - time.monotonic()))[0]:
+                        raise TimeoutError('Database response timed out')
+                    chunk = os.read(proc.stdout.fileno(), 257 - len(output))
+                    if not chunk:
+                        if proc.wait(timeout=max(0, deadline - time.monotonic())) != 0:
+                            raise ValueError('Database command failed')
+                        reply = json.loads(output)
+                        if not isinstance(reply, dict):
+                            raise ValueError('Invalid database response')
+                        return reply
+                    output.extend(chunk)
+                raise ValueError('Invalid database response')
+            finally:
+                if proc.returncode is None:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
 
 
 class Bootstrap:
@@ -90,7 +118,7 @@ class Bootstrap:
             except FileNotFoundError:
                 state = {'state': 'missing'}
             else:
-                if not isinstance(state, dict) or state.get('state') not in ('armed', 'claiming', 'closed'):
+                if not isinstance(state, dict) or state.get('state') not in ('installing', 'armed', 'claiming', 'closed'):
                     raise ValueError('Invalid bootstrap state')
                 if state['state'] == 'armed' and not re.fullmatch('[A-Z2-7]{16}', state.get('code', '')):
                     raise ValueError('Invalid bootstrap code')
@@ -148,10 +176,18 @@ class Bootstrap:
         return result
 
     def local(self, action, seed=None, expected=None):
-        if action not in ('fresh', 'upgrade', 'resume', 'close', 'show', 'rotate'):
+        if action not in ('begin-install', 'fresh', 'upgrade', 'resume', 'close', 'show', 'rotate'):
             raise ValueError('Unsupported operation')
         with self.locked() as state:
             phase = state['state']
+            if action == 'begin-install':
+                if phase == 'missing':
+                    save(self.root / 'state.json', {'state': 'installing'})
+                return {'state': 'closed'}
+            if phase == 'installing' and action != 'close':
+                if action not in ('fresh', 'upgrade'):
+                    return {'state': 'closed'}
+                phase, action = 'missing', 'fresh'
             if action == 'close' or (phase == 'missing' and action == 'upgrade'):
                 return self.close()
             if phase == 'claiming':
@@ -220,8 +256,10 @@ class Bootstrap:
 def main(local=False):
     if os.geteuid() != 0 or len(sys.argv) != (2 if local else 1):
         raise ValueError('Invalid invocation')
+    # On the first dpkg configure the display group is created after recording install intent.
+    display_gid = None if local and sys.argv[1] == 'begin-install' else grp.getgrnam('cmprovision-wallboard').gr_gid
     broker = Bootstrap(Path('/var/lib/cmprovision-bootstrap'), Path('/run/cmprovision-bootstrap'),
-                       artisan, 0, grp.getgrnam('cmprovision-wallboard').gr_gid, time.monotonic,
+                       artisan, 0, display_gid, time.monotonic,
                        Path('/proc/sys/kernel/random/boot_id').read_text().strip())
     if local:
         action = sys.argv[1]

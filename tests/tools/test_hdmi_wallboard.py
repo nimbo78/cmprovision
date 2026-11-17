@@ -312,6 +312,16 @@ class ReaderTest(unittest.TestCase):
 
 
 class WatcherTest(unittest.TestCase):
+    def test_setup_card_wakes_disabled_hdmi_without_revealing_rescue_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            card = Path(directory) / 'display.json'
+            card.touch()
+            with patch.object(w, 'FIRST_ADMIN', card), patch.object(w.AutomaticRescueQr, 'poll') as poll:
+                calls, _ = self.drive([True]*10, ticks=2, mode='off')
+                self.assertIn(('start',), calls)
+                self.assertTrue(poll.called)
+                self.assertTrue(all(call.args == (False,) for call in poll.call_args_list))
+
     def drive(self, readings, start_ok=(), ticks=12, mode='auto'):
         """Run the watcher for some ticks of a fake clock; returns (systemctl calls, console-switch flag seen at each start)."""
         calls, seen, active, clock = [], [], [False], [0.0]

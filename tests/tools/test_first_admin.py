@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
@@ -119,3 +120,21 @@ class FirstAdminTest(unittest.TestCase):
         with self.assertRaises(OSError):
             self.broker.local('fresh')
         self.assertFalse((self.base / 'untouched').exists())
+
+    def test_first_package_configuration_recovers_after_migration_was_interrupted(self):
+        self.broker.local('begin-install')
+        self.assertEqual({'state': 'closed'}, self.broker.web({'action': 'status'}))
+        self.assertEqual({'state': 'closed'}, self.broker.local('resume'))
+        self.assertEqual({'state': 'armed'}, self.broker.local('upgrade'))
+        code = self.broker.local('show')['code']
+        self.assertEqual({'state': 'claimed', 'id': 1}, self.submit(code))
+        self.broker.local('begin-install')
+        self.assertEqual({'state': 'closed'}, self.broker.local('upgrade'))
+
+    def test_database_reply_is_bounded_even_when_the_writer_keeps_its_pipe_open(self):
+        from first_admin import bounded_reply
+        started = time.monotonic()
+        worker = [sys.executable, '-c', "import sys,time; sys.stdout.write('x'*300); sys.stdout.flush(); time.sleep(8)"]
+        with self.assertRaises(ValueError):
+            bounded_reply(worker, {}, timeout=4)
+        self.assertLess(time.monotonic()-started, 3)

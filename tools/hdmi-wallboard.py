@@ -135,7 +135,7 @@ def watch():
                 if count >= DEBOUNCE:
                     connected, count = reading, 0
             desired = wanted(config, connected, FIRST_ADMIN.is_file())
-            rescue_qr.poll(desired)
+            rescue_qr.poll(wanted(config, connected))
             now = time.monotonic()
             if desired != active or now - last_check >= 10:
                 active = systemctl('is-active', '--quiet')
