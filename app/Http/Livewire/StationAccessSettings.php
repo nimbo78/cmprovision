@@ -60,8 +60,8 @@ class StationAccessSettings extends Component
             session()->put('password_hash_web', auth()->guard('web')->hashPasswordForCookie(auth()->user()->getAuthPassword()));
             session()->put('auth.password_confirmed_at', time());
             $this->notice = 'Web account saved.';
-            $this->dispatch('station-wizard-saved');
-        } finally { $this->dispatch('station-access-clear-secrets'); }
+            $this->dispatch('station-wizard-saved', scope: 'station-web-access-form');
+        } finally { $this->dispatch('station-access-clear-secrets', scope: 'web'); }
     }
 
     public function prepareSsh(#[\SensitiveParameter] string $password = '', #[\SensitiveParameter] string $keys = ''): void
@@ -74,7 +74,7 @@ class StationAccessSettings extends Component
             if (!($result['ok'] ?? false)) { $this->error = $result['error'] ?? 'Could not prepare SSH access.'; return; }
             $this->plan = $result['result'];
             session()->put('station_access_request', $this->plan['id']);
-        } finally { $this->dispatch('station-access-clear-secrets'); }
+        } finally { $this->dispatch('station-access-clear-secrets', scope: 'ssh'); }
     }
 
     public function applySsh(#[\SensitiveParameter] string $code = ''): void
@@ -82,12 +82,12 @@ class StationAccessSettings extends Component
         $this->ensurePasswordIsConfirmed();
         if ($this->plan === null) { $this->error = 'Prepare an SSH access request first.'; return; }
         $result = app(StationAccessControl::class)->apply($this->plan['id'], $code);
-        $this->dispatch('station-access-clear-secrets');
+        $this->dispatch('station-access-clear-secrets', scope: 'ssh');
         if (!($result['ok'] ?? false)) { $this->error = $result['error'] ?? 'Could not update SSH access.'; return; }
         $this->error = null;
         $this->notice = 'SSH access updated. '.implode('. ', $result['result']['applied'] ?? []);
         $this->plan = null; session()->forget('station_access_request');
-        $this->dispatch('station-wizard-saved');
+        $this->dispatch('station-wizard-saved', scope: 'station-ssh-access-form');
     }
 
     public function cancelSsh(): void
@@ -98,17 +98,32 @@ class StationAccessSettings extends Component
             if (!($result['ok'] ?? false)) { $this->error = $result['error'] ?? 'Could not cancel the request.'; return; }
         }
         $this->plan = null; session()->forget('station_access_request');
-        $this->dispatch('station-access-clear-secrets'); $this->dispatch('station-wizard-saved');
+        $this->dispatch('station-access-clear-secrets', scope: 'ssh'); $this->dispatch('station-wizard-saved', scope: 'station-ssh-access-form');
     }
 
     public function discardEdits(): void
     {
         abort_unless(auth()->check(), 403);
         if ($this->plan) { $this->error = 'Apply or cancel the prepared SSH request first.'; return; }
+        $this->discardWeb(); $this->discardSsh();
+    }
+
+    public function discardWeb(): void
+    {
+        abort_unless(auth()->check(), 403);
         $this->name = auth()->user()->fresh()->name; $this->email = auth()->user()->fresh()->email;
-        $this->enableSsh = false; $this->error = $this->notice = null;
+        $this->error = $this->notice = null;
         $this->resetValidation();
-        $this->dispatch('station-access-clear-secrets'); $this->dispatch('station-wizard-saved');
+        $this->dispatch('station-access-clear-secrets', scope: 'web'); $this->dispatch('station-wizard-saved', scope: 'station-web-access-form');
+    }
+
+    public function discardSsh(): void
+    {
+        abort_unless(auth()->check(), 403);
+        if ($this->plan) { $this->error = 'Apply or cancel the prepared SSH request first.'; return; }
+        $this->linuxUser = $this->status['users'][0]['user'] ?? '';
+        $this->enableSsh = false; $this->error = $this->notice = null;
+        $this->dispatch('station-access-clear-secrets', scope: 'ssh'); $this->dispatch('station-wizard-saved', scope: 'station-ssh-access-form');
     }
 
     public function render() { return view('livewire.station-access-settings'); }

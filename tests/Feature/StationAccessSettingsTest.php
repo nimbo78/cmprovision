@@ -89,4 +89,29 @@ class StationAccessSettingsTest extends TestCase
             ->call('discardEdits')->assertSet('name', $user->name)->assertSet('enableSsh', false)->assertDispatched('station-wizard-saved');
         $this->assertSame($user->name, $user->fresh()->name);
     }
+
+    public function test_web_save_and_validation_failure_clear_only_web_secrets(): void
+    {
+        $this->controller();
+        $this->actingAs(User::factory()->create(['password' => Hash::make('current-web-password')]));
+        Livewire::test(StationAccessSettings::class)->call('saveWeb', 'wrong', '', '')
+            ->assertHasErrors('current_password')->assertDispatched('station-access-clear-secrets', scope: 'web')
+            ->assertNotDispatched('station-wizard-saved');
+        Livewire::test(StationAccessSettings::class)->call('saveWeb', 'current-web-password', '', '')
+            ->assertHasNoErrors()->assertDispatched('station-access-clear-secrets', scope: 'web')
+            ->assertDispatched('station-wizard-saved', scope: 'station-web-access-form');
+    }
+
+    public function test_ssh_prepare_success_and_failure_clear_only_ssh_secrets(): void
+    {
+        $control = $this->controller();
+        $control->method('prepare')->willReturnOnConsecutiveCalls(
+            ['ok' => false, 'error' => 'Invalid keys'],
+            ['ok' => true, 'result' => ['id' => str_repeat('a',32), 'user' => 'operator', 'changes' => ['Enable SSH service'], 'state' => 'awaiting_approval', 'expires_at' => time()+300]]
+        );
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        $page = Livewire::test(StationAccessSettings::class)->set('linuxUser','operator');
+        $page->call('prepareSsh','secret-password','')->assertDispatched('station-access-clear-secrets', scope: 'ssh');
+        $page->call('prepareSsh','secret-password','')->assertDispatched('station-access-clear-secrets', scope: 'ssh');
+    }
 }

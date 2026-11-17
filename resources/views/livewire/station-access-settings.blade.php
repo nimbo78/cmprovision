@@ -1,21 +1,21 @@
 <x-settings-card title="Station access" id="station-access" description="Your web account and the existing Linux administrator of this provisioner. Sensor accounts are separate."
-    data-wizard-form data-wizard-editor="{{ $plan ? 'open' : 'closed' }}" wire:loading.attr="data-wizard-saving">
-    <div x-data x-on:station-access-clear-secrets.window="$el.querySelectorAll('[data-access-secret]').forEach(input => input.value = '')" class="space-y-5">
-        @if (!$plan)<button type="button" class="cmp-btn cmp-btn-secondary cmp-btn-small" wire:click="discardEdits" wire:loading.attr="disabled">Discard unsaved edits</button>@endif
+    wire:loading.attr="data-wizard-saving">
+    <div x-data x-on:station-access-clear-secrets.window="$el.querySelectorAll('[data-access-secret]').forEach(input => { if (input.dataset.accessSecret === $event.detail.scope) input.value = '' })" class="space-y-5">
         @if ($notice)<p class="cmp-flash text-sm" role="status">{{ $notice }}</p>@endif
         @if ($error)<p class="cmp-flash text-neg text-sm" role="alert">{{ $error }}</p>@endif
-        <form class="space-y-3" x-on:submit.prevent="$wire.saveWeb($refs.webCurrent.value, $refs.webNew.value, $refs.webConfirm.value)">
+        <form id="station-web-access-form" data-wizard-form data-wizard-editor="closed" class="space-y-3" x-on:submit.prevent="$wire.saveWeb($refs.webCurrent.value, $refs.webNew.value, $refs.webConfirm.value)">
             <h3 class="font-bold">Current web account</h3>
             <div class="grid gap-3 sm:grid-cols-2">
                 <div><label for="access-name" class="block text-sm mb-1">Name</label><input id="access-name" wire:model="name" class="cmp-field w-full" maxlength="255">@error('name')<p class="text-neg text-sm">{{ $message }}</p>@enderror</div>
                 <div><label for="access-email" class="block text-sm mb-1">Sign-in email</label><input id="access-email" type="email" wire:model="email" class="cmp-field w-full" maxlength="255">@error('email')<p class="text-neg text-sm">{{ $message }}</p>@enderror</div>
-                <div><label for="access-current" class="block text-sm mb-1">Current web password</label><input id="access-current" x-ref="webCurrent" data-access-secret type="password" autocomplete="current-password" class="cmp-field w-full">@error('current_password')<p class="text-neg text-sm">{{ $message }}</p>@enderror</div>
-                <div><label for="access-new" class="block text-sm mb-1">New web password (optional)</label><input id="access-new" x-ref="webNew" data-access-secret type="password" autocomplete="new-password" class="cmp-field w-full">@error('password')<p class="text-neg text-sm">{{ $message }}</p>@enderror</div>
-                <div><label for="access-confirm" class="block text-sm mb-1">Confirm new web password</label><input id="access-confirm" x-ref="webConfirm" data-access-secret type="password" autocomplete="new-password" class="cmp-field w-full"></div>
+                <div><label for="access-current" class="block text-sm mb-1">Current web password</label><input id="access-current" x-ref="webCurrent" data-access-secret="web" type="password" autocomplete="current-password" class="cmp-field w-full">@error('current_password')<p class="text-neg text-sm">{{ $message }}</p>@enderror</div>
+                <div><label for="access-new" class="block text-sm mb-1">New web password (optional)</label><input id="access-new" x-ref="webNew" data-access-secret="web" type="password" autocomplete="new-password" class="cmp-field w-full">@error('password')<p class="text-neg text-sm">{{ $message }}</p>@enderror</div>
+                <div><label for="access-confirm" class="block text-sm mb-1">Confirm new web password</label><input id="access-confirm" x-ref="webConfirm" data-access-secret="web" type="password" autocomplete="new-password" class="cmp-field w-full"></div>
             </div>
             <button type="submit" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled"><span wire:loading.remove wire:target="saveWeb">Save web account</span><span wire:loading wire:target="saveWeb">Saving…</span></button>
+            <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="discardWeb" wire:loading.attr="disabled">Discard web edits</button>
         </form>
-        <div class="border-t border-line pt-4 space-y-3">
+        <div id="station-ssh-access-form" data-wizard-form data-wizard-editor="{{ $plan ? 'open' : 'closed' }}" class="border-t border-line pt-4 space-y-3">
             <h3 class="font-bold">Linux / SSH access</h3>
             <p class="text-sm text-fg-muted">Existing users, SSH keys and sudo policy are retained. Keep your current SSH session open until you have tested a new login.</p>
             @if (!$status)
@@ -29,7 +29,7 @@
                     <p class="text-sm text-fg-muted">Review the request in that terminal. Its one-time code lasts up to two minutes. The prepared request expires after five minutes.</p>
                     <form x-on:submit.prevent="$el.querySelector('[data-access-apply]').click()" class="space-y-2">
                         <label for="access-code" class="block text-sm">One-time authorization code</label>
-                        <input id="access-code" x-ref="accessCode" data-access-secret class="cmp-field mono w-full" maxlength="64" autocomplete="one-time-code" placeholder="ABCD-EFGH-IJKL">
+                        <input id="access-code" x-ref="accessCode" data-access-secret="ssh" class="cmp-field mono w-full" maxlength="64" autocomplete="one-time-code" placeholder="ABCD-EFGH-IJKL">
                         <div class="flex flex-wrap gap-2"><x-confirms-password wire:then="applySsh($refs.accessCode.value)"><button type="button" data-access-apply class="cmp-btn" wire:loading.attr="disabled">Apply SSH changes</button></x-confirms-password>
                             <x-confirms-password wire:then="cancelSsh"><button type="button" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Cancel request</button></x-confirms-password>
                             <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="refreshStatus" wire:loading.attr="disabled">Refresh</button></div>
@@ -40,11 +40,12 @@
                     <div><label for="access-linux-user" class="block text-sm mb-1">Existing Linux administrator</label><select id="access-linux-user" wire:model="linuxUser" class="cmp-field w-full">
                         <option value="">Choose an administrator</option>@foreach ($status['users'] ?? [] as $user)<option value="{{ $user['user'] }}">{{ $user['user'] }}</option>@endforeach
                     </select></div>
-                    <div><label for="access-linux-password" class="block text-sm mb-1">New Linux password (optional)</label><input id="access-linux-password" x-ref="linuxPassword" data-access-secret type="password" autocomplete="new-password" minlength="8" maxlength="256" class="cmp-field w-full"></div>
-                    <div><label for="access-linux-keys" class="block text-sm mb-1">Add SSH public keys (optional)</label><textarea id="access-linux-keys" x-ref="linuxKeys" data-access-secret rows="3" maxlength="16384" spellcheck="false" class="cmp-field mono w-full" placeholder="ssh-ed25519 AAAA…"></textarea></div>
+                    <div><label for="access-linux-password" class="block text-sm mb-1">New Linux password (optional)</label><input id="access-linux-password" x-ref="linuxPassword" data-access-secret="ssh" type="password" autocomplete="new-password" minlength="8" maxlength="256" class="cmp-field w-full"></div>
+                    <div><label for="access-linux-keys" class="block text-sm mb-1">Add SSH public keys (optional)</label><textarea id="access-linux-keys" x-ref="linuxKeys" data-access-secret="ssh" rows="3" maxlength="16384" spellcheck="false" class="cmp-field mono w-full" placeholder="ssh-ed25519 AAAA…"></textarea></div>
                     <label class="flex gap-2 items-center text-sm"><input type="checkbox" wire:model="enableSsh">Enable SSH service</label>
                     <p class="text-sm text-fg-muted">SSH service: {{ ($status['ssh_active'] ?? false) ? 'running' : 'inactive' }}. Global SSH authentication rules are preserved; changing a Linux password does not override a disabled SSH password login.</p>
                     <x-confirms-password wire:then="prepareSsh($refs.linuxPassword.value, $refs.linuxKeys.value)"><button type="button" data-ssh-prepare class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled"><span wire:loading.remove wire:target="prepareSsh">Review SSH changes</span><span wire:loading wire:target="prepareSsh">Preparing…</span></button></x-confirms-password>
+                    <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="discardSsh" wire:loading.attr="disabled">Discard SSH edits</button>
                 </form>
             @endif
         </div>

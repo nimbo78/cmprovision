@@ -1,5 +1,5 @@
 <x-settings-card :title="$section === 'role' ? 'Stand role' : 'Ethernet and VLAN profiles'" id="network-profiles" description="Connections, addressing, DNS and routes."
-    data-wizard-form data-wizard-editor="{{ $device !== null || $roleForm ? 'open' : 'closed' }}" wire:loading.attr="data-wizard-saving">
+    wire:loading.attr="data-wizard-saving">
     <x-slot name="help">
         Changes are temporary until confirmed. If access is lost, the provisioner restores the previous profile automatically.
         The interface carrying the provisioning network is protected and cannot be edited here.
@@ -8,7 +8,7 @@
         <div class="rounded px-4 py-2 mb-4 text-sm {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $notice }}</div>
     @endif
     @if ($importedDraft && $available)
-        <div class="border border-pline rounded p-3 mb-4">
+        <div id="network-import-form" data-wizard-form data-wizard-editor="closed" class="border border-pline rounded p-3 mb-4">
             <h3 class="font-bold">Imported network draft: {{ $importedDraft['data']['name'] }}</h3>
             <p class="text-sm text-fg-muted my-2">Receiving interface {{ $importedDraft['interface']['device'] }}.
                 Select its saved profile to load the imported values into the editor. Create a disconnected Ethernet profile below if needed; create a missing VLAN in the VLAN section first.</p>
@@ -22,6 +22,7 @@
                 @endforeach
             </select>
             <button type="button" class="cmp-btn cmp-btn-secondary mt-2" wire:click="loadImportedDraft" wire:loading.attr="disabled">Load draft into editor</button>
+            <button type="button" class="cmp-btn cmp-btn-secondary mt-2" wire:click="discardDraft('network-import-form')" wire:loading.attr="disabled">Discard selection</button>
         </div>
     @endif
     @if (!$available)
@@ -44,6 +45,7 @@
             @endif
         </div>
     @elseif ($device !== null)
+        <div id="network-profile-editor" data-wizard-form data-wizard-editor="open">
         <div class="mb-3">
             <h3 class="font-bold">Edit {{ $device ?: 'saved profile' }}</h3>
             <p class="text-sm text-fg-muted">Reconnect using the new address and confirm within about two minutes; otherwise the change rolls back.</p>
@@ -107,6 +109,7 @@
             <x-confirms-password wire:then="apply"><button type="button" class="cmp-btn" wire:loading.attr="disabled">{{ $editingSaved ? 'Apply and connect temporarily' : 'Apply temporarily' }}</button></x-confirms-password>
             <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="close">Cancel</button>
         </div>
+        </div>
     @elseif ($section !== 'role' && $profiles === null)
         <p class="text-sm text-fg-muted">NetworkManager information is unavailable.</p>
     @elseif ($section !== 'role' && !$profiles)
@@ -133,7 +136,7 @@
     @if ($section !== 'role' && $available && !$statusError && !($pending['pending'] ?? false) && $device === null && $savedProfiles !== null)
         @php($inactiveProfiles = collect($savedProfiles)->reject(fn ($p) => in_array($p['uuid'], array_column($profiles ?? [], 'uuid'), true)))
         @if ($inactiveProfiles->isNotEmpty())
-            <div class="border-t border-pline mt-4 pt-4">
+            <div id="network-saved-form" data-wizard-form data-wizard-editor="closed" class="border-t border-pline mt-4 pt-4">
                 <h3 class="font-bold mb-2">Saved connections</h3>
                 <p class="text-sm text-fg-muted mb-3">Connect a saved profile or edit its IP settings before connecting. Connecting replaces the current profile on the same interface. Confirm within two minutes or the previous connection is restored.</p>
                 @if ($inactiveProfiles->contains(fn ($p) => $p['device'] === ''))
@@ -156,9 +159,10 @@
                         @endforeach
                     </tbody>
                 </table></div>
+                <button type="button" class="cmp-btn cmp-btn-secondary cmp-btn-small mt-2" wire:click="discardDraft('network-saved-form')" wire:loading.attr="disabled">Discard interface selection</button>
             </div>
         @endif
-        <div class="border-t border-pline mt-4 pt-4">
+        <div id="network-new-profile-form" data-wizard-form data-wizard-editor="closed" class="border-t border-pline mt-4 pt-4">
             <h3 class="font-bold mb-2">New Ethernet profile</h3>
             <p class="text-sm text-fg-muted mb-3">Create a disconnected profile, then edit its addresses and connect. Add tagged networks in the VLAN section.</p>
             <div class="flex flex-wrap items-end gap-2">
@@ -170,13 +174,14 @@
                 <div><label for="new-network-name" class="block text-sm font-bold mb-1">Profile name</label>
                     <input id="new-network-name" wire:model="newProfileName" class="cmp-field" maxlength="64" placeholder="Management uplink"></div>
                 <x-confirms-password wire:then="createProfile"><button type="button" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Create profile</button></x-confirms-password>
+                <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="discardDraft('network-new-profile-form')" wire:loading.attr="disabled">Discard draft</button>
             </div>
             @error('device') <p class="text-neg text-sm">{{ $message }}</p> @enderror
             @error('name') <p class="text-neg text-sm">{{ $message }}</p> @enderror
         </div>
     @endif
     @if ($section !== 'management' && $available && !$statusError && !($pending['pending'] ?? false) && $device === null && $stand !== null)
-        <div class="border-t border-pline mt-4 pt-4">
+        <div id="network-move-form" data-wizard-form data-wizard-editor="closed" class="border-t border-pline mt-4 pt-4">
             <h3 class="font-bold">Provisioning network</h3>
             <p class="text-sm text-fg-muted mt-1 mb-3">{{ $stand['address'] }}/16 is on {{ $stand['device'] }}. Move it to another active interface on the same Ethernet port. Configure the corresponding tagged or untagged VLAN on the switch first.</p>
             <div class="flex flex-wrap items-end gap-2">
@@ -190,12 +195,13 @@
                         @endforeach
                     </select></div>
                 <x-confirms-password wire:then="moveStand"><button type="button" class="cmp-btn" wire:loading.attr="disabled">Move temporarily</button></x-confirms-password>
+                <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="discardDraft('network-move-form')" wire:loading.attr="disabled">Discard selection</button>
             </div>
             <p class="text-sm text-fg-muted mt-2">DHCP/TFTP stays enabled or disabled as it was. Confirm the move after checking connectivity; otherwise it rolls back.</p>
         </div>
     @endif
     @if ($section !== 'management' && $available && !$statusError && !($pending['pending'] ?? false) && $device === null)
-        <div class="border-t border-pline mt-4 pt-4">
+        <div id="network-role-form" data-wizard-form data-wizard-editor="{{ $roleForm ? 'open' : 'closed' }}" class="border-t border-pline mt-4 pt-4">
             @if (!$roleForm)
                 <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="prepareStand" wire:loading.attr="disabled">Configure station role</button>
             @else
@@ -231,13 +237,14 @@
         </div>
     @endif
     @if ($section !== 'management')
-    <div id="reprovision-primary" class="border-t border-pline mt-4 pt-4">
+    <div id="reprovision-primary" data-wizard-form data-wizard-editor="closed" class="border-t border-pline mt-4 pt-4">
         <h3 class="font-bold mb-2">Current primary web address</h3>
         <p class="text-sm text-fg-muted mb-3">Optional on a secondary station: Re-provision opens this server, which supplies its active project at the next network boot. This does not change roles or enable DHCP/TFTP.</p>
         <div class="flex flex-wrap items-end gap-2">
             <div class="flex-1"><label for="primary-web-url" class="block text-sm font-bold mb-1">Primary HTTP/HTTPS address</label>
                 <input id="primary-web-url" type="url" wire:model="primaryWebUrl" maxlength="512" placeholder="http://primary.local" class="cmp-field w-full"></div>
             <x-confirms-password wire:then="savePrimaryUrl"><button type="button" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Save primary address</button></x-confirms-password>
+            <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="discardDraft('reprovision-primary')" wire:loading.attr="disabled">Discard edits</button>
         </div>
         @error('primaryWebUrl') <p class="text-neg text-sm mt-2">{{ $message }}</p> @enderror
     </div>

@@ -45,3 +45,15 @@ test('a closed form that becomes dirty stays guarded on a normal rerender', () =
     guard.editor('web-account', false);
     assert.equal(guard.canLeave(), false);
 });
+
+test('a hidden sibling draft stays dirty while a network transaction is shown', () => {
+    const guard = guardState();
+    guard.editor('network-new-profile-form', false);
+    guard.change('network-new-profile-form');
+    guard.change('network-move-form');
+    guard.saved('network-move-form');
+    guard.editor('network-new-profile-form', false);
+    assert.equal(guard.canLeave(), false);
+    guard.saved('network-new-profile-form');
+    assert.equal(guard.canLeave(), true);
+});

@@ -16,18 +16,25 @@
     }
     function bind(document) {
         if (!document.querySelector('[data-station-wizard]')) return;
-        var guard = guardState(), known = new Set(), previousStep = null;
+        var guard = guardState(), owners = new Map(), previousStep = null;
         function scope() { return document.querySelector('[data-station-wizard]'); }
         function id(element) { return element.getAttribute('wire:id') || element.id; }
+        function owner(element) {
+            while (element && !element.hasAttribute('wire:id')) element = element.parentElement;
+            return element;
+        }
         function sync() {
             var wizard = scope();
             if (!wizard) return;
             var current = new Set();
             wizard.querySelectorAll('[data-wizard-form]').forEach(function (element) {
-                var key = id(element); current.add(key);
+                var key = id(element); current.add(key); owners.set(key, owner(element));
                 guard.editor(key, element.getAttribute('data-wizard-editor') === 'open');
             });
-            known.forEach(function (key) { if (!current.has(key)) guard.forget(key); }); known = current;
+            owners.forEach(function (component, key) {
+                if (!component || !component.isConnected) { guard.forget(key); owners.delete(key); }
+                else if (!current.has(key)) guard.editor(key, false);
+            });
             guard.saving(!!wizard.querySelector('[data-wizard-saving]'));
             var step = wizard.getAttribute('data-wizard-step');
             if (previousStep !== null && step !== previousStep) {
@@ -41,7 +48,11 @@
         }
         document.addEventListener('input', changed, true); document.addEventListener('change', changed, true);
         document.addEventListener('station-wizard-saved', function (event) {
-            var form = event.target.closest('[data-wizard-form]'); if (form) guard.saved(id(form));
+            var named = event.detail && event.detail.scope;
+            if (named && owners.get(named) === owner(event.target)) guard.saved(named);
+            else if (!named) {
+                var form = event.target.closest('[data-wizard-form]'); if (form) guard.saved(id(form));
+            }
         });
         document.addEventListener('click', function (event) {
             var button = event.target.closest('[data-wizard-go]'), wizard = scope();

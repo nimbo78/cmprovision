@@ -5,7 +5,7 @@
             <ol class="flex gap-1 overflow-x-auto lg:flex-col">
                 @foreach ($steps as $number => $label)
                     <li class="shrink-0"><button type="button" data-wizard-go wire:click="go({{ $number }})" aria-label="Step {{ $number }}: {{ $label }}" @if ($step === $number) aria-current="step" @endif
-                        @class(['w-full rounded p-2 flex items-center gap-2 text-left text-sm', 'bg-accent-soft text-accent font-bold' => $step === $number, 'text-fg-muted' => $step !== $number]) wire:loading.attr="disabled">
+                        @class(['w-full rounded p-2 flex items-center gap-2 text-left text-sm', 'bg-accent-soft text-accent-text font-bold' => $step === $number, 'text-fg-muted' => $step !== $number]) wire:loading.attr="disabled">
                         <span class="mono">{{ str_pad($number, 2, '0', STR_PAD_LEFT) }}</span><span class="hidden sm:inline">{{ $label }}</span>
                     </button></li>
                 @endforeach

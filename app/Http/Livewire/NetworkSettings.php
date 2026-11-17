@@ -53,7 +53,7 @@ class NetworkSettings extends Component
         if ($origin === '') \App\Models\Setting::whereKey('reprovision_primary_url')->delete();
         else \App\Models\Setting::updateOrCreate(['key'=>'reprovision_primary_url'],['value'=>$origin]);
         $this->primaryWebUrl = $origin;
-        $this->dispatch('station-wizard-saved');
+        $this->dispatch('station-wizard-saved', scope: 'reprovision-primary');
         $this->flash('Current primary web address saved. Network roles and boot services were not changed.');
     }
 
@@ -103,6 +103,7 @@ class NetworkSettings extends Component
         $this->ipv6 = $this->formValues($draft['data']['ipv6']);
         $this->resetErrorBag();
         $this->flash('Imported values loaded. Review them, apply temporarily, then confirm connectivity.');
+        $this->dispatch('station-wizard-saved', scope: 'network-import-form');
     }
 
     public function render()
@@ -155,7 +156,7 @@ class NetworkSettings extends Component
         $this->uuid = null;
         $this->editingSaved = false;
         $this->resetErrorBag();
-        $this->dispatch('station-wizard-saved');
+        $this->dispatch('station-wizard-saved', scope: 'network-profile-editor');
     }
 
     public function apply(): void
@@ -225,6 +226,7 @@ class NetworkSettings extends Component
 
     private function connectionResult(array $result): void
     {
+        if ($result['ok'] ?? false) $this->dispatch('station-wizard-saved', scope: 'network-saved-form');
         $this->flash(($result['ok'] ?? false)
             ? 'The connection change is temporary. Check connectivity and confirm before the timer ends.'
             : ($result['error'] ?? 'The connection could not be changed.'), !($result['ok'] ?? false));
@@ -240,7 +242,7 @@ class NetworkSettings extends Component
         $result = app(NetworkChanges::class)->createProfile($this->newDevice, $this->newProfileName);
         $this->flash(($result['ok'] ?? false) ? 'Profile created and left disconnected. Edit it to configure addresses and connect.'
             : ($result['error'] ?? 'Could not create profile.'), !($result['ok'] ?? false));
-        if ($result['ok'] ?? false) { $this->newProfileName = ''; $this->dispatch('station-wizard-saved'); }
+        if ($result['ok'] ?? false) { $this->newProfileName = ''; $this->dispatch('station-wizard-saved', scope: 'network-new-profile-form'); }
     }
 
     public function deleteProfile(string $uuid): void
@@ -319,7 +321,20 @@ class NetworkSettings extends Component
             return;
         }
         $this->standTarget = '';
+        $this->dispatch('station-wizard-saved', scope: 'network-move-form');
         $this->flash('The stand network moved temporarily. Verify connectivity and confirm before the timer ends.');
+    }
+
+    public function discardDraft(string $scope): void
+    {
+        if ($scope === 'network-new-profile-form') $this->newDevice = $this->newProfileName = '';
+        elseif ($scope === 'network-saved-form') $this->activationDevice = '';
+        elseif ($scope === 'network-move-form') $this->standTarget = '';
+        elseif ($scope === 'network-import-form') $this->importTarget = '';
+        elseif ($scope === 'reprovision-primary') $this->primaryWebUrl = (string) \App\Models\Setting::find('reprovision_primary_url')?->value;
+        else return;
+        $this->resetValidation();
+        $this->dispatch('station-wizard-saved', scope: $scope);
     }
 
     private function finish(string $action): void
