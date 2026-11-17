@@ -1,5 +1,7 @@
 <livewire:station-time-settings />
 
+<livewire:station-access-settings />
+
 <livewire:station-storage />
 
 <livewire:station-power />

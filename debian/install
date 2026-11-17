@@ -44,6 +44,7 @@ debian/cmprovision-fpms-data.service lib/systemd/system
 debian/016_cmprovision-updates etc/sudoers.d
 debian/017_cmprovision-time etc/sudoers.d
 debian/022_cmprovision-storage etc/sudoers.d
+debian/023_cmprovision-access etc/sudoers.d
 debian/updates/* etc/cmprovision-updates
 debian/cmprovision-updates-recover.service lib/systemd/system
 debian/cmprovision-updates-check.service lib/systemd/system

@@ -142,9 +142,11 @@ jobs:
         run: |
           docker run --rm --user root --entrypoint sh -v "$GITHUB_WORKSPACE:/source:ro" cmprovision-backup-tests -ec '
             apt-get update
-            apt-get install -y --no-install-recommends openssh-server python3-pyftpdlib python3-moto python3-openssl python3-flask-cors python3-jsonpath-ng
+            apt-get install -y --no-install-recommends openssh-server sudo python3-pyftpdlib python3-moto python3-openssl python3-flask-cors python3-jsonpath-ng
             cp -a /source /tmp/backup-tests
             cd /tmp/backup-tests
+            python3 -B -m unittest discover -s tests/tools -p test_station_access.py -v
+            CMPROVISION_ACCESS_ACCEPTANCE=1 python3 -B tests/integration/station-access.py
             CMPROVISION_REMOTE_ACCEPTANCE=1 CMPROVISION_LARGE_BACKUP_TEST=1 python3 -B -m unittest discover -s tests/backups -v
           '
 
