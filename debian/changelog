@@ -1,3 +1,14 @@
+cmprovision4 (2.30.4) trixie; urgency=medium
+
+  * Release the Updates journal, guided station setup and station access settings.
+  * Preserve independent form drafts and confirmed network changes in the wizard.
+  * Check actual role, boot services and project readiness before setup completes.
+  * Require local operation-bound approval for existing administrator SSH changes.
+  * Route display checks separately from Utility OS builds and fix recovery test cleanup.
+  * Publish bilingual setup and update guides with the signed package/image bundle.
+
+ -- cmprovision contributors <cmprovision@localhost>  Tue, 17 Nov 2026 19:30:00 +0300
+
 cmprovision4 (2.30.4~dev2) trixie; urgency=medium
 
   * Guide station network, switch, access, project and stand-role setup in the web UI.
