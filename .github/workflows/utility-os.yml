@@ -9,11 +9,13 @@ on:
   pull_request:
     paths:
       - 'utility-os/**'
+      - 'scriptexecute64/**'
+      - 'scriptexecute/**'
       - 'resources/shell/**'
       - 'tools/usb-diagnostics.py'
-      - 'tests/tools/**'
-      # This helper has its own workflow and does not change utility-OS binaries.
-      - '!tests/tools/test_image_access.py'
+      # Display tests run in fpms.yml; image-access tests have their own workflow.
+      - 'tests/tools/test_usb_diagnostics*.py'
+      - 'tests/fixtures/utility-os/**'
       - 'tools/utility-os/**'
       - '.github/workflows/utility-os.yml'
 
@@ -60,7 +62,7 @@ jobs:
 
       - name: USB diagnostic protocol
         if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
-        run: python3 -m unittest discover -s tests/tools -p test_usb_diagnostics.py -v
+        run: python3 -m unittest discover -s tests/tools -p 'test_usb_diagnostics*.py' -v
 
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.event_name != 'schedule' || steps.check.outputs.new == 'yes'
