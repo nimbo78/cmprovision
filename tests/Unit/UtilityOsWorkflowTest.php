@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** .github/workflows/utility-os.yml (2.7.0): the triggers, the permissions, and what the monthly pull request carries */
@@ -32,5 +33,53 @@ class UtilityOsWorkflowTest extends TestCase
         $this->assertStringContainsString('git add utility-os/versions.env scriptexecute64 scriptexecute/usb scriptexecute/MANIFEST tests/fixtures/utility-os/messages.txt', $w);
         $this->assertStringContainsString('gh pr create --base main', $w);
         $this->assertStringContainsString('GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}', $w);
+    }
+
+    #[DataProvider('changedFiles')]
+    public function test_changed_files_select_the_required_workflows(array $files, array $expected): void
+    {
+        $selected = [];
+        foreach (['utility-os', 'fpms'] as $workflow) {
+            $yaml = file_get_contents(dirname(__DIR__, 2).'/.github/workflows/'.$workflow.'.yml');
+            $this->assertMatchesRegularExpression('/^  pull_request:\s*\n(.*?)(?=^  \w|^[^\s])/ms', $yaml);
+            preg_match('/^  pull_request:\s*\n(.*?)(?=^  \w|^[^\s])/ms', $yaml, $block);
+            preg_match_all("/'([^']+)'/", $block[1], $patterns);
+            $this->assertNotEmpty($patterns[1], 'Read the real pull-request filters, not a test copy.');
+            foreach ($files as $file) {
+                $matched = false;
+                foreach ($patterns[1] as $pattern) {
+                    $exclude = str_starts_with($pattern, '!');
+                    if (fnmatch($exclude ? substr($pattern, 1) : $pattern, $file)) $matched = !$exclude;
+                }
+                if ($matched) { $selected[] = $workflow; break; }
+            }
+        }
+        $this->assertSame($expected, $selected, implode(', ', $files));
+    }
+
+    public static function changedFiles(): array
+    {
+        return [
+            'HDMI test' => [['tests/tools/test_hdmi_wallboard.py'], ['fpms']],
+            'FPMS test' => [['tests/tools/test_fpms_control.py'], ['fpms']],
+            'future FPMS test' => [['tests/tools/test_fpms_touch.py'], ['fpms']],
+            'display units' => [['tests/tools/check_display_systemd.py'], ['fpms']],
+            'display source' => [['tools/hdmi-wallboard.py'], ['fpms']],
+            'image access owns its checks' => [['tests/tools/test_image_access.py'], []],
+            'wizard PHP test' => [['tests/Feature/StationSetupWizardTest.php'], []],
+            'docs' => [['docs/rescue-wifi.md'], []],
+            'OS configuration' => [['utility-os/board/cmprovision/linux.config'], ['utility-os']],
+            'collector' => [['resources/shell/module-diagnostics.sh'], ['utility-os']],
+            'USB protocol test' => [['tests/tools/test_usb_diagnostics.py'], ['utility-os']],
+            'future USB protocol test' => [['tests/tools/test_usb_diagnostics_v2.py'], ['utility-os']],
+            'USB receiver' => [['tools/usb-diagnostics.py'], ['utility-os']],
+            'USB boot builder' => [['tools/utility-os/usb_image.py'], ['utility-os']],
+            'network boot asset' => [['scriptexecute64/config.txt'], ['utility-os']],
+            'legacy USB boot asset' => [['scriptexecute/usb/config.txt'], ['utility-os']],
+            'diagnostic fixture' => [['tests/fixtures/utility-os/messages.txt'], ['utility-os']],
+            'kernel workflow' => [['.github/workflows/utility-os.yml'], ['utility-os']],
+            'display workflow' => [['.github/workflows/fpms.yml'], ['fpms']],
+            'mixed' => [['tests/tools/test_hdmi_wallboard.py', 'utility-os/versions.env'], ['utility-os', 'fpms']],
+        ];
     }
 }

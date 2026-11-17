@@ -42,6 +42,12 @@ The temporary micro-OS boots via network or USB, and its local console provides 
 - Scripts: `tools/utility-os/build.sh` (build), `test.sh` (automated validation), `update.sh` (version bump), `manifest.sh` (manifest generation).
 - GitHub Actions CI: `.github/workflows/utility-os.yml` runs identical builds and tests.
 
+Pull requests rebuild the OS when they change its sources, shipped network/USB boot files,
+diagnostic collector or USB protocol tests/fixtures, build helpers, or that workflow.
+HDMI/FPMS source and tests run in `.github/workflows/fpms.yml` without rebuilding the kernel;
+image-access tests retain their separate workflow. A PR touching both displays and OS inputs
+runs both sets of checks. Manual builds and the monthly update check remain available.
+
 The init system maintains backward compatibility with legacy formats, appending `uos=<version>` to start parameters. The server identifies targets by serial number, so parameter syntax is strictly preserved (`UtilityOsInitTest`).
 
 ## Building
