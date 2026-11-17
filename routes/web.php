@@ -38,6 +38,11 @@ Route::get('/', function () {
     return redirect()->route('login');
 });
 
+Route::middleware('guest')->group(function () {
+    Route::get('/setup', [\App\Http\Controllers\FirstAdminController::class, 'show'])->name('first-admin');
+    Route::post('/setup', [\App\Http\Controllers\FirstAdminController::class, 'claim'])->middleware('throttle:first-admin');
+});
+
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/dashboard', function () {
     return view('dashboard');   // progress panel and log are Livewire components that refresh themselves
 })->name('dashboard');
