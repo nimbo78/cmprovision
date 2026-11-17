@@ -25,7 +25,13 @@ flowchart LR
 
 ## Before opening the wizard
 
-The first web account is created through the existing SSH/local-console procedure:
+1. Open the management address shown on HDMI or the front panel. A fresh station opens **Set up this station**. You can also open `/setup` directly.
+2. Enter the 16-character code shown on the display. If the imaging project enabled **First web administrator in browser**, open the flashed device's card on the source station, select **Open setup code** and confirm your web password. The source keeps the code for 12 hours. The station accepts it until used or rotated.
+3. Enter your name, sign-in email and a new web password. **Create administrator** signs you in and opens the wizard. Further visits use the normal login.
+
+Without a display, an existing local or SSH administrator can read the unused code with `sudo cmprovision-first-admin show`. To replace an exposed unused code, run `sudo cmprovision-first-admin rotate`, then `show`. Each station has its own code. Rebooting preserves it. Restoring a backup or deleting users keeps registration closed.
+
+For recovery on an established station, or on versions through 2.30.4, create a web account at the console:
 
 ```sh
 cd /var/lib/cmprovision

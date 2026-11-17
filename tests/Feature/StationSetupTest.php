@@ -79,6 +79,44 @@ class StationSetupTest extends TestCase
         $this->assertStringNotContainsString($config['password_hash'], $html);
     }
 
+    public function test_headless_code_is_private_per_run_and_only_available_after_delivery_until_expiry(): void
+    {
+        [$cm, $oldRun, $project] = $this->fixtureRun();
+        $oldRun->delete();
+        $settings = StationSetupInput::normalize(['web_setup' => true] + $this->input());
+        $this->assertSame(3, $settings['schema']);
+        $this->assertSame($settings, StationSetupInput::saved($settings));
+        $project->station_setup = $settings;
+        $project->save();
+        $key = $this->createStub(ProvisionerKey::class);
+        $key->method('ensure')->willReturn($this->key());
+        $this->app->instance(ProvisionerKey::class, $key);
+        $script = app(StationSetup::class)->prepare($cm, $project, '172.20.0.1');
+        $run = StationSetupRun::sole();
+        $code = $run->web_setup_code;
+        $this->assertMatchesRegularExpression('/^[A-Z2-7]{16}$/D', $code);
+        $this->assertStringNotContainsString($code, $script);
+        $this->assertNotSame($code, $run->getRawOriginal('web_setup_code'));
+        $this->assertArrayNotHasKey('web_setup_code', $run->toArray());
+        $url = route('cm.setup-code', $cm->mac);
+        $this->get($url)->assertRedirect(route('login'));
+        $this->actingAs(User::factory()->create())->get($url)->assertRedirect(route('password.confirm'));
+        $this->withSession(['auth.password_confirmed_at' => now()->timestamp])->get($url)->assertNotFound();
+        $ssh = $this->createMock(StationSetupSsh::class);
+        $ssh->expects($this->once())->method('deliver')->with($this->anything(), $this->anything(), $this->anything(),
+            $this->callback(fn ($s) => $s['web_setup_code'] === $code && !isset($s['web_setup'])));
+        $this->app->instance(StationSetupSsh::class, $ssh);
+        $this->deliver()->assertOk()->assertDontSee($code);
+        $response = $this->get($url)->assertOk()->assertSee(implode(' ', str_split($code, 4)));
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        $cm->update(['diagnostics_token' => str_repeat('b', 40)]);
+        $this->get($url)->assertNotFound();
+        app(StationSetup::class)->prepare($cm, $project, '172.20.0.1');
+        $this->assertNotSame($code, $run->fresh()->web_setup_code);
+        $run->fresh()->update(['state' => 'applied', 'expires_at' => now()->subMinute()]);
+        $this->get($url)->assertNotFound();
+    }
+
     public function test_key_only_setup_requires_valid_keys_and_ssh(): void
     {
         $input = array_replace($this->input(), ['password_login' => false, 'keys' => $this->key()]);

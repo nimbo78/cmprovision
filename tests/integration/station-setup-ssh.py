@@ -22,6 +22,9 @@ root = pathlib.Path(__file__).parent
 action = os.environ.get('SSH_ORIGINAL_COMMAND')
 if action == 'identity':
  print(json.dumps({'schema':1,'serial':'10000000e611110c','cid':'a'*32,'run':'x'*40}))
+elif action == 'capabilities':
+ if (root/'mode').read_text() == 'legacy': sys.exit(1)
+ print(json.dumps({'station_setup':2}))
 elif action == 'apply':
  data = sys.stdin.buffer.read(32769)
  mode = (root/'mode').read_text()

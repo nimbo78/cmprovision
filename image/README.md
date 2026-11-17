@@ -176,14 +176,10 @@ connected to a production provisioning VLAN while performing the test.
    and a management connection with Raspberry Pi Imager when writing the image. There is no
    shared initial password. Verify that the operator can log in and that the application and
    SSH host keys remain unchanged after a reboot.
-2. Set up a management connection separately from the isolated provisioning network. Log in on
-   the device and create the first web user:
-
-   ```sh
-   sudo -u www-data /var/lib/cmprovision/artisan auth:create-user
-   ```
-
-   Open the web UI using the management address and verify the login. DHCP/TFTP and USB boot
+2. Set up a management connection separately from the isolated provisioning network. Open its
+   address in a browser and create the first administrator with the code on the station display.
+   Headless imaging projects can also provide the code on the source device card for 12 hours.
+   See [first sign-in and local recovery](../docs/station-setup.md#before-opening-the-wizard). DHCP/TFTP and USB boot
    remain masked at this point.
 3. With the current branch's network controller installed, open **Settings → Network**. For a
    **new, isolated primary stand**, connect the intended Ethernet or VLAN profile, then choose

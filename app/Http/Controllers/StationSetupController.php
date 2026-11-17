@@ -27,14 +27,21 @@ class StationSetupController extends Controller
             $run = $cm ? StationSetupRun::where('cm_id', $cm->id)->first() : null;
             if (!$cm || !$run || $run->expires_at->isPast() || $cm->phase !== 'postinstall'
                 || !hash_equals((string) $cm->diagnostics_token, $nonce) || !hash_equals($run->run, $nonce)
+                || ($run->target_serial !== null && ($run->target_serial !== $cm->serial || $run->target_cid !== $cm->cid))
                 || ($run->host_key !== null && !hash_equals($run->host_key, $host)))
                 return response('Station setup is not available for this run.', 409)->header('Cache-Control', 'no-store');
             if ($run->state === 'applied') return response('applied')->header('Cache-Control', 'no-store');
             $run->host_key = $host;
             $run->save();
             try {
+                $settings = $run->settings;
+                if (($settings['schema'] ?? null) === 3) {
+                    if (!$run->web_setup_code) throw new \RuntimeException('Missing setup code.');
+                    unset($settings['web_setup']);
+                    $settings['web_setup_code'] = $run->web_setup_code;
+                }
                 app(StationSetupSsh::class)->deliver($address, $host,
-                    ['schema' => 1, 'serial' => $serial, 'cid' => $cm->cid, 'run' => $nonce], $run->settings);
+                    ['schema' => 1, 'serial' => $serial, 'cid' => $cm->cid, 'run' => $nonce], $settings);
             } catch (ImageAccessFailure $e) {
                 return response($e->response(), 502)->header('Cache-Control', 'no-store');
             } catch (\Throwable $e) {

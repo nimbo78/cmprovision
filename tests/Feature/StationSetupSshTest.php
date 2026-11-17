@@ -48,6 +48,22 @@ class StationSetupSshTest extends TestCase
             $this->assertStringContainsString('identity', $e->getMessage());
         }
     }
+
+    public function test_web_setup_checks_capability_before_sending_credentials(): void
+    {
+        $ssh = $this->transport();
+        $settings = ['schema' => 3, 'web_setup_code' => 'ABCDEFGHIJKLMNOP'];
+        file_put_contents($this->fixture.'/mode', 'legacy');
+        try {
+            $ssh->deliver('127.0.0.1', $this->host(), $this->identity(), $settings);
+            $this->fail('Incompatible station image accepted a browser setup code');
+        } catch (\RuntimeException) {
+            $this->assertFileDoesNotExist($this->fixture.'/received');
+        }
+        file_put_contents($this->fixture.'/mode', 'ok');
+        $ssh->deliver('127.0.0.1', $this->host(), $this->identity(), $settings);
+        $this->assertSame($settings, json_decode(file_get_contents($this->fixture.'/received'), true)['settings']);
+    }
     public function test_wrong_host_key_receives_no_credentials(): void
     {
         $ssh = $this->transport();

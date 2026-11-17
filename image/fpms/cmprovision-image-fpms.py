@@ -11,6 +11,7 @@ import sys
 
 CONFIG = Path('/etc/default/cmprovision-fpms.json')
 RUNTIME = Path('/run/cmprovision-image-fpms')
+FIRST_ADMIN = Path('/run/cmprovision-bootstrap/display.json')
 
 
 def enabled(path):
@@ -38,7 +39,7 @@ def sync(config, runtime, systemctl):
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
         raise RuntimeError('The FPMS runtime directory is not secure.')
     marker = runtime / 'enabled'
-    if enabled(config):
+    if enabled(config) or FIRST_ADMIN.is_file():
         fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o644)
         try:
             info = os.fstat(fd)

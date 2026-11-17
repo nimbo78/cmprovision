@@ -1,4 +1,5 @@
 import concurrent.futures
+import hashlib
 import os
 from pathlib import Path
 import sys
@@ -6,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
-from first_admin import Bootstrap
+from first_admin import Bootstrap, save
 
 
 class FirstAdminTest(unittest.TestCase):
@@ -85,6 +86,24 @@ class FirstAdminTest(unittest.TestCase):
             result = list(pool.map(self.submit, [code, code]))
         self.assertCountEqual([r['state'] for r in result], ['claimed', 'closed'])
         self.assertEqual(len(self.people), 1)
+
+    def test_image_requires_the_committed_project_code_and_consumes_it_once(self):
+        code = 'ABCDEFGHIJKLMNOP'
+        marker = self.base / 'project-setup.json'
+        seed = self.base / 'web-setup.json'
+        save(marker, {'web_setup_sha256': hashlib.sha256(code.encode()).hexdigest()})
+        with self.assertRaises(ValueError):
+            self.broker.image_fresh(self.base)
+        save(seed, 'PONMLKJIHGFEDCBA')
+        with self.assertRaises(ValueError):
+            self.broker.image_fresh(self.base)
+        save(seed, code)
+        self.assertEqual({'state': 'armed'}, self.broker.image_fresh(self.base))
+        self.assertFalse(seed.exists())
+        self.assertEqual({'state': 'armed'}, self.broker.image_fresh(self.base))
+        self.assertEqual(code, self.broker.local('show')['code'])
+        self.submit(code)
+        self.assertEqual({'state': 'closed'}, self.broker.image_fresh(self.base))
 
     def test_upgrade_restore_and_private_state(self):
         for op in ('fresh', 'rotate', 'show', 'close'):

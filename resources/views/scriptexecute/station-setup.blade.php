@@ -31,6 +31,11 @@ chroot "$ROOT" /usr/bin/python3 -c 'import platform,struct; assert platform.mach
     [ ! -e "$ROOT/var/lib/cmprovision-image/firstboot-ready" ] || {
     echo 'This image does not support initial station setup'; exit 1;
 }
+@if ($requiresWebSetup ?? false)
+[ "$(cat "$ROOT/usr/lib/cmprovision/image-setup-capabilities" 2>/dev/null)" = 2 ] || {
+    echo 'First web administrator in browser requires a newer cmprovision station image'; exit 1;
+}
+@endif
 @endif
 for part in dev proc sys run; do
     [ -d "$ROOT/$part" ] && [ ! -L "$ROOT/$part" ] || exit 1

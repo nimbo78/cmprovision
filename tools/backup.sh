@@ -114,6 +114,10 @@ mkdir -m 700 "$OUT"
 # Root only writes its snapshot from what the web user's cat reads. .timeout: wait for a writer instead of failing
 TMPDB=$(runuser -u www-data -- mktemp -d /var/tmp/cmprovision-backup.XXXXXX)
 runuser -u www-data -- sqlite3 -cmd '.timeout 10000' "$APP/database/database.sqlite" ".backup '$TMPDB/database.sqlite'"
+HAS_WEB_CODE=$(runuser -u www-data -- sqlite3 "$TMPDB/database.sqlite" "SELECT count(*) FROM pragma_table_info('station_setup_runs') WHERE name='web_setup_code'")
+if [ "$HAS_WEB_CODE" = 1 ]; then
+    runuser -u www-data -- sqlite3 "$TMPDB/database.sqlite" 'PRAGMA secure_delete=ON; DELETE FROM station_setup_runs WHERE web_setup_code IS NOT NULL' >/dev/null
+fi
 runuser -u www-data -- cat "$TMPDB/database.sqlite" > "$OUT/database.sqlite"
 runuser -u www-data -- rm -rf "$TMPDB"
 

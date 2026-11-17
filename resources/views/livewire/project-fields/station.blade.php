@@ -26,6 +26,8 @@
                         </div>
                       @else
                         <p class="text-xs text-fg-muted">For a compatible cmprovision Lite image. DHCP/TFTP stays disabled until the new station's network is configured.</p>
+                        <label class="block text-sm"><input type="checkbox" wire:model="station.web_setup" class="form-checkbox"> First web administrator in browser</label>
+                        <p class="text-xs text-fg-muted">Requires a station image with browser setup. Each flashed station's device card offers its own code for 12 hours.</p>
                       @endif
                       @foreach (['hostname' => 'Host name', 'username' => 'Linux user name'] as $key => $title)
                         <div><label for="station-{{ $key }}" class="block text-sm font-bold mb-1">{{ $title }}</label>

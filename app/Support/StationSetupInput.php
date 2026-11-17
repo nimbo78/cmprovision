@@ -13,7 +13,8 @@ class StationSetupInput
     {
         $generic = ($saved['schema'] ?? null) === 2;
         Validator::make($saved, [
-            'schema' => 'required|integer|in:1,2', 'hostname' => ($generic ? 'present|nullable' : 'required').'|string|max:63', 'username' => 'required|string|max:32',
+            'schema' => 'required|integer|in:1,2,3', 'hostname' => ($generic ? 'present|nullable' : 'required').'|string|max:63', 'username' => 'required|string|max:32',
+            'web_setup' => ($saved['schema'] ?? null) === 3 ? 'required|accepted' : 'prohibited',
             'password_hash' => ['nullable', 'string', 'max:255', 'regex:/^\$6\$(?:rounds=100000\$)?[A-Za-z0-9.\/]{1,16}\$[A-Za-z0-9.\/]{86}$/D'],
             'keys' => 'present|array|max:10', 'keys.*' => 'string|max:16384', 'ssh' => 'required|boolean',
             'wifi' => 'present|nullable|array:ssid,security,password,country,hidden',
@@ -26,6 +27,7 @@ class StationSetupInput
         ])->validate();
         $allowed = ['schema', 'hostname', 'username', 'password_hash', 'keys', 'ssh', 'wifi'];
         if ($generic) $allowed = [...$allowed, 'profile', 'source_username', 'sudo_passwordless'];
+        if (($saved['schema'] ?? null) === 3) $allowed[] = 'web_setup';
         if (array_diff(array_keys($saved), $allowed)) {
             throw ValidationException::withMessages(['station_setup' => 'The station definition contains an unsupported field.']);
         }
@@ -37,6 +39,7 @@ class StationSetupInput
         $generic = ($input['profile'] ?? 'station') === 'raspios';
         $data = Validator::make($input, [
             'profile' => 'sometimes|required|string|in:station,raspios',
+            'web_setup' => 'sometimes|boolean',
             'source_username' => ['nullable', 'string', 'max:32', 'regex:/^[a-z][a-z0-9-]*$/D', 'not_in:root,nobody,daemon,bin,sys,www-data,sshd'],
             'sudo_passwordless' => 'sometimes|boolean',
             'hostname' => [$generic ? 'nullable' : 'required', 'string', 'max:63', function ($attribute, $value, $fail) {
@@ -109,12 +112,17 @@ class StationSetupInput
             'password_hash' => $hash, 'keys' => $keys, 'ssh' => (bool) $data['ssh'], 'wifi' => $wifi];
         if ($generic) $settings += ['profile' => 'raspios', 'source_username' => (string) ($data['source_username'] ?? ''),
             'sudo_passwordless' => (bool) ($data['sudo_passwordless'] ?? false)];
+        if (!$generic && !empty($data['web_setup'])) {
+            $settings['schema'] = 3;
+            $settings['web_setup'] = true;
+        }
         return $settings;
     }
 
     public static function form(?array $saved = null): array
     {
         return ['profile' => $saved['profile'] ?? 'station', 'source_username' => $saved['source_username'] ?? '',
+            'web_setup' => $saved['web_setup'] ?? false,
             'sudo_passwordless' => $saved['sudo_passwordless'] ?? false,
             'hostname' => $saved['hostname'] ?? 'cmprovision-{serial}', 'username' => $saved['username'] ?? '',
             'password' => '', 'password_login' => $saved === null || !empty($saved['password_hash']),

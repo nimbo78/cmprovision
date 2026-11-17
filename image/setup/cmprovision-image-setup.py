@@ -29,9 +29,14 @@ def regular(path, limit=32768):
 
 
 def validate(settings):
-    if not isinstance(settings, dict) or set(settings) != {'schema', 'hostname', 'username', 'password_hash', 'keys', 'ssh', 'wifi'}:
+    fields = {'schema', 'hostname', 'username', 'password_hash', 'keys', 'ssh', 'wifi'}
+    if isinstance(settings, dict) and settings.get('schema') == 3:
+        fields.add('web_setup_code')
+        if not isinstance(settings.get('web_setup_code'), str) or not re.fullmatch('[A-Z2-7]{16}', settings['web_setup_code']):
+            raise ValueError('Invalid first web administrator setup code')
+    if not isinstance(settings, dict) or set(settings) != fields:
         raise ValueError('Invalid settings')
-    if settings['schema'] != 1 or type(settings['ssh']) is not bool:
+    if type(settings['schema']) is not int or settings['schema'] not in (1, 3) or type(settings['ssh']) is not bool:
         raise ValueError('Invalid schema')
     for field, pattern in (('hostname', r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'), ('username', r'[a-z][a-z0-9-]{0,31}')):
         if not isinstance(settings[field], str) or not re.fullmatch(pattern, settings[field]):
@@ -121,6 +126,8 @@ def configure(root, identity, settings, run=execute):
     state.chmod(0o700)
     digest = hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     receipt = dict(identity, digest=digest)
+    if settings['schema'] == 3:
+        receipt['web_setup_sha256'] = hashlib.sha256(settings['web_setup_code'].encode()).hexdigest()
     marker = state / 'project-setup.json'
     pending = state / 'project-setup-pending.json'
     for path in (marker, pending):
@@ -190,6 +197,8 @@ def configure(root, identity, settings, run=execute):
               '\ntype=ethernet\ninterface-name=eth0\nautoconnect=true\nautoconnect-priority=100\n'
               '\n[ethernet]\n\n[ipv4]\nmethod=auto\nnever-default=true\nignore-auto-dns=true\n'
               '\n[ipv6]\nmethod=auto\nnever-default=true\nignore-auto-dns=true\n')
+    if settings['schema'] == 3:
+        write(root, STATE + '/web-setup.json', json.dumps(settings['web_setup_code']))
     write(root, STATE + '/project-setup.json', json.dumps(receipt))
     pending.unlink(missing_ok=True)
 
@@ -211,9 +220,12 @@ def main():
     if os.geteuid() != 0 or len(sys.argv) != 1:
         raise ValueError('Invalid invocation')
     command = os.environ.get('SSH_ORIGINAL_COMMAND')
-    if command not in ('identity', 'apply'):
+    if command not in ('identity', 'capabilities', 'apply'):
         raise ValueError('Unsupported operation')
     expected = identity()
+    if command == 'capabilities':
+        print(json.dumps({'station_setup': 2}))
+        return
     if command == 'identity':
         print(json.dumps(expected))
         return

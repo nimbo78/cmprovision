@@ -88,6 +88,18 @@ class SetupTest(unittest.TestCase):
         self.assertFalse((self.root / 'etc/NetworkManager/system-connections/cmprovision-stand-uplink.nmconnection').exists())
         self.assertFalse((self.root / 'etc/systemd/system/cmprovision-image-wifi.service').exists())
 
+    def test_enhanced_station_profile_stages_one_private_first_boot_code(self):
+        self.settings.update(schema=3, web_setup_code='ABCDEFGHIJKLMNOP')
+        self.apply()
+        self.apply()
+        seed = self.root / setup.STATE / 'web-setup.json'
+        self.assertEqual(json.loads(seed.read_bytes()), self.settings['web_setup_code'])
+        self.assertEqual(seed.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn(self.settings['web_setup_code'], (seed.parent/'project-setup.json').read_text())
+        self.assertEqual(setup.hashlib.sha256(seed.read_text().strip('"').encode()).hexdigest(),
+                         json.loads((seed.parent/'project-setup.json').read_text())['web_setup_sha256'])
+        self.assertNotIn(self.settings['web_setup_code'], str(self.commands))
+
     def test_wifi_radio_is_enabled_after_networkmanager_restores_its_state(self):
         state = self.root / 'var/lib/NetworkManager/NetworkManager.state'
         state.parent.mkdir(parents=True)

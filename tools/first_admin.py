@@ -3,6 +3,7 @@ import base64
 from contextlib import contextmanager
 import fcntl
 import grp
+import hashlib
 import hmac
 import json
 import os
@@ -130,7 +131,23 @@ class Bootstrap:
         closed = self.close()
         return {'state': 'claimed', 'id': result['id']} if authenticate else closed
 
-    def local(self, action, seed=None):
+    def image_fresh(self, directory):
+        marker = directory / 'project-setup.json'
+        seed = directory / 'web-setup.json'
+        receipt = private_json(marker, self.uid) if os.path.lexists(marker) else {}
+        expected = receipt.get('web_setup_sha256')
+        if expected is not None and not re.fullmatch('[0-9a-f]{64}', expected):
+            raise ValueError('Invalid image receipt')
+        value = private_json(seed, self.uid) if os.path.lexists(seed) else None
+        if value is not None and expected is None:
+            raise ValueError('Setup code has no image receipt')
+        result = self.local('fresh', value, expected)
+        if value is not None:
+            seed.unlink()
+            durable_directory(directory)
+        return result
+
+    def local(self, action, seed=None, expected=None):
         if action not in ('fresh', 'upgrade', 'resume', 'close', 'show', 'rotate'):
             raise ValueError('Unsupported operation')
         with self.locked() as state:
@@ -147,6 +164,10 @@ class Bootstrap:
                 return self.close()
             if occupied != {'result': 'empty'}:
                 raise ValueError('Database unavailable')
+            if expected is not None:
+                code = state.get('code') if phase == 'armed' else seed
+                if not isinstance(code, str) or not hmac.compare_digest(hashlib.sha256(code.encode()).hexdigest(), expected):
+                    raise ValueError('Image setup code does not match the committed receipt')
             if phase == 'missing' or action == 'rotate':
                 code = generated() if seed is None else seed
                 if not isinstance(code, str) or not re.fullmatch('[A-Z2-7]{16}', code):
@@ -204,11 +225,8 @@ def main(local=False):
                        Path('/proc/sys/kernel/random/boot_id').read_text().strip())
     if local:
         action = sys.argv[1]
-        seed = Path('/var/lib/cmprovision-image/web-setup.json')
         if action == 'image-fresh':
-            value = private_json(seed, 0) if os.path.lexists(seed) else None
-            result = broker.local('fresh', value)
-            seed.unlink(missing_ok=True)
+            result = broker.image_fresh(Path('/var/lib/cmprovision-image'))
         else:
             result = broker.local(action)
         if action == 'show' and 'code' in result:
@@ -225,7 +243,7 @@ def main(local=False):
 def entry(local=False):
     try:
         main(local)
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+    except (OSError, ValueError, KeyError, TypeError, RecursionError, subprocess.SubprocessError):
         print('Station setup unavailable.', file=sys.stderr)
         return 1
     return 0

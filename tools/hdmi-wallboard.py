@@ -10,6 +10,7 @@ import curses
 import fcntl
 import glob
 import grp
+import ipaddress
 import json
 import math
 import os
@@ -33,6 +34,7 @@ MAX_SNAPSHOT = 2097152
 RESCUE_ACCESS = Path('/run/fpms/rescue-wifi-qr.json')
 RESCUE_AUTO = RUNTIME / 'rescue-wifi-qr.json'
 RESCUE_CLOSED = Path('/run/fpms/rescue-wifi-qr-closed.json')
+FIRST_ADMIN = Path('/run/cmprovision-bootstrap/display.json')
 RESCUE_STATUS = Path('/run/cmprovision/rescue-wifi.json')
 DEBOUNCE = 2   # readings in a row before a connector change counts
 CONSOLEBLANK = Path('/sys/module/kernel/parameters/consoleblank')
@@ -98,8 +100,8 @@ def hdmi_connected(root=Path('/sys/class/drm')):
     return False
 
 
-def wanted(config, connected):
-    return config['mode'] == 'on' or (config['mode'] == 'auto' and connected)
+def wanted(config, connected, first_setup=False):
+    return config['mode'] == 'on' or (connected and (first_setup or config['mode'] == 'auto'))
 
 
 def systemctl(*args):
@@ -132,7 +134,7 @@ def watch():
                 candidate = reading
                 if count >= DEBOUNCE:
                     connected, count = reading, 0
-            desired = wanted(config, connected)
+            desired = wanted(config, connected, FIRST_ADMIN.is_file())
             rescue_qr.poll(desired)
             now = time.monotonic()
             if desired != active or now - last_check >= 10:
@@ -902,6 +904,28 @@ def rescue_closed(started, now):
     return type(closed) in (int, float) and started <= closed <= now
 
 
+def first_admin_frame(card, cols, rows, data=None):
+    code, host = card.get('code'), card.get('host')
+    if not isinstance(code, str) or not re.fullmatch('[A-Z2-7]{16}', code):
+        return None
+    if not isinstance(host, str) or not re.fullmatch(r'[A-Za-z0-9-]{1,63}\.local', host):
+        return None
+    data = data or {}
+    uplink = (data.get('station') or {}).get('uplink') or {}
+    try:
+        host = str(ipaddress.IPv4Interface(uplink.get('address', '')).ip)
+    except (ValueError, TypeError):
+        pass
+    canvas = Canvas(cols, rows)
+    lines = [('cm  Set up this station', 'accent'), ('Open http://'+host+'/setup', 'fg'),
+             ('Setup code', 'dim'), (' '.join(code[i:i+4] for i in range(0, 16, 4)), 'accent'),
+             ('Create your first web administrator', 'fg')]
+    top = max(0, (rows - 9) // 2)
+    for i, (line, ink) in enumerate(lines):
+        canvas.text(max(0, (cols-len(line))//2), top+i*2, line, ink)
+    return canvas
+
+
 def publish_rescue_qr(status):
     """Root watcher reveals the running AP only; the renderer gains no privilege."""
     import qrcode
@@ -1100,6 +1124,9 @@ def display(screen):
                 canvas = access_frame(access, width, height)
             else:
                 access = None
+                setup = root_json(FIRST_ADMIN)
+                if setup:
+                    canvas = first_admin_frame(setup, width, height, data) or canvas
             screen.timeout(int(SCROLL_SECONDS * 1000) if canvas.scrolls else 1000)   # faster only while a text runs
             palette = resolved_palette(config['palette'], data)
             if (palette, bool(access)) != palette_name:

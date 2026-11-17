@@ -13,6 +13,17 @@ w = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(w)
 
 
+class FirstAdminCardTest(unittest.TestCase):
+    def test_private_setup_only_overrides_off_on_a_connected_monitor(self):
+        self.assertTrue(w.wanted({'mode': 'off'}, True, first_setup=True))
+        self.assertFalse(w.wanted({'mode': 'off'}, False, first_setup=True))
+        self.assertFalse(w.wanted({'mode': 'off'}, True, first_setup=False))
+        for cols, rows in [(80, 24), (137, 38), (240, 60)]:
+            canvas = w.first_admin_frame({'code': 'ABCDEFGHIJKLMNOP', 'host': 'wlanpi.local'}, cols, rows)
+            self.assertIn('ABCD EFGH IJKL MNOP', canvas.plain())
+            self.assertIn('http://wlanpi.local/setup', canvas.plain())
+
+
 def device(serial='1000000000000001', state='run', phase='write'):
     return dict(serial=serial, name='wlanpi-demo', port='sw01 Gi0/1', phase=phase, state=state, percent=63,
                 speed=25 * 1048576, eta=60, cycle=200, detail='Writing image', diagnostics=None, steps=['preinstall', 'write'])

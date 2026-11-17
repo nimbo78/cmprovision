@@ -29,8 +29,9 @@ This page describes the **cmprovision station image — access and Wi-Fi** profi
    station**, then continues the project's remaining post-install steps and optional OS check.
 
 The new station keeps DHCP/TFTP and USB boot masked. Connect through the configured management path,
-create a **separate web account** with `sudo -u www-data /var/lib/cmprovision/artisan auth:create-user`,
+create a **separate web account** at `/setup` with the code from its physical display,
 then use [Configure station role](operations.md#addresses-routes-and-the-provisioning-network).
+For headless stations, select **First web administrator in browser** in the project before flashing. After delivery, open the device card on the source station, select **Open setup code** and confirm your web password. Copy it within 12 hours. This option requires a station image with browser setup. [First sign-in and console recovery](station-setup.md#before-opening-the-wizard)
 The Linux password does not create or change a web account. Without Wi-Fi setup, the image keeps its
 normal Ethernet management behavior; with Wi-Fi, a DHCP profile for the CM4's provisioning port `eth0`
 excludes its default routes and DNS, leaving management to Wi-Fi.
