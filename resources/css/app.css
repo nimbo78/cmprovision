@@ -362,3 +362,64 @@ body { background: var(--page); color: var(--text); }
 .ports-chip.pressed { box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor; }
 .ports-chip.faded { opacity: .45; }
 .ports-chip.ports-free { border-color: #e5e7eb; background: #f9fafb; color: #6b7280; }
+
+/* Updates journal: the existing appearance tokens own both colour and density. */
+@layer components {
+    .cmp-updates { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+    .cmp-updates-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+    .cmp-updates-heading h2, .cmp-updates h3 { font-size: calc(var(--fs) + 2px); font-weight: 700; }
+    .cmp-updates-heading p { margin-top: 4px; color: var(--muted); font-size: calc(var(--fs) - 1px); }
+    .cmp-updates-alert { padding: 12px 14px; border-radius: 8px; font-size: var(--fs); overflow-wrap: anywhere; }
+    .cmp-updates-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }
+    .cmp-updates-rail { display: flex; flex-direction: column; gap: 14px; padding-right: 18px; border-right: 1px solid var(--panel-line); }
+    .cmp-updates-component { min-width: 0; }
+    .cmp-updates-selector { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 12px; border: 1px solid transparent; border-radius: 8px; text-align: left; overflow-wrap: anywhere; }
+    .cmp-updates-selector[aria-pressed="true"] { border-color: var(--panel-line); background: var(--head); }
+    .cmp-updates-selector:hover { background: var(--head); }
+    .cmp-updates-selector:focus-visible, .cmp-updates-disclosure:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    .cmp-updates-version { font-size: var(--fs-mono); font-variant-numeric: tabular-nums; }
+    .cmp-updates-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--muted); font-size: calc(var(--fs) - 1px); overflow-wrap: anywhere; }
+    .cmp-updates-badge { display: inline-flex; width: fit-content; max-width: 100%; margin-top: 4px; padding: 2px 7px; border-radius: 5px; font-size: calc(var(--fs) - 2px); font-weight: 700; }
+    .cmp-updates-autocheck { display: flex; align-items: center; gap: 8px; padding: 8px 4px; color: var(--muted); font-size: calc(var(--fs) - 1px); cursor: pointer; }
+    .cmp-updates-rail-note { color: var(--muted); font-size: calc(var(--fs) - 2px); padding: 0 4px; }
+    .cmp-updates-journal { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .cmp-updates-current, .cmp-updates-candidate { padding: 16px 18px; min-width: 0; overflow-wrap: anywhere; }
+    .cmp-updates-current h3, .cmp-updates-candidate h3 { margin-top: 6px; }
+    .cmp-updates-current { border-left: 3px solid var(--accent); }
+    .cmp-updates-stages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 14px 0; list-style: none; padding: 0; }
+    .cmp-updates-stages li { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: calc(var(--fs) - 2px); }
+    .cmp-updates-step { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; flex-shrink: 0; border-radius: 50%; background: var(--head); }
+    .cmp-updates-stages li[data-state="current"] { color: var(--accent-text); font-weight: 700; }
+    .cmp-updates-stages li[data-state="current"] .cmp-updates-step { background: var(--accent-soft); }
+    .cmp-updates-stages li[data-state="done"] .cmp-updates-step { background: var(--pos-bg); color: var(--pos-text); }
+    .cmp-updates-stages li[data-state="failed"] .cmp-updates-step { background: var(--neg-bg); color: var(--neg-text); }
+    .cmp-updates-operation-details { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
+    .cmp-updates-disclosure { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: calc(var(--fs) - 1px); text-align: left; }
+    .cmp-updates-disclosure:hover { color: var(--text); }
+    .cmp-updates-ready { margin-top: 12px; background: var(--pos-bg); color: var(--pos-text); padding: 10px 12px; border-radius: 6px; font-size: calc(var(--fs) - 1px); }
+    .cmp-updates-next-action { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+    .cmp-updates-next-action p { color: var(--muted); font-size: calc(var(--fs) - 1px); }
+    .cmp-updates-next-action .cmp-btn { flex-shrink: 0; }
+    .cmp-updates-history { padding: 0 0 0 5px; margin: 0; list-style: none; }
+    .cmp-updates-event { position: relative; border-left: 1px solid var(--panel-line); padding: 0 0 22px 22px; }
+    .cmp-updates-event:last-child { padding-bottom: 0; border-left-color: transparent; }
+    .cmp-updates-event::before { content: ''; position: absolute; top: 6px; left: -4px; width: 7px; height: 7px; background: var(--track); border-radius: 50%; }
+    .cmp-updates-event h4 { margin-top: 4px; font-weight: 600; }
+    .cmp-updates-history-label { display: inline-block; margin-top: 4px; color: var(--muted); font-size: calc(var(--fs) - 2px); }
+    .cmp-updates-history-label[data-state="failed"], .cmp-updates-history-label[data-state="recovery-required"] { color: var(--neg-text); }
+    .cmp-updates-history-label[data-state="rolled-back"], .cmp-updates-history-label[data-state="canceled"] { color: var(--warn-text); }
+    .cmp-updates-history-label[data-state="succeeded"], .cmp-updates-history-label[data-state="ready"] { color: var(--pos-text); }
+    .cmp-updates-advanced { border-top: 1px solid var(--panel-line); padding-top: 14px; }
+    .cmp-updates-source { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; border-top: 1px solid var(--line); padding-top: 16px; }
+    @media (max-width: 767px) {
+        .cmp-updates-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+        .cmp-updates-rail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; border-right: 0; padding-right: 0; }
+        .cmp-updates-rail-note { grid-column: 1 / -1; }
+        .cmp-updates-selector { padding: 10px; height: calc(100% - 38px); }
+        .cmp-updates-current, .cmp-updates-candidate { padding: 14px; }
+        .cmp-updates-stages { gap: 8px 10px; }
+    }
+    @media (pointer: coarse) {
+        .cmp-updates-disclosure, .cmp-updates-autocheck { min-height: 44px; }
+    }
+}

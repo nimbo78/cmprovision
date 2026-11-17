@@ -12,6 +12,7 @@ class StationUpdatesPanel extends Component
 {
     use ConfirmsPasswords;
     public bool $applicationCheck = false, $utilityCheck = false, $open = false;
+    #[Locked] public string $component = 'application';
     #[Locked] public ?array $confirmation = null;
     public ?string $error = null;
     public function mount(): void
@@ -40,6 +41,13 @@ class StationUpdatesPanel extends Component
         catch (\RuntimeException|\InvalidArgumentException $error) { $this->error = $error->getMessage(); }
     }
     public function check(): void { $this->execute(fn () => app(StationUpdates::class)->check()); }
+    public function selectComponent(string $component): void
+    {
+        $this->actor();
+        abort_unless(in_array($component, StationUpdates::COMPONENTS, true), 422);
+        $this->component = $component;
+        $this->error = null;
+    }
     public function download(string $component, string $tag): void
     {
         $this->execute(fn () => app(StationUpdates::class)->download($component, $tag));

@@ -123,6 +123,57 @@ class StationUpdatesTest extends TestCase
         $this->actingAs(User::factory()->create())->getJson('/settings/updates/status')->assertOk();
     }
 
+    public function test_component_selection_is_local_and_does_not_check_or_install_updates(): void
+    {
+        $control = $this->control(['installed' => ['application' => '2.30.3', 'utility-os' => '2026.11']]);
+        $this->actingAs(User::factory()->create());
+        \Livewire\Livewire::test(\App\Http\Livewire\StationUpdatesPanel::class)
+            ->assertSet('component', 'application')
+            ->call('selectComponent', 'utility-os')->assertSet('component', 'utility-os')
+            ->assertSee('2026.11')
+            ->call('selectComponent', 'application')->assertSet('component', 'application');
+        $this->assertSame([], $control->calls);
+    }
+
+    public function test_unsupported_component_selection_is_rejected_without_requesting_an_update(): void
+    {
+        $control = $this->control();
+        $this->actingAs(User::factory()->create());
+        \Livewire\Livewire::test(\App\Http\Livewire\StationUpdatesPanel::class)
+            ->call('selectComponent', 'fpms')->assertStatus(422);
+        $this->assertSame([], $control->calls);
+    }
+
+    public function test_prepared_updates_do_not_cross_component_or_compatibility_boundaries(): void
+    {
+        $release = ['component' => 'utility-os', 'version' => '2026.11.1', 'tag' => 'utility-os-2026.11.1', 'notes' => 'Boot files'];
+        $control = $this->control(['checks' => ['utility-os' => ['id' => str_repeat('b', 64), 'release' => $release]],
+            'ready' => [['id' => str_repeat('b', 64), 'receipt' => str_repeat('c', 64), 'release' => $release, 'plan' => []]]]);
+        $this->actingAs(User::factory()->create());
+        $component = \Livewire\Livewire::test(\App\Http\Livewire\StationUpdatesPanel::class)
+            ->assertDontSee('Review and apply')
+            ->call('selectComponent', 'utility-os')->assertSee('Review and apply');
+        $control->state['checks']['utility-os']['incompatible'] = 'This station requires another boot-file format.';
+        $component->call('$refresh')->assertDontSee('Review and apply')->assertSee('another boot-file format');
+        $this->assertSame([], $control->calls);
+    }
+
+    public function test_failed_apply_with_a_retained_receipt_can_prepare_the_files_again(): void
+    {
+        $release = ['component' => 'application', 'version' => '2.30.4', 'tag' => 'v2.30.4', 'notes' => 'Release notes'];
+        $control = $this->control(['checks' => ['application' => ['id' => str_repeat('b', 64), 'release' => $release]],
+            'operation' => ['id' => str_repeat('a', 32), 'action' => 'apply', 'component' => 'application', 'state' => 'failed',
+                'message' => 'Required package changes changed; download and review the plan again.'],
+            'ready' => [['id' => str_repeat('b', 64), 'receipt' => str_repeat('c', 64), 'release' => $release, 'plan' => []]]]);
+        $this->actingAs(User::factory()->create());
+        \Livewire\Livewire::test(\App\Http\Livewire\StationUpdatesPanel::class)
+            ->assertSee('Download and verify again')
+            ->call('download', 'application', 'v2.30.4');
+        $this->assertSame('download', $control->calls[0]['action']);
+        $this->assertSame('application', $control->calls[0]['component']);
+        $this->assertSame('v2.30.4', $control->calls[0]['tag']);
+    }
+
     public function test_old_utility_os_selector_cannot_bypass_the_packaged_update_confirmation(): void
     {
         $this->makeTree();
