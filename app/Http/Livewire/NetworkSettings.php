@@ -13,6 +13,7 @@ use Livewire\Component;
 class NetworkSettings extends Component
 {
     use ConfirmsPasswords;
+    protected $listeners = ['station-network-recheck' => '$refresh'];
 
     #[Locked]
     public $device = null, $uuid = null;
@@ -31,7 +32,7 @@ class NetworkSettings extends Component
 
     public function mount(string $section = 'all'): void
     {
-        $this->section = in_array($section, ['all', 'management', 'role'], true) ? $section : 'all';
+        $this->section = in_array($section, ['all', 'management', 'role', 'pending'], true) ? $section : 'all';
         $this->primaryWebUrl = (string) \App\Models\Setting::find('reprovision_primary_url')?->value;
         $source = session('configuration_transfer_draft');
         if (is_array($source) && isset($source['operation'], $source['ref'])) {
@@ -116,6 +117,10 @@ class NetworkSettings extends Component
             $pending['can_confirm'] = isset($pending['token']);
             unset($pending['token']); // the confirmation token never goes to the browser
         }
+        $statusError = $status !== null && !($status['ok'] ?? false) ? ($status['error'] ?? 'Network status is unavailable.') : null;
+        if ($this->section === 'pending') {
+            return view('livewire.wizard.network-pending', compact('pending', 'statusError'));
+        }
         $profiles = $available ? app(NetworkProfiles::class)->active() : null;
         return view('livewire.network-settings', [
             'importedDraft' => $this->importedDraft(),
@@ -125,7 +130,9 @@ class NetworkSettings extends Component
             'ethernetDevices' => $available ? app(NetworkProfiles::class)->ethernetDevices() : null,
             'stand' => $available ? app(NetworkProfiles::class)->stand($profiles) : null,
             'pending' => $pending,
-            'statusError' => $status !== null && !($status['ok'] ?? false) ? ($status['error'] ?? 'Network status is unavailable.') : null,
+            'statusError' => $statusError,
+            'needsProject' => $this->section === 'role' && $this->roleForm && $this->stationRole === 'primary'
+                && !app(\App\Services\StationWizardState::class)->projectReady()['ready'],
         ]);
     }
 
@@ -200,6 +207,14 @@ class NetworkSettings extends Component
 
     public function confirm(): void { $this->finish('confirm'); }
     public function cancel(): void { $this->finish('cancel'); }
+
+    public function refreshPending(): void
+    {
+        $status = app(NetworkChanges::class)->status();
+        if (($status['ok'] ?? false) && ($status['result']['pending'] ?? null) === false) {
+            $this->dispatch('station-network-changed');
+        }
+    }
 
     public function activate(string $uuid): void
     {
@@ -400,5 +415,6 @@ class NetworkSettings extends Component
     {
         $this->notice = $text;
         $this->noticeIsError = $error;
+        if (!$error && $this->section !== 'all') $this->dispatch('station-network-changed');
     }
 }

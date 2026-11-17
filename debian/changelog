@@ -1,3 +1,10 @@
+cmprovision4 (2.30.5~dev2) trixie; urgency=medium
+
+  * Streamline station setup with a mobile step picker, independent access
+    forms and a diagram of the station's management and provisioning links.
+
+ -- cmprovision contributors <cmprovision@localhost>  Wed, 18 Nov 2026 02:25:00 +0300
+
 cmprovision4 (2.30.5~dev1) trixie; urgency=medium
 
   * Claim the first web administrator with a unique code on the station

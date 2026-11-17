@@ -18,6 +18,7 @@ class StationAccessSettings extends Component
 
     public string $name = '', $email = '', $linuxUser = '';
     public bool $enableSsh = false;
+    #[Locked] public bool $compact = false;
     #[Locked] public ?array $plan = null;
     #[Locked] public array $status = [];
     public ?string $notice = null, $error = null;

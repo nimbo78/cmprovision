@@ -42,6 +42,7 @@ class VlanStatus extends Component
         if (!$this->noticeIsError) {
             $this->form = false;
             $this->reset('parent', 'vlanId', 'address');
+            $this->dispatch('station-network-changed');
         }
     }
 
@@ -51,5 +52,6 @@ class VlanStatus extends Component
         $result = app(VlanNetworks::class)->remove($uuid);
         $this->noticeIsError = !($result['ok'] ?? false);
         $this->notice = $this->noticeIsError ? ($result['error'] ?? 'Could not remove VLAN.') : 'VLAN removed.';
+        if (!$this->noticeIsError) $this->dispatch('station-network-changed');
     }
 }

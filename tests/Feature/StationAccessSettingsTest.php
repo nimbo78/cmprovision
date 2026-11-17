@@ -31,6 +31,23 @@ class StationAccessSettingsTest extends TestCase
         Livewire::test(StationAccessSettings::class)->set('linuxUser', 'operator')->call('prepareSsh', 'new-password12', '')->assertForbidden();
     }
 
+    public function test_wizard_access_sections_are_independent_and_share_a_visible_password_prompt(): void
+    {
+        $this->controller();
+        $this->actingAs(User::factory()->create());
+        $html = Livewire::test(StationAccessSettings::class, ['compact' => true])->html();
+        $document = new \DOMDocument();
+        $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new \DOMXPath($document);
+        foreach (['station-web-access-form', 'station-ssh-access-form'] as $id) {
+            $this->assertCount(1, $xpath->query("//*[@id='$id']/ancestor::details[not(@open)]"));
+        }
+        $this->assertCount(1, $xpath->query('//*[starts-with(@id,"confirm-password-") and not(ancestor::details)]'));
+        $full = Livewire::test(StationAccessSettings::class)->html();
+        $document->loadHTML($full, LIBXML_NOERROR | LIBXML_NOWARNING);
+        $this->assertCount(0, (new \DOMXPath($document))->query('//*[@id="station-web-access-form"]/ancestor::details'));
+    }
+
     public function test_secrets_are_action_arguments_and_never_livewire_properties(): void
     {
         $control = $this->controller();

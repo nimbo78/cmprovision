@@ -23,6 +23,8 @@ test('saving one component does not discard another component edits', () => {
     const guard = guardState();
     guard.change('wifi'); guard.change('network');
     guard.saved('wifi');
+    assert.equal(guard.needsAttention('wifi'), false);
+    assert.equal(guard.needsAttention('network'), true);
     assert.equal(guard.canLeave(), false);
     guard.saved('network');
     assert.equal(guard.canLeave(), true);

@@ -52,6 +52,12 @@ Web and Linux/SSH accounts are separate. No default web password or public regis
 | Stand role | Choose Primary, Secondary or Disabled; acknowledge an isolated network for Primary, then check and confirm the temporary role change |
 | Review | Refresh actual role, address, services and project readiness; resolve blockers and complete setup |
 
+On a phone, use the step selector above the summary to jump by name. **Continue to network** opens the first configuration step. **Show connections** on Management network and Stand role shows the management uplink, this station and the provisioning interface. A pending network change keeps its countdown, **Confirm network** and **Restore previous** in view.
+
+![Management Wi-Fi on wlan1 and the provisioning stand on eth0 in the expanded connection diagram](assets/guides/station-setup-network.png)
+
+On Access, open **Web account**, **Station SSH** or **Sensor accounts** to edit that group. Review lists blockers first. **Other checks** shows interfaces, addresses and the current web login.
+
 **Back** changes steps. **Save and leave** remembers the current step; first save or cancel open editors. Reloading reads saved configuration again, rather than restoring unsaved drafts. Existing working stations are never redirected into setup automatically.
 
 The primary check verifies image preparation/files, required hashes and split copy, and matches prepared EEPROM against the selected project's firmware/settings. A stale active-project setting is insufficient. Unknown network/service state is not treated as intentionally disabled.
