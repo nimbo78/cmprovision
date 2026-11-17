@@ -1,3 +1,12 @@
+cmprovision4 (2.30.4~dev1) trixie; urgency=medium
+
+  * Group component releases, next actions and recent operations in an Updates journal.
+  * Keep confirmed update phases visible during reconnects and recovery.
+  * Preserve password confirmation, independent checks and repeat preparation.
+  * Refresh bilingual update instructions and the roadmap after 2.30.3.
+
+ -- cmprovision contributors <cmprovision@localhost>  Tue, 17 Nov 2026 13:25:21 +0300
+
 cmprovision4 (2.30.3) trixie; urgency=medium
 
   * Finalize compatible-device re-provisioning without local history or OURS marks.

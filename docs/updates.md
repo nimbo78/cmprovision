@@ -23,17 +23,19 @@ flowchart LR
 ## Check and download
 
 1. Open **Settings → Updates** and select **Check for updates**. Opening the page alone does not contact GitHub.
-2. Read the available version, notes and compatibility result for each component. Old unsigned releases, drafts, prereleases and pull requests are not installation candidates.
+2. Select **Application** or **Utility OS** in the component list. Read its available version, expandable **What’s new** notes and compatibility result. Old unsigned releases, drafts, prereleases and pull requests are not installation candidates.
 3. Select **Download and verify**. Download progress shows received bytes. Verification, package configuration and health checks show their current stage without a fabricated percentage.
 
-The two **Automatically check once a day** switches are independent and initially off. The timer checks enabled components approximately daily, with scheduling jitter. It never installs anything automatically. The selective configuration transfer can move these preferences; it does not transfer publisher keys, operation state or recovery snapshots.
+The two **Check daily** switches are independent and initially off. The timer checks enabled components approximately daily, with scheduling jitter. It never installs anything automatically. The selective configuration transfer can move these preferences; it does not transfer publisher keys, operation state or recovery snapshots.
+
+The journal shows the selected component’s next action, current operation and recent history. An operation on the other component remains visible with **View operation**; switching the view never starts an update. Recent events come from the station’s existing history, with up to ten operations. Times use the station’s configured timezone. Release notes, operation logs and recovery tools are collapsed until needed.
 
 ## Apply
 
 1. Finish all active or unfinished provisioning, OS checks and reserved image jobs. A silent board is still unfinished work. There is no force-install option.
-2. Review the required package changes, choose **Review and apply**, confirm your account password and approve the exact prepared version. **Back** leaves the confirmation without installing.
+2. Review the required package changes, choose **Review and apply**, confirm your account password and approve the exact prepared version. **Back** leaves the confirmation without installing. If station components or dependencies changed after preparation, use **Download and verify again** to refresh the prepared files and package plan before retrying.
 3. Keep station power connected. The worker continues independently of the browser, PHP-FPM and queue workers. A lost connection shows **Reconnecting**; do not submit another installation.
-   Expected maintenance responses are handled within the update status area. When the station returns, the operation result and installed version refresh automatically.
+   The last confirmed target and phase remain visible during reconnection. Snapshot preparation, installation and health checks show named stages and elapsed operation time. Expected maintenance responses are handled within the update status area. When the station returns, the operation result and installed version refresh automatically.
    When upgrading from 2.27.0, refresh the page once after completion to load this browser fix; do not apply again.
 4. After a successful health check, the station restores its prior service states. Previously masked DHCP/TFTP or USB boot services remain masked.
 
@@ -47,7 +49,7 @@ Recovery snapshots include uploaded images, so large image libraries need enough
 
 Downloaded Utility OS releases live outside application package directories in `/var/lib/cmprovision-utility-os/releases`. Preparation validates the complete inventory, checksums and required Ethernet/USB files. Checking or downloading never changes the boot selection. Applying changes the boot link as the web user; a package upgrade preserves a valid managed selection. Legacy and bundled modern boot files remain selectable.
 
-**Recovery history → Review rollback** can restore a retained prior version within its seven-day window, until another snapshot retires it. An application rollback also restores that snapshot's application data: later changes are discarded. Immediate automatic recovery runs while maintenance blocks intervening work.
+**Recovery and other versions → Recovery history → Review rollback** can restore a retained prior version within its seven-day window, until another snapshot retires it. An application rollback also restores that snapshot's application data: later changes are discarded. Immediate automatic recovery runs while maintenance blocks intervening work.
 
 If installation or its health checks fail, the updater restores the immediate snapshot automatically. Interrupted critical operations are recovered without repeating installation; boot recovery recreates the maintenance gate. If recovery fails, the page reports **recovery-required** and the gate stays closed. Use SSH/local console, inspect `journalctl -u 'cmprovision-update-*'` and `/var/lib/cmprovision-updates/private`, and resolve the recorded operation before reopening the stand. Do not delete pending files to bypass recovery.
 
@@ -55,7 +57,7 @@ The protocol-1 boot dispatcher is retained at `/var/lib/cmprovision-updates/reco
 
 ## Failure diagnostics
 
-Expand **Failure details** in Settings → Updates to see the failed phase, exception type and operation reference. **Download diagnostics** asks for your account password again and exports a bounded JSON report. Keep the reference with the report when requesting help. It distinguishes the original failure from any failure during automatic recovery, and records code locations and constrained HTTP status/OS error numbers. Passwords, response bodies, private command output and unexpected exception messages are excluded.
+Expand **Operation details and diagnostics** in Settings → Updates to see the failed phase, exception type and operation reference. **Download diagnostics** asks for your account password again and exports a bounded JSON report. Keep the reference with the report when requesting help. It distinguishes the original failure from any failure during automatic recovery, and records code locations and constrained HTTP status/OS error numbers. Passwords, response bodies, private command output and unexpected exception messages are excluded.
 
 Reports are retained privately on the station for the latest 20 diagnostic operations, with pending/recovery-required records protected from cleanup. For an unavailable web interface, use the reference over SSH: `sudo journalctl -u 'cmprovision-update-*' --no-pager`. A missing report does not mean an installation succeeded: use the recorded operation outcome and maintenance state. Do not remove pending markers to bypass recovery.
 

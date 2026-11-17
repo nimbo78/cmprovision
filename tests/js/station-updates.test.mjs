@@ -126,3 +126,87 @@ test('Alpine data reinitialization resumes polling after a Livewire render', asy
     assert.equal(timers.at(-1).delay, 10000);
     refreshed.destroy();
 });
+
+test('reconnection keeps the last confirmed target and phase visible', async (t) => {
+    const state = api.create('/status', { operation: { id: 'apply-1', component: 'application', version: '2.30.4',
+        action: 'apply', state: 'applying', message: 'Installing application packages.' } });
+    state.destroyed = true;
+    t.mock.method(globalThis, 'fetch', async () => { throw new Error('offline'); });
+    await state.poll();
+    assert.match(state.operationLabel(state.operation), /Application.*2\.30\.4/);
+    assert.match(state.message(), /Installing application packages/);
+    assert.match(state.connectionMessage(), /do not apply again/);
+    assert.equal(state.blocked(), true);
+    assert.equal(state.canCancel(), false);
+});
+
+test('terminal operations remain blocked until pending recovery clears', async (t) => {
+    const operation = { id: 'apply-1', state: 'failed', action: 'apply', component: 'application' };
+    const state = api.create('/status', { operation, pending: { id: 'apply-1' } });
+    state.destroyed = true;
+    let refreshes = 0;
+    state.$wire = { $refresh: () => { refreshes++; } };
+    assert.equal(state.blocked(), true);
+    assert.equal(state.busy(), false);
+    t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({ schema: 1, operation, pending: null, history: [] }) }));
+    await state.poll();
+    assert.equal(state.blocked(), false);
+    assert.equal(refreshes, 1, 'finishing recovery refreshes candidates and installed versions');
+});
+
+test('component history includes shared checks and omits the current operation and other components', () => {
+    const state = api.create('/status', { operation: { id: 'current', component: 'utility-os', state: 'downloading' }, history: [
+        { id: 'current', component: 'utility-os', state: 'downloading' },
+        { id: 'utility', component: 'utility-os', action: 'activate', state: 'succeeded' },
+        { id: 'both', components: ['application', 'utility-os'], action: 'check', state: 'succeeded' },
+        { id: 'app', component: 'application', action: 'apply', state: 'failed' },
+        { id: 'legacy', action: 'check', state: 'succeeded' },
+    ] });
+    assert.deepEqual(state.historyFor('application').map(x => x.id), ['both', 'app', 'legacy']);
+    assert.deepEqual(state.historyFor('utility-os').map(x => x.id), ['utility', 'both', 'legacy']);
+    assert.equal(state.operationFor('application'), false);
+    assert.equal(state.operationFor('utility-os'), true);
+    assert.deepEqual(state.historyFor('utility-os', true).map(x => x.id), ['current', 'utility', 'both', 'legacy'], 'a completed current operation can be shown once as a past event');
+});
+
+test('phase feedback distinguishes application snapshots from Utility OS activation and recovery', () => {
+    const state = api.create('/status', {});
+    assert.match(state.phaseLabel({ action: 'apply', component: 'application', state: 'preparing' }), /snapshot/i);
+    assert.doesNotMatch(state.phaseLabel({ action: 'activate', component: 'utility-os', state: 'preparing' }), /snapshot/i);
+    assert.match(state.phaseLabel({ action: 'apply', component: 'utility-os', state: 'applying' }), /activat/i);
+    assert.match(state.phaseLabel({ action: 'apply', component: 'application', state: 'reconnecting' }), /health/i);
+    assert.match(state.phaseLabel({ state: 'recovery-required' }), /recovery required/i);
+    assert.doesNotMatch(state.phaseLabel({ state: 'recovery-required' }), /completed|success/i);
+});
+
+test('timestamps follow the station timezone and tolerate incomplete operation data', () => {
+    const state = api.create('/status', {}, 'Asia/Jerusalem');
+    assert.match(state.formatTime(Date.UTC(2026, 10, 17, 11, 0) / 1000), /17 Nov 2026.*13:00/);
+    for (const timestamp of [undefined, null, 'broken', 0, Number.POSITIVE_INFINITY]) {
+        assert.equal(state.formatTime(timestamp), 'Time not available');
+    }
+    assert.equal(state.historyFor('application').length, 0);
+    assert.equal(state.operationFor('application'), false);
+});
+
+test('application and Utility OS stage strips reflect the real operation instead of fake percentages', () => {
+    const state = api.create('/status', { operation: { action: 'apply', component: 'application', state: 'reconnecting' } });
+    assert.deepEqual(state.stages().map(x => x.state), ['done', 'done', 'current']);
+    state.operation = { action: 'activate', component: 'utility-os', state: 'preparing' };
+    assert.deepEqual(state.stages().map(x => x.state), ['current']);
+    assert.equal(state.stages().some(x => /snapshot/i.test(x.label)), false);
+    state.operation = { action: 'apply', component: 'application', state: 'failed', diagnostic: { phase: 'preparing' } };
+    assert.deepEqual(state.stages().map(x => x.state), ['failed', 'next', 'next']);
+});
+
+test('real automatic and manual restore transitions never claim packages are still being installed', () => {
+    const state = api.create('/status', { operation: { action: 'apply', component: 'application', state: 'applying',
+        message: 'The update failed; automatically restoring the previous snapshot.', diagnostic: { phase: 'reconnecting', type: 'UpdateError' } } });
+    assert.match(state.phaseLabel(state.operation), /restor/i);
+    assert.doesNotMatch(state.phaseLabel(state.operation), /install/i);
+    assert.deepEqual(state.stages().map(x => x.state), ['current']);
+    state.operation.state = 'rolled-back';
+    assert.deepEqual(state.stages().map(x => x.state), ['done']);
+    state.operation = { action: 'rollback', component: 'application', state: 'applying' };
+    assert.match(state.phaseLabel(state.operation), /restor/i);
+});
