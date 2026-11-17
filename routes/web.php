@@ -13,6 +13,8 @@ use App\Http\Livewire\Settings;
 use App\Http\Controllers\AddImageController;
 use App\Http\Controllers\AddPackageController;
 use App\Http\Controllers\BackupDownloadController;
+use App\Http\Controllers\StationSetupCodeController;
+use App\Http\Middleware\RequireSetupCodePassword;
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
     ->get('/settings/backups/status', [\App\Http\Controllers\StationBackupsController::class, 'status'])->name('settings.backups.status');
@@ -49,6 +51,11 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/cms', Cms::class)->name('cms');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/cms/{mac}', CmCard::class)->name('cm');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->prefix('cms/{mac}/setup-code')->group(function () {
+    Route::get('/', StationSetupCodeController::class)->middleware(RequireSetupCodePassword::class)->name('cm.setup-code');
+    Route::view('/confirm-password', 'auth.confirm-password')->name('cm.setup-code.confirm');
+    Route::post('/confirm-password', [StationSetupCodeController::class, 'confirmPassword']);
+});
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
     ->get('/cms/{mac}/report/{format}', [\App\Http\Controllers\ModuleReportController::class, 'module'])
     ->whereIn('format', ['html', 'json'])->name('cm.report');
@@ -72,7 +79,6 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     ->get('/settings/power/status', \App\Http\Controllers\StationPowerStatusController::class)->name('settings.power.status');
 // the copy of the data holds the application key and every password of the server: the password is asked again
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'password.confirm'])->group(function () {
-    Route::get('/cms/{mac}/setup-code', \App\Http\Controllers\StationSetupCodeController::class)->name('cm.setup-code');
     Route::get('/settings/updates/{id}/diagnostics', \App\Http\Controllers\StationUpdatesDiagnosticsController::class)
         ->where('id', '[0-9a-f]{32}')->name('settings.updates.diagnostics');
     Route::get('/settings/backup', [BackupDownloadController::class, 'show'])->name('settings.backup');

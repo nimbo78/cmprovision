@@ -4,9 +4,22 @@ namespace App\Http\Controllers;
 
 use App\Models\Cm;
 use App\Models\StationSetupRun;
+use Illuminate\Http\Request;
+use Laravel\Fortify\Contracts\PasswordConfirmedResponse;
+use Laravel\Fortify\Http\Controllers\ConfirmablePasswordController;
 
 class StationSetupCodeController extends Controller
 {
+    public function confirmPassword(Request $request, string $mac, ConfirmablePasswordController $passwords)
+    {
+        $response = $passwords->store($request);
+        if ($response instanceof PasswordConfirmedResponse && ! $request->wantsJson()) {
+            return to_route('cm.setup-code', ['mac' => $mac]);
+        }
+
+        return $response;
+    }
+
     public function __invoke(string $mac)
     {
         $cm = Cm::findByKey($mac);
