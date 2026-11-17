@@ -50,7 +50,7 @@ test('every section id of the tab views is in the table', async () => {
     const { readFileSync, readdirSync } = await import('node:fs');
     const dir = new URL('../../resources/views/livewire/', import.meta.url);
     const ids = new Set();
-    const files = ['wifi-settings', 'switch-settings', 'notification-settings', 'utility-os-settings', 'usb-prep-settings', 'wallboard-settings', 'station-time-settings']
+    const files = ['wifi-settings', 'switch-settings', 'notification-settings', 'utility-os-settings', 'usb-prep-settings', 'wallboard-settings', 'station-time-settings', 'station-access-settings']
         .map((f) => `${f}.blade.php`)
         .concat(['settings/status.blade.php', 'settings/system.blade.php', 'settings/network.blade.php', 'settings/provisioning.blade.php']);
     for (const f of files) {

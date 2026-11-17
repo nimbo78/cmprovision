@@ -1,0 +1,25 @@
+#!/usr/bin/python3 -I
+"""Local root approval; deliberately absent from the web user's sudo rules."""
+import os
+import sys
+sys.path.insert(0, '/usr/lib/cmprovision')
+from station_access import Controller, STATE
+from station_access_linux import Linux
+
+if os.geteuid() != 0 or len(sys.argv) != 3 or sys.argv[1] != 'approve' or not sys.stdin.isatty():
+    raise SystemExit('Run sudo cmprovision-access approve <reference> in an interactive terminal.')
+try:
+    controller = Controller(STATE, Linux())
+    plan = controller.review(sys.argv[2])
+    print('Station access request:', plan['id'])
+    print('Existing Linux administrator:', plan['user'])
+    for change in plan['changes']:
+        print(' -', change)
+    print('Existing SSH keys and sudo policy are retained.')
+    if input('Approve exactly this request? Type YES: ') != 'YES':
+        raise SystemExit('Not approved.')
+    approved = controller.approve(plan['id'])
+    print('One-time code:', approved['code'])
+    print('Enter it in the browser within 120 seconds. Do not approve an unexpected request.')
+except ValueError as error:
+    raise SystemExit(str(error))

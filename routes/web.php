@@ -60,6 +60,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/labels', Labels::class)->name('labels');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/firmware', Firmwares::class)->name('firmware');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/settings', Settings::class)->name('settings');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/settings/setup', \App\Http\Livewire\StationSetupWizard::class)->name('settings.setup');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
     ->get('/settings/updates/status', \App\Http\Controllers\StationUpdatesStatusController::class)->name('settings.updates.status');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])

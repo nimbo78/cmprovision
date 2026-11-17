@@ -1,6 +1,6 @@
 @php($input = 'cmp-field w-full')
 @php($label = 'block text-fg text-sm font-bold mb-2')
-<x-settings-card title="Ethernet switches" id="switches" description="Managed switches tell each module the switch and port it is plugged into.">
+<x-settings-card title="Ethernet switches" id="switches" description="Managed switches tell each module the switch and port it is plugged into." data-wizard-form data-wizard-editor="{{ $form ? 'open' : 'closed' }}" wire:loading.attr="data-wizard-saving">
     @if (!$form)
         <x-slot name="actions">
             <button type="button" wire:click="add" class="cmp-btn cmp-btn-secondary">Add switch</button>

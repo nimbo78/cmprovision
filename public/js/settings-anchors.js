@@ -27,6 +27,8 @@
         'services': 'status',
         'backup': 'system',
         'station-power': 'system',
+        'station-setup': 'system',
+        'station-access': 'system',
         'time': 'system',
         'storage': 'system',
         'wifi': 'network',

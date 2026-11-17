@@ -1,3 +1,14 @@
+cmprovision4 (2.30.4~dev2) trixie; urgency=medium
+
+  * Guide station network, switch, access, project and stand-role setup in the web UI.
+  * Configure the current web account and operation-approved station SSH access.
+  * Preserve existing Linux users, SSH keys, sudo policy and network rollback.
+  * Verify actual station/project readiness and guard unsaved wizard editors.
+  * Keep display-only tests out of Utility OS builds and wait for recovery cleanup in CI.
+  * Add bilingual setup instructions, diagrams and an actual UI capture.
+
+ -- cmprovision contributors <cmprovision@localhost>  Tue, 17 Nov 2026 18:40:00 +0300
+
 cmprovision4 (2.30.4~dev1) trixie; urgency=medium
 
   * Group component releases, next actions and recent operations in an Updates journal.

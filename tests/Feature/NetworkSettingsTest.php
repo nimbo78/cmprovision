@@ -130,7 +130,8 @@ class NetworkSettingsTest extends TestCase
         $this->app->instance(NetworkProfiles::class, $reader);
         $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
         Livewire::test(NetworkSettings::class)->assertSee('172.20.0.1/16')->assertSee('VLAN 42')
-            ->set('standTarget', self::UUID)->call('moveStand')->assertSee('The stand network moved temporarily.');
+            ->set('standTarget', self::UUID)->call('moveStand')->assertSee('The stand network moved temporarily.')
+            ->assertDispatched('station-wizard-saved', scope: 'network-move-form');
     }
 
     public function test_stand_move_requires_password_confirmation(): void
@@ -159,7 +160,8 @@ class NetworkSettingsTest extends TestCase
         $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
         Livewire::test(NetworkSettings::class)->assertSee('Lab management')->assertSee('Connect')
             ->set('activationDevice', 'wrong0')->call('activate', self::UUID)
-            ->assertSee('The connection change is temporary.');
+            ->assertSee('The connection change is temporary.')
+            ->assertDispatched('station-wizard-saved', scope: 'network-saved-form');
     }
 
     public function test_connection_actions_require_password_confirmation(): void
@@ -175,6 +177,22 @@ class NetworkSettingsTest extends TestCase
         Livewire::test(NetworkSettings::class)->call('deactivate', 'eth0.42', self::UUID)->assertForbidden();
         Livewire::test(NetworkSettings::class)->call('createProfile')->assertForbidden();
         Livewire::test(NetworkSettings::class)->call('deleteProfile', self::UUID)->assertForbidden();
+    }
+
+    public function test_discarding_one_network_draft_keeps_other_unsaved_fields(): void
+    {
+        $changes = $this->createMock(NetworkChanges::class);
+        $changes->method('available')->willReturn(true);
+        $changes->method('status')->willReturn(['ok' => true, 'result' => ['pending' => false]]);
+        $changes->expects($this->never())->method('createProfile');
+        $this->app->instance(NetworkChanges::class, $changes);
+        $this->app->instance(NetworkProfiles::class, $this->reader());
+        $this->actingAs(User::factory()->create());
+        Livewire::test(NetworkSettings::class)->set('newDevice','eth0')->set('newProfileName','unsaved profile')
+            ->set('standTarget',self::UUID)->set('primaryWebUrl','http://unsaved.example')
+            ->call('discardDraft','network-new-profile-form')->assertSet('newDevice','')->assertSet('newProfileName','')
+            ->assertSet('standTarget',self::UUID)->assertSet('primaryWebUrl','http://unsaved.example')
+            ->assertDispatched('station-wizard-saved', scope:'network-new-profile-form');
     }
 
     public function test_inactive_profile_can_be_edited_before_a_temporary_activation(): void

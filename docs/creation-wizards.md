@@ -4,6 +4,8 @@
 
 [Operations](operations.md) · [Configuration transfer](configuration-transfer.md)
 
+For this provisioner's own network, accounts and stand role, use the [Station setup wizard](station-setup.md).
+
 Projects, Labels and Scripts each offer **Create with wizard**. **Copy with wizard** starts from an existing row and creates a distinct object. The ordinary **Add** and **Edit** forms remain available.
 
 Each wizard shows its steps, checks the current step before continuing and provides Back, Cancel and a final summary. Back retains entered values. Save is available only at the summary and validates the complete definition again. Escape cancels the wizard.

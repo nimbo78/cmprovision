@@ -1,0 +1,2 @@
+# Local approval issuance (/usr/sbin/cmprovision-access) is intentionally not permitted.
+www-data ALL=(root) NOPASSWD: /usr/lib/cmprovision/station-access ""
