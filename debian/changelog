@@ -1,3 +1,14 @@
+cmprovision4 (2.30.6) trixie; urgency=medium
+
+  * Check recovery space on each filesystem before pausing the stand and
+    verify the snapshot and its restore helper before changing packages.
+  * Keep DHCP, TFTP and USB boot closed across a power loss until recovery
+    permits the saved role to resume. Preserve secondary station masks.
+  * Refresh installed versions and available releases in the update journal
+    after an installation. Keep the last verified check visible offline.
+
+ -- cmprovision contributors <cmprovision@localhost>  Wed, 18 Nov 2026 22:00:00 +0300
+
 cmprovision4 (2.30.5) trixie; urgency=medium
 
   * Create the first web administrator in the browser with a one-use code
