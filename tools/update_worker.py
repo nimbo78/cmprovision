@@ -168,10 +168,16 @@ class Worker:
             context={key: context.get(key) for key in ('cmprovision', 'fpms_version', 'fpms_installed')}))
         self._phase(identity, 'ready', 'Verified update is ready. Apply it when the station is idle.')
 
-    def _prepare(self, identity, component, selected=None, restore_role=None):
+    def _check_rollback_station(self, rollback, context):
+        if rollback:
+            self.system.check_boot_services(rollback['services'], role_only=True)
+            if rollback['previous']['fpms_installed'] != context['fpms_installed']:
+                raise UpdateError('The installed FPMS package set differs from the selected recovery snapshot.')
+
+    def _prepare(self, identity, component, selected=None, rollback=None):
         self._idle()
         self.system.conflicts()
-        if restore_role is not None: self.system.check_boot_services(restore_role, role_only=True)
+        if rollback: self._check_rollback_station(rollback, self.system.context())
         space = None
         if component == 'application':
             self._phase(identity, 'preparing', 'Checking recovery space while the station is online.')
@@ -187,9 +193,9 @@ class Worker:
         with self.system.admission_lock():
             self.system.conflicts()
             self._idle()
-            if restore_role is not None: self.system.check_boot_services(restore_role, role_only=True)
             services = self.system.capture_services()
             previous = self.system.context()
+            self._check_rollback_station(rollback, previous)
             if space is not None:
                 # The measured requirement already includes this fixed-size reserve.
                 self.system.require_snapshot_space(space)
@@ -335,7 +341,7 @@ class Worker:
                 raise UpdateError('The recovery snapshot does not belong to the selected operation.')
             verified = self.system.validate_backup(selected)
         services, previous = self._prepare(identity, component, selected=request['operation'],
-            restore_role=previous_operation['services'] if component == 'application' else None)
+            rollback=previous_operation if component == 'application' else None)
         if component == 'application':
             # A new snapshot allows recovery if this explicitly requested later data rollback itself fails.
             safety = self.system.backup(identity)

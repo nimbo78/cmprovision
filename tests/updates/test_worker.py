@@ -466,6 +466,23 @@ class WorkerTest(unittest.TestCase):
         resumed = [call[1] for call in self.system.calls if call[0] == 'resume']
         self.assertEqual({'enabled': 'enabled', 'active': True}, resumed[-1][service])
 
+    def assert_rollback_preserves_display_package_set(self, saved_fpms):
+        self.system.current['fpms_installed'] = saved_fpms
+        installed = self.apply(self.download())
+        self.assertEqual('succeeded', installed['state'])
+        self.system.current['fpms_installed'] = not saved_fpms
+        self.system.calls.clear()
+        rejected = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', rejected['state'])
+        self.assertIn('FPMS', rejected['message'])
+        self.assertFalse(any(c[0] in ('retire', 'pause', 'backup', 'recover') for c in self.system.calls))
+
+    def test_manual_rollback_rejects_a_removed_display_package_before_maintenance(self):
+        self.assert_rollback_preserves_display_package_set(True)
+
+    def test_manual_rollback_rejects_an_added_display_package_before_maintenance(self):
+        self.assert_rollback_preserves_display_package_set(False)
+
     def test_reboot_cleanup_closes_both_boot_servers_if_one_restart_fails(self):
         ready = self.download()
         class PowerLoss(BaseException): pass
