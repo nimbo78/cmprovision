@@ -2,7 +2,7 @@
 
 # Provision another cmprovision station
 
-The development branch can configure a new station while writing the generic cmprovision Lite image.
+cmprovision can configure a new station while writing the generic cmprovision Lite image.
 The project supplies Linux access and optional management Wi-Fi; the shared image stays unchanged.
 This feature requires a rebuilt image with **station setup schema 1**, the 64-bit utility OS, and
 eMMC/SD with an ext4 root on partition 2. The previously tested `2.24.0~dev2` image predates this support.

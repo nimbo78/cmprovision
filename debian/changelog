@@ -1,3 +1,14 @@
+cmprovision4 (2.30.5) trixie; urgency=medium
+
+  * Create the first web administrator in the browser with a one-use code
+    from the station display or the imaging station's device card.
+  * Return to the requested device code after password confirmation and
+    keep first-time registration closed on existing and restored stations.
+  * Streamline the seven setup steps on desktop and mobile, show the
+    management and provisioning links, and hide the setup card on completion.
+
+ -- cmprovision contributors <cmprovision@localhost>  Wed, 18 Nov 2026 04:00:00 +0300
+
 cmprovision4 (2.30.5~dev3) trixie; urgency=medium
 
   * Hide the station setup card in Settings once initial setup is complete.
