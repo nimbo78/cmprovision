@@ -4,7 +4,7 @@
 
 [Deployment options](deployment-options.md) · [Project wizard](creation-wizards.md) · [Network profiles](provisioner-network.md)
 
-Open **Settings → System → Open setup wizard**. A new, unconfigured station also offers **Set up station** on Dashboard. Existing stations can use it to review their configuration.
+Open **Settings → System → Open setup wizard**. A new, unconfigured station also offers **Set up station** on its dashboard. After **Complete setup**, the wizard card disappears from Settings for everyone. To review the setup later, sign in and open `/settings/setup`.
 
 ![Station setup: current role and guided steps](assets/guides/station-setup.png)
 
@@ -58,7 +58,7 @@ On a phone, use the step selector above the summary to jump by name. **Continue 
 
 On Access, open **Web account**, **Station SSH** or **Sensor accounts** to edit that group. Review lists blockers first. **Other checks** shows interfaces, addresses and the current web login.
 
-**Back** changes steps. **Save and leave** remembers the current step; first save or cancel open editors. Reloading reads saved configuration again, rather than restoring unsaved drafts. Existing working stations are never redirected into setup automatically.
+**Back** changes steps. To pause initial setup, save or cancel any open edits and select **Save and leave**. Select **Resume station setup** in **Settings → System** to return to the same step in this browser session. Reloading the page shows the saved configuration. Existing working stations are never redirected into setup automatically.
 
 The primary check verifies image preparation/files, required hashes and split copy, and matches prepared EEPROM against the selected project's firmware/settings. A stale active-project setting is insufficient. Unknown network/service state is not treated as intentionally disabled.
 

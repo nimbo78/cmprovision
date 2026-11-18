@@ -1,3 +1,9 @@
+cmprovision4 (2.30.5~dev3) trixie; urgency=medium
+
+  * Hide the station setup card in Settings once initial setup is complete.
+
+ -- cmprovision contributors <cmprovision@localhost>  Wed, 18 Nov 2026 03:18:00 +0300
+
 cmprovision4 (2.30.5~dev2) trixie; urgency=medium
 
   * Streamline station setup with a mobile step picker, independent access

@@ -146,6 +146,25 @@ class StationSetupWizardTest extends TestCase
         $this->assertNotNull(Setting::find('station_wizard_completed'));
     }
 
+    public function test_system_settings_offer_to_resume_until_the_station_setup_is_completed(): void
+    {
+        $this->network();
+        $this->actingAs(User::factory()->create());
+        $settings = route('settings', ['tab' => 'system']);
+        $this->get($settings)->assertOk()->assertSee('Open setup wizard');
+
+        Livewire::test(StationSetupWizard::class)->call('go', 3)->call('leave')->assertRedirect($settings);
+        $this->get($settings)->assertOk()->assertSee('Resume station setup');
+
+        Livewire::test(StationSetupWizard::class)->assertSet('step', 3)
+            ->call('go', 7)->call('finish')->assertRedirect($settings);
+        $this->get($settings)->assertOk()->assertDontSee('id="station-setup"', false);
+
+        $this->actingAs(User::factory()->create())->withSession(['station_wizard_step' => 2]);
+        $this->get($settings)->assertOk()->assertDontSee('id="station-setup"', false);
+        $this->get(route('settings.setup'))->assertOk()->assertSeeLivewire(StationSetupWizard::class);
+    }
+
     public function test_pending_or_unavailable_network_status_blocks_navigation_and_finish(): void
     {
         $this->network(pending: true);

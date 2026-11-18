@@ -73,8 +73,13 @@ class StationWizardState
         return ['ready' => !$errors, 'name' => $project->name, 'errors' => $errors];
     }
 
+    public static function completed(): bool
+    {
+        return Setting::whereKey('station_wizard_completed')->exists();
+    }
+
     public static function invitation(): bool
     {
-        return !Setting::find('station_wizard_completed') && !Project::exists() && !EthernetSwitch::exists();
+        return !self::completed() && !Project::exists() && !EthernetSwitch::exists();
     }
 }
