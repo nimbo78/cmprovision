@@ -143,6 +143,30 @@ class RecoverySnapshotTest(unittest.TestCase):
             self.system.recover(self.backup())
         self.assertEqual(['/usr/bin/dpkg'], self.installers)
 
+    def test_manual_rollback_uses_current_strict_helper_with_legacy_data(self):
+        self.restore.write_text('#!/bin/sh\nexit 0\n')  # Old helpers ignored system-config extraction failures.
+        for name in ('time-settings.saved', 'boot-services.saved'):
+            (self.snapshot/name).write_text('1\n')
+        backup = self.backup()
+        verified = self.system.validate_backup(backup)
+        safety_id = 'b'*32
+        directory = self.store.private/'recovery'/safety_id
+        directory.mkdir(mode=0o700)
+        strict = directory/'restore.sh'
+        strict.write_text('#!/bin/sh\nexit 23\n')
+        safety = {'identity': safety_id, 'restore_sha256': hashlib.sha256(strict.read_bytes()).hexdigest()}
+        def command(argv, **options):
+            if argv[0] == '/usr/bin/dpkg': return ''
+            self.assertEqual(['/bin/sh', strict, '--force'], argv[:3])
+            for name in ('time-settings.saved', 'boot-services.saved'):
+                self.assertTrue((argv[3]/name).samefile(self.snapshot/name))
+            self.assertTrue(options['strict_snapshot'])
+            if subprocess.run(argv, capture_output=True).returncode:
+                raise UpdateError('Strict system-config extraction failed.')
+        self.system.command = command
+        with self.assertRaisesRegex(UpdateError, 'Strict system-config extraction failed'):
+            self.system.recover(backup, verified=verified, safety=safety)
+
 
 class SystemTest(unittest.TestCase):
     def test_capture_returns_a_verified_reinstallable_snapshot_after_admission(self):
@@ -224,6 +248,17 @@ class SystemTest(unittest.TestCase):
         self.assertFalse(any('unmask' in c and 'cmprovision-dnsmasq.service' in c for c in calls))
         self.assertFalse(any('start' in c and 'cmprovision-dnsmasq.service' in c for c in calls))
         self.assertTrue(any('start' in c and 'cmprovision-queue.service' in c for c in calls))
+
+    def test_health_checks_fpms_presence_and_its_own_historical_version(self):
+        system = LinuxSystem(None)
+        with patch.object(system, 'www', return_value={'ok': True}), patch.object(system, 'http_health'):
+            for installed, expected in [(None, '2.29.0'), ('2.30.0', '2.29.0'), ('2.29.0', None), ('2.29.0', '2.29.0')]:
+                with self.subTest(installed=installed, expected=expected), patch.object(system, 'package',
+                        side_effect=lambda name: '2.30.0' if name == 'cmprovision4' else installed):
+                    context = {'cmprovision': '2.30.0', 'fpms_installed': expected is not None, 'fpms_version': expected}
+                    if installed == expected: system.health(context, {})
+                    else:
+                        with self.assertRaisesRegex(UpdateError, 'FPMS'): system.health(context, {})
 
     def test_masked_but_running_service_is_rejected_before_changing_anything(self):
         system = LinuxSystem.__new__(LinuxSystem)

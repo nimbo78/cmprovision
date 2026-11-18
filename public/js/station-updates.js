@@ -36,12 +36,22 @@
         if (operation.components?.length) return operation.components.includes(component);
         return true; // Older station-wide checks did not record components.
     }
+    function panelState(status) {
+        // These values drive the server-rendered version, release and action buttons.
+        // Byte progress belongs to Alpine and should not trigger a Livewire render.
+        return JSON.stringify([status.operation?.id, status.operation?.state, status.pending?.id,
+            status.installed, ['application', 'utility-os'].map(part => {
+                var check = status.checks?.[part];
+                return [check?.id, check?.checked_at, check?.verified_at, check?.error, check?.incompatible];
+            }), (status.ready || []).map(item => [item.id, item.receipt]),
+            (status.recoveries || []).map(item => item.id)]);
+    }
     function create(url, initial, timezone) {
         return {
             operation: initial.operation || null, reconnecting: false, signin: false, timer: null, destroyed: false,
             history: Array.isArray(initial.history) ? initial.history : [], pending: initial.pending || null,
             now: Math.floor(Date.now() / 1000),
-            sequence: initial.operation?.updated_at || 0,
+            rendered: panelState(initial), polling: false,
             busy: function () { return !!this.operation && !terminal.includes(this.operation.state); },
             blocked: function () { return this.busy() || !!this.pending || this.reconnecting || this.signin; },
             canCancel: function () { return !this.reconnecting && !this.signin && !this.pending && !!this.operation && ['queued', 'checking', 'downloading', 'verifying'].includes(this.operation.state); },
@@ -118,6 +128,8 @@
             init: function () { return this.poll(); },
             destroy: function () { this.destroyed = true; clearTimeout(this.timer); },
             poll: async function () {
+                if (this.polling) return;
+                this.polling = true;
                 clearTimeout(this.timer);
                 try {
                     var response = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.timeout(10000) });
@@ -125,17 +137,19 @@
                     if (!response.ok) throw new Error('reconnecting');
                     var state = await response.json();
                     if (state.schema !== 1) throw new Error('invalid status');
-                    var changed = this.operation?.id !== state.operation?.id || this.operation?.state !== state.operation?.state || (!!this.pending && !state.pending);
+                    var next = panelState(state);
                     this.operation = state.operation || null;
                     this.history = Array.isArray(state.history) ? state.history : [];
                     this.pending = state.pending || null;
                     this.reconnecting = false;
                     this.signin = false;
-                    if (changed && !this.busy() && !state.pending) {
+                    if (next !== this.rendered && !this.busy() && !state.pending) {
                         try { sessionStorage.removeItem('cmprovision-update:' + url); } catch (_) {}
-                        if (this.$wire) this.$wire.$refresh();
+                        if (this.$wire) await this.$wire.$refresh();
+                        this.rendered = next;
                     }
                 } catch (_) { this.reconnecting = true; }
+                this.polling = false;
                 this.now = Math.floor(Date.now() / 1000);
                 if (!this.destroyed) this.timer = setTimeout(() => this.poll(), this.blocked() ? 2000 : 10000);
             }

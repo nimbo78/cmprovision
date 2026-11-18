@@ -154,6 +154,23 @@ test('terminal operations remain blocked until pending recovery clears', async (
     assert.equal(refreshes, 1, 'finishing recovery refreshes candidates and installed versions');
 });
 
+test('an open tab refreshes again when the installed version and prepared files catch up', async (t) => {
+    const operation = { id: 'same-install', state: 'succeeded', action: 'apply', component: 'application' };
+    const projection = { schema: 1, operation, installed: { application: '2.30.5' },
+        ready: [{ id: 'package', receipt: 'reviewed' }], pending: null };
+    let response = projection;
+    t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => response }));
+    const state = api.create('/status', { ...projection, operation: { ...operation, state: 'applying' } });
+    state.destroyed = true;
+    let refreshes = 0;
+    state.$wire = { $refresh: () => { refreshes++; } };
+    await state.poll();
+    response = { ...projection, installed: { application: '2.30.6' }, ready: [] };
+    await state.poll();
+    await state.poll();
+    assert.equal(refreshes, 2, 'refresh the finished install and its later metadata, then stop refreshing');
+});
+
 test('component history includes shared checks and omits the current operation and other components', () => {
     const state = api.create('/status', { operation: { id: 'current', component: 'utility-os', state: 'downloading' }, history: [
         { id: 'current', component: 'utility-os', state: 'downloading' },

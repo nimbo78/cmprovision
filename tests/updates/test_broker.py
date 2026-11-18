@@ -149,5 +149,21 @@ class BrokerTest(unittest.TestCase):
             self.assertEqual('failed', store.operation(operation['id'])['state'])
             self.assertEqual(1, len(calls))
 
+    def test_dead_worker_after_commit_dispatches_cleanup_and_preserves_the_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            store = UpdateStore(Path(temporary)/'state', Path(temporary)/'run', owner=os.getuid(), clock=lambda: 1)
+            operation, _ = store.begin({'action': 'check', 'nonce': 'e'*64, 'components': ['application']})
+            store.mark_pending(operation['id'])
+            store.update(operation['id'], state='rolled-back', committed=True, outcome='rolled-back')
+            run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout='inactive\n'))
+            reconcile(store, run=run, clock=lambda: 100)
+            self.assertEqual(2, run.call_count)
+            self.assertEqual(str(store.root/'recover.py'), run.call_args.args[0][-1])
+            self.assertEqual('rolled-back', store.operation(operation['id'])['state'])
+            store.clear_pending(operation['id'])
+            run.reset_mock()
+            reconcile(store, run=run, clock=lambda: 100)
+            run.assert_not_called()
+
 
 if __name__ == '__main__': unittest.main()

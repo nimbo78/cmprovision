@@ -15,12 +15,12 @@ import sys
 import time
 
 from update_manifest import DEB_VERSION_RE, UpdateError
+from update_recovery import BOOT_SERVICES
 from update_store import ID_RE, matches, safe_text
 
 APP = Path('/var/lib/cmprovision')
 HELPERS = Path('/usr/lib/cmprovision')
 RESTORE_HELPER = Path('/usr/sbin/cmprovision-restore')
-BOOT_SERVICES = frozenset(('cmprovision-dnsmasq.service', 'cmprovision-rpiboot.service'))
 READERS = ('cmprovision-queue.service', 'cmprovision-queue-images.service',
            'cmprovision-usb-diagnostics.service', 'cmprovision-wallboard-data.service',
            'cmprovision-fpms-data.service')
@@ -153,6 +153,24 @@ class LinuxSystem:
                 if state['enabled'] not in ('masked', 'masked-runtime'):
                     self.command(['/usr/bin/systemctl', 'mask', '--runtime', name])
             self.command(['/usr/bin/systemctl', 'stop', name])
+
+    def ensure_boot_guard(self):
+        from update_recovery import install_boot_guard
+        install_boot_guard(self.store)
+        # Reload even after a previously interrupted installation of the drop-ins.
+        self.command(['/usr/bin/systemctl', 'daemon-reload'])
+
+    def check_boot_services(self, services, *, role_only=False):
+        for name in BOOT_SERVICES:
+            wanted = services.get(name)
+            result = self.command(['/usr/bin/systemctl', 'show', name, '-p', 'LoadState',
+                '-p', 'UnitFileState', '-p', 'ActiveState'])
+            state = dict(line.split('=', 1) for line in result.splitlines() if '=' in line)
+            if not wanted and state.get('LoadState') == 'not-found': continue
+            if not wanted or state.get('UnitFileState') != wanted['enabled']:
+                raise UpdateError('The station boot-service role differs from the snapshot: '+name)
+            if not role_only and state.get('ActiveState') != ('active' if wanted['active'] else 'inactive'):
+                raise UpdateError('Could not restore the recorded boot-service state: '+name)
 
     def resume(self, services, boot=True):
         for name, state in services.items():
@@ -324,7 +342,7 @@ class LinuxSystem:
         self._check_snapshot_contents(backup['identity'], snapshot, hashes)
         return stamps
 
-    def recover(self, backup, *, verified=None, before_mutation=None):
+    def recover(self, backup, *, verified=None, before_mutation=None, safety=None):
         snapshot = Path(backup['directory'])
         directory = snapshot.parent
         if verified is None: verified = self.validate_backup(backup)
@@ -332,11 +350,25 @@ class LinuxSystem:
         # files after taking the safety copy without decompressing the entire library twice.
         if verified != self._snapshot_stamps(backup['identity'], snapshot, backup['hashes']):
             raise UpdateError('The recovery snapshot changed after verification.')
+        helper = directory/'restore.sh'
+        if safety is not None:
+            # A pre-2.30.6 helper could ignore a system-config extraction error.
+            # Use the strict helper saved by this rollback before dpkg replaces it.
+            from update_recovery import protected
+            if not matches(ID_RE, safety['identity']):
+                raise UpdateError('Invalid safety snapshot identity.')
+            helper = self.store.private/'recovery'/safety['identity']/'restore.sh'
+            protected(helper.parent, self.store.owner, directory=True)
+            self.store._file(helper)
+            if file_sha256(helper) != safety['restore_sha256']:
+                raise UpdateError('The safety snapshot restore helper changed.')
         data = directory/'restore-data'
         self.store._directory(data, 0o700)
-        if any(path.name not in RECOVERY_DATA for path in data.iterdir()):
+        optional = ('time-settings.saved', 'boot-services.saved')
+        files = (*RECOVERY_DATA, *(name for name in optional if name in backup['hashes']))
+        if any(path.name not in files for path in data.iterdir()):
             raise UpdateError('Unexpected file in the recovery staging directory.')
-        for name in RECOVERY_DATA:
+        for name in files:
             target = data/name
             if os.path.lexists(target):
                 self.store._file(target)
@@ -346,7 +378,7 @@ class LinuxSystem:
         packages = sorted(snapshot/name for name in backup['hashes'] if name.endswith('.deb'))
         if before_mutation: before_mutation()
         self.command(['/usr/bin/dpkg', '--force-confold', '-i', *packages], timeout=1800)
-        self.command(['/bin/sh', directory/'restore.sh', '--force', data], timeout=1800, strict_snapshot=True)
+        self.command(['/bin/sh', helper, '--force', data], timeout=1800, strict_snapshot=True)
         from update_recovery import restore_trust
         restore_trust(self.store, backup['identity'])
         self.activate_utility(self.store.operation(backup['identity']).get('previous', {}).get('utility_selector', 'bundled-modern'))
@@ -354,7 +386,11 @@ class LinuxSystem:
     def health(self, expected, services):
         version = expected.get('cmprovision', expected.get('version'))
         if self.package('cmprovision4') != version: raise UpdateError('Installed application version does not match.')
-        if expected.get('component') == 'application' and self.package('fpms-lite') is not None and self.package('fpms-lite') != version:
+        if 'fpms_installed' in expected:
+            wanted_fpms = expected['fpms_version'] if expected['fpms_installed'] else None
+            if self.package('fpms-lite') != wanted_fpms:
+                raise UpdateError('Installed FPMS package does not match the expected version or presence.')
+        elif expected.get('component') == 'application' and self.package('fpms-lite') not in (None, version):
             raise UpdateError('FPMS package version does not match the application.')
         result = self.www('updates:health')
         if result.get('ok') is not True: raise UpdateError('Application database/schema health check failed.')

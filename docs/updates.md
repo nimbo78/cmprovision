@@ -34,6 +34,8 @@ The journal shows the selected component’s next action, current operation and 
 
 ## Apply
 
+After a successful installation, the journal removes the installed release from the list of offers. The page also refreshes if the installed version reaches the browser after the operation result. If a later check cannot reach the publisher, the last verified release and its check time remain visible alongside the error.
+
 1. Finish all active or unfinished provisioning, OS checks and reserved image jobs. A silent board is still unfinished work. There is no force-install option.
 2. Review the required package changes, choose **Review and apply**, confirm your account password and approve the exact prepared version. **Back** leaves the confirmation without installing. If station components or dependencies changed after preparation, use **Download and verify again** to refresh the prepared files and package plan before retrying.
    For an application update or rollback, the confirmation shows how much space each filesystem needs, how much is free, and how much an eligible older snapshot could release. If a filesystem is short, free the indicated amount on that filesystem and select **Recheck space**. Opening the confirmation keeps the current snapshot in place.
@@ -61,6 +63,8 @@ If installation or its health checks fail, the updater restores the immediate sn
 The protocol-1 boot dispatcher is retained at `/var/lib/cmprovision-updates/recover.py`, outside files replaced by dpkg. It verifies and launches the previous operation's saved Python runner, so a partly replaced updater or trust configuration does not prevent its own recovery.
 
 ## Failure diagnostics
+
+For operations started with 2.30.6 or later, systemd checks the saved update state before starting DHCP/TFTP or USB boot, including at power-on. An interrupted operation keeps both services closed until recovery commits a result. The primary station can then resume its previous services. A secondary station keeps its saved masks. If the journal is unreadable, check the station over SSH or the local console before returning it to service.
 
 Expand **Operation details and diagnostics** in Settings → Updates to see the failed phase, exception type and operation reference. **Download diagnostics** asks for your account password again and exports a bounded JSON report. Keep the reference with the report when requesting help. It distinguishes the original failure from any failure during automatic recovery, and records code locations and constrained HTTP status/OS error numbers. Passwords, response bodies, private command output and unexpected exception messages are excluded.
 

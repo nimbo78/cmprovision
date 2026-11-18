@@ -47,8 +47,10 @@ def reconcile(store, run=subprocess.run, clock=time.time):
     recover = False
     status = store.snapshot()
     operation = status['operation']
-    if not operation or operation['state'] in ('ready', 'succeeded', 'rolled-back', 'failed', 'canceled', 'recovery-required'):
+    if not operation or operation['state'] == 'recovery-required':
         return
+    finished = operation['state'] in ('ready', 'succeeded', 'rolled-back', 'failed', 'canceled')
+    if finished and not status['pending']: return
     if clock()-operation['updated_at'] < 30: return
     try:
         unit = run(['/usr/bin/systemctl', 'is-active', 'cmprovision-update-'+operation['id']],
@@ -57,10 +59,12 @@ def reconcile(store, run=subprocess.run, clock=time.time):
         with store.lock('worker', blocking=False):
             current = store.operation(operation['id'])
             if current['state'] != operation['state']: return
-            if status['pending']:
-                store.update(operation['id'], state='unknown', message='The interrupted worker is being recovered; no installation will be repeated.')
+            pending = store.snapshot()['pending']
+            if pending and pending['id'] == operation['id']:
+                if not current.get('committed'):
+                    store.update(operation['id'], state='unknown', message='The interrupted worker is being recovered; no installation will be repeated.')
                 recover = True
-            else:
+            elif not pending and not finished:
                 store.update(operation['id'], state='failed', message='The noncritical worker was interrupted. Check or download again.')
         if recover:
             # Release the worker lock before starting its retained replacement.

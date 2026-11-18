@@ -48,8 +48,8 @@ class System:
         self.fail_backup = self.fail_install = self.fail_health = self.fail_recovery = False
         self.extra_dependency = False
         self.fail_space = False
-        self.services = {'cmprovision-dnsmasq': {'enabled': 'masked', 'active': False},
-                         'cmprovision-rpiboot': {'enabled': 'masked', 'active': False},
+        self.services = {'cmprovision-dnsmasq.service': {'enabled': 'masked', 'active': False},
+                         'cmprovision-rpiboot.service': {'enabled': 'masked', 'active': False},
                          'cmprovision-queue': {'enabled': 'enabled', 'active': True}}
 
     def context(self): return copy.deepcopy(self.current)
@@ -69,6 +69,11 @@ class System:
     def require_snapshot_space(self, plan):
         self.calls.append(('check-space',))
     def retain_runner(self, identity): return {'directory': str(self.root/'runner'/identity), 'hashes': {}}
+    def ensure_boot_guard(self): self.calls.append(('boot-guard',))
+    def check_boot_services(self, services, *, role_only=False):
+        if any(self.services.get(name, {}).get('enabled') != state['enabled']
+               for name, state in services.items() if 'dnsmasq' in name or 'rpiboot' in name):
+            raise UpdateError('The station boot-service role differs from the snapshot.')
     def pause(self, services): self.calls.append(('pause', copy.deepcopy(services)))
     def resume(self, services, boot=True):
         self.calls.append(('resume', copy.deepcopy(services), boot))
@@ -99,7 +104,7 @@ class System:
         self.calls.append(('health', expected.get('version', expected.get('cmprovision'))))
         if self.fail_health and self.current['cmprovision'] != self.original['cmprovision']:
             raise UpdateError('Target health check failed.')
-    def recover(self, backup, *, verified=None, before_mutation=None):
+    def recover(self, backup, *, verified=None, before_mutation=None, safety=None):
         self.validate_backup(backup)
         if before_mutation: before_mutation()
         self.calls.append(('recover', backup['identity']))
@@ -147,6 +152,29 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual('queued', operation['state'])
         self.assertEqual([], self.source.calls)
         prune.assert_not_called()
+
+    def test_offline_check_keeps_the_last_verified_release_and_its_date(self):
+        self.store.clock = lambda: 100
+        self.run_operation('check', components=['application', 'utility-os'])
+        self.store.clock = lambda: 200
+        with patch.object(self.source, 'check', side_effect=UpdateError('Publisher is offline')):
+            self.run_operation('check', components=['application'])
+        checks = self.store.snapshot()['checks']
+        self.assertEqual(self.envelope['id'], checks['application']['id'])
+        self.assertEqual('2.28.0', checks['application']['release']['version'])
+        self.assertEqual((100, 200, 'Publisher is offline'),
+            tuple(checks['application'][k] for k in ('verified_at', 'checked_at', 'error')))
+        self.assertEqual(100, checks['utility-os']['checked_at'])
+
+    def test_current_release_and_stale_receipt_do_not_offer_another_install(self):
+        self.run_operation('check', components=['application'])
+        self.download()
+        for version, eligible in [('2.28.0~dev2', True), ('2.28.0', False), ('2.28.1', False)]:
+            with self.subTest(version=version):
+                self.store.metadata(dict(self.system.current, cmprovision=version), {})
+                status = self.store.snapshot()
+                self.assertEqual(eligible, bool(status['ready']))
+                self.assertEqual(eligible, bool(status['checks']['application']['release']))
 
     def test_unexpected_check_failure_has_safe_correlated_diagnostics(self):
         with patch.object(self.source, 'check', side_effect=RuntimeError('secret=private-check-value')):
@@ -411,10 +439,48 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual('recovery-required', result['state'])
         self.assertTrue(self.store.snapshot()['pending'])
         self.assertFalse(any(item[0] == 'recover' for item in self.system.calls))
+        self.assertEqual({'cmprovision-dnsmasq.service', 'cmprovision-rpiboot.service'},
+            {next(iter(c[1])) for c in self.system.calls if c[0] == 'pause' and len(c[1]) == 1})
         self.worker.recover_pending()
         self.assertEqual('succeeded', self.store.operation(result['id'])['state'])
         self.assertIsNone(self.store.snapshot()['pending'])
         self.assertEqual(1, sum(item[0] == 'install' for item in self.system.calls))
+
+    def test_changed_role_rejects_a_manual_rollback_while_the_station_is_online(self):
+        previous = self.apply(self.download())
+        self.system.services['cmprovision-rpiboot.service'] = {'enabled': 'enabled', 'active': True}
+        self.system.calls.clear()
+        result = self.run_operation('rollback', operation=previous['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertIn('role', result['message'])
+        self.assertFalse(any(call[0] in ('pause', 'retire', 'backup', 'install', 'recover') for call in self.system.calls))
+
+    def test_role_changed_before_admission_is_the_role_resumed_after_installation(self):
+        service = 'cmprovision-dnsmasq.service'
+        ready = self.download()
+        def change_role():
+            self.system.services[service] = {'enabled': 'enabled', 'active': True}
+        with patch.object(self.system, 'ensure_boot_guard', side_effect=change_role):
+            result = self.apply(ready)
+        self.assertEqual('succeeded', result['state'])
+        resumed = [call[1] for call in self.system.calls if call[0] == 'resume']
+        self.assertEqual({'enabled': 'enabled', 'active': True}, resumed[-1][service])
+
+    def test_reboot_cleanup_closes_both_boot_servers_if_one_restart_fails(self):
+        ready = self.download()
+        class PowerLoss(BaseException): pass
+        with patch.object(self.system, 'check_boot_services', side_effect=PowerLoss), self.assertRaises(PowerLoss):
+            self.apply(ready)
+        identity = self.store.snapshot()['pending']['id']
+        self.assertTrue(self.store.operation(identity)['committed'])
+        self.system.calls.clear()
+        with patch.object(self.system, 'check_boot_services', side_effect=UpdateError('USB boot failed')):
+            self.worker.recover_pending()
+        self.assertEqual('recovery-required', self.store.operation(identity)['state'])
+        self.assertEqual(identity, self.store.snapshot()['pending']['id'])
+        self.assertEqual({'cmprovision-dnsmasq.service', 'cmprovision-rpiboot.service'},
+                         {next(iter(c[1])) for c in self.system.calls if c[0] == 'pause' and len(c[1]) == 1})
+        self.assertFalse(any(c[0] in ('install', 'recover') for c in self.system.calls))
 
     def test_changed_receipt_or_dependency_plan_requires_new_confirmation(self):
         ready = self.download()

@@ -96,6 +96,9 @@
                     <div class="cmp-updates-meta">{{ $label }} · Last check: {{ !empty($check['checked_at']) ? \Carbon\Carbon::createFromTimestamp($check['checked_at'])->local()->format('Y-m-d H:i') : 'Never' }}</div>
                     <h3>{{ $label }} {{ $candidate['version'] ?? ($status['installed'][$part] ?? '') }}</h3>
                     @if (!empty($check['error']))<p class="text-neg text-sm mt-3" role="alert">{{ $check['error'] }}</p>@endif
+                    @if (!empty($check['error']) && !empty($check['verified_at']))
+                        <p class="text-sm text-fg-muted">Last successful check: {{ \Carbon\Carbon::createFromTimestamp($check['verified_at'])->local()->format('Y-m-d H:i') }}</p>
+                    @endif
                     @if (!empty($check['incompatible']))<p class="text-neg text-sm mt-3" role="alert">{{ $check['incompatible'] }}</p>@endif
                     @if ($candidate)
                         @if ($ready && empty($check['incompatible']))

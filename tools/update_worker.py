@@ -7,6 +7,7 @@ import stat
 from update_diagnostics import record
 
 from update_manifest import UpdateError, canonical_bytes, compatibility_error, newer, verify_manifest
+from update_recovery import BOOT_SERVICES
 from update_store import TERMINAL
 
 
@@ -167,9 +168,10 @@ class Worker:
             context={key: context.get(key) for key in ('cmprovision', 'fpms_version', 'fpms_installed')}))
         self._phase(identity, 'ready', 'Verified update is ready. Apply it when the station is idle.')
 
-    def _prepare(self, identity, component, selected=None):
+    def _prepare(self, identity, component, selected=None, restore_role=None):
         self._idle()
         self.system.conflicts()
+        if restore_role is not None: self.system.check_boot_services(restore_role, role_only=True)
         space = None
         if component == 'application':
             self._phase(identity, 'preparing', 'Checking recovery space while the station is online.')
@@ -180,18 +182,20 @@ class Worker:
             self._idle()
             self.system.prune(before_snapshot=True)
             self.system.require_snapshot_space(space)
-        services = self.system.capture_services()
-        previous = self.system.context()
         runner = self.system.retain_runner(identity)
-        self._phase(identity, 'preparing', 'Pausing new boots and preparing a recovery snapshot.',
-                    services=services, previous=previous, runner=runner)
+        self.system.ensure_boot_guard()
         with self.system.admission_lock():
             self.system.conflicts()
             self._idle()
+            if restore_role is not None: self.system.check_boot_services(restore_role, role_only=True)
+            services = self.system.capture_services()
+            previous = self.system.context()
             if space is not None:
                 # The measured requirement already includes this fixed-size reserve.
                 self.system.require_snapshot_space(space)
                 self.store.reserve_journal()
+            self._phase(identity, 'preparing', 'Pausing new boots and preparing a recovery snapshot.',
+                        services=services, previous=previous, runner=runner, boot_guard=True)
             self.store.mark_pending(identity)
         self.system.pause(services)
         self._idle()
@@ -225,7 +229,8 @@ class Worker:
             self.system.install(paths, receipt['plan'], value, before_mutation=start_install)
             self.system.resume(services, boot=False)
             self._phase(identity, 'reconnecting', 'Checking the updated application and services.')
-            self.system.health(value, services)
+            self.system.health(dict(value, fpms_installed=previous['fpms_installed'],
+                                    fpms_version=value['version']), services)
         else:
             self._phase(identity, 'applying', 'Activating the prepared Utility OS for subsequent boots.')
             self.system.activate_utility(receipt['selector'])
@@ -233,8 +238,11 @@ class Worker:
         self._finish(identity, services, 'Update installed and verified.')
 
     def _finish(self, identity, services, message, state='succeeded'):
-        self.system.resume(services, boot=True)
+        # A reboot can erase every runtime mask. Authorize only the saved role in
+        # the durable journal before asking systemd to reopen the boot services.
         self._phase(identity, state, message, committed=True, outcome=state)
+        self.system.resume(services, boot=True)
+        self.system.check_boot_services(services)
         self.store.clear_pending(identity)
         try:
             self.store.metadata(self.system.context(), {'repository': self.source.repository, 'configured': True})
@@ -277,6 +285,11 @@ class Worker:
             try: self.store.update(identity, recovery_diagnostic=recovery)
             except Exception: pass
             self._phase(identity, 'recovery-required', message+' Automatic recovery/cleanup did not complete. Use SSH or the local console.')
+            # One server may have started before its peer failed. The journal now
+            # prevents new starts. Stop both, also if stopping the first one fails.
+            for name in sorted(BOOT_SERVICES.intersection(operation.get('services', {}))):
+                try: self.system.pause({name: operation['services'][name]})
+                except Exception as stop_error: record(self.store, identity, stop_error, 'recovery')
 
     def recover_pending(self):
         pending = self.store.snapshot()['pending']
@@ -287,8 +300,11 @@ class Worker:
             self.store.mark_pending(identity) # Recreate the runtime marker after a host reboot.
             if operation['state'] == 'recovery-required' and not operation.get('committed'): return
             if operation.get('committed'):
-                self._finish(identity, operation['services'], 'Committed update maintenance cleanup completed.',
-                             operation.get('outcome', operation['state'] if operation['state'] in TERMINAL else 'succeeded'))
+                try:
+                    self._finish(identity, operation['services'], 'Committed update maintenance cleanup completed.',
+                                 operation.get('outcome', operation['state'] if operation['state'] in TERMINAL else 'succeeded'))
+                except Exception as error:
+                    self._failed(identity, error)
             else:
                 self._failed(identity, UpdateError('Update was interrupted before its final health result.'))
             self._prune()
@@ -318,15 +334,17 @@ class Worker:
             if not selected or selected.get('identity') != previous_operation['id']:
                 raise UpdateError('The recovery snapshot does not belong to the selected operation.')
             verified = self.system.validate_backup(selected)
-        services, previous = self._prepare(identity, component, selected=request['operation'])
+        services, previous = self._prepare(identity, component, selected=request['operation'],
+            restore_role=previous_operation['services'] if component == 'application' else None)
         if component == 'application':
             # A new snapshot allows recovery if this explicitly requested later data rollback itself fails.
-            self.store.update(identity, backup=self.system.backup(identity), mutation_started=False)
+            safety = self.system.backup(identity)
+            self.store.update(identity, backup=safety, mutation_started=False)
 
             def start_restore():
                 self._phase(identity, 'applying', 'Restoring the selected application snapshot.', mutation_started=True)
 
-            self.system.recover(selected, verified=verified, before_mutation=start_restore)
+            self.system.recover(selected, verified=verified, before_mutation=start_restore, safety=safety)
             self.system.resume(services, boot=False)
             self.system.health(previous_operation['previous'], services)
         else:

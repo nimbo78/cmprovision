@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import copy
 import errno
 import fcntl
+from functools import lru_cache
 import hashlib
 import json
 import os
@@ -13,7 +14,7 @@ import stat
 import time
 import uuid
 
-from update_manifest import COMPONENTS, SHA_RE, UOS_VERSION_RE, UpdateError, canonical_bytes
+from update_manifest import COMPONENTS, DEB_VERSION_RE, SHA_RE, UOS_VERSION_RE, UpdateError, canonical_bytes, newer
 
 STATES = frozenset(('queued', 'checking', 'downloading', 'verifying', 'ready', 'preparing', 'applying',
                     'reconnecting', 'succeeded', 'rolled-back', 'failed', 'canceled', 'unknown', 'recovery-required'))
@@ -22,6 +23,18 @@ RECOVERY_TTL = 7*24*60*60
 MAX_STATE = 4*1024*1024
 ID_RE = r'[0-9a-f]{32}'
 NONCE_RE = r'[0-9a-f]{64}'
+
+# Progress updates repeatedly project the same pair of Debian versions.
+_newer = lru_cache(maxsize=64)(newer)
+
+
+def offered_release(envelope, context):
+    if not envelope: return None
+    release = envelope['manifest']
+    installed = context.get('cmprovision' if release['component'] == 'application' else 'utility_os_version')
+    if installed is None: return release
+    if matches(DEB_VERSION_RE, installed) and _newer(release['version'], installed): return release
+    return None
 
 
 def matches(pattern, value):
@@ -213,18 +226,21 @@ class UpdateStore:
     def _projection(self, state):
         operations = state['operations']
         current = operations.get(state['current'])
+        context = state['context']
         checks = {}
         for component, check in state['checks'].items():
             envelope = state['catalogues'].get(check.get('id'))
-            checks[component] = dict(check, release=envelope['manifest'] if envelope else None)
+            release = offered_release(envelope, context)
+            checks[component] = dict(check, release=release,
+                incompatible=check.get('incompatible') if release else None)
         ready = []
         for identity, receipt in state['ready'].items():
             envelope = state['catalogues'].get(identity)
-            if envelope:
-                ready.append({'id': identity, 'release': envelope['manifest'],
+            release = offered_release(envelope, context)
+            if release:
+                ready.append({'id': identity, 'release': release,
                               'receipt': receipt['fingerprint'],
                               'plan': receipt.get('plan', []), 'prepared_at': receipt.get('prepared_at')})
-        context = state['context']
         return {'schema': 1, 'installed': {'application': context.get('cmprovision'),
                  'fpms': context.get('fpms_version'), 'utility-os': context.get('utility_os_label', context.get('utility_os_version')),
                  'utility_selector': context.get('utility_selector')}, 'source': state['source'], 'checks': checks,
@@ -387,10 +403,17 @@ class UpdateStore:
             if hashlib.sha256(raw).hexdigest() != envelope['id'] or not signature:
                 raise UpdateError('Verified catalogue identifier does not match.')
         def action(state):
+            now = int(self.clock())
+            previous = state['checks'].get(component, {})
+            if error:
+                # Older entries have only checked_at for their last successful check.
+                verified_at = previous.get('verified_at', previous.get('checked_at') if not previous.get('error') else None)
+                state['checks'][component] = dict(previous, checked_at=now, verified_at=verified_at, error=safe_text(error))
+                return
             identity = envelope['id'] if envelope else None
             if envelope: state['catalogues'][identity] = envelope
-            state['checks'][component] = {'id': identity, 'checked_at': int(self.clock()),
-                'error': safe_text(error) if error else None, 'incompatible': envelope.get('incompatible') if envelope else None}
+            state['checks'][component] = {'id': identity, 'checked_at': now, 'verified_at': now,
+                'error': None, 'incompatible': envelope.get('incompatible') if envelope else None}
         return self._mutate(action)
 
     def cache_catalogue(self, envelope):

@@ -21,6 +21,34 @@ class RecoveryTest(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.store = UpdateStore(self.root/'updates', self.root/'run', owner=os.getuid())
 
+    def test_boot_services_follow_the_durable_decision_after_a_cold_start(self):
+        from update_recovery import boot_permitted
+        service = 'cmprovision-dnsmasq.service'
+        secondary = 'cmprovision-rpiboot.service'
+        operation, _ = self.store.begin({'action': 'activate', 'nonce': 'f'*64, 'selector': 'bundled-modern'})
+        identity = operation['id']
+        self.store.update(identity, boot_guard=True, services={
+            service: {'enabled': 'enabled', 'active': True},
+            secondary: {'enabled': 'masked', 'active': False}})
+        self.assertTrue(boot_permitted(self.store.root, service, os.getuid()))
+        self.store.mark_pending(identity)
+        self.store.pending_file.unlink()  # /run is fresh and even a broken dispatcher cannot open the stand.
+        for state in ('applying', 'recovery-required'):
+            self.store.update(identity, state=state)
+            self.assertFalse(boot_permitted(self.store.root, service, os.getuid()))
+        self.store.update(identity, state='rolled-back', committed=True, outcome='rolled-back')
+        self.assertTrue(boot_permitted(self.store.root, service, os.getuid()))
+        self.assertFalse(boot_permitted(self.store.root, secondary, os.getuid()))
+        self.store.clear_pending(identity)
+        self.assertTrue(boot_permitted(self.store.root, service, os.getuid()))
+
+    def test_legacy_runner_can_restart_services_during_its_final_cleanup(self):
+        from update_recovery import boot_permitted
+        operation, _ = self.store.begin({'action': 'check', 'nonce': 'a'*64, 'components': ['application']})
+        self.store.update(operation['id'], state='reconnecting')
+        self.store.mark_pending(operation['id'])
+        self.assertTrue(boot_permitted(self.store.root, 'cmprovision-rpiboot.service', os.getuid()))
+
     def test_installed_dispatcher_accepts_both_protocol1_inventories(self):
         # d918911 differs only by the missing diagnostics module in this exact inventory.
         source = (TOOLS/'update_recovery.py').read_text()
