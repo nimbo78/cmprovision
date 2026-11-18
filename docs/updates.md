@@ -13,7 +13,9 @@ flowchart LR
   Download --> Review[Review package plan]
   Review --> Idle{Station idle?}
   Idle -- No --> Wait[Finish unfinished work first]
-  Idle -- Yes --> Snapshot[Required recovery snapshot]
+  Idle -- Yes --> Space{Enough recovery space?}
+  Space -- No --> Online[Show shortfall and keep station online]
+  Space -- Yes --> Snapshot[Pause and save recovery snapshot]
   Snapshot --> Apply[Install and check health]
   Apply -- Healthy --> Ready[Resume previous services]
   Apply -- Failed --> Rollback[Restore immediate snapshot]
@@ -34,6 +36,7 @@ The journal shows the selected component’s next action, current operation and 
 
 1. Finish all active or unfinished provisioning, OS checks and reserved image jobs. A silent board is still unfinished work. There is no force-install option.
 2. Review the required package changes, choose **Review and apply**, confirm your account password and approve the exact prepared version. **Back** leaves the confirmation without installing. If station components or dependencies changed after preparation, use **Download and verify again** to refresh the prepared files and package plan before retrying.
+   For an application update or rollback, the confirmation shows how much space each filesystem needs, how much is free, and how much an eligible older snapshot could release. If a filesystem is short, free the indicated amount on that filesystem and select **Recheck space**. Opening the confirmation keeps the current snapshot in place.
 3. Keep station power connected. The worker continues independently of the browser, PHP-FPM and queue workers. A lost connection shows **Reconnecting**; do not submit another installation.
    The last confirmed target and phase remain visible during reconnection. Snapshot preparation, installation and health checks show named stages and elapsed operation time. Expected maintenance responses are handled within the update status area. When the station returns, the operation result and installed version refresh automatically.
    When upgrading from 2.27.0, refresh the page once after completion to load this browser fix; do not apply again.
@@ -43,7 +46,9 @@ Checks and downloads can run during provisioning. Critical installation pauses n
 
 Recovery snapshots include uploaded images, so large image libraries need enough additional free space for their copy. Downloads preserve a 64 MiB safety reserve. **One successful recovery point is retained for 7 days** across application and Utility OS updates. Its expiry is fixed at successful completion; later status/diagnostic changes do not extend it. Existing records use their recorded completion/update time. Local cleanup runs on idle status requests and the existing hourly timer (plus timer jitter), even with both publisher auto-check switches off; it does not contact the publisher unless an enabled check is due.
 
-**Before a new application snapshot**, the updater removes the previous eligible recovery point, then checks free space, then creates the new snapshot. If space is still insufficient or capture fails, the old point is already gone and no later rollback to it is offered. This avoids requiring room for two retained full snapshots. Active/critical recovery and the selected source of a rollback stay protected until resolved; a rollback can therefore still need space for both its source and its safety copy. Cleanup removes only the updater's inactive, unreferenced files and leaves unrelated backups untouched.
+After confirmation, the updater estimates space while the station is online, retires the previous eligible recovery point and checks actual free space again just before pausing new boots. The estimate includes uploaded images, temporary database and package files, and the updater journal. If space is still short, the station keeps serving boards. A retired point is gone even if the new snapshot later fails. A manual rollback keeps its selected snapshot and needs room for a separate safety copy.
+
+Before changing packages, the updater verifies the new snapshot and flushes its files, restore helper and directories to disk. A write error at this stage stops the installation and lets the station resume its previous services.
 
 ## Utility OS and recovery
 

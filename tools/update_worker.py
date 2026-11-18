@@ -94,7 +94,9 @@ class Worker:
 
     def _prune(self):
         try:
-            if not self.store.snapshot()['pending']: self.system.prune()
+            if not self.store.snapshot()['pending']:
+                self.store.release_journal()
+                self.system.prune()
         except Exception:
             pass # Cleanup cannot undo a verified install; never guess at unsafe/unowned artifacts.
 
@@ -165,9 +167,19 @@ class Worker:
             context={key: context.get(key) for key in ('cmprovision', 'fpms_version', 'fpms_installed')}))
         self._phase(identity, 'ready', 'Verified update is ready. Apply it when the station is idle.')
 
-    def _prepare(self, identity):
+    def _prepare(self, identity, component, selected=None):
         self._idle()
         self.system.conflicts()
+        space = None
+        if component == 'application':
+            self._phase(identity, 'preparing', 'Checking recovery space while the station is online.')
+            space = self.system.plan_snapshot_space(selected)
+            # A board can arrive during the directory walk. Retire an old point only for
+            # a confirmed, still-idle operation. The worker lock protects the selected rollback.
+            self.system.conflicts()
+            self._idle()
+            self.system.prune(before_snapshot=True)
+            self.system.require_snapshot_space(space)
         services = self.system.capture_services()
         previous = self.system.context()
         runner = self.system.retain_runner(identity)
@@ -176,6 +188,10 @@ class Worker:
         with self.system.admission_lock():
             self.system.conflicts()
             self._idle()
+            if space is not None:
+                # The measured requirement already includes this fixed-size reserve.
+                self.system.require_snapshot_space(space)
+                self.store.reserve_journal()
             self.store.mark_pending(identity)
         self.system.pause(services)
         self._idle()
@@ -197,7 +213,7 @@ class Worker:
         self.store.update(identity, component=value['component'], version=value['version'])
         if value['component'] == 'application' and self.system.plan_install(paths, value) != receipt['plan']:
             raise UpdateError('Required package changes changed; download and review the plan again.')
-        services, previous = self._prepare(identity)
+        services, previous = self._prepare(identity, value['component'])
         if value['component'] == 'application':
             backup = self.system.backup(identity)
             self.store.update(identity, backup=backup, mutation_started=False)
@@ -280,7 +296,7 @@ class Worker:
     def _activate(self, identity, request):
         self.system.validate_utility(request['selector'])
         self.store.update(identity, component='utility-os')
-        services, previous = self._prepare(identity)
+        services, previous = self._prepare(identity, 'utility-os')
         self._phase(identity, 'applying', 'Switching the selected Utility OS.')
         self.system.activate_utility(request['selector'])
         self.system.utility_health(request['selector'])
@@ -302,7 +318,7 @@ class Worker:
             if not selected or selected.get('identity') != previous_operation['id']:
                 raise UpdateError('The recovery snapshot does not belong to the selected operation.')
             verified = self.system.validate_backup(selected)
-        services, previous = self._prepare(identity)
+        services, previous = self._prepare(identity, component, selected=request['operation'])
         if component == 'application':
             # A new snapshot allows recovery if this explicitly requested later data rollback itself fails.
             self.store.update(identity, backup=self.system.backup(identity), mutation_started=False)

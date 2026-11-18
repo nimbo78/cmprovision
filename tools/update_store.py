@@ -2,6 +2,7 @@
 import base64
 from contextlib import contextmanager
 import copy
+import errno
 import fcntl
 import hashlib
 import json
@@ -181,6 +182,34 @@ class UpdateStore:
                 else previous.get('utility_os_label', previous.get('utility_os_version', 'previous')))
         return result
 
+    def reserve_journal(self):
+        # A full snapshot filesystem must not prevent the next atomic journal write
+        # that records failure and reopens admission. Called under the worker lock.
+        path = self.private/'journal.reserve'
+        try:
+            fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+            with os.fdopen(fd, 'r+b') as stream:
+                self._file(path, 0o600)
+                if os.fstat(fd).st_nlink != 1: raise UpdateError('The updater journal reserve is unsafe.')
+                try:
+                    os.posix_fallocate(fd, 0, MAX_STATE)
+                except OSError as error:
+                    if error.errno not in (errno.EOPNOTSUPP, errno.ENOSYS): raise
+                    stream.write(bytes(MAX_STATE))
+                    stream.flush()
+                os.fsync(fd)
+        except OSError as error:
+            if error.errno in (errno.ENOSPC, errno.EDQUOT):
+                raise UpdateError('Not enough free space for the updater journal in '+str(self.private)+'.') from error
+            raise
+
+    def release_journal(self):
+        path = self.private/'journal.reserve'
+        try: self._file(path, 0o600)
+        except FileNotFoundError: return False
+        path.unlink()
+        return True
+
     def _projection(self, state):
         operations = state['operations']
         current = operations.get(state['current'])
@@ -207,7 +236,11 @@ class UpdateStore:
                     key=lambda item: item['sequence'], reverse=True)[:10]]}
 
     def _persist(self, state):
-        self._atomic(self.state_file, state, 0o600)
+        try:
+            self._atomic(self.state_file, state, 0o600)
+        except OSError as error:
+            if error.errno not in (errno.ENOSPC, errno.EDQUOT) or not self.release_journal(): raise
+            self._atomic(self.state_file, state, 0o600)
         # A failed UI projection is not a failed durable transaction. In particular, do not repeat or roll back
         # an accepted install just because its status file could not be refreshed. The broker can read private state.
         try:

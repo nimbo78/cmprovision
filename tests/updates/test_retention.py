@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from support import manifest
 from update_store import UpdateStore
@@ -172,6 +173,22 @@ class RetentionTest(unittest.TestCase):
             prune(store, root/'managed')
             self.assertFalse(directories[0].exists())
             self.assertTrue(directories[1].exists())
+
+
+    def test_retirement_preserves_an_operation_with_a_nested_or_root_mount(self):
+        for suffix in ('', 'usb'):
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                store, _, directory = self.point(root)
+                mounted = directory/suffix
+                mounted.mkdir(exist_ok=True)
+                keep = mounted/'external-backup'
+                keep.write_bytes(b'operator data')
+                os.utime(directory, (1, 1))
+                with patch('update_retention.mount_points', create=True, return_value={mounted}):
+                    prune(store, root/'managed', now=2000, before_snapshot=True)
+                self.assertTrue(keep.is_file())
+                self.assertEqual(b'operator data', keep.read_bytes())
 
 
 if __name__ == '__main__': unittest.main()

@@ -19,6 +19,7 @@ from update_store import ID_RE, matches, safe_text
 
 APP = Path('/var/lib/cmprovision')
 HELPERS = Path('/usr/lib/cmprovision')
+RESTORE_HELPER = Path('/usr/sbin/cmprovision-restore')
 BOOT_SERVICES = frozenset(('cmprovision-dnsmasq.service', 'cmprovision-rpiboot.service'))
 READERS = ('cmprovision-queue.service', 'cmprovision-queue-images.service',
            'cmprovision-usb-diagnostics.service', 'cmprovision-wallboard-data.service',
@@ -51,9 +52,11 @@ def parse_plan(text):
 class LinuxSystem:
     def __init__(self, store): self.store = store
 
-    def command(self, argv, timeout=60, check=True, *, stdout=subprocess.PIPE, **options):
+    def command(self, argv, timeout=60, check=True, *, stdout=subprocess.PIPE, strict_snapshot=False, **options):
         env = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
                'DEBIAN_FRONTEND': 'noninteractive', 'CMPROVISION_NO_SNAPSHOT': '1'}
+        if strict_snapshot:
+            env['CMPROVISION_UPDATE_SNAPSHOT'] = '1'
         try:
             result = subprocess.run([str(arg) for arg in argv], timeout=timeout, stdout=stdout, stderr=subprocess.PIPE,
                                     text=True, env=env, check=False, **options)
@@ -87,6 +90,20 @@ class LinuxSystem:
     def download_space(self, size):
         if shutil.disk_usage(self.store.payloads).free < size+64*1024**2:
             raise UpdateError('Not enough free space for the signed download plus the 64 MiB safety reserve.')
+
+    def plan_snapshot_space(self, selected):
+        # Only a new installation needs the estimator. A retained protocol-1 runner
+        # can still recover offline after an older package has replaced the live code.
+        from update_space import estimate
+        return estimate(self.store, selected=selected)
+
+    def require_snapshot_space(self, plan):
+        from update_space import measure
+        report = measure(plan, reclaimable=False)
+        if not report['sufficient']:
+            missing = [f"{(row['shortfall']+1048575)//1048576} MiB on {row['location']}"
+                       for row in report['volumes'] if row['shortfall'] > 0]
+            raise UpdateError('Not enough free space for a recovery snapshot. Free at least '+', '.join(missing)+'.')
 
     def conflicts(self):
         if os.path.lexists('/run/cmprovision-backups/pending.json'):
@@ -182,18 +199,32 @@ class LinuxSystem:
                       *(item['package']+'='+item['version'] for item in plan)], timeout=1800)
 
     def backup(self, identity):
-        self.prune(before_snapshot=True)
+        if not matches(ID_RE, identity):
+            raise UpdateError('Invalid recovery operation identifier.')
         directory = self.store.private/'recovery'/identity
         self.store._directory(directory, 0o700)
-        # Refuse installation unless a full, reinstallable snapshot can be kept independently
-        # of the application's ordinary snapshot retention policy.
-        size = int(self.command(['/usr/bin/du', '-sx', '--block-size=1', APP]).split()[0])
-        if shutil.disk_usage(directory).free < size*2+128*1024**2:
-            raise UpdateError('Not enough free space for a required recovery snapshot.')
+        if any(directory.iterdir()):
+            raise UpdateError('The new recovery snapshot needs its own empty operation directory.')
+        try:
+            return self._create_snapshot(identity, directory)
+        except Exception:
+            # Under the worker lock this directory contained only this unpublished attempt.
+            # Reclaim it before the worker records the failure, especially after ENOSPC.
+            try:
+                shutil.rmtree(directory)
+            except OSError as error:
+                print('Could not remove the unpublished recovery snapshot:', error, file=sys.stderr)
+            raise
+
+    def _create_snapshot(self, identity, directory):
         restore = directory/'restore.sh'
-        shutil.copyfile('/usr/sbin/cmprovision-restore', restore)
-        restore.chmod(0o700)
-        self.command(['/usr/sbin/cmprovision-backup', '--with-uploads', '--keep', '1', directory], timeout=1800)
+        with RESTORE_HELPER.open('rb') as source, restore.open('xb') as destination:
+            os.fchmod(destination.fileno(), 0o700)
+            shutil.copyfileobj(source, destination)
+            destination.flush()
+            os.fsync(destination.fileno())
+        self.command(['/usr/sbin/cmprovision-backup', '--with-uploads', '--keep', '1', directory],
+                     timeout=1800, strict_snapshot=True)
         snapshots = [path for path in directory.iterdir() if path.is_dir() and not path.is_symlink()]
         if len(snapshots) != 1: raise UpdateError('Could not identify the completed recovery snapshot.')
         snapshot = snapshots[0]
@@ -203,11 +234,30 @@ class LinuxSystem:
             self.command(['/usr/bin/dpkg-repack', 'fpms-lite'], cwd=snapshot, timeout=600)
             if not list(snapshot.glob('fpms-lite_*.deb')): raise UpdateError('The recovery snapshot has no FPMS package.')
         names = {path.name for path in snapshot.iterdir()}
-        self._snapshot_stamps(identity, snapshot, names)
+        stamps = self._snapshot_stamps(identity, snapshot, names)
         self._check_snapshot_contents(identity, snapshot, names)
+        hashes = {}
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+        try:
+            for path in stamps:
+                fd = os.open(path, flags | os.O_NONBLOCK)
+                with os.fdopen(fd, 'rb') as stream:
+                    if not stat.S_ISREG(os.fstat(fd).st_mode):
+                        raise UpdateError('The recovery snapshot file changed during verification.')
+                    os.fsync(fd)
+                    hashes[path] = hashlib.file_digest(stream, 'sha256').hexdigest()
+            # Each child's name must survive in its parent, including a freshly made
+            # recovery tree or updater root. Each fd refers to its own filesystem.
+            for path in (snapshot, directory, directory.parent, self.store.private, self.store.root, self.store.root.parent):
+                fd = os.open(path, flags | os.O_DIRECTORY)
+                try: os.fsync(fd)
+                finally: os.close(fd)
+        except OSError as error:
+            raise UpdateError('Could not write the recovery snapshot to stable storage.') from error
+        if stamps != self._snapshot_stamps(identity, snapshot, names):
+            raise UpdateError('The recovery snapshot changed during verification.')
         return {'directory': str(snapshot), 'identity': identity,
-                'hashes': {name: file_sha256(snapshot/name) for name in names},
-                'restore_sha256': file_sha256(restore)}
+                'hashes': {name: hashes[snapshot/name] for name in names}, 'restore_sha256': hashes[restore]}
 
     def _snapshot_stamps(self, identity, snapshot, names):
         from update_recovery import protected
@@ -296,7 +346,7 @@ class LinuxSystem:
         packages = sorted(snapshot/name for name in backup['hashes'] if name.endswith('.deb'))
         if before_mutation: before_mutation()
         self.command(['/usr/bin/dpkg', '--force-confold', '-i', *packages], timeout=1800)
-        self.command(['/bin/sh', directory/'restore.sh', '--force', data], timeout=1800)
+        self.command(['/bin/sh', directory/'restore.sh', '--force', data], timeout=1800, strict_snapshot=True)
         from update_recovery import restore_trust
         restore_trust(self.store, backup['identity'])
         self.activate_utility(self.store.operation(backup['identity']).get('previous', {}).get('utility_selector', 'bundled-modern'))

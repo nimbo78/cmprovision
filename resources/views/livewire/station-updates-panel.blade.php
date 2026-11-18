@@ -118,6 +118,9 @@
                                 <p>{{ $ready ? 'Review the changes before installation. The station must be idle to apply.' : 'Download and verify first. This does not install the update.' }}</p>
                                 @if ($ready)
                                     <x-confirms-password wire:then="begin('apply', '{{ $ready['id'] }}')"><button type="button" class="cmp-btn" :disabled="blocked()" wire:loading.attr="disabled">Review and apply</button></x-confirms-password>
+                                    @if ($part === 'application')
+                                        <span class="text-xs text-fg-muted" role="status" wire:loading.delay wire:target="begin('apply', '{{ $ready['id'] }}')">Checking disk space…</span>
+                                    @endif
                                 @else
                                     <button type="button" class="cmp-btn" wire:click="download(@js($part), @js($candidate['tag']))" :disabled="blocked()" wire:loading.attr="disabled">Download and verify</button>
                                 @endif
@@ -153,11 +156,14 @@
             <div id="updates-advanced" x-show="advanced" x-cloak class="space-y-5 mt-4">
                 <div>
                     <h3>Recovery history</h3>
-                    <p class="text-sm text-fg-muted mt-2">One recovery point is kept for 7 days. The previous point is removed before checking free space and creating the next snapshot. Active recovery stays protected.</p>
+                    <p class="text-sm text-fg-muted mt-2">One recovery point is kept for 7 days. Reviewing disk space keeps that point. A confirmed application update removes it before the final space check and the new snapshot. Active recovery stays protected.</p>
                     <p class="text-sm text-fg-muted mt-2">Restoring application data discards changes made after the selected snapshot.</p>
                     @forelse ($status['recoveries'] ?? [] as $previous)
                         <div class="flex flex-wrap items-center justify-between gap-3 text-sm mt-3"><span>{{ $previous['component'] }} {{ $previous['version'] ?? '' }} → {{ $previous['previous_version'] ?? 'recorded previous version' }} · {{ $previous['state'] }}</span>
                             <x-confirms-password wire:then="begin('rollback', '{{ $previous['id'] }}')"><button class="cmp-btn cmp-btn-secondary" type="button" :disabled="blocked() || !@js($available)">Review rollback</button></x-confirms-password>
+                            @if ($previous['component'] === 'application')
+                                <span class="text-xs text-fg-muted" role="status" wire:loading.delay wire:target="begin('rollback', '{{ $previous['id'] }}')">Checking disk space…</span>
+                            @endif
                         </div>
                     @empty
                         <p class="text-sm text-fg-muted mt-3">No retained recovery point.</p>
@@ -180,6 +186,39 @@
                 <x-slot name="title">{{ $confirmation['action'] === 'rollback' ? 'Restore a previous version?' : 'Apply station update?' }}</x-slot>
                 <x-slot name="content"><div class="space-y-3">
                     <p>{{ $confirmation['description'] }}</p>
+                    @if (isset($confirmation['space']))
+                        @php($space = $confirmation['space'])
+                        <section class="space-y-2" aria-label="Disk space estimate">
+                            <h3 class="font-semibold text-fg">Disk space estimate</h3>
+                            <p class="text-xs text-fg-muted">Potential release counts eligible recovery files. The updater checks free space again when the operation starts.</p>
+                            @foreach ($space['volumes'] as $volume)
+                                <div class="border border-line rounded-lg p-3">
+                                    <p class="text-sm font-semibold text-fg break-all">{{ $volume['location'] }}</p>
+                                    <dl class="grid grid-cols-2 sm:flex justify-between gap-2 mt-2 text-xs">
+                                        @foreach (['required' => 'Required', 'free' => 'Free now', 'reclaimable' => 'Potential release', 'shortfall' => 'Shortfall'] as $field => $name)
+                                            @php($bytes = $volume[$field])
+                                            <div>
+                                                <dt>{{ $name }}</dt>
+                                                <dd @class(['font-semibold', 'text-neg' => $field === 'shortfall' && $bytes > 0]) title="{{ number_format($bytes) }} bytes">
+                                                    @if ($bytes >= 1073741824){{ number_format($bytes / 1073741824, 2) }} GiB
+                                                    @elseif ($bytes >= 1048576){{ number_format($bytes / 1048576, 1) }} MiB
+                                                    @else{{ number_format($bytes) }} B
+                                                    @endif
+                                                </dd>
+                                            </div>
+                                        @endforeach
+                                    </dl>
+                                </div>
+                            @endforeach
+                            @if (isset($space['error']))
+                                <p class="text-neg" role="alert">Disk space estimate unavailable. {{ $space['error'] }}</p>
+                            @elseif (!$space['sufficient'])
+                                <p class="text-neg" role="alert">Free the shortfall on each affected filesystem, then recheck space.</p>
+                            @endif
+                            <button type="button" wire:click="recheckSpace" wire:loading.attr="disabled" class="cmp-btn cmp-btn-secondary cmp-btn-small">Recheck space</button>
+                            <span class="text-xs text-fg-muted" role="status" wire:loading.delay wire:target="recheckSpace">Checking disk space…</span>
+                        </section>
+                    @endif
                     @if ($confirmation['action'] === 'apply' && !empty($status['recoveries']))<p class="text-sm text-fg-muted">Before a new application snapshot, the previous recovery point is retired. If preparation fails, it cannot be used for rollback.</p>@endif
                     <p>The station must be idle. Its web interface and boot services may briefly disconnect. A failed installation automatically restores the immediate recovery state.</p>
                     <p class="text-sm text-fg-muted">Do not disconnect station power. If automatic recovery fails, maintenance stays enabled and recovery requires SSH or the local console.</p>
@@ -187,7 +226,9 @@
                 </div></x-slot>
                 <x-slot name="footer">
                     <button type="button" wire:click="back" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Back</button>
-                    <button type="button" wire:click="confirm" class="cmp-btn cmp-btn-danger ml-3" :disabled="blocked()" wire:loading.attr="disabled">Confirm {{ $confirmation['action'] === 'rollback' ? 'rollback' : 'apply' }}</button>
+                    @if (isset($confirmation['token']))
+                        <button type="button" wire:click="confirm" class="cmp-btn cmp-btn-danger ml-3" :disabled="blocked()" wire:loading.attr="disabled">Confirm {{ $confirmation['action'] === 'rollback' ? 'rollback' : 'apply' }}</button>
+                    @endif
                 </x-slot>
             </x-dialog-modal>
         @endif

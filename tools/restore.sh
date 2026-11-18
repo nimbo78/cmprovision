@@ -17,6 +17,7 @@ TIME_BACKUP=/usr/lib/cmprovision/time-backup.sh
 if [ -r "$TIME_BACKUP" ]; then . "$TIME_BACKUP"; fi
 DATA_ONLY=0
 FORCE=0
+STRICT=${CMPROVISION_UPDATE_SNAPSHOT:-0}
 while :; do
     case "${1:-}" in
         --data-only) DATA_ONLY=1; shift ;;
@@ -33,6 +34,11 @@ exec 7< "$SRC"
 flock -s 7
 [ -f "$SRC/app.tar.gz" ] || { echo "$SRC: not a backup directory" >&2; exit 1; }
 [ ! -e "$SRC/.incomplete" ] || { echo "$SRC: the backup did not finish; refusing to restore it" >&2; exit 1; }
+if [ "$STRICT" = 1 ]; then
+    for name in database.sqlite system-config.tar.gz; do
+        [ -f "$SRC/$name" ] || { echo "$SRC: required recovery file $name is missing" >&2; exit 1; }
+    done
+fi
 
 network_guard()
 {
@@ -133,6 +139,10 @@ else
         if ! grep -Fxq 'etc/default/cmprovision-stand-interface' "$STAND_LIST"; then
             rm -f /etc/default/cmprovision-stand-interface
         fi
+    elif [ "$STRICT" = 1 ]; then
+        rm -f "$STAND_LIST"
+        echo "Could not read the required system configuration archive" >&2
+        exit 1
     fi
     rm -f "$STAND_LIST"
     if [ -f "$SRC/boot-services.saved" ]; then
@@ -141,7 +151,11 @@ else
             /etc/systemd/system/multi-user.target.wants/cmprovision-dnsmasq.service \
             /etc/systemd/system/multi-user.target.wants/cmprovision-rpiboot.service
     fi
-    tar xzf "$SRC/system-config.tar.gz" -C / 2>/dev/null || true
+    if [ "$STRICT" = 1 ]; then
+        tar xzf "$SRC/system-config.tar.gz" -C /
+    else
+        tar xzf "$SRC/system-config.tar.gz" -C / 2>/dev/null || true
+    fi
     systemctl daemon-reload
     if command -v cmprovision_time_restore >/dev/null 2>&1; then cmprovision_time_restore "$SRC" "$DATA_ONLY"; fi
 fi

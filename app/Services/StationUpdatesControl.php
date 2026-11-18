@@ -31,7 +31,8 @@ class StationUpdatesControl
         if (!$this->available()) throw new \RuntimeException('Install the updated cmprovision4 package to enable updates.');
         $process = new Process(['sudo', '-n', self::HELPER]);
         $process->setInput(json_encode($request, JSON_THROW_ON_ERROR));
-        $process->setTimeout(12);
+        // The on-demand estimate walks local storage and can take longer on eMMC.
+        $process->setTimeout(($request['action'] ?? null) === 'space' ? 120 : 12);
         try { $process->run(); }
         catch (\Throwable $error) { throw new \RuntimeException('The updater did not answer. Reload its status before retrying.'); }
         $response = json_decode($process->getOutput(), true);

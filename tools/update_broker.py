@@ -20,6 +20,11 @@ def decode_request(raw):
     except (ValueError, RecursionError) as error: raise UpdateError('Invalid update request JSON.') from error
     if type(value) is not dict: raise UpdateError('Expected a bounded update request object.')
     if value.get('action') == 'status' and set(value) == {'action'}: return value
+    if value.get('action') == 'space':
+        if ((set(value) == {'action', 'candidate'} and matches(r'[0-9a-f]{64}', value['candidate']))
+                or (set(value) == {'action', 'operation'} and matches(ID_RE, value['operation']))):
+            return value
+        raise UpdateError('Select a prepared application update or a retained application recovery point.')
     if value.get('action') in ('cancel', 'diagnostics'):
         if set(value) != {'action', 'id'} or not matches(ID_RE, value.get('id')):
             raise UpdateError('Invalid canceled operation identifier.')
@@ -68,8 +73,22 @@ def reconcile(store, run=subprocess.run, clock=time.time):
 class Broker:
     def __init__(self, store, launcher=launch): self.store, self.launcher = store, launcher
 
+    def _snapshot_space(self, selected):
+        from update_space import estimate, measure
+        return measure(estimate(self.store, selected=selected))
+
     def request(self, request):
         action = request['action']
+        if action == 'space':
+            status = self.store.snapshot()
+            if status['pending']: raise UpdateError('Wait for maintenance to finish before reviewing another update.')
+            if 'candidate' in request:
+                if any(row['id'] == request['candidate'] and row['release']['component'] == 'application' for row in status['ready']):
+                    return self._snapshot_space(None)
+            else:
+                if any(row['id'] == request['operation'] and row['component'] == 'application' for row in status['recoveries']):
+                    return self._snapshot_space(request['operation'])
+            raise UpdateError('This application update or recovery point is no longer available.')
         if action == 'status':
             from update_retention import prune_idle, recovery_expired, has_unretained_artifacts
             status = self.store.snapshot()

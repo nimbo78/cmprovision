@@ -10,6 +10,7 @@ class StationUpdates
 {
     const COMPONENTS = ['application', 'utility-os'];
     const TTL = 600;
+    private const TICKET_PREFIX = 'station-update-reviewed:';
     public function __construct(private StationUpdatesControl $control) {}
     public function preferences(): array
     {
@@ -53,31 +54,63 @@ class StationUpdates
         $status = $this->control->status();
         if ($this->control->pending()) throw new \RuntimeException('Another update is in maintenance or needs recovery.');
         $request = ['action' => $action, 'nonce' => bin2hex(random_bytes(32))];
+        $spaceTarget = null;
         if ($action === 'apply') {
             $ready = collect($status['ready'] ?? [])->firstWhere('id', $target);
             if (!$ready) throw new \RuntimeException('Download and verify the selected update first.');
             $request += ['candidate' => $target, 'receipt' => $ready['receipt']];
             $description = $ready['release']['component'].' '.$ready['release']['version'];
+            if ($ready['release']['component'] !== 'utility-os') $spaceTarget = ['candidate' => $target];
         } elseif ($action === 'rollback') {
             $previous = collect($status['recoveries'] ?? [])->firstWhere('id', $target);
             if (!$previous) throw new \RuntimeException('No retained recovery snapshot is available for this operation.');
             $request += ['operation' => $target];
             $description = 'Restore '.$previous['component'].' '.($previous['previous_version'] ?? 'the recorded previous version').
                 ' and its recorded data. Changes after that snapshot will be lost.';
+            if ($previous['component'] !== 'utility-os') $spaceTarget = ['operation' => $target];
         } elseif ($action === 'activate') {
             if (!preg_match('/\A(?:legacy|bundled-modern|managed:[0-9]{4}\.[0-9]{2}(?:\.[0-9]+)?)\z/D', $target)) throw new \InvalidArgumentException('Invalid Utility OS selection.');
             $request += ['selector' => $target];
             $description = 'Use Utility OS '.$target.' for subsequent boots.';
         } else throw new \InvalidArgumentException('Unknown update action.');
-        $token = bin2hex(random_bytes(32));
-        $ticket = ['actor' => $actor, 'request' => $request, 'description' => $description, 'expires_at' => now()->timestamp + self::TTL];
-        Cache::put('station-update-ticket:'.$token, $ticket, self::TTL);
-        return ['token' => $token, 'description' => $description, 'action' => $action, 'expires_at' => $ticket['expires_at']];
+        $space = $spaceTarget === null ? null : $this->spaceEstimate($spaceTarget);
+        $review = ['action' => $action, 'target' => $target, 'description' => $description, 'space' => $space,
+            'token' => null, 'expires_at' => now()->timestamp + self::TTL];
+        if ($space !== null && !$space['sufficient']) return $review;
+
+        $review['token'] = bin2hex(random_bytes(32));
+        Cache::put(self::TICKET_PREFIX.$review['token'], ['actor' => $actor, 'request' => $request, 'expires_at' => $review['expires_at']], self::TTL);
+        return $review;
+    }
+
+    private function spaceEstimate(array $target): array
+    {
+        $unavailable = ['sufficient' => false, 'volumes' => [], 'error' => 'The local updater returned an incomplete estimate.'];
+        try {
+            $estimate = $this->control->request(['action' => 'space'] + $target);
+        } catch (\RuntimeException $error) {
+            $unavailable['error'] = $error->getMessage();
+            return $unavailable;
+        }
+        $sufficient = $estimate['sufficient'] ?? null;
+        $volumes = $estimate['volumes'] ?? null;
+        if (!is_bool($sufficient) || !is_array($volumes) || !array_is_list($volumes) || !$volumes) return $unavailable;
+        foreach ($volumes as $volume) {
+            if (!is_string($volume['location'] ?? null) || trim($volume['location']) === '') return $unavailable;
+            foreach (['required', 'free', 'reclaimable', 'shortfall'] as $field) {
+                $bytes = $volume[$field] ?? null;
+                // JSON integers beyond PHP_INT_MAX become floats on 32-bit systems.
+                $whole = is_int($bytes) || (is_float($bytes) && is_finite($bytes) && floor($bytes) === $bytes);
+                if (!$whole || $bytes < 0) return $unavailable;
+            }
+            if ($sufficient && $volume['shortfall'] > 0) return $unavailable;
+        }
+        return ['sufficient' => $sufficient, 'volumes' => $volumes];
     }
     public function confirm(string $token, string $actor): array
     {
         return Cache::lock('station-update-confirm', 20)->block(1, function () use ($token, $actor) {
-            $ticket = preg_match('/\A[0-9a-f]{64}\z/D', $token) ? Cache::get('station-update-ticket:'.$token) : null;
+            $ticket = preg_match('/\A[0-9a-f]{64}\z/D', $token) ? Cache::get(self::TICKET_PREFIX.$token) : null;
             if (!is_array($ticket) || !hash_equals($ticket['actor'], $actor) || $ticket['expires_at'] <= now()->timestamp)
                 throw new \RuntimeException('The confirmation expired or belongs to another session. Review the update again.');
             // Keep the same nonce for a lost/retried reply: root decides if it has already run.
@@ -89,10 +122,10 @@ class StationUpdates
     public function abandon(string $token, string $actor): void
     {
         Cache::lock('station-update-confirm', 20)->block(1, function () use ($token, $actor) {
-            $ticket = preg_match('/\A[0-9a-f]{64}\z/D', $token) ? Cache::get('station-update-ticket:'.$token) : null;
+            $ticket = preg_match('/\A[0-9a-f]{64}\z/D', $token) ? Cache::get(self::TICKET_PREFIX.$token) : null;
             if (!is_array($ticket) || !hash_equals($ticket['actor'], $actor))
                 throw new \RuntimeException('The confirmation expired or belongs to another session.');
-            Cache::forget('station-update-ticket:'.$token);
+            Cache::forget(self::TICKET_PREFIX.$token);
         });
     }
     public function cancel(string $id): array { return $this->control->request(['action' => 'cancel', 'id' => $id]); }

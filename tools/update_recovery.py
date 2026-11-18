@@ -73,6 +73,12 @@ def retain_runner(store, identity, installed=Path('/usr/lib/cmprovision'), names
                 raise RuntimeError('Existing retained worker differs.')
         else: write(destination, raw, 0o600)
         hashes[name] = digest
+    # write() flushes the entries inside this operation. Also persist the directories
+    # that make a newly retained runner reachable after a loss of power.
+    for parent in (target.parent, store.private, store.root, store.root.parent):
+        fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try: os.fsync(fd)
+        finally: os.close(fd)
     return {'directory': str(target), 'hashes': hashes}
 
 

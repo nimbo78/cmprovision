@@ -123,6 +123,22 @@ def run():
         assert entry['state'] == 'ready', entry
         return next(item for item in store.snapshot()['ready'] if item['id'] == envelope['id'])
     ready = download()
+    # A full scratch filesystem must reject an application update while HTTP and
+    # provisioning are still available, even when the snapshot volume has room.
+    from update_broker import Broker
+    subprocess.run(['mount', '-t', 'tmpfs', '-o', 'size=16M,mode=1777', 'tmpfs', '/var/tmp'], check=True)
+    try:
+        preview = Broker(store).request({'action': 'space', 'candidate': ready['id']})
+        assert not preview['sufficient'] and any(row['location'] == '/var/tmp' and row['shortfall'] > 0
+                                                 for row in preview['volumes']), preview
+        with patch.object(system, 'pause', wraps=system.pause) as pause:
+            refused = operation('apply', candidate=ready['id'], receipt=ready['receipt'])
+        pause.assert_not_called()
+        assert refused['state'] == 'failed' and '/var/tmp' in refused['message'], refused['message']
+        assert not store.snapshot()['pending'] and system.package('cmprovision4') == original
+        system.http_health({})
+    finally:
+        subprocess.run(['umount', '/var/tmp'], check=True)
     health = system.health
     def reject_target(expected, services):
         health(expected, services)

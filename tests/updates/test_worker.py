@@ -1,6 +1,7 @@
 import base64
 import copy
 from contextlib import contextmanager
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -60,7 +61,13 @@ class System:
     @contextmanager
     def admission_lock(self): yield
     def capture_services(self): return copy.deepcopy(self.services)
-    def prune(self): pass
+    def prune(self, before_snapshot=False):
+        if before_snapshot: self.calls.append(('retire',))
+    def plan_snapshot_space(self, selected=None):
+        self.calls.append(('size', selected))
+        return {'selected': selected}
+    def require_snapshot_space(self, plan):
+        self.calls.append(('check-space',))
     def retain_runner(self, identity): return {'directory': str(self.root/'runner'/identity), 'hashes': {}}
     def pause(self, services): self.calls.append(('pause', copy.deepcopy(services)))
     def resume(self, services, boot=True):
@@ -187,6 +194,105 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(2, len(report['failures']))
 
     def apply(self, ready): return self.run_operation('apply', candidate=ready['id'], receipt=ready['receipt'])
+
+    def test_insufficient_snapshot_space_finishes_before_maintenance(self):
+        ready = self.download()
+        with patch.object(self.system, 'require_snapshot_space', side_effect=UpdateError('Free 86 MiB for the recovery snapshot.')), \
+             patch.object(self.store, 'mark_pending', wraps=self.store.mark_pending) as pending:
+            result = self.apply(ready)
+        self.assertEqual('failed', result['state'])
+        self.assertIn('86 MiB', result['message'])
+        self.assertIn(('retire',), self.system.calls)
+        pending.assert_not_called()
+        self.assertFalse(any(c[0] in ('pause', 'resume', 'backup', 'install') for c in self.system.calls))
+
+    def test_sizing_and_retirement_are_online_and_free_space_is_rechecked_at_admission(self):
+        ready = self.download()
+        events = []
+        @contextmanager
+        def admission():
+            events.append('lock')
+            try: yield
+            finally: events.append('unlock')
+        def measure(plan):
+            events.append('measure')
+            if 'lock' in events: raise UpdateError('Space filled during preparation.')
+        with patch.object(self.system, 'admission_lock', admission), \
+             patch.object(self.system, 'plan_snapshot_space', side_effect=lambda selected: events.append('size') or {}), \
+             patch.object(self.system, 'prune', side_effect=lambda before_snapshot=False: events.append('retire') if before_snapshot else None), \
+             patch.object(self.system, 'require_snapshot_space', side_effect=measure):
+            result = self.apply(ready)
+        self.assertEqual('failed', result['state'])
+        self.assertEqual(['size', 'retire', 'measure', 'lock', 'measure', 'unlock'], events)
+        self.assertFalse(any(c[0] in ('pause', 'backup', 'install') for c in self.system.calls))
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_new_board_or_conflicting_backup_during_estimate_keeps_station_online(self):
+        for conflict in ('board', 'backup'):
+            with self.subTest(conflict=conflict):
+                self.system.conflict = False
+                self.system.active = []
+                ready = self.download()
+                self.system.calls.clear()
+                def new_work(selected):
+                    if conflict == 'board': self.system.active = [{'phase': 'write'}]
+                    else: self.system.conflict = True
+                    return {}
+                with patch.object(self.system, 'plan_snapshot_space', side_effect=new_work):
+                    result = self.apply(ready)
+                self.assertEqual('failed', result['state'])
+                self.assertFalse(any(c[0] in ('retire', 'pause', 'backup', 'install') for c in self.system.calls))
+                self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_rollback_sizes_the_insurance_copy_while_protecting_selected_source(self):
+        installed = self.apply(self.download())
+        self.system.calls.clear()
+        with patch.object(self.system, 'require_snapshot_space', side_effect=UpdateError('Insufficient space for both snapshots.')):
+            result = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertIn(('size', installed['id']), self.system.calls)
+        self.assertIn(installed['id'], self.system.snapshots)
+        self.assertFalse(any(c[0] in ('pause', 'backup', 'recover') for c in self.system.calls))
+
+    def test_late_enospc_can_still_record_failure_and_reopen_admission(self):
+        ready = self.download()
+        exhausted = False
+        reserve = self.store.private/'journal.reserve'
+        def no_space(identity):
+            nonlocal exhausted
+            exhausted = True
+            self.assertGreaterEqual(reserve.stat().st_blocks*512, 4*1024**2)
+            raise UpdateError('Cannot finish writing the snapshot: no space left.')
+        atomic = self.store._atomic
+        def write(path, value, mode):
+            if exhausted and path == self.store.state_file and reserve.exists():
+                raise OSError(errno.ENOSPC, 'Test journal volume is full')
+            return atomic(path, value, mode)
+        with patch.object(self.system, 'backup', side_effect=no_space), patch.object(self.store, '_atomic', side_effect=write):
+            result = self.apply(ready)
+        self.assertEqual('failed', result['state'])
+        self.assertIn('no space left', result['message'])
+        self.assertFalse(reserve.exists())
+        self.assertIsNone(self.store.snapshot()['pending'])
+        self.assertTrue(any(c[0] == 'resume' for c in self.system.calls))
+        self.assertFalse(any(c[0] in ('install', 'recover') for c in self.system.calls))
+
+    def test_journal_reserve_is_counted_once_and_must_fit_before_pausing(self):
+        ready = self.download()
+        def at_estimated_limit(plan):
+            if (self.store.private/'journal.reserve').exists():
+                raise UpdateError('Journal reserve counted twice.')
+        with patch.object(self.system, 'require_snapshot_space', side_effect=at_estimated_limit), \
+             patch('os.posix_fallocate', side_effect=OSError(errno.ENOSPC, 'quota reached')):
+            result = self.apply(ready)
+        self.assertEqual('failed', result['state'])
+        self.assertIn('Not enough free space for the updater journal', result['message'])
+        self.assertIsNone(self.store.snapshot()['pending'])
+        self.assertFalse(any(c[0] in ('pause', 'install', 'recover') for c in self.system.calls))
+        self.assertFalse((self.store.private/'journal.reserve').exists())
+        with patch.object(self.system, 'require_snapshot_space', side_effect=at_estimated_limit):
+            result = self.apply(ready)
+        self.assertEqual('succeeded', result['state'], result.get('message'))
 
     def test_download_can_run_while_flashing_but_apply_cannot_interrupt_it(self):
         self.system.active = [{'serial': '10000000feedface', 'phase': 'write'}]

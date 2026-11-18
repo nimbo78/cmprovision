@@ -83,6 +83,28 @@ class RecoveryMigrationTest(unittest.TestCase):
 
 
 class BrokerTest(unittest.TestCase):
+    def test_space_preview_is_read_only_and_bound_to_an_application_candidate_or_recovery(self):
+        candidate, previous = 'a'*64, 'b'*32
+        status = {'ready': [{'id': candidate, 'release': {'component': 'application'}}],
+                  'recoveries': [{'id': previous, 'component': 'application'}], 'pending': None}
+        store = Mock()
+        store.snapshot.return_value = status
+        broker = Broker(store, launcher=Mock())
+        plan = {'sufficient': True, 'volumes': []}
+        with patch.object(broker, '_snapshot_space', create=True, return_value=plan) as preview:
+            for key, value in [('candidate', candidate), ('operation', previous)]:
+                req = decode_request(json.dumps({'action': 'space', key: value}))
+                self.assertEqual(plan, broker.request(req))
+                preview.assert_called_with(previous if key == 'operation' else None)
+            status['ready'][0]['release']['component'] = 'utility-os'
+            for req in ({'action': 'space', 'candidate': candidate}, {'action': 'space', 'operation': 'c'*32}):
+                with self.assertRaises(UpdateError): broker.request(req)
+            self.assertEqual(2, preview.call_count)
+        for bad in ({'operation': '../backup'}, {'candidate': candidate, 'operation': previous}, {'candidate': []}):
+            with self.assertRaises(UpdateError): decode_request(json.dumps(dict(action='space', **bad)))
+        store.begin.assert_not_called()
+        broker.launcher.assert_not_called()
+
     def test_backup_gate_rejects_new_checks_but_keeps_status_available(self):
         with tempfile.TemporaryDirectory() as temporary:
             store = UpdateStore(Path(temporary)/'state', Path(temporary)/'run', owner=os.getuid())

@@ -11,6 +11,20 @@ from update_store import TERMINAL, RECOVERY_TTL
 from update_manifest import UpdateError
 
 
+def mount_points():
+    """Include bind mounts, even when both sides have the same device number."""
+    try:
+        rows = Path('/proc/self/mountinfo').read_bytes().splitlines()
+        mounts = set()
+        for row in rows:
+            field = row.split()[4]
+            path = re.sub(rb'\\([0-7]{3})', lambda match: bytes([int(match[1], 8)]), field)
+            mounts.add(Path(os.fsdecode(path)))
+        return mounts
+    except (OSError, IndexError, ValueError) as error:
+        raise UpdateError('Cannot identify mounted filesystems for recovery storage.') from error
+
+
 def recovery_expired(operation, now):
     expiry = operation.get('recovery_expires_at')
     if expiry is None:
@@ -52,6 +66,7 @@ def prune_idle(store):
 
 def prune(store, managed=Path('/var/lib/cmprovision-utility-os'), now=None, active_selector=None, before_snapshot=False):
     now = store.clock() if now is None else now
+    mounts = mount_points()
     with store.lock('control'):
         state = store._load()
         references = {value.get('id') for value in state['checks'].values()} | set(state['ready'])
@@ -88,6 +103,7 @@ def prune(store, managed=Path('/var/lib/cmprovision-utility-os'), now=None, acti
             info = path.lstat()
             if (not stat.S_ISDIR(info.st_mode) or info.st_uid != store.owner or info.st_mode & 0o022
                     or info.st_mtime > now-grace): continue
+            if any(mount.is_relative_to(path) for mount in mounts): continue
             if verify:
                 try: verify(path)
                 except Exception: continue # An unknown/damaged tree is left for an administrator, not guessed at.
