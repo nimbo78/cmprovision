@@ -5,12 +5,15 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import tarfile
 import time
+import urllib.parse
+import urllib.request
 import uuid
 
 from acceptance_version import candidate_version
@@ -27,6 +30,23 @@ def command(*args): return subprocess.check_output(args, text=True).strip()
 def enabled(name): return subprocess.run(['systemctl', 'is-enabled', name], capture_output=True, text=True).stdout.strip()
 
 
+def commission_station():
+    origin = 'http://127.0.0.1'
+    client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+    with client.open(origin+'/login', timeout=15) as response:
+        assert response.url == origin+'/setup'
+        form = response.read()
+    token = re.search(rb'name="_token"\s+value="([^"]+)"', form)
+    assert token and b'name="setup_code"' in form
+    code = command('/usr/sbin/cmprovision-first-admin', 'show')
+    password = 'Aa1!' + uuid.uuid4().hex
+    fields = {'_token': token[1].decode(), 'setup_code': code, 'name': 'Acceptance operator',
+              'email': 'operator@example.test', 'password': password, 'password_confirmation': password}
+    with client.open(origin+'/setup', urllib.parse.urlencode(fields).encode(), timeout=20) as response:
+        assert response.url == origin+'/settings/setup'
+    print('PASS: offline install, first boot and web administrator setup on the disposable station.')
+
+
 def run():
     if Path('/etc/hostname').read_text().strip() != 'cmprovision-update-bench' or not Path('/fixture/usbboot-shim.deb').exists():
         raise RuntimeError('Refusing to run outside the dedicated disposable container.')
@@ -40,7 +60,9 @@ def run():
     assert refused.returncode != 0
     original = system.package('cmprovision4')
     version = candidate_version(original)
-    system.command(['/usr/bin/systemctl', 'start', 'nginx', 'php8.4-fpm', 'cmprovision-network-init'])
+    system.command(['/usr/bin/systemctl', 'start', 'nginx', 'php8.4-fpm', 'cmprovision-network-init',
+                    'cmprovision-first-admin.service'])
+    commission_station()
     system.http_health({})
     for name in ('cmprovision-dnsmasq', 'cmprovision-rpiboot'):
         assert enabled(name) == 'masked'

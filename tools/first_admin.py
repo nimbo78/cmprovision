@@ -24,6 +24,13 @@ def generated():
     return base64.b32encode(secrets.token_bytes(10)).decode('ascii')
 
 
+def kernel_boot_id(path=Path('/proc/sys/kernel/random/boot_id')):
+    try:
+        return path.read_text().strip() or None
+    except FileNotFoundError:
+        return None  # dpkg may configure an offline root without procfs.
+
+
 def durable_directory(path):
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -118,7 +125,7 @@ class Bootstrap:
             except FileNotFoundError:
                 state = {'state': 'missing'}
             else:
-                if not isinstance(state, dict) or state.get('state') not in ('installing', 'armed', 'claiming', 'closed'):
+                if not isinstance(state, dict) or state.get('state') not in ('installing', 'awaiting-boot', 'armed', 'claiming', 'closed'):
                     raise ValueError('Invalid bootstrap state')
                 if state['state'] == 'armed' and not re.fullmatch('[A-Z2-7]{16}', state.get('code', '')):
                     raise ValueError('Invalid bootstrap code')
@@ -184,12 +191,20 @@ class Bootstrap:
                 if phase == 'missing':
                     save(self.root / 'state.json', {'state': 'installing'})
                 return {'state': 'closed'}
-            if phase == 'installing' and action != 'close':
-                if action not in ('fresh', 'upgrade'):
-                    return {'state': 'closed'}
-                phase, action = 'missing', 'fresh'
             if action == 'close' or (phase == 'missing' and action == 'upgrade'):
                 return self.close()
+            if self.boot is None:
+                if action != 'upgrade':
+                    raise ValueError('First setup requires a running station')
+                if phase == 'installing':
+                    # postinst finished the database migration. Each booted copy must mint its own code.
+                    save(self.root / 'state.json', {'state': 'awaiting-boot'})
+                return {'state': 'closed'}
+            if phase in ('installing', 'awaiting-boot'):
+                ready_to_resume = phase == 'awaiting-boot' and action == 'resume'
+                if action not in ('fresh', 'upgrade') and not ready_to_resume:
+                    return {'state': 'closed'}
+                phase, action = 'missing', 'fresh'
             if phase == 'claiming':
                 return self.finish(state['request'])
             if phase == 'closed' or (phase == 'missing' and action != 'fresh'):
@@ -225,6 +240,8 @@ class Bootstrap:
                     raise ValueError('Invalid claim')
             if not re.fullmatch(r'\$2[ayb]\$\d{2}\$[./A-Za-z0-9]{53}', data['password_hash']):
                 raise ValueError('Invalid password hash')
+        if self.boot is None:
+            return {'state': 'closed'}
         with self.locked() as state:
             if state['state'] == 'claiming':
                 return self.finish(state['request'])
@@ -259,8 +276,7 @@ def main(local=False):
     # On the first dpkg configure the display group is created after recording install intent.
     display_gid = None if local and sys.argv[1] == 'begin-install' else grp.getgrnam('cmprovision-wallboard').gr_gid
     broker = Bootstrap(Path('/var/lib/cmprovision-bootstrap'), Path('/run/cmprovision-bootstrap'),
-                       artisan, 0, display_gid, time.monotonic,
-                       Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+                       artisan, 0, display_gid, time.monotonic, kernel_boot_id())
     if local:
         action = sys.argv[1]
         if action == 'image-fresh':

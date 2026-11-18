@@ -1,5 +1,6 @@
 import concurrent.futures
 import hashlib
+import json
 import os
 from pathlib import Path
 import sys
@@ -8,7 +9,7 @@ import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
-from first_admin import Bootstrap, save
+from first_admin import Bootstrap, kernel_boot_id, save
 
 
 class FirstAdminTest(unittest.TestCase):
@@ -130,6 +131,27 @@ class FirstAdminTest(unittest.TestCase):
         self.assertEqual({'state': 'claimed', 'id': 1}, self.submit(code))
         self.broker.local('begin-install')
         self.assertEqual({'state': 'closed'}, self.broker.local('upgrade'))
+
+    def test_offline_package_install_generates_a_code_only_on_first_boot(self):
+        self.broker.boot = kernel_boot_id(self.base / 'unmounted-proc' / 'boot_id')
+        self.broker.local('begin-install')
+        for _ in range(2):
+            self.assertEqual({'state': 'closed'}, self.broker.local('upgrade'))
+            self.assertEqual({'state': 'awaiting-boot'},
+                             json.loads((self.broker.root / 'state.json').read_bytes()))
+            self.assertFalse((self.broker.display / 'display.json').exists())
+            self.assertEqual({'state': 'closed'}, self.broker.web({'action': 'status'}))
+        self.broker.boot = 'first-boot'
+        self.assertEqual({'state': 'armed'}, self.broker.local('resume'))
+        code = self.broker.local('show')['code']
+        self.assertEqual({'state': 'claimed', 'id': 1}, self.submit(code))
+
+    def test_offline_upgrade_of_an_existing_station_stays_closed_on_boot(self):
+        self.broker.boot = None
+        self.assertEqual({'state': 'closed'}, self.broker.local('upgrade'))
+        self.broker.boot = 'next-boot'
+        self.assertEqual({'state': 'closed'}, self.broker.local('resume'))
+        self.assertEqual({'state': 'closed'}, self.broker.web({'action': 'status'}))
 
     def test_database_reply_is_bounded_even_when_the_writer_keeps_its_pipe_open(self):
         from first_admin import bounded_reply
