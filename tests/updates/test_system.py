@@ -1,17 +1,151 @@
+import hashlib
+import io
+import os
+import shutil
+import sqlite3
+import subprocess
+import tarfile
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from update_manifest import UpdateError
+from update_store import UpdateStore
 from update_system import LinuxSystem, parse_plan
+
+
+def write_snapshot(snapshot):
+    snapshot.mkdir(mode=0o700)
+    archives = {
+        'app.tar.gz': ('var/lib/cmprovision/.env', 'var/lib/cmprovision/etc/dnsmasq.conf'),
+        'system-config.tar.gz': ('etc/nginx/sites-available/cmprovision',),
+    }
+    for name, members in archives.items():
+        with tarfile.open(snapshot/name, 'w:gz') as archive:
+            for member in members:
+                data = b'configuration\n'
+                info = tarfile.TarInfo(member)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+    database = sqlite3.connect(snapshot/'database.sqlite')
+    try:
+        database.execute('CREATE TABLE projects (id INTEGER PRIMARY KEY)')
+    finally:
+        database.close()
+    with tempfile.TemporaryDirectory() as temp:
+        control = Path(temp)/'DEBIAN'
+        control.mkdir()
+        (control/'control').write_text('Package: cmprovision4\nVersion: 2.30.0\nArchitecture: all\n'
+                                      'Maintainer: Test <test@example.invalid>\nDescription: Recovery fixture\n')
+        subprocess.run(['dpkg-deb', '--build', temp, snapshot/'cmprovision4_2.30.0_all.deb'],
+                       check=True, capture_output=True)
+
+
+class RecoverySnapshotTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.store = UpdateStore(root/'store', root/'run', owner=os.getuid())
+        entry, _ = self.store.begin({'action': 'check', 'nonce': 'a'*64, 'components': ['application']})
+        self.identity = entry['id']
+        self.store.update(self.identity, previous={'cmprovision': '2.30.0', 'fpms_installed': False,
+                                                   'fpms_version': None})
+        directory = self.store.private/'recovery'/self.identity
+        directory.mkdir(mode=0o700, parents=True)
+        self.snapshot = directory/'20261118-120000-2.30.0'
+        write_snapshot(self.snapshot)
+        self.restore = directory/'restore.sh'
+        self.restore.write_bytes(b'fixture')
+        self.system = LinuxSystem(self.store)
+        self.installers = []
+        command = self.system.command
+        def intercept(argv, **options):
+            if argv[0] in ('/usr/bin/dpkg', '/bin/sh'):
+                self.installers.append(argv[0])
+                raise UpdateError('Test stopped the installer.')
+            return command(argv, **options)
+        self.system.command = intercept
+
+    def backup(self):
+        return {'identity': self.identity, 'directory': str(self.snapshot),
+                'restore_sha256': hashlib.sha256(self.restore.read_bytes()).hexdigest(),
+                'hashes': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in self.snapshot.iterdir()}}
+
+    def test_missing_required_archive_never_calls_installer(self):
+        (self.snapshot/'system-config.tar.gz').unlink()
+        with self.assertRaises(UpdateError):
+            self.system.recover(self.backup())
+        self.assertEqual([], self.installers)
+
+    def test_archive_with_matching_checksum_and_truncated_footer_never_calls_installer(self):
+        for name in ('app.tar.gz', 'system-config.tar.gz'):
+            with self.subTest(name=name):
+                archive = self.snapshot/name
+                original = archive.read_bytes()
+                archive.write_bytes(original[:-5])
+                try:
+                    with self.assertRaises(UpdateError):
+                        self.system.recover(self.backup())
+                    self.assertEqual([], self.installers)
+                finally:
+                    archive.write_bytes(original)
+
+    def test_absent_application_package_never_calls_installer(self):
+        (self.snapshot/'cmprovision4_2.30.0_all.deb').unlink()
+        with self.assertRaises(UpdateError):
+            self.system.recover(self.backup())
+        self.assertEqual([], self.installers)
+
+    def test_damaged_package_payload_with_readable_control_never_calls_installer(self):
+        package = self.snapshot/'cmprovision4_2.30.0_all.deb'
+        package.write_bytes(package.read_bytes()[:-12])
+        with self.assertRaises(UpdateError):
+            self.system.recover(self.backup())
+        self.assertEqual([], self.installers)
+
+    def test_changed_source_after_preflight_does_not_start_mutation(self):
+        backup = self.backup()
+        verified = self.system.validate_backup(backup)
+        database = self.snapshot/'database.sqlite'
+        replacement = self.snapshot.parent/'replacement.sqlite'
+        shutil.copyfile(database, replacement)
+        replacement.replace(database)
+        mutations = []
+        with self.assertRaises(UpdateError):
+            self.system.recover(backup, verified=verified, before_mutation=lambda: mutations.append(True))
+        self.assertEqual([], mutations)
+        self.assertEqual([], self.installers)
+
+    def test_invalid_database_with_recorded_checksum_never_calls_installer(self):
+        (self.snapshot/'database.sqlite').write_bytes(b'not a database')
+        with self.assertRaises(UpdateError):
+            self.system.recover(self.backup())
+        self.assertEqual([], self.installers)
+
+    def test_missing_previously_installed_display_package_never_calls_installer(self):
+        self.store.update(self.identity, previous={'cmprovision': '2.30.0', 'fpms_installed': True,
+                                                   'fpms_version': '2.30.0'})
+        with self.assertRaises(UpdateError):
+            self.system.recover(self.backup())
+        self.assertEqual([], self.installers)
+
+    def test_unrecorded_package_is_never_passed_to_installer(self):
+        backup = self.backup()
+        (self.snapshot/'extra.deb').write_bytes(b'unrecorded')
+        with self.assertRaises(UpdateError):
+            self.system.recover(backup)
+        self.assertEqual([], self.installers)
+
+    def test_complete_legacy_snapshot_reaches_installer(self):
+        with self.assertRaisesRegex(UpdateError, 'Test stopped the installer'):
+            self.system.recover(self.backup())
+        self.assertEqual(['/usr/bin/dpkg'], self.installers)
 
 
 class SystemTest(unittest.TestCase):
     def test_backup_retires_even_the_latest_recovery_before_testing_free_space(self):
-        import os
-        import shutil
-        import tempfile
-        from update_store import UpdateStore
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             store = UpdateStore(root/'updates', root/'run', owner=os.getuid())
@@ -25,20 +159,22 @@ class SystemTest(unittest.TestCase):
                 old.append(path)
             store._mutate(lambda state: state.update(recoveries=legacy))
             current, _ = store.begin({'action': 'check', 'nonce': 'a'*64, 'components': ['application']})
-            store.update(current['id'], state='preparing')
+            store.update(current['id'], state='preparing', previous={'cmprovision': '2.30.0', 'fpms_installed': False})
             store.mark_pending(current['id'])
             system = LinuxSystem(store)
             system.www = lambda *args: {}
             from update_retention import prune
             system.prune = lambda **kwargs: prune(store, root/'managed', **kwargs)
             system.package = lambda name: None
+            read_only_command = system.command
             def command(argv, **options):
                 if argv[0].endswith('/du'): return '1024 app'
                 if argv[0].endswith('/cmprovision-backup'):
                     snapshot = Path(argv[-1])/'20261112-120000-2.30.0'
-                    snapshot.mkdir()
-                    (snapshot/'cmprovision4_2.30.0_all.deb').write_bytes(b'fixture package')
+                    write_snapshot(snapshot)
                     return ''
+                if argv[0] in ('/usr/bin/tar', '/usr/bin/dpkg-deb'):
+                    return read_only_command(argv, **options)
                 raise AssertionError(argv)
             system.command = command
             def usage(path):
@@ -52,8 +188,6 @@ class SystemTest(unittest.TestCase):
             self.assertEqual(current['id'], backup['identity'])
 
     def test_space_failure_after_retirement_does_not_advertise_the_removed_recovery(self):
-        import os, shutil, tempfile
-        from update_store import UpdateStore
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             store = UpdateStore(root/'updates', root/'run', owner=os.getuid())

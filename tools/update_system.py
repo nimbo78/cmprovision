@@ -1,5 +1,5 @@
 """Fixed Linux effects for the root updater. Application DB access always runs as www-data."""
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import fcntl
 import hashlib
 import http.client
@@ -8,13 +8,14 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
 import time
 
 from update_manifest import DEB_VERSION_RE, UpdateError
-from update_store import safe_text
+from update_store import ID_RE, matches, safe_text
 
 APP = Path('/var/lib/cmprovision')
 HELPERS = Path('/usr/lib/cmprovision')
@@ -25,6 +26,12 @@ READERS = ('cmprovision-queue.service', 'cmprovision-queue-images.service',
 WATCHERS = ('cmprovision-wallboard.service', 'cmprovision-wallboard-display.service',
             'cmprovision-fpms.service', 'fpms-lite.service')
 PACKAGE = r'[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+)?'
+RECOVERY_DATA = ('app.tar.gz', 'database.sqlite', 'system-config.tar.gz')
+
+
+def file_sha256(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
 def parse_plan(text):
@@ -44,18 +51,18 @@ def parse_plan(text):
 class LinuxSystem:
     def __init__(self, store): self.store = store
 
-    def command(self, argv, timeout=60, check=True, **options):
+    def command(self, argv, timeout=60, check=True, *, stdout=subprocess.PIPE, **options):
         env = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
                'DEBIAN_FRONTEND': 'noninteractive', 'CMPROVISION_NO_SNAPSHOT': '1'}
         try:
-            result = subprocess.run([str(arg) for arg in argv], timeout=timeout, capture_output=True,
+            result = subprocess.run([str(arg) for arg in argv], timeout=timeout, stdout=stdout, stderr=subprocess.PIPE,
                                     text=True, env=env, check=False, **options)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise UpdateError('A required system operation timed out or could not start: '+Path(argv[0]).name) from error
         if check and result.returncode:
-            print(safe_text((result.stderr+' '+result.stdout)[-2000:], 2000), file=sys.stderr)
+            print(safe_text((result.stderr+' '+(result.stdout or ''))[-2000:], 2000), file=sys.stderr)
             raise UpdateError('A required system operation failed: '+Path(argv[0]).name+'. Inspect the updater service journal.')
-        return result.stdout.strip() if check else result
+        return (result.stdout or '').strip() if check else result
 
     def www(self, *args):
         return json.loads(self.command(['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/php',
@@ -164,10 +171,11 @@ class LinuxSystem:
     def prefetch(self, paths, plan):
         self.command(['/usr/bin/apt-get', '-y', '--download-only', '--no-remove', 'install', *paths], timeout=1800)
 
-    def install(self, paths, plan, value):
+    def install(self, paths, plan, value, *, before_mutation=None):
         if self.plan_install(paths, value) != plan: raise UpdateError('The approved dependency plan changed.')
         # apt3 --no-download rejects local .deb paths. Unpack verified application files first;
         # configure them with pinned package names and already cached dependencies, offline.
+        if before_mutation: before_mutation()
         self.command(['/usr/bin/dpkg', '--force-confold', '--unpack', *paths], timeout=600)
         self.command(['/usr/bin/apt-get', '-y', '--no-download', '--no-remove',
                       '-o', 'Dpkg::Options::=--force-confold', '--fix-broken', 'install',
@@ -194,31 +202,101 @@ class LinuxSystem:
         if self.package('fpms-lite'):
             self.command(['/usr/bin/dpkg-repack', 'fpms-lite'], cwd=snapshot, timeout=600)
             if not list(snapshot.glob('fpms-lite_*.deb')): raise UpdateError('The recovery snapshot has no FPMS package.')
-        hashes = {path.name: hashlib.file_digest(path.open('rb'), 'sha256').hexdigest()
-                  for path in snapshot.iterdir() if path.is_file()}
-        return {'directory': str(snapshot), 'identity': identity, 'hashes': hashes,
-                'restore_sha256': hashlib.file_digest(restore.open('rb'), 'sha256').hexdigest()}
+        names = {path.name for path in snapshot.iterdir()}
+        self._snapshot_stamps(identity, snapshot, names)
+        self._check_snapshot_contents(identity, snapshot, names)
+        return {'directory': str(snapshot), 'identity': identity,
+                'hashes': {name: file_sha256(snapshot/name) for name in names},
+                'restore_sha256': file_sha256(restore)}
 
-    def recover(self, backup):
-        directory = self.store.private/'recovery'/backup['identity']
+    def _snapshot_stamps(self, identity, snapshot, names):
+        from update_recovery import protected
+        if not matches(ID_RE, identity) or snapshot.parent != self.store.private/'recovery'/identity:
+            raise UpdateError('Recovery snapshot path does not match.')
+        try:
+            for directory in (snapshot.parent.parent, snapshot.parent, snapshot):
+                protected(directory, self.store.owner, directory=True)
+            if ('.incomplete' in names or not set(RECOVERY_DATA).issubset(names)
+                    or set(names) != {path.name for path in snapshot.iterdir()}):
+                raise UpdateError('The recovery snapshot is incomplete or its inventory changed.')
+            stamps = {}
+            for path in [snapshot.parent/'restore.sh', *(snapshot/name for name in names)]:
+                info = self.store._file(path)
+                stamps[path] = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+            return stamps
+        except (OSError, RuntimeError) as error:
+            raise UpdateError('The recovery snapshot is missing, unreadable or unsafe.') from error
+
+    def _check_snapshot_contents(self, identity, snapshot, names):
+        previous = self.store.operation(identity)['previous']
+        expected = {'cmprovision4': previous['cmprovision']}
+        if previous.get('fpms_installed'): expected['fpms-lite'] = previous['fpms_version']
+        for name in sorted(n for n in names if n.endswith('.deb')):
+            package = name.partition('_')[0]
+            version = expected.pop(package, None)
+            if not version: raise UpdateError('The recovery snapshot contains an unexpected package.')
+            info = self.command(['/usr/bin/dpkg-deb', '-f', snapshot/name, 'Package', 'Version', 'Architecture'], check=False)
+            fields = dict(line.split(': ', 1) for line in info.stdout.splitlines() if ': ' in line)
+            if info.returncode: raise UpdateError('The recovery package '+name+' is unreadable.')
+            if fields != {'Package': package, 'Version': version, 'Architecture': 'all'}:
+                raise UpdateError('A recovery package does not match the recorded installation.')
+            contents = self.command(['/usr/bin/dpkg-deb', '--contents', snapshot/name], check=False,
+                                    stdout=subprocess.DEVNULL, timeout=1800)
+            if contents.returncode: raise UpdateError('The recovery package '+name+' has an unreadable payload.')
+        if expected: raise UpdateError('The recovery snapshot is missing an installed station package.')
+
+        # Read through the gzip footer and tar headers without extracting user data.
+        # Selecting required members keeps the command output bounded for large libraries.
+        for name, members in (
+                ('app.tar.gz', ('var/lib/cmprovision/.env', 'var/lib/cmprovision/etc/dnsmasq.conf')),
+                ('system-config.tar.gz', ('etc/nginx/sites-available/cmprovision',))):
+            result = self.command(['/usr/bin/tar', '--list', '--gzip', '--ignore-zeros', '--file', snapshot/name,
+                                   '--', *members], check=False, timeout=1800)
+            if result.returncode: raise UpdateError('The recovery archive '+name+' is incomplete or unreadable.')
+        database = snapshot/'database.sqlite'
+        if not database.stat().st_size: raise UpdateError('The recovery database is empty.')
+        try:
+            # This is the root-owned copy. Immutable mode never creates a journal beside it.
+            with closing(sqlite3.connect(database.as_uri()+'?mode=ro&immutable=1', uri=True)) as connection:
+                connection.execute('PRAGMA trusted_schema=OFF')
+                if connection.execute('PRAGMA quick_check(1)').fetchone() != ('ok',):
+                    raise UpdateError('The recovery database failed its integrity check.')
+        except sqlite3.Error as error:
+            raise UpdateError('The recovery database is unreadable.') from error
+
+    def validate_backup(self, backup):
         snapshot = Path(backup['directory'])
-        if snapshot.parent != directory or snapshot.is_symlink(): raise UpdateError('Recovery snapshot path does not match.')
-        restore = directory/'restore.sh'
-        for path, expected in [(restore, backup['restore_sha256']),
-                               *((snapshot/name, digest) for name, digest in backup['hashes'].items())]:
-            self.store._file(path)
-            with path.open('rb') as stream:
-                if hashlib.file_digest(stream, 'sha256').hexdigest() != expected: raise UpdateError('Recovery snapshot checksum failed.')
-        # Restore package(s) offline; the retained helper then restores data/config without
-        # invoking apt (and hence without allowing an unrecorded network dependency change).
-        packages = sorted(snapshot.glob('*.deb'))
-        self.command(['/usr/bin/dpkg', '--force-confold', '-i', *packages], timeout=1800)
+        hashes = backup['hashes']
+        stamps = self._snapshot_stamps(backup['identity'], snapshot, hashes)
+        if (file_sha256(snapshot.parent/'restore.sh') != backup['restore_sha256']
+                or any(file_sha256(snapshot/name) != digest for name, digest in hashes.items())):
+            raise UpdateError('Recovery snapshot checksum failed.')
+        self._check_snapshot_contents(backup['identity'], snapshot, hashes)
+        return stamps
+
+    def recover(self, backup, *, verified=None, before_mutation=None):
+        snapshot = Path(backup['directory'])
+        directory = snapshot.parent
+        if verified is None: verified = self.validate_backup(backup)
+        # The worker lock protects the selected source from pruning. Recheck the protected
+        # files after taking the safety copy without decompressing the entire library twice.
+        if verified != self._snapshot_stamps(backup['identity'], snapshot, backup['hashes']):
+            raise UpdateError('The recovery snapshot changed after verification.')
         data = directory/'restore-data'
         self.store._directory(data, 0o700)
-        for name in ('app.tar.gz', 'database.sqlite', 'system-config.tar.gz'):
-            if name not in backup['hashes']: raise UpdateError('The recovery snapshot is incomplete.')
-            if not (data/name).exists(): os.link(snapshot/name, data/name)
-        self.command(['/bin/sh', restore, '--force', data], timeout=1800)
+        if any(path.name not in RECOVERY_DATA for path in data.iterdir()):
+            raise UpdateError('Unexpected file in the recovery staging directory.')
+        for name in RECOVERY_DATA:
+            target = data/name
+            if os.path.lexists(target):
+                self.store._file(target)
+                if not target.samefile(snapshot/name): raise UpdateError('The staged recovery data changed.')
+            else:
+                os.link(snapshot/name, target)
+        packages = sorted(snapshot/name for name in backup['hashes'] if name.endswith('.deb'))
+        if before_mutation: before_mutation()
+        self.command(['/usr/bin/dpkg', '--force-confold', '-i', *packages], timeout=1800)
+        self.command(['/bin/sh', directory/'restore.sh', '--force', data], timeout=1800)
         from update_recovery import restore_trust
         restore_trust(self.store, backup['identity'])
         self.activate_utility(self.store.operation(backup['identity']).get('previous', {}).get('utility_selector', 'bundled-modern'))

@@ -200,9 +200,13 @@ class Worker:
         services, previous = self._prepare(identity)
         if value['component'] == 'application':
             backup = self.system.backup(identity)
-            self.store.update(identity, backup=backup)
-            self._phase(identity, 'applying', 'Installing the application and approved dependency changes.')
-            self.system.install(paths, receipt['plan'], value)
+            self.store.update(identity, backup=backup, mutation_started=False)
+
+            def start_install():
+                self._phase(identity, 'applying', 'Installing the application and approved dependency changes.',
+                            mutation_started=True)
+
+            self.system.install(paths, receipt['plan'], value, before_mutation=start_install)
             self.system.resume(services, boot=False)
             self._phase(identity, 'reconnecting', 'Checking the updated application and services.')
             self.system.health(value, services)
@@ -238,7 +242,8 @@ class Worker:
         try:
             if operation.get('committed'):
                 raise UpdateError('Update result is committed, but maintenance cleanup needs SSH/local-console recovery.')
-            if operation.get('backup'):
+            # Older runners recorded only the safety copy. Their packages may already have changed.
+            if operation.get('backup') and operation.get('mutation_started', True):
                 self._phase(identity, 'applying', 'The update failed; automatically restoring the previous snapshot.')
                 self.system.pause(operation['services']) # Close every new DB connection before restoring SQLite.
                 self.system.recover(operation['backup'])
@@ -289,11 +294,23 @@ class Worker:
             raise UpdateError('This operation has no recoverable previous version.')
         component = previous_operation['component']
         self.store.update(identity, component=component)
+        if component == 'application':
+            self._idle()
+            self.system.conflicts()
+            self._phase(identity, 'preparing', 'Checking the selected recovery snapshot before pausing the station.')
+            selected = previous_operation.get('backup')
+            if not selected or selected.get('identity') != previous_operation['id']:
+                raise UpdateError('The recovery snapshot does not belong to the selected operation.')
+            verified = self.system.validate_backup(selected)
         services, previous = self._prepare(identity)
         if component == 'application':
             # A new snapshot allows recovery if this explicitly requested later data rollback itself fails.
-            self.store.update(identity, backup=self.system.backup(identity))
-            self.system.recover(previous_operation['backup'])
+            self.store.update(identity, backup=self.system.backup(identity), mutation_started=False)
+
+            def start_restore():
+                self._phase(identity, 'applying', 'Restoring the selected application snapshot.', mutation_started=True)
+
+            self.system.recover(selected, verified=verified, before_mutation=start_restore)
             self.system.resume(services, boot=False)
             self.system.health(previous_operation['previous'], services)
         else:

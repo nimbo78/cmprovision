@@ -42,6 +42,7 @@ class System:
         self.current = dict(CONTEXT, fpms_version='2.27.0~dev1', utility_os_version='2026.10.2',
                             utility_selector='bundled-modern', source_commit='abcdef0')
         self.original = copy.deepcopy(self.current)
+        self.snapshots = {}
         self.active, self.reserved, self.conflict = [], 0, False
         self.fail_backup = self.fail_install = self.fail_health = self.fail_recovery = False
         self.extra_dependency = False
@@ -74,8 +75,14 @@ class System:
     def backup(self, identity):
         self.calls.append(('backup', identity))
         if self.fail_backup: raise UpdateError('Snapshot unavailable.')
+        self.snapshots[identity] = self.context()
         return {'directory': str(self.root/'snapshot'), 'identity': identity}
-    def install(self, paths, plan, value):
+    def validate_backup(self, backup):
+        if backup['identity'] not in self.snapshots:
+            raise UpdateError('Unreadable recovery snapshot.')
+        return backup['identity']
+    def install(self, paths, plan, value, *, before_mutation=None):
+        if before_mutation: before_mutation()
         self.calls.append(('install', value['version']))
         self.current['cmprovision'] = value['version']
         self.current['fpms_version'] = value['version']
@@ -85,10 +92,12 @@ class System:
         self.calls.append(('health', expected.get('version', expected.get('cmprovision'))))
         if self.fail_health and self.current['cmprovision'] != self.original['cmprovision']:
             raise UpdateError('Target health check failed.')
-    def recover(self, backup):
+    def recover(self, backup, *, verified=None, before_mutation=None):
+        self.validate_backup(backup)
+        if before_mutation: before_mutation()
         self.calls.append(('recover', backup['identity']))
         if self.fail_recovery: raise UpdateError('Snapshot recovery failed.')
-        self.current = copy.deepcopy(self.original)
+        self.current = copy.deepcopy(self.snapshots[backup['identity']])
 
 
 class WorkerTest(unittest.TestCase):
@@ -164,7 +173,10 @@ class WorkerTest(unittest.TestCase):
 
     def test_unexpected_install_and_failed_recovery_keep_distinct_diagnostics(self):
         ready = self.download()
-        with patch.object(self.system, 'install', side_effect=RuntimeError('private install output')):
+        def fail_during_install(*args, before_mutation):
+            before_mutation()
+            raise RuntimeError('private install output')
+        with patch.object(self.system, 'install', side_effect=fail_during_install):
             with patch.object(self.system, 'recover', side_effect=RuntimeError('private restore output')):
                 result = self.apply(ready)
         self.assertEqual('recovery-required', result['state'])
@@ -221,6 +233,70 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual('rolled-back', self.store.operation(operation['id'])['state'])
         self.assertEqual(1, sum(item[0] == 'recover' for item in self.system.calls))
         self.assertFalse(any(item[0] == 'install' for item in self.system.calls))
+
+    def test_invalid_manual_rollback_keeps_station_online_and_preserves_current_version(self):
+        installed = self.apply(self.download())
+        self.system.snapshots.pop(installed['id'])
+        self.system.calls.clear()
+        result = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertEqual([], self.system.calls)
+        self.assertEqual('2.28.0', self.system.current['cmprovision'])
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_rollback_does_not_use_another_operations_valid_backup(self):
+        installed = self.apply(self.download())
+        other = 'a'*32
+        self.store.update(installed['id'], backup=self.system.backup(other))
+        self.system.calls.clear()
+        result = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertEqual([], self.system.calls)
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_rollback_source_lost_after_preflight_does_not_reinstall_current_packages(self):
+        installed = self.apply(self.download())
+        self.system.calls.clear()
+        backup = self.system.backup
+        def capture(identity):
+            self.system.snapshots.pop(installed['id'])
+            return backup(identity)
+        with patch.object(self.system, 'backup', side_effect=capture):
+            result = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertFalse(any(call[0] in ('recover', 'install') for call in self.system.calls))
+        self.assertTrue(any(call[0] == 'resume' for call in self.system.calls))
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_restart_between_safety_snapshot_and_first_mutation_only_resumes_services(self):
+        installed = self.apply(self.download())
+        self.system.calls.clear()
+        class Interruption(BaseException): pass
+        with patch.object(self.system, 'recover', side_effect=Interruption), self.assertRaises(Interruption):
+            self.run_operation('rollback', operation=installed['id'])
+        identity = self.store.snapshot()['pending']['id']
+        self.assertIn('backup', self.store.operation(identity))
+        Worker(self.store, self.source, self.system).recover_pending()
+        self.assertEqual('failed', self.store.operation(identity)['state'])
+        self.assertFalse(any(call[0] in ('recover', 'install') for call in self.system.calls))
+        self.assertEqual('2.28.0', self.system.current['cmprovision'])
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_interrupt_after_rollback_mutation_restores_current_version_from_safety_copy(self):
+        installed = self.apply(self.download())
+        class Interruption(BaseException): pass
+        recover = self.system.recover
+        def interrupt(backup, **options):
+            recover(backup, **options)
+            raise Interruption()
+        with patch.object(self.system, 'recover', side_effect=interrupt), self.assertRaises(Interruption):
+            self.run_operation('rollback', operation=installed['id'])
+        identity = self.store.snapshot()['pending']['id']
+        self.assertEqual(self.system.original, self.system.current)
+        Worker(self.store, self.source, self.system).recover_pending()
+        self.assertEqual('rolled-back', self.store.operation(identity)['state'])
+        self.assertEqual('2.28.0', self.system.current['cmprovision'])
+        self.assertIsNone(self.store.snapshot()['pending'])
 
     def test_committed_cleanup_failure_never_reinstalls_or_rolls_back(self):
         ready = self.download()
