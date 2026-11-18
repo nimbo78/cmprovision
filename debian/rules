@@ -41,6 +41,9 @@ override_dh_install:
 	install -D -m 755 tools/station-storage debian/cmprovision4/usr/lib/cmprovision/station-storage
 	install -D -m 755 tools/station-access debian/cmprovision4/usr/lib/cmprovision/station-access
 	install -D -m 755 tools/station-access-admin debian/cmprovision4/usr/sbin/cmprovision-access
+	install -D -m 644 tools/first_admin.py debian/cmprovision4/usr/lib/cmprovision/first_admin.py
+	install -D -m 755 tools/first-admin debian/cmprovision4/usr/lib/cmprovision/first-admin
+	install -D -m 755 tools/first-admin-local debian/cmprovision4/usr/sbin/cmprovision-first-admin
 	for f in station_access.py station_access_linux.py; do install -D -m 644 tools/$$f debian/cmprovision4/usr/lib/cmprovision/$$f; done
 	install -D -m 644 tools/station-storage.py debian/cmprovision4/usr/lib/cmprovision/station-storage.py
 	install -D -m 644 tools/station-time.py debian/cmprovision4/usr/lib/cmprovision/station-time.py

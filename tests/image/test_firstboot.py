@@ -70,6 +70,20 @@ class FirstBootTest(unittest.TestCase):
         prepare(app, state)
         self.assertTrue((state / 'firstboot-ready').is_file())
 
+    def test_first_web_setup_is_initialized_after_keys_and_before_ready(self):
+        app, state = self.station('web-setup')
+        calls = []
+        def run(path, operation):
+            calls.append(operation)
+            self.assertFalse((state / 'firstboot-ready').exists())
+            if operation == 'key:generate':
+                env = path / '.env'
+                env.write_text('APP_KEY=base64:'+base64.b64encode(secrets.token_bytes(32)).decode()+'\n')
+                os.chown(env, pwd.getpwnam('www-data').pw_uid, -1)
+                env.chmod(0o600)
+        firstboot.initialize(app, state, run)
+        self.assertEqual(calls, ['key:generate', 'ssh-host-keys', 'config:clear', 'first-admin'])
+
     def test_parallel_boot_attempts_generate_only_once(self):
         app, state = self.station('parallel')
         processes = [multiprocessing.Process(target=prepare, args=(app, state)) for _ in range(2)]

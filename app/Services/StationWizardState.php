@@ -39,11 +39,13 @@ class StationWizardState
             $result = $access->status();
             if (($result['ok'] ?? false) && ($result['result']['pending'] ?? null)) $blockers[] = 'Apply or cancel the prepared SSH access request before completing setup.';
         }
-        $links = app(NetworkStatus::class)->read()['links'] ?? [];
+        $networkStatus = app(NetworkStatus::class)->read();
+        $links = $networkStatus['links'] ?? [];
+        $uplink = $networkStatus['uplink'] ?? null;
         $switches = EthernetSwitch::count();
         if (!$switches) $warnings[] = 'No managed switch configured. Port mapping and PoE controls will be unavailable.';
-        if (!$links) $warnings[] = 'No management uplink information was reported. Keep the working browser/SSH connection.';
-        return ['role' => $role, 'pending' => $pending, 'stand' => $stand ? array_intersect_key($stand, array_flip(['device', 'address', 'type', 'vlan_id'])) : null,
+        if (!$uplink) $warnings[] = 'No management uplink information was reported. Keep the working browser/SSH connection.';
+        return ['role' => $role, 'pending' => $pending, 'uplink' => $uplink, 'stand' => $stand ? array_intersect_key($stand, array_flip(['device', 'address', 'type', 'vlan_id'])) : null,
             'services' => ['dhcp' => $dhcp, 'usb' => $usb], 'links' => $links, 'switches' => $switches, 'project' => $project,
             'blockers' => array_values(array_unique($blockers)), 'warnings' => $warnings];
     }
@@ -71,8 +73,13 @@ class StationWizardState
         return ['ready' => !$errors, 'name' => $project->name, 'errors' => $errors];
     }
 
+    public static function completed(): bool
+    {
+        return Setting::whereKey('station_wizard_completed')->exists();
+    }
+
     public static function invitation(): bool
     {
-        return !Setting::find('station_wizard_completed') && !Project::exists() && !EthernetSwitch::exists();
+        return !self::completed() && !Project::exists() && !EthernetSwitch::exists();
     }
 }

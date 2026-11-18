@@ -1,10 +1,12 @@
 <x-settings-card title="Station access" id="station-access" description="Your web account and the existing Linux administrator of this provisioner. Sensor accounts are separate."
-    wire:loading.attr="data-wizard-saving">
-    <div x-data x-on:station-access-clear-secrets.window="$el.querySelectorAll('[data-access-secret]').forEach(input => { if (input.dataset.accessSecret === $event.detail.scope) input.value = '' })" class="space-y-5">
+    :bare="$compact" wire:loading.attr="data-wizard-saving">
+    @if ($compact)<x-confirm-password-dialog />@endif
+    <div x-data x-on:station-access-clear-secrets.window="$el.querySelectorAll('[data-access-secret]').forEach(input => { if (input.dataset.accessSecret === $event.detail.scope) input.value = '' })" @class([$compact ? 'space-y-2' : 'space-y-5'])>
         @if ($notice)<p class="cmp-flash text-sm" role="status">{{ $notice }}</p>@endif
         @if ($error)<p class="cmp-flash text-neg text-sm" role="alert">{{ $error }}</p>@endif
+        <x-wizard-disclosure :enabled="$compact" title="Web account" :value="auth()->user()->email">
         <form id="station-web-access-form" data-wizard-form data-wizard-editor="closed" class="space-y-3" x-on:submit.prevent="$wire.saveWeb($refs.webCurrent.value, $refs.webNew.value, $refs.webConfirm.value)">
-            <h3 class="font-bold">Current web account</h3>
+            @unless ($compact)<h3 class="font-bold">Current web account</h3>@endunless
             <div class="grid gap-3 sm:grid-cols-2">
                 <div><label for="access-name" class="block text-sm mb-1">Name</label><input id="access-name" wire:model="name" class="cmp-field w-full" maxlength="255">@error('name')<p class="text-neg text-sm">{{ $message }}</p>@enderror</div>
                 <div><label for="access-email" class="block text-sm mb-1">Sign-in email</label><input id="access-email" type="email" wire:model="email" class="cmp-field w-full" maxlength="255">@error('email')<p class="text-neg text-sm">{{ $message }}</p>@enderror</div>
@@ -15,8 +17,12 @@
             <button type="submit" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled"><span wire:loading.remove wire:target="saveWeb">Save web account</span><span wire:loading wire:target="saveWeb">Saving…</span></button>
             <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="discardWeb" wire:loading.attr="disabled">Discard web edits</button>
         </form>
-        <div id="station-ssh-access-form" data-wizard-form data-wizard-editor="{{ $plan ? 'open' : 'closed' }}" class="border-t border-line pt-4 space-y-3">
-            <h3 class="font-bold">Linux / SSH access</h3>
+        </x-wizard-disclosure>
+        <x-wizard-disclosure :enabled="$compact" title="Station SSH"
+            :value="$plan ? 'Awaiting approval' : (!$status ? 'Unavailable' : (($status['ssh_active'] ?? false) ? 'Running' : 'Stopped'))"
+            :open="(bool) $plan" wire:key="ssh-disclosure-{{ $plan ? 'pending' : 'settings' }}">
+        <div id="station-ssh-access-form" data-wizard-form data-wizard-editor="{{ $plan ? 'open' : 'closed' }}" @class(['space-y-3', 'border-t border-line pt-4' => !$compact])>
+            @unless ($compact)<h3 class="font-bold">Linux / SSH access</h3>@endunless
             <p class="text-sm text-fg-muted">Existing users, SSH keys and sudo policy are retained. Keep your current SSH session open until you have tested a new login.</p>
             @if (!$status)
                 <p class="text-sm text-fg-muted">SSH access control is unavailable. Use the station's existing SSH session or local console.</p>
@@ -49,5 +55,6 @@
                 </form>
             @endif
         </div>
+        </x-wizard-disclosure>
     </div>
 </x-settings-card>

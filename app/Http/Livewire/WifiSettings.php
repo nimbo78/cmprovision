@@ -266,5 +266,6 @@ class WifiSettings extends Component
     {
         $this->notice = $text;
         $this->noticeIsError = $error;
+        if (!$error) $this->dispatch('station-network-changed');
     }
 }

@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import re
 import stat
+import sqlite3
+from contextlib import closing
 import sys
 
 
@@ -20,6 +22,23 @@ def read_regular(path, limit=131072):
 
 
 def audit(root):
+    if any(os.path.lexists(root / path) for path in (
+            'var/lib/cmprovision-bootstrap', 'run/cmprovision-bootstrap', 'var/lib/cmprovision-image/web-setup.json')):
+        raise ValueError('The generic image contains private station setup state.')
+    # The exported filesystem is offline. Open the database read-only and refuse any uncheckpointed WAL.
+    database = root / 'var/lib/cmprovision/database/database.sqlite'
+    if not stat.S_ISREG(database.lstat().st_mode) or any(
+            os.path.lexists(path) and path.lstat().st_size for path in
+            (database.with_name(database.name+'-wal'), database.with_name(database.name+'-journal'))):
+        raise ValueError('The exported station database is not ready for an offline audit.')
+    try:
+        with closing(sqlite3.connect(database.resolve().as_uri()+'?mode=ro&immutable=1', uri=True)) as db:
+            if db.execute('SELECT EXISTS(SELECT 1 FROM users) OR EXISTS(SELECT 1 FROM first_admin_receipts)').fetchone()[0]:
+                raise ValueError('The shared station image contains a web user or claim receipt.')
+    except sqlite3.Error as error:
+        raise ValueError('Unable to audit the exported web accounts.') from error
+    if read_regular(root / 'usr/lib/cmprovision/image-setup-capabilities').strip() != '2':
+        raise ValueError('The browser setup capability is missing.')
     # The package initializes this outside dpkg's replaceable files. A warning in postinst must not turn
     # into a published image whose early boot ordering barrier has no program to execute.
     dispatcher = root / 'var/lib/cmprovision-updates/recover.py'

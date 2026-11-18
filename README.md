@@ -103,10 +103,9 @@ Use a `cmprovision4_*_all.deb` built from **this fork**; the [build instructions
 
 ```sh
 sudo apt install ./cmprovision4_*_all.deb
-sudo -u www-data /var/lib/cmprovision/artisan auth:create-user
 ```
 
-Open `http://<server-wifi-address>/` and sign in with the account you created. For an existing server, read [Upgrading](#upgrading) before installing.
+Open the station's management address in a browser. On a fresh installation, enter the one-time code from HDMI, FPMS or the source station's device card, then create your web administrator. See [First sign-in and station setup](docs/station-setup.md). For an existing server, read [Upgrading](#upgrading) before installing.
 
 ### 3. Provision the first module
 

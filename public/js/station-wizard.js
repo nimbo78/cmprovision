@@ -11,6 +11,7 @@
             change: function (id) { dirty.add(id); }, saved: function (id) { dirty.delete(id); },
             forget: function (id) { dirty.delete(id); editors.delete(id); },
             saving: function (value) { busy = value; },
+            needsAttention: function (id) { return dirty.has(id) || editors.get(id) === true; },
             canLeave: function () { return !busy && !dirty.size && !Array.from(editors.values()).some(Boolean); }
         };
     }
@@ -36,23 +37,37 @@
                 else if (!current.has(key)) guard.editor(key, false);
             });
             guard.saving(!!wizard.querySelector('[data-wizard-saving]'));
+            var message = wizard.querySelector('[data-wizard-guard-message]');
+            if (message && guard.canLeave()) message.classList.add('hidden');
             var step = wizard.getAttribute('data-wizard-step');
+            var picker = wizard.querySelector('[data-wizard-step-picker]');
+            if (picker) picker.value = step;
             if (previousStep !== null && step !== previousStep) {
                 var heading = wizard.querySelector('#station-wizard-heading'); if (heading) heading.focus();
             }
             previousStep = step;
         }
         function changed(event) {
+            if (event.target.closest('[id^="confirm-password-"]')) return;
             var form = event.target.closest('[data-wizard-form]');
             if (scope() && form && scope().contains(form)) guard.change(id(form));
         }
         document.addEventListener('input', changed, true); document.addEventListener('change', changed, true);
+        // The mobile picker uses the same guarded step button as keyboard and desktop navigation.
+        document.addEventListener('change', function (event) {
+            if (!event.target.matches('[data-wizard-step-picker]')) return;
+            var wizard = scope(), step = event.target.value;
+            if (!wizard || !/^[1-7]$/.test(step)) return;
+            event.target.value = wizard.getAttribute('data-wizard-step');
+            wizard.querySelector('[data-wizard-destination="' + step + '"]').click();
+        });
         document.addEventListener('station-wizard-saved', function (event) {
             var named = event.detail && event.detail.scope;
             if (named && owners.get(named) === owner(event.target)) guard.saved(named);
             else if (!named) {
                 var form = event.target.closest('[data-wizard-form]'); if (form) guard.saved(id(form));
             }
+            sync();
         });
         document.addEventListener('click', function (event) {
             var button = event.target.closest('[data-wizard-go]'), wizard = scope();
@@ -60,6 +75,12 @@
             sync();
             if (!guard.canLeave()) {
                 event.preventDefault(); event.stopImmediatePropagation();
+                wizard.querySelectorAll('[data-wizard-form]').forEach(function (form) {
+                    if (!guard.needsAttention(id(form))) return;
+                    for (var ancestor = form.parentElement; ancestor && ancestor !== wizard; ancestor = ancestor.parentElement) {
+                        if (ancestor.tagName === 'DETAILS') ancestor.open = true;
+                    }
+                });
                 var message = wizard.querySelector('[data-wizard-guard-message]');
                 if (message) { message.classList.remove('hidden'); message.focus(); }
             }

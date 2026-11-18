@@ -13,6 +13,17 @@ w = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(w)
 
 
+class FirstAdminCardTest(unittest.TestCase):
+    def test_private_setup_only_overrides_off_on_a_connected_monitor(self):
+        self.assertTrue(w.wanted({'mode': 'off'}, True, first_setup=True))
+        self.assertFalse(w.wanted({'mode': 'off'}, False, first_setup=True))
+        self.assertFalse(w.wanted({'mode': 'off'}, True, first_setup=False))
+        for cols, rows in [(80, 24), (137, 38), (240, 60)]:
+            canvas = w.first_admin_frame({'code': 'ABCDEFGHIJKLMNOP', 'host': 'wlanpi.local'}, cols, rows)
+            self.assertIn('ABCD EFGH IJKL MNOP', canvas.plain())
+            self.assertIn('http://wlanpi.local/setup', canvas.plain())
+
+
 def device(serial='1000000000000001', state='run', phase='write'):
     return dict(serial=serial, name='wlanpi-demo', port='sw01 Gi0/1', phase=phase, state=state, percent=63,
                 speed=25 * 1048576, eta=60, cycle=200, detail='Writing image', diagnostics=None, steps=['preinstall', 'write'])
@@ -301,6 +312,16 @@ class ReaderTest(unittest.TestCase):
 
 
 class WatcherTest(unittest.TestCase):
+    def test_setup_card_wakes_disabled_hdmi_without_revealing_rescue_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            card = Path(directory) / 'display.json'
+            card.touch()
+            with patch.object(w, 'FIRST_ADMIN', card), patch.object(w.AutomaticRescueQr, 'poll') as poll:
+                calls, _ = self.drive([True]*10, ticks=2, mode='off')
+                self.assertIn(('start',), calls)
+                self.assertTrue(poll.called)
+                self.assertTrue(all(call.args == (False,) for call in poll.call_args_list))
+
     def drive(self, readings, start_ok=(), ticks=12, mode='auto'):
         """Run the watcher for some ticks of a fake clock; returns (systemctl calls, console-switch flag seen at each start)."""
         calls, seen, active, clock = [], [], [False], [0.0]

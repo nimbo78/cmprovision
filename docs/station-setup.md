@@ -4,7 +4,7 @@
 
 [Deployment options](deployment-options.md) · [Project wizard](creation-wizards.md) · [Network profiles](provisioner-network.md)
 
-Open **Settings → System → Open setup wizard**. A new, unconfigured station also offers **Set up station** on Dashboard. Existing stations can use it to review their configuration.
+Open **Settings → System → Open setup wizard**. A new, unconfigured station also offers **Set up station** on its dashboard. After **Complete setup**, the wizard card disappears from Settings for everyone. To review the setup later, sign in and open `/settings/setup`.
 
 ![Station setup: current role and guided steps](assets/guides/station-setup.png)
 
@@ -25,7 +25,13 @@ flowchart LR
 
 ## Before opening the wizard
 
-The first web account is created through the existing SSH/local-console procedure:
+1. Open the management address shown on HDMI or the front panel. A fresh station opens **Set up this station**. You can also open `/setup` directly.
+2. Enter the 16-character code shown on the display. If the imaging project enabled **First web administrator in browser**, open the flashed device's card on the source station, select **Open setup code** and confirm your web password. The source keeps the code for 12 hours. The station accepts it until used or rotated.
+3. Enter your name, sign-in email and a new web password. **Create administrator** signs you in and opens the wizard. Further visits use the normal login.
+
+Without a display, an existing local or SSH administrator can read the unused code with `sudo cmprovision-first-admin show`. To replace an exposed unused code, run `sudo cmprovision-first-admin rotate`, then `show`. Each station has its own code. Rebooting preserves it. Restoring a backup or deleting users keeps registration closed.
+
+For recovery on an established station, or on versions through 2.30.4, create a web account at the console:
 
 ```sh
 cd /var/lib/cmprovision
@@ -46,7 +52,13 @@ Web and Linux/SSH accounts are separate. No default web password or public regis
 | Stand role | Choose Primary, Secondary or Disabled; acknowledge an isolated network for Primary, then check and confirm the temporary role change |
 | Review | Refresh actual role, address, services and project readiness; resolve blockers and complete setup |
 
-**Back** changes steps. **Save and leave** remembers the current step; first save or cancel open editors. Reloading reads saved configuration again, rather than restoring unsaved drafts. Existing working stations are never redirected into setup automatically.
+On a phone, use the step selector above the summary to jump by name. **Continue to network** opens the first configuration step. **Show connections** on Management network and Stand role shows the management uplink, this station and the provisioning interface. A pending network change keeps its countdown, **Confirm network** and **Restore previous** in view.
+
+![Management Wi-Fi on wlan1 and the provisioning stand on eth0 in the expanded connection diagram](assets/guides/station-setup-network.png)
+
+On Access, open **Web account**, **Station SSH** or **Sensor accounts** to edit that group. Review lists blockers first. **Other checks** shows interfaces, addresses and the current web login.
+
+**Back** changes steps. To pause initial setup, save or cancel any open edits and select **Save and leave**. Select **Resume station setup** in **Settings → System** to return to the same step in this browser session. Reloading the page shows the saved configuration. Existing working stations are never redirected into setup automatically.
 
 The primary check verifies image preparation/files, required hashes and split copy, and matches prepared EEPROM against the selected project's firmware/settings. A stale active-project setting is insufficient. Unknown network/service state is not treated as intentionally disabled.
 

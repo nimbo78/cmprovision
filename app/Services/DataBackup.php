@@ -168,6 +168,10 @@ class DataBackup
             $target = new SQLite3($to);
             if (!$source->backup($target))
                 throw new BackupFailed('The database could not be copied.');
+            if ($target->querySingle("SELECT COUNT(*) FROM pragma_table_info('station_setup_runs') WHERE name='web_setup_code'") &&
+                !$target->exec('PRAGMA secure_delete=ON; DELETE FROM station_setup_runs WHERE web_setup_code IS NOT NULL')) {
+                throw new BackupFailed('The temporary imaging codes could not be removed from the copy.');
+            }
         }
         catch (BackupFailed $e)
         {

@@ -39,6 +39,9 @@ with path.open('w') as out:
     os.fsync(out.fileno())
 PY
 rm -f /var/lib/cmprovision/bootstrap/cache/config.php
+# This build root may be resumed. Never export an earlier run's one-use code.
+rm -rf -- /var/lib/cmprovision-bootstrap /run/cmprovision-bootstrap
+rm -f -- /var/lib/cmprovision-image/web-setup.json
 if [ -e /var/lib/cmprovision-image/firstboot-ready ]; then
     echo 'The image first-boot marker must not be present in an exported image.' >&2
     exit 1

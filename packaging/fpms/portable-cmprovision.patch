@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..fed0ebd
+index 0000000..c475146
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,500 @@
+@@ -0,0 +1,548 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10051,9 +10051,11 @@ index 0000000..fed0ebd
 +"""
 +
 +import json
++import ipaddress
 +import math
 +import os
 +import pwd
++import re
 +import stat
 +import tempfile
 +import threading
@@ -10064,6 +10066,7 @@ index 0000000..fed0ebd
 +
 +CONFIG = Path("/etc/default/cmprovision-fpms.json")
 +SNAPSHOT = Path("/run/cmprovision-wallboard-data/snapshot.json")
++FIRST_ADMIN = Path("/run/cmprovision-bootstrap/display.json")
 +HEARTBEAT = Path("/run/fpms/cmprovision.json")
 +LIMIT = 2097152
 +
@@ -10118,7 +10121,7 @@ index 0000000..fed0ebd
 +    return frozenset(owners)
 +
 +
-+def read_json(path, limit=4096):
++def read_json(path, limit=4096, private=False):
 +    """A bounded read of a small file that another user may have prepared: a link is not followed, a pipe is not waited
 +    for (a FIFO or /dev/watchdog put in its place would hang or reboot the box), only a regular file of a trusted owner
 +    counts, and anything else is an empty answer."""
@@ -10127,6 +10130,8 @@ index 0000000..fed0ebd
 +        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
 +        info = os.fstat(fd)
 +        if not stat.S_ISREG(info.st_mode) or info.st_size > limit or info.st_uid not in trusted_owners():
++            return {}
++        if private and (info.st_uid != 0 or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o640):
 +            return {}
 +        with os.fdopen(fd, "rb") as stream:
 +            fd = None
@@ -10140,6 +10145,40 @@ index 0000000..fed0ebd
 +    finally:
 +        if fd is not None:
 +            os.close(fd)
++
++
++def first_admin_projection():
++    card = read_json(FIRST_ADMIN, 512, private=True)
++    if (isinstance(card.get('host'), str) and re.fullmatch(r'[A-Za-z0-9-]{1,63}\.local', card['host'])
++            and isinstance(card.get('code'), str) and re.fullmatch('[A-Z2-7]{16}', card['code'])):
++        return card
++    return {}
++
++
++def first_admin_frame(card, data, palette):
++    from . import cmprovision_fonts as fonts
++    image = Image.new('RGB', (128, 128), palette['bg'])
++    body, mono = fonts.font('body'), fonts.font('code')
++    ink = palette.get('fg', palette.get('text'))
++    body.draw(image, 2, 2, 'Set up this station', palette['accent'])
++    host = card['host']
++    try:
++        host = str(ipaddress.IPv4Interface(data['station']['uplink']['address']).ip)
++    except (KeyError, ValueError, TypeError):
++        pass
++    url = 'http://'+host+'/setup'
++    line, y = '', 19
++    for char in url:
++        if mono.width(line+char) > 124:
++            mono.draw(image, 2, y, line, ink)
++            line, y = '', y+mono.h+1
++        line += char
++    mono.draw(image, 2, y, line, ink)
++    body.draw(image, 2, 83, 'Setup code', palette['accent'])
++    groups = [card['code'][i:i+4] for i in range(0, 16, 4)]
++    for i in range(2):
++        mono.draw(image, 2, 99+i*13, '  '.join(groups[2*i:2*i+2]), ink)
++    return image
 +
 +
 +def settings(path=CONFIG):
@@ -10262,7 +10301,7 @@ index 0000000..fed0ebd
 +            if not force and time.monotonic() - self.last_read < 2:
 +                return
 +            self.last_read = time.monotonic()
-+            self.enabled = settings(self.config)["enabled"]
++            self.enabled = settings(self.config)["enabled"] or FIRST_ADMIN.is_file()
 +            if not self.enabled:
 +                self.data, self.problem, self.age = {}, "Integration off", None
 +                self.detail = None
@@ -10392,6 +10431,10 @@ index 0000000..fed0ebd
 +            if key == 'KEY2' and self.rescue_available():
 +                from .cmprovision_rescue import close_notice
 +                close_notice()
++            if first_admin_projection():
++                if key == 'CENTER' and self.rescue_available():
++                    self.rescue_menu.show()
++                return True
 +            if self.power_menu and self.power_menu.open:
 +                self.power_menu.key(key)
 +                if self.power_menu.appearance_observation:
@@ -10521,6 +10564,11 @@ index 0000000..fed0ebd
 +                    from . import cmprovision_new
 +                    palette = cmprovision_new.LIGHT if self.color_mode() == 'light' else cmprovision_new.DARK
 +                    return render(self.rescue_menu, palette)
++            setup = first_admin_projection()
++            if setup:
++                from . import cmprovision_new, cmprovision_classic
++                theme = cmprovision_new if self.theme() == 'new' else cmprovision_classic
++                return first_admin_frame(setup, self.data, theme.LIGHT if self.color_mode() == 'light' else theme.DARK)
 +            if self.theme() == "new":
 +                from . import cmprovision_new
 +
@@ -12724,10 +12772,10 @@ index 0000000..b348bf3
 +    return result
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..5fe7c90
+index 0000000..b7515ec
 --- /dev/null
 +++ b/fpms/lite.py
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,178 @@
 +"""Compact station menu. No imports from the WLAN Pi application/provider."""
 +
 +import argparse
@@ -12738,7 +12786,7 @@ index 0000000..5fe7c90
 +from datetime import timedelta
 +from pathlib import Path
 +
-+from .integrations.cmprovision import CONFIG, SNAPSHOT, Panel, heartbeat
++from .integrations.cmprovision import CONFIG, SNAPSHOT, FIRST_ADMIN, Panel, heartbeat
 +from .integrations.cmprovision_power import request as power_request
 +from .integrations.cmprovision_rescue import request as rescue_request
 +from .modules.screen.st7735_probe import probe_st7735
@@ -12850,6 +12898,12 @@ index 0000000..5fe7c90
 +                except Exception:
 +                    logging.getLogger(__name__).exception("snapshot not usable")
 +                panel.expire_access()
++                setup_visible = FIRST_ADMIN.is_file()
++                if setup_visible:
++                    last_key = now
++                    if sleeping:
++                        screen.wakeup()
++                        sleeping = False
 +                if args.sleep and now - last_key >= args.sleep and not sleeping:
 +                    screen.sleep()
 +                    sleeping = True
@@ -13216,10 +13270,10 @@ index 0000000..0e0ea7f
 +WantedBy=multi-user.target
 diff --git a/tests/test_cmprovision.py b/tests/test_cmprovision.py
 new file mode 100644
-index 0000000..8bcfcce
+index 0000000..8a75964
 --- /dev/null
 +++ b/tests/test_cmprovision.py
-@@ -0,0 +1,489 @@
+@@ -0,0 +1,505 @@
 +import json
 +import os
 +import signal
@@ -13233,6 +13287,22 @@ index 0000000..8bcfcce
 +from fpms.integrations import cmprovision_classic as classic
 +from fpms.integrations.cmprovision import Panel, rate, read_json, remaining, settings, slow
 +from fpms.integrations.cmprovision_menu import CmprovisionMenu
++
++
++@pytest.mark.parametrize('theme', ['classic', 'new'])
++def test_first_admin_card_is_visible_in_both_layouts_and_disappears_after_claim(panel, monkeypatch, theme):
++    panel.data['panel']['theme'] = theme
++    ordinary = panel.frame().tobytes()
++    projection = {'code': 'ABCDEFGHIJKLMNOP', 'host': 'provisioner.local'}
++    monkeypatch.setattr(cmprovision, 'first_admin_projection', lambda: projection)
++    first = panel.frame()
++    assert first.size == (128, 128)
++    assert first.tobytes() != ordinary
++    assert projection['code'] not in json.dumps(panel.data)
++    projection['code'] = 'ZYXWVUTSRQPONMLK'
++    assert first.tobytes() != panel.frame().tobytes()
++    projection.clear()
++    assert panel.frame().tobytes() == ordinary
 +
 +
 +@pytest.fixture

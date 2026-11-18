@@ -3,6 +3,7 @@ Description=Watch the optional FPMS setting
 
 [Path]
 PathChanged=/etc/default/cmprovision-fpms.json
+PathChanged=/run/cmprovision-bootstrap
 Unit=cmprovision-image-fpms.service
 
 [Install]

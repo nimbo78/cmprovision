@@ -2,7 +2,7 @@
 
 # Provision another cmprovision station
 
-The development branch can configure a new station while writing the generic cmprovision Lite image.
+cmprovision can configure a new station while writing the generic cmprovision Lite image.
 The project supplies Linux access and optional management Wi-Fi; the shared image stays unchanged.
 This feature requires a rebuilt image with **station setup schema 1**, the 64-bit utility OS, and
 eMMC/SD with an ext4 root on partition 2. The previously tested `2.24.0~dev2` image predates this support.
@@ -29,8 +29,9 @@ This page describes the **cmprovision station image — access and Wi-Fi** profi
    station**, then continues the project's remaining post-install steps and optional OS check.
 
 The new station keeps DHCP/TFTP and USB boot masked. Connect through the configured management path,
-create a **separate web account** with `sudo -u www-data /var/lib/cmprovision/artisan auth:create-user`,
+create a **separate web account** at `/setup` with the code from its physical display,
 then use [Configure station role](operations.md#addresses-routes-and-the-provisioning-network).
+For headless stations, select **First web administrator in browser** in the project before flashing. After delivery, open the device card on the source station, select **Open setup code** and confirm your web password. Copy it within 12 hours. This option requires a station image with browser setup. [First sign-in and console recovery](station-setup.md#before-opening-the-wizard)
 The Linux password does not create or change a web account. Without Wi-Fi setup, the image keeps its
 normal Ethernet management behavior; with Wi-Fi, a DHCP profile for the CM4's provisioning port `eth0`
 excludes its default routes and DNS, leaving management to Wi-Fi.

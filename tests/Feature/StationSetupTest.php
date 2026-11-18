@@ -79,6 +79,44 @@ class StationSetupTest extends TestCase
         $this->assertStringNotContainsString($config['password_hash'], $html);
     }
 
+    public function test_headless_code_is_private_per_run_and_only_available_after_delivery_until_expiry(): void
+    {
+        [$cm, $oldRun, $project] = $this->fixtureRun();
+        $oldRun->delete();
+        $settings = StationSetupInput::normalize(['web_setup' => true] + $this->input());
+        $this->assertSame(3, $settings['schema']);
+        $this->assertSame($settings, StationSetupInput::saved($settings));
+        $project->station_setup = $settings;
+        $project->save();
+        $key = $this->createStub(ProvisionerKey::class);
+        $key->method('ensure')->willReturn($this->key());
+        $this->app->instance(ProvisionerKey::class, $key);
+        $script = app(StationSetup::class)->prepare($cm, $project, '172.20.0.1');
+        $run = StationSetupRun::sole();
+        $code = $run->web_setup_code;
+        $this->assertMatchesRegularExpression('/^[A-Z2-7]{16}$/D', $code);
+        $this->assertStringNotContainsString($code, $script);
+        $this->assertNotSame($code, $run->getRawOriginal('web_setup_code'));
+        $this->assertArrayNotHasKey('web_setup_code', $run->toArray());
+        $url = route('cm.setup-code', $cm->mac);
+        $this->get($url)->assertRedirect(route('login'));
+        $this->actingAs(User::factory()->create())->get($url)->assertRedirect(route('cm.setup-code.confirm', $cm->mac));
+        $this->withSession(['auth.password_confirmed_at' => now()->timestamp])->get($url)->assertNotFound();
+        $ssh = $this->createMock(StationSetupSsh::class);
+        $ssh->expects($this->once())->method('deliver')->with($this->anything(), $this->anything(), $this->anything(),
+            $this->callback(fn ($s) => $s['web_setup_code'] === $code && !isset($s['web_setup'])));
+        $this->app->instance(StationSetupSsh::class, $ssh);
+        $this->deliver()->assertOk()->assertDontSee($code);
+        $response = $this->get($url)->assertOk()->assertSee(implode(' ', str_split($code, 4)));
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        $cm->update(['diagnostics_token' => str_repeat('b', 40)]);
+        $this->get($url)->assertNotFound();
+        app(StationSetup::class)->prepare($cm, $project, '172.20.0.1');
+        $this->assertNotSame($code, $run->fresh()->web_setup_code);
+        $run->fresh()->update(['state' => 'applied', 'expires_at' => now()->subMinute()]);
+        $this->get($url)->assertNotFound();
+    }
+
     public function test_key_only_setup_requires_valid_keys_and_ssh(): void
     {
         $input = array_replace($this->input(), ['password_login' => false, 'keys' => $this->key()]);
@@ -87,6 +125,43 @@ class StationSetupTest extends TestCase
         $this->assertSame([$this->key()], $settings['keys']);
         $this->expectException(ValidationException::class);
         StationSetupInput::normalize(array_replace($input, ['ssh' => false]));
+    }
+
+    public function test_password_confirmation_returns_to_this_device_code_when_the_card_poll_loses_the_intended_url(): void
+    {
+        [$cm, $run] = $this->fixtureRun();
+        $run->update(['state' => 'applied', 'target_serial' => $cm->serial, 'target_cid' => $cm->cid,
+            'web_setup_code' => 'ABCDEFGHIJKLMNOP']);
+        $url = route('cm.setup-code', $cm->mac);
+        $this->actingAs(User::factory()->create());
+        $this->getJson($url)->assertStatus(423);
+        $challenge = $this->get($url)->assertRedirect()->headers->get('Location');
+        $this->get($challenge)->assertOk()->assertDontSee('ABCD EFGH IJKL MNOP')
+            ->assertSeeHtml('action="'.$challenge.'"')->assertSee('Back to device');
+        $this->from($challenge)->post($challenge, ['password' => 'incorrect'])
+            ->assertRedirect($challenge)->assertSessionHasErrors('password');
+        $this->get($url)->assertRedirect($challenge);
+
+        // A card poll that started before the link was clicked can save its older session here.
+        session()->forget('url.intended');
+        session()->save();
+        $this->post($challenge, ['password' => 'password'])->assertRedirect($url);
+        $this->get($url)->assertOk()->assertSee('ABCD EFGH IJKL MNOP');
+    }
+
+    public function test_device_confirmation_keeps_another_tabs_backup_destination(): void
+    {
+        [$cm] = $this->fixtureRun();
+        $url = route('cm.setup-code', $cm->mac);
+        $this->actingAs(User::factory()->create());
+        $challenge = $this->get($url)->assertRedirect()->headers->get('Location');
+
+        $backup = route('settings.backup');
+        $this->get($backup)->assertRedirect(route('password.confirm'));
+        $this->get($challenge)->assertOk()->assertDontSee('Back to Backup');
+        $this->post($challenge, ['password' => 'password'])->assertRedirect($url)
+            ->assertSessionHas('url.intended', $backup);
+        $this->post(route('password.confirm'), ['password' => 'password'])->assertRedirect($backup);
     }
 
     public function test_new_wifi_network_does_not_inherit_another_network_password(): void

@@ -106,6 +106,19 @@ class DataBackupTest extends TestCase
         $this->assertContains($app.'/storage/app/ssh/id_ed25519', $members);
     }
 
+    public function test_a_portable_copy_leaves_one_use_imaging_codes_on_the_source(): void
+    {
+        $backup = $this->backup();
+        $this->writer->exec('CREATE TABLE station_setup_runs (web_setup_code text)');
+        $this->writer->exec("INSERT INTO station_setup_runs VALUES ('encrypted-one-use-code')");
+        $dir = $this->unpack($backup->make());
+        $db = new \SQLite3($dir.'/database.sqlite', SQLITE3_OPEN_READONLY);
+        $this->assertSame(0, $db->querySingle('SELECT COUNT(web_setup_code) FROM station_setup_runs'));
+        $db->close();
+        $this->assertSame(1, (int) $this->writer->query('SELECT COUNT(web_setup_code) FROM station_setup_runs')->fetchColumn());
+        $this->assertStringNotContainsString('encrypted-one-use-code', file_get_contents($dir.'/database.sqlite'));
+    }
+
     public function test_what_does_not_belong_in_it_stays_out()
     {
         $folder = $this->unpack($this->backup()->make());

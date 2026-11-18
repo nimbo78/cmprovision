@@ -4,6 +4,12 @@ set -e
 
 case "$1" in
   configure)
+    if [ -z "${2:-}" ] && [ ! -e /var/lib/cmprovision/database/database.sqlite ] &&
+       [ ! -L /var/lib/cmprovision/database/database.sqlite ] && [ ! -e /var/lib/cmprovision/.env ] &&
+       [ ! -L /var/lib/cmprovision/.env ] && [ ! -x /usr/lib/cmprovision/image-firstboot ]; then
+        # Record a genuine first install before migration creates either file. dpkg can retry configure.
+        /usr/sbin/cmprovision-first-admin begin-install >/dev/null
+    fi
 
     PHP_VERSION=`echo "<?php echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;" | php`
 
@@ -187,6 +193,10 @@ POOLCONF
     fi
 
     # Ownership again (fix_ownership above): what the steps run as root created
+    # Image assembly defers initialization until each clone's first boot.
+    if [ ! -x /usr/lib/cmprovision/image-firstboot ] || [ -e /var/lib/cmprovision-image/firstboot-ready ]; then
+        /usr/sbin/cmprovision-first-admin upgrade >/dev/null
+    fi
     fix_ownership || echo "Could not adjust file ownership in /var/lib/cmprovision"
 
     # The built-in Wi-Fi as a cold spare (2.5.2): the switch is written once and then left to the operator, and one check

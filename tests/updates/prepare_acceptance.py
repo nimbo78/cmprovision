@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Root-only preparation of a dedicated Debian tree. Never installs the app on the host."""
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
@@ -42,6 +43,9 @@ def prepare(package):
     command('/usr/bin/apt-get', 'update')
     command('/usr/bin/apt-get', '-y', '--no-install-recommends', 'install', 'network-manager',
         '/fixture/usbboot-shim.deb', '/fixture/'+package.name)
+    state = json.loads((root/'var/lib/cmprovision-bootstrap/state.json').read_bytes())
+    if state != {'state': 'awaiting-boot'} or (root/'run/cmprovision-bootstrap/display.json').exists():
+        raise RuntimeError('Offline package installation must leave the first setup code for boot.')
     (root/'etc/hostname').write_text('cmprovision-update-bench\n')
     (root/'usr/sbin/policy-rc.d').unlink()
     print('Prepared isolated package acceptance; boot this tree with systemd-nspawn --private-network.')

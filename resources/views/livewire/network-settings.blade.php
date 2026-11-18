@@ -1,13 +1,18 @@
 <x-settings-card :title="$section === 'role' ? 'Stand role' : 'Ethernet and VLAN profiles'" id="network-profiles" description="Connections, addressing, DNS and routes."
-    wire:loading.attr="data-wizard-saving">
+    :bare="$section !== 'all'" wire:loading.attr="data-wizard-saving">
+    @if ($section !== 'all')<x-confirm-password-dialog />@endif
+    @if ($section === 'all')
     <x-slot name="help">
         Changes are temporary until confirmed. If access is lost, the provisioner restores the previous profile automatically.
         The interface carrying the provisioning network is protected and cannot be edited here.
     </x-slot>
+    @endif
     @if ($notice)
         <div class="rounded px-4 py-2 mb-4 text-sm {{ $noticeIsError ? 'bg-neg-bg text-neg' : 'bg-pos-bg text-pos' }}" role="status">{{ $notice }}</div>
     @endif
-    @if ($importedDraft && $available)
+    <x-wizard-disclosure title="Ethernet profiles" :enabled="$section === 'management' && $available && !$statusError && !($pending['pending'] ?? false)"
+        :value="implode(', ', array_column($profiles ?? [], 'device'))" :open="(bool) $importedDraft">
+    @if ($importedDraft && $available && !($pending['pending'] ?? false))
         <div id="network-import-form" data-wizard-form data-wizard-editor="closed" class="border border-pline rounded p-3 mb-4">
             <h3 class="font-bold">Imported network draft: {{ $importedDraft['data']['name'] }}</h3>
             <p class="text-sm text-fg-muted my-2">Receiving interface {{ $importedDraft['interface']['device'] }}.
@@ -30,20 +35,7 @@
     @elseif ($statusError)
         <p class="text-sm text-neg">{{ $statusError }}</p>
     @elseif ($pending['pending'] ?? false)
-        <div wire:poll.10s class="rounded bg-warn-bg text-warn px-4 py-3" role="status">
-            <p class="font-bold">A network change is waiting for confirmation.</p>
-            @if ($pending['can_confirm'] ?? false)
-                <p class="text-sm mt-1">Interface {{ $pending['device'] ?? 'unknown' }} ·
-                    {{ max(0, ($pending['expires_at'] ?? 0) - now()->getTimestamp()) }} seconds remain.
-                    Reconnect at the new address if needed, then confirm. Otherwise the previous settings are restored.</p>
-                <div class="flex gap-2 mt-3">
-                    <x-confirms-password wire:then="confirm"><button type="button" class="cmp-btn" wire:loading.attr="disabled">Confirm network</button></x-confirms-password>
-                    <x-confirms-password wire:then="cancel"><button type="button" class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled">Restore previous</button></x-confirms-password>
-                </div>
-            @else
-                <p class="text-sm mt-1">Recovery is in progress; network changes are temporarily unavailable.</p>
-            @endif
-        </div>
+        @include('livewire.wizard.network-pending')
     @elseif ($device !== null)
         <div id="network-profile-editor" data-wizard-form data-wizard-editor="open">
         <div class="mb-3">
@@ -181,7 +173,8 @@
         </div>
     @endif
     @if ($section !== 'management' && $available && !$statusError && !($pending['pending'] ?? false) && $device === null && $stand !== null)
-        <div id="network-move-form" data-wizard-form data-wizard-editor="closed" class="border-t border-pline mt-4 pt-4">
+        <x-wizard-disclosure :enabled="$section === 'role'" title="Move provisioning interface" :value="$stand['device']">
+        <div id="network-move-form" data-wizard-form data-wizard-editor="closed" @class(['border-t border-pline mt-4 pt-4' => $section === 'all'])>
             <h3 class="font-bold">Provisioning network</h3>
             <p class="text-sm text-fg-muted mt-1 mb-3">{{ $stand['address'] }}/16 is on {{ $stand['device'] }}. Move it to another active interface on the same Ethernet port. Configure the corresponding tagged or untagged VLAN on the switch first.</p>
             <div class="flex flex-wrap items-end gap-2">
@@ -199,9 +192,10 @@
             </div>
             <p class="text-sm text-fg-muted mt-2">DHCP/TFTP stays enabled or disabled as it was. Confirm the move after checking connectivity; otherwise it rolls back.</p>
         </div>
+        </x-wizard-disclosure>
     @endif
     @if ($section !== 'management' && $available && !$statusError && !($pending['pending'] ?? false) && $device === null)
-        <div id="network-role-form" data-wizard-form data-wizard-editor="{{ $roleForm ? 'open' : 'closed' }}" class="border-t border-pline mt-4 pt-4">
+        <div id="network-role-form" data-wizard-form data-wizard-editor="{{ $roleForm ? 'open' : 'closed' }}" @class(['border-t border-pline mt-4 pt-4' => $section === 'all', 'mb-3' => $section === 'role'])>
             @if (!$roleForm)
                 <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="prepareStand" wire:loading.attr="disabled">Configure station role</button>
             @else
@@ -215,28 +209,41 @@
                                 <option value="{{ $profile['uuid'] }}">{{ $profile['device'] }} · {{ $profile['type'] === 'vlan' ? 'VLAN '.($profile['vlan_id'] ?? '?') : 'untagged Ethernet' }}</option>
                             @endforeach
                         </select></div>
+                    @if ($section === 'role')
+                        <fieldset class="space-y-1"><legend class="text-sm font-bold mb-1">Role</legend>
+                            @foreach (['primary' => 'Primary · serve DHCP/TFTP', 'secondary' => 'Secondary · monitor the stand', 'disabled' => 'Disabled · stop boot services'] as $value => $label)
+                                <label class="flex items-center gap-2 py-1 text-sm">
+                                    <input type="radio" name="wizard-stand-role" wire:model.live="stationRole" value="{{ $value }}"> {{ $label }}
+                                </label>
+                            @endforeach
+                        </fieldset>
+                    @else
                     <div><label for="station-role" class="block text-sm font-bold mb-1">Role</label>
                         <select id="station-role" wire:model.live="stationRole" class="cmp-field w-full">
                             <option value="primary">Primary · 172.20.0.1 · DHCP/TFTP enabled</option>
                             <option value="secondary">Secondary · 172.20.0.2 · DHCP/TFTP disabled</option>
                             <option value="disabled">Disable provisioning network and boot services</option>
                         </select></div>
+                    @endif
                 </div>
                 @if ($stationRole === 'primary')
                     <label class="block text-sm mt-3"><input type="checkbox" wire:model="standUsb"> Enable USB boot service</label>
-                    <label class="block text-sm mt-3"><input type="checkbox" wire:model="standIsolated"> This is an isolated provisioning network with no other DHCP server.</label>
+                    <label class="block rounded bg-warn-bg text-warn p-3 text-sm mt-3"><input type="checkbox" wire:model.live="standIsolated"> This is an isolated provisioning network with no other DHCP server.</label>
+                    @if ($needsProject)<p class="text-sm text-warn mt-2">Activate a ready project before enabling primary DHCP/TFTP.</p>@endif
                 @else
                     <p class="text-sm text-fg-muted mt-3">DHCP/TFTP and USB boot will be stopped and disabled. Use an independent management connection during this change.</p>
                 @endif
                 <p class="text-sm text-fg-muted mt-3">The address and services are temporary until confirmed. If access is lost, the previous address and service settings are restored automatically.</p>
                 <div class="flex gap-2 mt-3">
-                    <x-confirms-password wire:then="configureStand"><button type="button" class="cmp-btn" wire:loading.attr="disabled">Apply role temporarily</button></x-confirms-password>
+                    <x-confirms-password wire:then="configureStand"><button type="button" class="cmp-btn" wire:loading.attr="disabled"
+                        @disabled($section === 'role' && $stationRole === 'primary' && (!$standIsolated || $needsProject))>Apply role temporarily</button></x-confirms-password>
                     <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="$set('roleForm', false)">Cancel</button>
                 </div>
             @endif
         </div>
     @endif
     @if ($section !== 'management')
+    <x-wizard-disclosure :enabled="$section === 'role'" title="Primary web address" value="Optional">
     <div id="reprovision-primary" data-wizard-form data-wizard-editor="closed" class="border-t border-pline mt-4 pt-4">
         <h3 class="font-bold mb-2">Current primary web address</h3>
         <p class="text-sm text-fg-muted mb-3">Optional on a secondary station: Re-provision opens this server, which supplies its active project at the next network boot. This does not change roles or enable DHCP/TFTP.</p>
@@ -248,5 +255,7 @@
         </div>
         @error('primaryWebUrl') <p class="text-neg text-sm mt-2">{{ $message }}</p> @enderror
     </div>
+    </x-wizard-disclosure>
     @endif
+    </x-wizard-disclosure>
 </x-settings-card>

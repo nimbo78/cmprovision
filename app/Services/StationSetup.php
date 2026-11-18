@@ -20,8 +20,15 @@ class StationSetup
         if (!$run || $run->run !== $cm->diagnostics_token) {
             $settings = $project->station_setup;
             $settings['hostname'] = str_replace('{serial}', $cm->serial, $settings['hostname']);
+            $code = null;
+            if (($settings['web_setup'] ?? false) === true) {
+                $code = '';
+                $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+                for ($i = 0; $i < 16; ++$i) $code .= $alphabet[random_int(0, 31)];
+            }
             $run = StationSetupRun::updateOrCreate(['cm_id' => $cm->id], [
                 'run' => $cm->diagnostics_token, 'settings' => $settings,
+                'web_setup_code' => $code, 'target_serial' => $cm->serial, 'target_cid' => $cm->cid,
                 'host_key' => null, 'state' => 'pending', 'expires_at' => now()->addHours(12),
             ]);
             \App\Jobs\ExpireStationSetup::dispatch($run->id)->delay($run->expires_at);
@@ -33,6 +40,7 @@ class StationSetup
             'stationRun' => $run->run, 'stationPublic' => app(ProvisionerKey::class)->ensure(),
             'stationUrl' => 'http://'.$server.'/station-setup',
             'stationProfile' => $profile,
+            'requiresWebSetup' => ($run->settings['web_setup'] ?? false) === true,
             'stationHelperUrl' => 'http://'.$server.'/tools/image-access',
             'stationHelperSha256' => $profile === 'raspios' ? hash_file('sha256', public_path('tools/image-access')) : null,
         ])->render();

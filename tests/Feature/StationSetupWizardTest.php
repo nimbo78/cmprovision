@@ -39,7 +39,7 @@ class StationSetupWizardTest extends TestCase
         parent::tearDown();
     }
 
-    private function network(string $role = 'secondary', bool $pending = false, bool $known = true): NetworkChanges
+    private function network(string $role = 'secondary', bool $pending = false, bool $known = true, array $links = [], ?array $uplink = null): NetworkChanges
     {
         $control = $this->createMock(NetworkChanges::class);
         $control->method('available')->willReturn(true);
@@ -55,7 +55,7 @@ class StationSetupWizardTest extends TestCase
         $profiles->method('standState')->willReturn(['known' => true, 'stand' => $stand]);
         $this->app->instance(NetworkProfiles::class, $profiles);
         $status = $this->createStub(NetworkStatus::class);
-        $status->method('read')->willReturn(['links' => []]);
+        $status->method('read')->willReturn(['links' => $links, 'uplink' => $uplink]);
         $this->app->instance(NetworkStatus::class, $status);
         return $control;
     }
@@ -64,6 +64,75 @@ class StationSetupWizardTest extends TestCase
     {
         $this->get('/settings/setup')->assertRedirect('/login');
         $this->get('/register')->assertNotFound();
+    }
+
+    public function test_overview_is_a_summary_and_connections_use_the_reported_uplink_only_on_network_steps(): void
+    {
+        $wifi = ['role' => 'uplink', 'name' => 'wlan1', 'kind' => 'wifi', 'up' => true,
+            'addresses' => ['192.0.2.18/24'], 'wifi' => ['ssid' => 'Workshop <A>']];
+        $this->network(links: [
+            ['role' => 'stand', 'name' => 'eth0', 'up' => true, 'addresses' => ['172.20.0.2/16']],
+            $wifi,
+        ], uplink: $wifi);
+        $this->actingAs(User::factory()->create());
+        $wizard = Livewire::test(StationSetupWizard::class)
+            ->assertSee('Continue to network')->assertSee('Managed switches')->assertSee('Secondary')
+            ->assertDontSee('Show connections')->assertDontSee('Next checks progress');
+        foreach ([2, 6] as $step) {
+            $wizard->call('go', $step)->assertSee('Show connections')->assertSee('Workshop <A>')
+                ->assertSee('192.0.2.18/24')->assertSee('eth0')->assertDontSee('Workshop <A>', false);
+        }
+        $wizard->call('go', 4)->assertSee('Web account')->assertSee('Station SSH')->assertSee('Sensor accounts')
+            ->assertDontSee('Show connections');
+    }
+
+    public function test_stand_link_alone_never_claims_a_management_uplink(): void
+    {
+        $this->network(links: [['role' => 'stand', 'name' => 'eth0', 'up' => true, 'addresses' => ['172.20.0.2/16']]]);
+        $this->actingAs(User::factory()->create());
+        Livewire::test(StationSetupWizard::class)->call('go', 2)->assertSee('No uplink reported');
+        $this->assertStringContainsString('uplink', implode(' ', app(StationWizardState::class)->read()['warnings']));
+    }
+
+    public function test_a_stand_port_can_also_carry_the_management_default_route(): void
+    {
+        $port = ['name' => 'eth0', 'kind' => 'ethernet', 'up' => true, 'addresses' => ['172.20.0.2/16', '192.0.2.62/24']];
+        $this->network(links: [$port + ['role' => 'stand']], uplink: $port);
+        $this->actingAs(User::factory()->create());
+        Livewire::test(StationSetupWizard::class)->call('go', 6)->assertSee('192.0.2.62/24')->assertDontSee('No uplink reported');
+    }
+
+    public function test_pending_controls_are_visible_even_when_resuming_outside_network_steps(): void
+    {
+        $this->network(pending: true);
+        $this->actingAs(User::factory()->create());
+        foreach ([1, 2, 4, 6, 7] as $step) {
+            session()->put('station_wizard_step', $step);
+            $html = Livewire::test(StationSetupWizard::class)->assertSee('Confirm network')->assertSee('Restore previous')->html();
+            $document = new \DOMDocument();
+            $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+            $matches = (new \DOMXPath($document))->query('//button[normalize-space(.)="Confirm network" and not(ancestor::details)]');
+            $this->assertCount(1, $matches, 'One visible confirmation on step '.$step);
+        }
+    }
+
+    public function test_review_lists_blockers_before_optional_details(): void
+    {
+        $this->network('primary');
+        $this->actingAs(User::factory()->create());
+        Livewire::test(StationSetupWizard::class)->call('go', 7)
+            ->assertSeeInOrder(['Resolve before completing setup', 'Prepare and activate a provisioning project.', 'Other checks']);
+    }
+
+    public function test_a_second_tab_starting_a_network_change_refreshes_the_existing_editor(): void
+    {
+        $this->network();
+        $this->actingAs(User::factory()->create());
+        $wizard = Livewire::test(StationSetupWizard::class)->call('go', 2);
+        $this->network(pending: true);
+        $wizard->call('go', 3)->assertSet('step', 2)->assertHasErrors('wizard')->assertDispatched('station-network-recheck');
+        $this->network();
+        $wizard->dispatch('station-network-changed')->assertHasNoErrors('wizard')->call('go', 3)->assertSet('step', 3);
     }
 
     public function test_next_and_finish_never_change_roles_or_activate_a_project(): void
@@ -75,6 +144,25 @@ class StationSetupWizardTest extends TestCase
             ->call('go', 7)->call('finish')->assertRedirect(route('settings', ['tab' => 'system']));
         $this->assertNull(Project::getActiveId());
         $this->assertNotNull(Setting::find('station_wizard_completed'));
+    }
+
+    public function test_system_settings_offer_to_resume_until_the_station_setup_is_completed(): void
+    {
+        $this->network();
+        $this->actingAs(User::factory()->create());
+        $settings = route('settings', ['tab' => 'system']);
+        $this->get($settings)->assertOk()->assertSee('Open setup wizard');
+
+        Livewire::test(StationSetupWizard::class)->call('go', 3)->call('leave')->assertRedirect($settings);
+        $this->get($settings)->assertOk()->assertSee('Resume station setup');
+
+        Livewire::test(StationSetupWizard::class)->assertSet('step', 3)
+            ->call('go', 7)->call('finish')->assertRedirect($settings);
+        $this->get($settings)->assertOk()->assertDontSee('id="station-setup"', false);
+
+        $this->actingAs(User::factory()->create())->withSession(['station_wizard_step' => 2]);
+        $this->get($settings)->assertOk()->assertDontSee('id="station-setup"', false);
+        $this->get(route('settings.setup'))->assertOk()->assertSeeLivewire(StationSetupWizard::class);
     }
 
     public function test_pending_or_unavailable_network_status_blocks_navigation_and_finish(): void

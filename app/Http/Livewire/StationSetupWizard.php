@@ -12,6 +12,7 @@ use Livewire\Component;
 class StationSetupWizard extends Component
 {
     const STEPS = [1 => 'Overview', 2 => 'Management network', 3 => 'Switch', 4 => 'Access', 5 => 'Project', 6 => 'Stand role', 7 => 'Review'];
+    protected $listeners = ['station-network-changed' => 'refreshNetwork'];
     #[Locked] public int $step = 1;
 
     public function mount(): void
@@ -26,7 +27,7 @@ class StationSetupWizard extends Component
         $this->resetValidation();
         if (!isset(self::STEPS[$step])) { $this->addError('wizard', 'Choose a valid setup step.'); return; }
         $state = app(StationWizardState::class)->read();
-        if ($state['pending'] !== false) { $this->addError('wizard', $state['pending'] === true ? 'Confirm or restore the pending network change before continuing.' : 'Network transaction status is unavailable. Refresh before continuing.'); return; }
+        if ($this->networkBlocksNavigation($state)) return;
         $this->step = $step; session()->put('station_wizard_step', $step);
         $this->dispatch('station-wizard-step-changed');
     }
@@ -34,7 +35,7 @@ class StationSetupWizard extends Component
     public function leave()
     {
         $state = app(StationWizardState::class)->read();
-        if ($state['pending'] !== false) { $this->addError('wizard', 'Confirm or restore the network change before leaving.'); return; }
+        if ($this->networkBlocksNavigation($state)) return;
         session()->put('station_wizard_step', $this->step);
         return $this->redirectRoute('settings', ['tab' => 'system']);
     }
@@ -54,5 +55,21 @@ class StationSetupWizard extends Component
     public function render()
     {
         return view('livewire.station-setup-wizard', ['steps' => self::STEPS, 'state' => app(StationWizardState::class)->read()]);
+    }
+
+    public function refreshNetwork(): void
+    {
+        $this->resetValidation('wizard');
+    }
+
+    private function networkBlocksNavigation(array $state): bool
+    {
+        if ($state['pending'] === false) return false;
+        $this->addError('wizard', $state['pending'] === true ? 'Confirm or restore the pending network change before continuing.' : 'Network transaction status is unavailable. Refresh before continuing.');
+        if (in_array($this->step, [2, 6], true)) {
+            // Another session may have started a change since the embedded network editor last rendered.
+            $this->dispatch('station-network-recheck')->to(NetworkSettings::class);
+        }
+        return true;
     }
 }

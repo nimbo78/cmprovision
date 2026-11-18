@@ -1,3 +1,37 @@
+cmprovision4 (2.30.5) trixie; urgency=medium
+
+  * Create the first web administrator in the browser with a one-use code
+    from the station display or the imaging station's device card.
+  * Return to the requested device code after password confirmation and
+    keep first-time registration closed on existing and restored stations.
+  * Support configuring the package in a Debian root without procfs and
+    generate its one-use code on the station's first boot.
+  * Streamline the seven setup steps on desktop and mobile, show the
+    management and provisioning links, and hide the setup card on completion.
+
+ -- cmprovision contributors <cmprovision@localhost>  Wed, 18 Nov 2026 04:00:00 +0300
+
+cmprovision4 (2.30.5~dev3) trixie; urgency=medium
+
+  * Hide the station setup card in Settings once initial setup is complete.
+
+ -- cmprovision contributors <cmprovision@localhost>  Wed, 18 Nov 2026 03:18:00 +0300
+
+cmprovision4 (2.30.5~dev2) trixie; urgency=medium
+
+  * Streamline station setup with a mobile step picker, independent access
+    forms and a diagram of the station's management and provisioning links.
+
+ -- cmprovision contributors <cmprovision@localhost>  Wed, 18 Nov 2026 02:25:00 +0300
+
+cmprovision4 (2.30.5~dev1) trixie; urgency=medium
+
+  * Claim the first web administrator with a unique code on the station
+    display or the imaging station's password-confirmed device card.
+  * Keep existing and restored stations closed to browser registration.
+
+ -- cmprovision contributors <cmprovision@localhost>  Tue, 17 Nov 2026 22:00:00 +0300
+
 cmprovision4 (2.30.4) trixie; urgency=medium
 
   * Release the Updates journal, guided station setup and station access settings.

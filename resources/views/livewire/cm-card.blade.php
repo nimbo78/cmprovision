@@ -4,6 +4,7 @@
         <livewire:poe-outages />
 
         <div class="flex flex-wrap justify-end gap-2 mb-4">
+            @if ($hasSetupCode)<a href="{{ route('cm.setup-code', $cm->mac) }}" class="cmp-btn cmp-btn-primary cmp-btn-small">Open setup code</a>@endif
             <a href="{{ route('cm.report', ['mac'=>$cm->mac, 'format'=>'html']) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">Download device report</a>
             <a href="{{ route('cm.report', ['mac'=>$cm->mac, 'format'=>'json']) }}" class="cmp-btn cmp-btn-secondary cmp-btn-small">JSON</a>
         </div>

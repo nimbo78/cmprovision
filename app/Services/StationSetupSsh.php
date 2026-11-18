@@ -29,6 +29,10 @@ class StationSetupSsh
                 '-o', 'LogLevel=ERROR', '--', 'root@'.$address];
             $actual = json_decode($this->execute([...$argv, 'identity'], null), true);
             if ($actual !== $identity) throw new \RuntimeException('Station identity does not match this provisioning run.');
+            if (($settings['schema'] ?? null) === 3 &&
+                json_decode($this->execute([...$argv, 'capabilities'], null), true) !== ['station_setup' => 2]) {
+                throw new \RuntimeException('The station image does not support browser setup.');
+            }
             // No credentials in arguments, shell text, HTTP responses or process logs.
             $result = $this->execute([...$argv, 'apply'], json_encode(['identity' => $identity, 'settings' => $settings], JSON_THROW_ON_ERROR),
                 ($settings['profile'] ?? null) === 'raspios');

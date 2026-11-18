@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class CreateUser extends Command
@@ -79,11 +80,12 @@ class CreateUser extends Command
             }
         }
 
-        User::create([
-            'name' => $name,
-            'email' => $email,
-            'password' => Hash::make($pass1),
-        ]);
+        $hash = Hash::make($pass1);
+        DB::transaction(function () use ($name, $email, $hash) {
+            User::create(['name' => $name, 'email' => $email, 'password' => $hash]);
+            DB::table('first_admin_receipts')->insertOrIgnore(['id' => 1]);
+        });
+        app(\App\Services\FirstAdmin::class)->state();
 
         echo "User created\n";
 

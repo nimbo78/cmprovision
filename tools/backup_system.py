@@ -154,8 +154,17 @@ class LinuxBackupSystem:
             self.command([*prefix, '/usr/bin/sqlite3', '-cmd', '.timeout 10000', self.app/'database/database.sqlite', ".backup '"+saved+"'"], timeout=120)
             tables = self.command([*prefix, '/usr/bin/sqlite3', saved, "SELECT name FROM sqlite_master WHERE type='table';"])
             selected = [name for name in tables.splitlines() if name in RUNTIME_TABLES]
-            sql = 'PRAGMA foreign_keys=OFF; BEGIN; '+''.join('DELETE FROM "'+name+'";' for name in selected)+' COMMIT; PRAGMA quick_check;'
-            if self.command([*prefix, '/usr/bin/sqlite3', saved, sql], timeout=120) != 'ok':
+            redact = ''
+            if 'station_setup_runs' in tables.splitlines():
+                has_code = self.command([*prefix, '/usr/bin/sqlite3', saved,
+                    "SELECT count(*) FROM pragma_table_info('station_setup_runs') WHERE name='web_setup_code'"])
+                if has_code == '1':
+                    redact = 'DELETE FROM station_setup_runs WHERE web_setup_code IS NOT NULL;'
+            sql = 'PRAGMA foreign_keys=OFF; BEGIN; '+''.join('DELETE FROM "'+name+'";' for name in selected)+redact+' COMMIT; PRAGMA quick_check;'
+            if redact:
+                # sqlite3 emits the secure_delete value. Keep the final integrity result separate.
+                sql = 'PRAGMA secure_delete=ON; '+sql
+            if self.command([*prefix, '/usr/bin/sqlite3', saved, sql], timeout=120).splitlines() != (['1', 'ok'] if redact else ['ok']):
                 raise UpdateError('The database snapshot failed its integrity check.')
             fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             with os.fdopen(fd, 'wb') as output:

@@ -1,0 +1,5 @@
+#!/usr/bin/python3 -I
+import sys
+sys.path.insert(0, '/usr/lib/cmprovision')
+from first_admin import entry
+sys.exit(entry(local=True))

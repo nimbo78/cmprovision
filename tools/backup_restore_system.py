@@ -207,6 +207,7 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             self.command(['/usr/bin/apt-get', '-y', '--download-only', '--reinstall', '--no-remove', '--allow-downgrades', 'install', *paths], timeout=1800)
         pending = self.store.configuration()['pending']
         self.quiesce_restore(pending['services'])
+        self.command(['/usr/sbin/cmprovision-first-admin', 'close'])
         if paths:
             if self.package_plan(paths, archive) != installation: raise UpdateError('The package restore plan changed before installation.')
             self.command(['/usr/bin/dpkg', '--force-confold', '--unpack', *paths], timeout=600)

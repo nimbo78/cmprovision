@@ -13,6 +13,8 @@ use App\Http\Livewire\Settings;
 use App\Http\Controllers\AddImageController;
 use App\Http\Controllers\AddPackageController;
 use App\Http\Controllers\BackupDownloadController;
+use App\Http\Controllers\StationSetupCodeController;
+use App\Http\Middleware\RequireSetupCodePassword;
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
     ->get('/settings/backups/status', [\App\Http\Controllers\StationBackupsController::class, 'status'])->name('settings.backups.status');
@@ -38,12 +40,22 @@ Route::get('/', function () {
     return redirect()->route('login');
 });
 
+Route::middleware('guest')->group(function () {
+    Route::get('/setup', [\App\Http\Controllers\FirstAdminController::class, 'show'])->name('first-admin');
+    Route::post('/setup', [\App\Http\Controllers\FirstAdminController::class, 'claim'])->middleware('throttle:first-admin');
+});
+
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/dashboard', function () {
     return view('dashboard');   // progress panel and log are Livewire components that refresh themselves
 })->name('dashboard');
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/cms', Cms::class)->name('cms');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/cms/{mac}', CmCard::class)->name('cm');
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->prefix('cms/{mac}/setup-code')->group(function () {
+    Route::get('/', StationSetupCodeController::class)->middleware(RequireSetupCodePassword::class)->name('cm.setup-code');
+    Route::view('/confirm-password', 'auth.confirm-password')->name('cm.setup-code.confirm');
+    Route::post('/confirm-password', [StationSetupCodeController::class, 'confirmPassword']);
+});
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
     ->get('/cms/{mac}/report/{format}', [\App\Http\Controllers\ModuleReportController::class, 'module'])
     ->whereIn('format', ['html', 'json'])->name('cm.report');
