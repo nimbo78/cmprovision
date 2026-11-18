@@ -18,6 +18,14 @@ TIME_BACKUP=/usr/lib/cmprovision/time-backup.sh
 if [ -r "$TIME_BACKUP" ]; then . "$TIME_BACKUP"; fi
 APP=/var/lib/cmprovision
 DEFAULT_DEST=/var/backups/cmprovision
+STRICT=${CMPROVISION_UPDATE_SNAPSHOT:-0}
+
+# Keep the output description open across the writer and fsync so Linux can
+# deliver writeback errors from that write even if background writeback ran first.
+flush_snapshot_output() {
+    /usr/bin/python3 -I -S -c 'import os; os.fsync(1)'
+}
+
 WITH_UPLOADS=0
 PRUNE=0
 KEEP=${CMPROVISION_BACKUP_KEEP:-1}
@@ -112,22 +120,40 @@ mkdir -m 700 "$OUT"
 # The web user makes the copy, in a directory of its own: the database is in WAL, and a root sqlite3 would open the
 # -wal and -shm files in the web user's directory, where a planted symlink would have root write to or chown any file.
 # Root only writes its snapshot from what the web user's cat reads. .timeout: wait for a writer instead of failing
+if [ "$STRICT" = 1 ]; then
+    for path in "$APP/.env" "$APP/etc/dnsmasq.conf" "$APP/database/database.sqlite"; do
+        [ -f "$path" ] || { echo "Required recovery file $path is missing" >&2; exit 1; }
+    done
+    # An input that disappears must not be recreated as an empty live database.
+    set -- -readonly
+else
+    set --
+fi
 TMPDB=$(runuser -u www-data -- mktemp -d /var/tmp/cmprovision-backup.XXXXXX)
-runuser -u www-data -- sqlite3 -cmd '.timeout 10000' "$APP/database/database.sqlite" ".backup '$TMPDB/database.sqlite'"
+trap 'runuser -u www-data -- rm -rf "$TMPDB" || :' 0
+runuser -u www-data -- sqlite3 "$@" -cmd '.timeout 10000' "$APP/database/database.sqlite" ".backup '$TMPDB/database.sqlite'"
 HAS_WEB_CODE=$(runuser -u www-data -- sqlite3 "$TMPDB/database.sqlite" "SELECT count(*) FROM pragma_table_info('station_setup_runs') WHERE name='web_setup_code'")
 if [ "$HAS_WEB_CODE" = 1 ]; then
     runuser -u www-data -- sqlite3 "$TMPDB/database.sqlite" 'PRAGMA secure_delete=ON; DELETE FROM station_setup_runs WHERE web_setup_code IS NOT NULL' >/dev/null
 fi
-runuser -u www-data -- cat "$TMPDB/database.sqlite" > "$OUT/database.sqlite"
+{
+    runuser -u www-data -- cat "$TMPDB/database.sqlite"
+    if [ "$STRICT" = 1 ]; then flush_snapshot_output; fi
+} > "$OUT/database.sqlite"
 runuser -u www-data -- rm -rf "$TMPDB"
+trap - 0
 
 EXCLUDE="--exclude=$APP/public/uploads"
 [ "$WITH_UPLOADS" = 1 ] && EXCLUDE=""
-# The database comes from the consistent copy above. A log or cache file that changes while tar
-# reads it is still archived; tar only warns about it and exits 1.
+# Ordinary snapshots can include a changing log. The updater has paused the
+# station and needs all of the bytes tar was asked to archive.
 # shellcheck disable=SC2086
-tar czf "$OUT/app.tar.gz" --warning=no-file-changed --exclude="$APP/database/database.sqlite*" \
-    --exclude="$APP/storage/framework/configuration-transfer" $EXCLUDE "$APP" || [ $? = 1 ]
+set -- --exclude="$APP/database/database.sqlite*" --exclude="$APP/storage/framework/configuration-transfer" $EXCLUDE "$APP"
+if [ "$STRICT" = 1 ]; then
+    { tar czf - "$@"; flush_snapshot_output; } > "$OUT/app.tar.gz"
+else
+    tar czf "$OUT/app.tar.gz" --warning=no-file-changed "$@" || [ $? = 1 ]
+fi
 
 # Serialize the network part with a new network change. This lock is held only for the small
 # system configuration archive, not while copying large uploaded images or the database.
@@ -143,8 +169,8 @@ if [ -e /run/cmprovision-network/pending ] || [ -e /var/lib/cmprovision-network/
     echo "Confirm or recover the pending network change before making a backup." >&2; exit 1
 fi
 if command -v cmprovision_time_snapshot >/dev/null 2>&1; then cmprovision_time_snapshot "$OUT"; fi
-tar czf "$OUT/system-config.tar.gz" --ignore-failed-read \
-    /etc/nginx/sites-available/cmprovision /etc/php/*/fpm/php.ini \
+set -- /etc/nginx/sites-available/cmprovision
+for config in /etc/php/*/fpm/php.ini \
     /etc/sudoers.d/010_cmprovision /etc/dhcpcd.conf /etc/NetworkManager/system-connections \
     /var/lib/cmprovision-network/vlans \
     /etc/systemd/system/cmprovision-dnsmasq.service /etc/systemd/system/cmprovision-rpiboot.service \
@@ -153,17 +179,31 @@ tar czf "$OUT/system-config.tar.gz" --ignore-failed-read \
     /lib/systemd/system/cmprovision-*.service /lib/systemd/system/cmprovision-*.timer \
     /etc/default/cmprovision-uplink /etc/default/cmprovision-wallboard.json /etc/default/cmprovision-fpms.json \
     /etc/localtime /etc/timezone /etc/systemd/timesyncd.conf.d/90-cmprovision.conf \
-    /etc/default/cmprovision-stand-interface 2>/dev/null || true
+    /etc/default/cmprovision-stand-interface; do
+    # This station may have no optional override. A dangling link is still a
+    # real directory entry, for example a saved service enablement link.
+    if [ -e "$config" ] || [ -L "$config" ]; then set -- "$@" "$config"; fi
+done
+if [ "$STRICT" = 1 ]; then
+    { tar czf - "$@"; flush_snapshot_output; } > "$OUT/system-config.tar.gz"
+else
+    tar czf "$OUT/system-config.tar.gz" --ignore-failed-read "$@" 2>/dev/null || true
+fi
 # The absence of a mask or WantedBy link is part of the saved role too.
 printf '%s\n' 1 > "$OUT/boot-services.saved"
 if [ "$NETWORK_LOCKED" = 1 ]; then flock -u 9; exec 9<&-; fi
 
 if command -v dpkg-repack >/dev/null 2>&1; then
-    (cd "$OUT" && dpkg-repack cmprovision4 >/dev/null 2>&1) || echo "dpkg-repack failed; restore will keep the installed package" >&2
+    if [ "$STRICT" = 1 ]; then
+        (cd "$OUT" && dpkg-repack cmprovision4)
+    else
+        (cd "$OUT" && dpkg-repack cmprovision4 >/dev/null 2>&1) || echo "dpkg-repack failed; restore will keep the installed package" >&2
+    fi
 else
     echo "dpkg-repack not installed: no reinstallable copy of the package in this backup" >&2
+    [ "$STRICT" != 1 ] || exit 1
 fi
-dpkg -l cmprovision4 nginx 'php*-fpm' dnsmasq-base rpiboot 2>/dev/null | grep '^ii' > "$OUT/packages.txt" || true
+dpkg -l cmprovision4 nginx 'php*-fpm' dnsmasq-base rpiboot 2>/dev/null | grep '^ii' > "$OUT/packages.txt" || [ "$STRICT" != 1 ]
 
 rm -f "$OUT/.incomplete"
 du -sh "$OUT" | awk '{print "backup written to '"$OUT"' (" $1 ")"}'

@@ -135,8 +135,8 @@ SH
         // a root sqlite3 would open the -wal and -shm files in the web user's directory, where a planted symlink makes
         // root write to or chown any file; root only writes its own snapshot from what the web user's cat reads
         $backup = $this->file('tools/backup.sh');
-        $this->assertStringContainsString("runuser -u www-data -- sqlite3 -cmd '.timeout 10000' \"\$APP/database/database.sqlite\" \".backup '\$TMPDB/database.sqlite'\"", $backup);
-        $this->assertStringContainsString('runuser -u www-data -- cat "$TMPDB/database.sqlite" > "$OUT/database.sqlite"', $backup);
+        $this->assertStringContainsString("runuser -u www-data -- sqlite3 \"\$@\" -cmd '.timeout 10000' \"\$APP/database/database.sqlite\" \".backup '\$TMPDB/database.sqlite'\"", $backup);
+        $this->assertMatchesRegularExpression('#\{\s+runuser -u www-data -- cat "\$TMPDB/database\.sqlite"\s+[^}]*\} > "\$OUT/database\.sqlite"#', $backup);
         $this->assertDoesNotMatchRegularExpression('#^\s*(sqlite3|mv|chown) #m', $backup);
     }
 

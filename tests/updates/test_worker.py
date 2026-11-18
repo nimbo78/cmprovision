@@ -1,6 +1,7 @@
 import base64
 import copy
 from contextlib import contextmanager
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -42,12 +43,13 @@ class System:
         self.current = dict(CONTEXT, fpms_version='2.27.0~dev1', utility_os_version='2026.10.2',
                             utility_selector='bundled-modern', source_commit='abcdef0')
         self.original = copy.deepcopy(self.current)
+        self.snapshots = {}
         self.active, self.reserved, self.conflict = [], 0, False
         self.fail_backup = self.fail_install = self.fail_health = self.fail_recovery = False
         self.extra_dependency = False
         self.fail_space = False
-        self.services = {'cmprovision-dnsmasq': {'enabled': 'masked', 'active': False},
-                         'cmprovision-rpiboot': {'enabled': 'masked', 'active': False},
+        self.services = {'cmprovision-dnsmasq.service': {'enabled': 'masked', 'active': False},
+                         'cmprovision-rpiboot.service': {'enabled': 'masked', 'active': False},
                          'cmprovision-queue': {'enabled': 'enabled', 'active': True}}
 
     def context(self): return copy.deepcopy(self.current)
@@ -59,8 +61,19 @@ class System:
     @contextmanager
     def admission_lock(self): yield
     def capture_services(self): return copy.deepcopy(self.services)
-    def prune(self): pass
+    def prune(self, before_snapshot=False):
+        if before_snapshot: self.calls.append(('retire',))
+    def plan_snapshot_space(self, selected=None):
+        self.calls.append(('size', selected))
+        return {'selected': selected}
+    def require_snapshot_space(self, plan):
+        self.calls.append(('check-space',))
     def retain_runner(self, identity): return {'directory': str(self.root/'runner'/identity), 'hashes': {}}
+    def ensure_boot_guard(self): self.calls.append(('boot-guard',))
+    def check_boot_services(self, services, *, role_only=False):
+        if any(self.services.get(name, {}).get('enabled') != state['enabled']
+               for name, state in services.items() if 'dnsmasq' in name or 'rpiboot' in name):
+            raise UpdateError('The station boot-service role differs from the snapshot.')
     def pause(self, services): self.calls.append(('pause', copy.deepcopy(services)))
     def resume(self, services, boot=True):
         self.calls.append(('resume', copy.deepcopy(services), boot))
@@ -74,8 +87,14 @@ class System:
     def backup(self, identity):
         self.calls.append(('backup', identity))
         if self.fail_backup: raise UpdateError('Snapshot unavailable.')
+        self.snapshots[identity] = self.context()
         return {'directory': str(self.root/'snapshot'), 'identity': identity}
-    def install(self, paths, plan, value):
+    def validate_backup(self, backup):
+        if backup['identity'] not in self.snapshots:
+            raise UpdateError('Unreadable recovery snapshot.')
+        return backup['identity']
+    def install(self, paths, plan, value, *, before_mutation=None):
+        if before_mutation: before_mutation()
         self.calls.append(('install', value['version']))
         self.current['cmprovision'] = value['version']
         self.current['fpms_version'] = value['version']
@@ -85,10 +104,12 @@ class System:
         self.calls.append(('health', expected.get('version', expected.get('cmprovision'))))
         if self.fail_health and self.current['cmprovision'] != self.original['cmprovision']:
             raise UpdateError('Target health check failed.')
-    def recover(self, backup):
+    def recover(self, backup, *, verified=None, before_mutation=None, safety=None):
+        self.validate_backup(backup)
+        if before_mutation: before_mutation()
         self.calls.append(('recover', backup['identity']))
         if self.fail_recovery: raise UpdateError('Snapshot recovery failed.')
-        self.current = copy.deepcopy(self.original)
+        self.current = copy.deepcopy(self.snapshots[backup['identity']])
 
 
 class WorkerTest(unittest.TestCase):
@@ -132,6 +153,29 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual([], self.source.calls)
         prune.assert_not_called()
 
+    def test_offline_check_keeps_the_last_verified_release_and_its_date(self):
+        self.store.clock = lambda: 100
+        self.run_operation('check', components=['application', 'utility-os'])
+        self.store.clock = lambda: 200
+        with patch.object(self.source, 'check', side_effect=UpdateError('Publisher is offline')):
+            self.run_operation('check', components=['application'])
+        checks = self.store.snapshot()['checks']
+        self.assertEqual(self.envelope['id'], checks['application']['id'])
+        self.assertEqual('2.28.0', checks['application']['release']['version'])
+        self.assertEqual((100, 200, 'Publisher is offline'),
+            tuple(checks['application'][k] for k in ('verified_at', 'checked_at', 'error')))
+        self.assertEqual(100, checks['utility-os']['checked_at'])
+
+    def test_current_release_and_stale_receipt_do_not_offer_another_install(self):
+        self.run_operation('check', components=['application'])
+        self.download()
+        for version, eligible in [('2.28.0~dev2', True), ('2.28.0', False), ('2.28.1', False)]:
+            with self.subTest(version=version):
+                self.store.metadata(dict(self.system.current, cmprovision=version), {})
+                status = self.store.snapshot()
+                self.assertEqual(eligible, bool(status['ready']))
+                self.assertEqual(eligible, bool(status['checks']['application']['release']))
+
     def test_unexpected_check_failure_has_safe_correlated_diagnostics(self):
         with patch.object(self.source, 'check', side_effect=RuntimeError('secret=private-check-value')):
             result = self.run_operation('check', components=['application'])
@@ -164,7 +208,10 @@ class WorkerTest(unittest.TestCase):
 
     def test_unexpected_install_and_failed_recovery_keep_distinct_diagnostics(self):
         ready = self.download()
-        with patch.object(self.system, 'install', side_effect=RuntimeError('private install output')):
+        def fail_during_install(*args, before_mutation):
+            before_mutation()
+            raise RuntimeError('private install output')
+        with patch.object(self.system, 'install', side_effect=fail_during_install):
             with patch.object(self.system, 'recover', side_effect=RuntimeError('private restore output')):
                 result = self.apply(ready)
         self.assertEqual('recovery-required', result['state'])
@@ -175,6 +222,105 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(2, len(report['failures']))
 
     def apply(self, ready): return self.run_operation('apply', candidate=ready['id'], receipt=ready['receipt'])
+
+    def test_insufficient_snapshot_space_finishes_before_maintenance(self):
+        ready = self.download()
+        with patch.object(self.system, 'require_snapshot_space', side_effect=UpdateError('Free 86 MiB for the recovery snapshot.')), \
+             patch.object(self.store, 'mark_pending', wraps=self.store.mark_pending) as pending:
+            result = self.apply(ready)
+        self.assertEqual('failed', result['state'])
+        self.assertIn('86 MiB', result['message'])
+        self.assertIn(('retire',), self.system.calls)
+        pending.assert_not_called()
+        self.assertFalse(any(c[0] in ('pause', 'resume', 'backup', 'install') for c in self.system.calls))
+
+    def test_sizing_and_retirement_are_online_and_free_space_is_rechecked_at_admission(self):
+        ready = self.download()
+        events = []
+        @contextmanager
+        def admission():
+            events.append('lock')
+            try: yield
+            finally: events.append('unlock')
+        def measure(plan):
+            events.append('measure')
+            if 'lock' in events: raise UpdateError('Space filled during preparation.')
+        with patch.object(self.system, 'admission_lock', admission), \
+             patch.object(self.system, 'plan_snapshot_space', side_effect=lambda selected: events.append('size') or {}), \
+             patch.object(self.system, 'prune', side_effect=lambda before_snapshot=False: events.append('retire') if before_snapshot else None), \
+             patch.object(self.system, 'require_snapshot_space', side_effect=measure):
+            result = self.apply(ready)
+        self.assertEqual('failed', result['state'])
+        self.assertEqual(['size', 'retire', 'measure', 'lock', 'measure', 'unlock'], events)
+        self.assertFalse(any(c[0] in ('pause', 'backup', 'install') for c in self.system.calls))
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_new_board_or_conflicting_backup_during_estimate_keeps_station_online(self):
+        for conflict in ('board', 'backup'):
+            with self.subTest(conflict=conflict):
+                self.system.conflict = False
+                self.system.active = []
+                ready = self.download()
+                self.system.calls.clear()
+                def new_work(selected):
+                    if conflict == 'board': self.system.active = [{'phase': 'write'}]
+                    else: self.system.conflict = True
+                    return {}
+                with patch.object(self.system, 'plan_snapshot_space', side_effect=new_work):
+                    result = self.apply(ready)
+                self.assertEqual('failed', result['state'])
+                self.assertFalse(any(c[0] in ('retire', 'pause', 'backup', 'install') for c in self.system.calls))
+                self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_rollback_sizes_the_insurance_copy_while_protecting_selected_source(self):
+        installed = self.apply(self.download())
+        self.system.calls.clear()
+        with patch.object(self.system, 'require_snapshot_space', side_effect=UpdateError('Insufficient space for both snapshots.')):
+            result = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertIn(('size', installed['id']), self.system.calls)
+        self.assertIn(installed['id'], self.system.snapshots)
+        self.assertFalse(any(c[0] in ('pause', 'backup', 'recover') for c in self.system.calls))
+
+    def test_late_enospc_can_still_record_failure_and_reopen_admission(self):
+        ready = self.download()
+        exhausted = False
+        reserve = self.store.private/'journal.reserve'
+        def no_space(identity):
+            nonlocal exhausted
+            exhausted = True
+            self.assertGreaterEqual(reserve.stat().st_blocks*512, 4*1024**2)
+            raise UpdateError('Cannot finish writing the snapshot: no space left.')
+        atomic = self.store._atomic
+        def write(path, value, mode):
+            if exhausted and path == self.store.state_file and reserve.exists():
+                raise OSError(errno.ENOSPC, 'Test journal volume is full')
+            return atomic(path, value, mode)
+        with patch.object(self.system, 'backup', side_effect=no_space), patch.object(self.store, '_atomic', side_effect=write):
+            result = self.apply(ready)
+        self.assertEqual('failed', result['state'])
+        self.assertIn('no space left', result['message'])
+        self.assertFalse(reserve.exists())
+        self.assertIsNone(self.store.snapshot()['pending'])
+        self.assertTrue(any(c[0] == 'resume' for c in self.system.calls))
+        self.assertFalse(any(c[0] in ('install', 'recover') for c in self.system.calls))
+
+    def test_journal_reserve_is_counted_once_and_must_fit_before_pausing(self):
+        ready = self.download()
+        def at_estimated_limit(plan):
+            if (self.store.private/'journal.reserve').exists():
+                raise UpdateError('Journal reserve counted twice.')
+        with patch.object(self.system, 'require_snapshot_space', side_effect=at_estimated_limit), \
+             patch('os.posix_fallocate', side_effect=OSError(errno.ENOSPC, 'quota reached')):
+            result = self.apply(ready)
+        self.assertEqual('failed', result['state'])
+        self.assertIn('Not enough free space for the updater journal', result['message'])
+        self.assertIsNone(self.store.snapshot()['pending'])
+        self.assertFalse(any(c[0] in ('pause', 'install', 'recover') for c in self.system.calls))
+        self.assertFalse((self.store.private/'journal.reserve').exists())
+        with patch.object(self.system, 'require_snapshot_space', side_effect=at_estimated_limit):
+            result = self.apply(ready)
+        self.assertEqual('succeeded', result['state'], result.get('message'))
 
     def test_download_can_run_while_flashing_but_apply_cannot_interrupt_it(self):
         self.system.active = [{'serial': '10000000feedface', 'phase': 'write'}]
@@ -222,6 +368,70 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(1, sum(item[0] == 'recover' for item in self.system.calls))
         self.assertFalse(any(item[0] == 'install' for item in self.system.calls))
 
+    def test_invalid_manual_rollback_keeps_station_online_and_preserves_current_version(self):
+        installed = self.apply(self.download())
+        self.system.snapshots.pop(installed['id'])
+        self.system.calls.clear()
+        result = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertEqual([], self.system.calls)
+        self.assertEqual('2.28.0', self.system.current['cmprovision'])
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_rollback_does_not_use_another_operations_valid_backup(self):
+        installed = self.apply(self.download())
+        other = 'a'*32
+        self.store.update(installed['id'], backup=self.system.backup(other))
+        self.system.calls.clear()
+        result = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertEqual([], self.system.calls)
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_rollback_source_lost_after_preflight_does_not_reinstall_current_packages(self):
+        installed = self.apply(self.download())
+        self.system.calls.clear()
+        backup = self.system.backup
+        def capture(identity):
+            self.system.snapshots.pop(installed['id'])
+            return backup(identity)
+        with patch.object(self.system, 'backup', side_effect=capture):
+            result = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertFalse(any(call[0] in ('recover', 'install') for call in self.system.calls))
+        self.assertTrue(any(call[0] == 'resume' for call in self.system.calls))
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_restart_between_safety_snapshot_and_first_mutation_only_resumes_services(self):
+        installed = self.apply(self.download())
+        self.system.calls.clear()
+        class Interruption(BaseException): pass
+        with patch.object(self.system, 'recover', side_effect=Interruption), self.assertRaises(Interruption):
+            self.run_operation('rollback', operation=installed['id'])
+        identity = self.store.snapshot()['pending']['id']
+        self.assertIn('backup', self.store.operation(identity))
+        Worker(self.store, self.source, self.system).recover_pending()
+        self.assertEqual('failed', self.store.operation(identity)['state'])
+        self.assertFalse(any(call[0] in ('recover', 'install') for call in self.system.calls))
+        self.assertEqual('2.28.0', self.system.current['cmprovision'])
+        self.assertIsNone(self.store.snapshot()['pending'])
+
+    def test_interrupt_after_rollback_mutation_restores_current_version_from_safety_copy(self):
+        installed = self.apply(self.download())
+        class Interruption(BaseException): pass
+        recover = self.system.recover
+        def interrupt(backup, **options):
+            recover(backup, **options)
+            raise Interruption()
+        with patch.object(self.system, 'recover', side_effect=interrupt), self.assertRaises(Interruption):
+            self.run_operation('rollback', operation=installed['id'])
+        identity = self.store.snapshot()['pending']['id']
+        self.assertEqual(self.system.original, self.system.current)
+        Worker(self.store, self.source, self.system).recover_pending()
+        self.assertEqual('rolled-back', self.store.operation(identity)['state'])
+        self.assertEqual('2.28.0', self.system.current['cmprovision'])
+        self.assertIsNone(self.store.snapshot()['pending'])
+
     def test_committed_cleanup_failure_never_reinstalls_or_rolls_back(self):
         ready = self.download()
         with patch.object(self.store, 'clear_pending', side_effect=UpdateError('cleanup failed')):
@@ -229,10 +439,65 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual('recovery-required', result['state'])
         self.assertTrue(self.store.snapshot()['pending'])
         self.assertFalse(any(item[0] == 'recover' for item in self.system.calls))
+        self.assertEqual({'cmprovision-dnsmasq.service', 'cmprovision-rpiboot.service'},
+            {next(iter(c[1])) for c in self.system.calls if c[0] == 'pause' and len(c[1]) == 1})
         self.worker.recover_pending()
         self.assertEqual('succeeded', self.store.operation(result['id'])['state'])
         self.assertIsNone(self.store.snapshot()['pending'])
         self.assertEqual(1, sum(item[0] == 'install' for item in self.system.calls))
+
+    def test_changed_role_rejects_a_manual_rollback_while_the_station_is_online(self):
+        previous = self.apply(self.download())
+        self.system.services['cmprovision-rpiboot.service'] = {'enabled': 'enabled', 'active': True}
+        self.system.calls.clear()
+        result = self.run_operation('rollback', operation=previous['id'])
+        self.assertEqual('failed', result['state'])
+        self.assertIn('role', result['message'])
+        self.assertFalse(any(call[0] in ('pause', 'retire', 'backup', 'install', 'recover') for call in self.system.calls))
+
+    def test_role_changed_before_admission_is_the_role_resumed_after_installation(self):
+        service = 'cmprovision-dnsmasq.service'
+        ready = self.download()
+        def change_role():
+            self.system.services[service] = {'enabled': 'enabled', 'active': True}
+        with patch.object(self.system, 'ensure_boot_guard', side_effect=change_role):
+            result = self.apply(ready)
+        self.assertEqual('succeeded', result['state'])
+        resumed = [call[1] for call in self.system.calls if call[0] == 'resume']
+        self.assertEqual({'enabled': 'enabled', 'active': True}, resumed[-1][service])
+
+    def assert_rollback_preserves_display_package_set(self, saved_fpms):
+        self.system.current['fpms_installed'] = saved_fpms
+        installed = self.apply(self.download())
+        self.assertEqual('succeeded', installed['state'])
+        self.system.current['fpms_installed'] = not saved_fpms
+        self.system.calls.clear()
+        rejected = self.run_operation('rollback', operation=installed['id'])
+        self.assertEqual('failed', rejected['state'])
+        self.assertIn('FPMS', rejected['message'])
+        self.assertFalse(any(c[0] in ('retire', 'pause', 'backup', 'recover') for c in self.system.calls))
+
+    def test_manual_rollback_rejects_a_removed_display_package_before_maintenance(self):
+        self.assert_rollback_preserves_display_package_set(True)
+
+    def test_manual_rollback_rejects_an_added_display_package_before_maintenance(self):
+        self.assert_rollback_preserves_display_package_set(False)
+
+    def test_reboot_cleanup_closes_both_boot_servers_if_one_restart_fails(self):
+        ready = self.download()
+        class PowerLoss(BaseException): pass
+        with patch.object(self.system, 'check_boot_services', side_effect=PowerLoss), self.assertRaises(PowerLoss):
+            self.apply(ready)
+        identity = self.store.snapshot()['pending']['id']
+        self.assertTrue(self.store.operation(identity)['committed'])
+        self.system.calls.clear()
+        with patch.object(self.system, 'check_boot_services', side_effect=UpdateError('USB boot failed')):
+            self.worker.recover_pending()
+        self.assertEqual('recovery-required', self.store.operation(identity)['state'])
+        self.assertEqual(identity, self.store.snapshot()['pending']['id'])
+        self.assertEqual({'cmprovision-dnsmasq.service', 'cmprovision-rpiboot.service'},
+                         {next(iter(c[1])) for c in self.system.calls if c[0] == 'pause' and len(c[1]) == 1})
+        self.assertFalse(any(c[0] in ('install', 'recover') for c in self.system.calls))
 
     def test_changed_receipt_or_dependency_plan_requires_new_confirmation(self):
         ready = self.download()

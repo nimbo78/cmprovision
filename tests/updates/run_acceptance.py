@@ -15,6 +15,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+from unittest.mock import patch
 
 from acceptance_version import candidate_version
 from acceptance_wait import wait_worker_idle
@@ -122,6 +123,22 @@ def run():
         assert entry['state'] == 'ready', entry
         return next(item for item in store.snapshot()['ready'] if item['id'] == envelope['id'])
     ready = download()
+    # A full scratch filesystem must reject an application update while HTTP and
+    # provisioning are still available, even when the snapshot volume has room.
+    from update_broker import Broker
+    subprocess.run(['mount', '-t', 'tmpfs', '-o', 'size=16M,mode=1777', 'tmpfs', '/var/tmp'], check=True)
+    try:
+        preview = Broker(store).request({'action': 'space', 'candidate': ready['id']})
+        assert not preview['sufficient'] and any(row['location'] == '/var/tmp' and row['shortfall'] > 0
+                                                 for row in preview['volumes']), preview
+        with patch.object(system, 'pause', wraps=system.pause) as pause:
+            refused = operation('apply', candidate=ready['id'], receipt=ready['receipt'])
+        pause.assert_not_called()
+        assert refused['state'] == 'failed' and '/var/tmp' in refused['message'], refused['message']
+        assert not store.snapshot()['pending'] and system.package('cmprovision4') == original
+        system.http_health({})
+    finally:
+        subprocess.run(['umount', '/var/tmp'], check=True)
     health = system.health
     def reject_target(expected, services):
         health(expected, services)
@@ -175,6 +192,20 @@ def run():
     assert system.context()['utility_selector'] == before
     # Preparing an OS is read-only. Roll back the application while its snapshot
     # is the retained point, before a successful OS change replaces that point.
+    snapshot = Path(application_result['backup']['directory'])
+    system_archive = snapshot/'system-config.tar.gz'
+    held = snapshot.parent/'held-system-config.tar.gz'
+    system_archive.rename(held)
+    try:
+        with patch.object(system, 'command', wraps=system.command) as commands:
+            refused = operation('rollback', operation=application_result['id'])
+        assert all(call.args[0][0] != '/usr/bin/dpkg' for call in commands.call_args_list)
+        assert refused['state'] == 'failed' and 'services' not in refused and 'backup' not in refused, refused
+        assert 'snapshot' in refused['message'].lower(), refused['message']
+        assert not store.snapshot()['pending'] and system.package('cmprovision4') == version
+        system.http_health({})
+    finally:
+        held.rename(system_archive)
     entry = operation('rollback', operation=application_result['id'])
     assert entry['state'] == 'succeeded', entry
     assert system.package('cmprovision4') == original
@@ -189,8 +220,8 @@ def run():
     ready = download()
     install = system.install
     class Interrupted(BaseException): pass
-    def interrupt(*args):
-        install(*args)
+    def interrupt(*args, **options):
+        install(*args, **options)
         raise Interrupted()
     system.install = interrupt
     request, _ = store.begin({'action': 'apply', 'candidate': ready['id'], 'receipt': ready['receipt'],

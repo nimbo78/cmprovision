@@ -19,12 +19,20 @@ class StationUpdatesTest extends TestCase
         $fake = new class($status) extends StationUpdatesControl {
             public array $calls = [];
             public int $statusCalls = 0;
+            public array $space = ['sufficient' => true, 'volumes' => [
+                ['location' => 'Recovery storage', 'required' => 536870912, 'free' => 1073741824, 'reclaimable' => 0, 'shortfall' => 0],
+            ]];
+            public ?string $spaceError = null;
             public function __construct(public array $state) {}
             public function available(): bool { return true; }
             public function status(): array { $this->statusCalls++; return $this->state; }
             public function request(array $request): array
             {
                 $this->calls[] = $request;
+                if ($request['action'] === 'space') {
+                    if ($this->spaceError !== null) throw new \RuntimeException($this->spaceError);
+                    return $this->space;
+                }
                 return $request['action'] === 'status' ? $this->state : ['id' => str_repeat('a', 32)];
             }
             public function pending(): bool { return false; }
@@ -85,7 +93,8 @@ class StationUpdatesTest extends TestCase
         $this->control();
         $this->actingAs(User::factory()->create())->get('/settings?tab=updates')
             ->assertOk()->assertSee('7 days')
-            ->assertSee('removed before checking free space and creating the next snapshot');
+            ->assertSee('Reviewing disk space keeps that point')
+            ->assertSee('before the final space check and the new snapshot');
     }
 
     public function test_confirmation_binds_actor_and_receipt_expires_and_replays_one_nonce(): void
@@ -98,7 +107,8 @@ class StationUpdatesTest extends TestCase
         catch (\RuntimeException $expected) {}
         $updates->confirm($intent['token'], 'web:1:session');
         $updates->confirm($intent['token'], 'web:1:session');
-        $this->assertSame($control->calls[0], $control->calls[1]);
+        $this->assertSame(['space', 'apply', 'apply'], array_column($control->calls, 'action'));
+        $this->assertSame($control->calls[1], $control->calls[2]);
         $this->travel(601)->seconds();
         $this->expectException(\RuntimeException::class);
         $updates->confirm($intent['token'], 'web:1:session');
@@ -111,9 +121,108 @@ class StationUpdatesTest extends TestCase
         $updates = app(StationUpdates::class);
         $intent = $updates->prepare('apply', str_repeat('b', 64), 'web:1:session');
         $updates->abandon($intent['token'], 'web:1:session');
-        $this->assertSame([], $control->calls);
+        $this->assertSame([['action' => 'space', 'candidate' => str_repeat('b', 64)]], $control->calls);
         $this->expectException(\RuntimeException::class);
         $updates->confirm($intent['token'], 'web:1:session');
+    }
+
+    public function test_application_space_review_displays_each_volume_and_blocks_apply_until_rechecked(): void
+    {
+        $id = str_repeat('b', 64);
+        $release = ['component' => 'application', 'tag' => 'v2.31.0', 'version' => '2.31.0'];
+        $control = $this->control(['ready' => [['id' => $id, 'receipt' => str_repeat('c', 64), 'release' => $release]]]);
+        $enough = $control->space;
+        $control->space = ['sufficient' => false, 'volumes' => [
+            ['location' => 'Recovery storage', 'required' => 1073741824, 'free' => 536870912, 'reclaimable' => 268435456, 'shortfall' => 268435456],
+            ['location' => 'Package filesystem', 'required' => 67108864, 'free' => 134217728, 'reclaimable' => 0, 'shortfall' => 0],
+        ]];
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        $panel = \Livewire\Livewire::test(\App\Http\Livewire\StationUpdatesPanel::class)
+            ->assertDontSee('Disk space estimate')
+            ->call('begin', 'apply', $id)->assertSet('open', true)->assertSee('Disk space estimate')
+            ->assertSee('Recovery storage')->assertSee('Package filesystem')
+            ->assertSee('Required')->assertSee('Free now')->assertSee('Potential release')->assertSee('Shortfall')
+            ->assertSee('1.00 GiB')->assertSee('512.0 MiB')->assertSee('256.0 MiB')->assertSee('64.0 MiB')->assertSee('128.0 MiB')
+            ->assertSee('Recheck space')->assertDontSeeHtml('wire:click="confirm"')
+            ->call('confirm')->assertNotDispatched('station-update-started');
+        $preview = ['action' => 'space', 'candidate' => $id];
+        $this->assertSame([$preview], $control->calls);
+
+        $control->space = $enough;
+        $panel->call('recheckSpace')->assertSet('open', true)->assertDontSee('Package filesystem')
+            ->assertDontSee('256.0 MiB')->assertSee('Confirm apply')
+            ->call('confirm')->assertDispatched('station-update-started')->assertSet('open', false);
+        $this->assertSame([$preview, $preview], array_slice($control->calls, 0, 2));
+        $this->assertSame('apply', $control->calls[2]['action']);
+        $this->assertSame($id, $control->calls[2]['candidate']);
+    }
+
+    public function test_application_rollback_rechecks_its_operation_and_invalidates_a_stale_confirmation(): void
+    {
+        $id = str_repeat('d', 32);
+        $control = $this->control(['recoveries' => [['id' => $id, 'component' => 'application', 'previous_version' => '2.30.3', 'state' => 'succeeded']]]);
+        $enough = $control->space;
+        $user = User::factory()->create();
+        $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
+        $panel = \Livewire\Livewire::test(\App\Http\Livewire\StationUpdatesPanel::class)
+            ->call('begin', 'rollback', $id)->assertSee('Confirm rollback')->assertSee('Disk space estimate');
+        $oldToken = $panel->get('confirmation.token');
+        $actor = 'web:'.$user->id.':'.hash('sha256', session()->getId());
+
+        $control->spaceError = 'The updater did not answer.';
+        $panel->call('recheckSpace')->assertSet('open', true)->assertSee('Disk space estimate unavailable')
+            ->assertDontSee('Recovery storage')->assertDontSeeHtml('wire:click="confirm"')
+            ->call('confirm')->assertNotDispatched('station-update-started');
+        try {
+            app(StationUpdates::class)->confirm($oldToken, $actor);
+            $this->fail('The previous estimate authorized a rollback after a failed recheck.');
+        } catch (\RuntimeException $expired) {
+            $this->assertStringContainsString('expired', $expired->getMessage());
+        }
+        $control->spaceError = null;
+        $control->space = ['id' => $id]; // Older controller without an estimate.
+        $panel->call('recheckSpace')->assertSee('Disk space estimate unavailable')
+            ->assertDontSeeHtml('wire:click="confirm"')->call('back')->assertSet('open', false);
+        $this->assertSame(array_fill(0, 3, ['action' => 'space', 'operation' => $id]), $control->calls);
+        $control->space = $enough;
+        $panel->call('begin', 'rollback', $id)->call('confirm')->assertDispatched('station-update-started');
+        $this->assertSame('rollback', $control->calls[4]['action']);
+        $this->assertSame($id, $control->calls[4]['operation']);
+    }
+
+    public function test_malformed_space_reports_cannot_issue_a_ticket(): void
+    {
+        $id = str_repeat('d', 32);
+        $control = $this->control(['recoveries' => [['id' => $id, 'component' => 'application', 'state' => 'succeeded']]]);
+        $volume = $control->space['volumes'][0];
+        foreach ([
+            ['sufficient' => true, 'volumes' => ['unexpected' => $volume]],
+            ['sufficient' => true, 'volumes' => [array_replace($volume, ['free' => -1])]],
+            ['sufficient' => true, 'volumes' => [array_replace($volume, ['shortfall' => 1])]],
+        ] as $report) {
+            $control->space = $report;
+            $review = app(StationUpdates::class)->prepare('rollback', $id, 'web:1:session');
+            $this->assertNull($review['token']);
+            $this->assertFalse($review['space']['sufficient']);
+        }
+    }
+
+    public function test_utility_os_apply_rollback_and_activation_require_no_space_preview(): void
+    {
+        $candidate = str_repeat('b', 64);
+        $operation = str_repeat('d', 32);
+        $release = ['component' => 'utility-os', 'tag' => 'utility-os-2026.11', 'version' => '2026.11'];
+        $control = $this->control(['ready' => [['id' => $candidate, 'receipt' => str_repeat('c', 64), 'release' => $release]],
+            'recoveries' => [['id' => $operation, 'component' => 'utility-os', 'state' => 'succeeded']]]);
+        $control->spaceError = 'Unsupported request';
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        $panel = \Livewire\Livewire::test(\App\Http\Livewire\StationUpdatesPanel::class);
+        foreach (['apply' => $candidate, 'rollback' => $operation, 'activate' => 'legacy'] as $action => $target) {
+            $panel->call('begin', $action, $target)->assertSet('open', true)
+                ->assertDontSee('Disk space estimate')->assertDontSee('Recheck space')
+                ->assertSeeHtml('wire:click="confirm"')->call('confirm')->assertSet('open', false);
+        }
+        $this->assertSame(['apply', 'rollback', 'activate'], array_column($control->calls, 'action'));
     }
 
     public function test_status_requires_authentication(): void

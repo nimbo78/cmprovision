@@ -14,6 +14,7 @@ NAMES = ('station-updates.py', 'update_manifest.py', 'update_store.py', 'update_
          'update_recovery.py', 'update_retention.py', 'update_diagnostics.py', 'publisher.json', 'publisher.pub')
 TRUST = ('publisher.json', 'publisher.pub')
 LEGACY_NAMES = tuple(name for name in NAMES if name != 'update_diagnostics.py')
+BOOT_SERVICES = frozenset(('cmprovision-dnsmasq.service', 'cmprovision-rpiboot.service'))
 
 
 def protected(path, owner, directory=False):
@@ -40,8 +41,7 @@ def write(path, raw, mode):
         if os.path.exists(name): os.unlink(name)
 
 
-def install_dispatcher(store):
-    target = store.root/'recover.py'
+def _retain_program(store, target):
     if target.exists() or target.is_symlink():
         protected(target, store.owner)
     # This stdlib-only protocol-1 dispatcher accepts both historical inventories.
@@ -50,6 +50,30 @@ def install_dispatcher(store):
     protected(source, store.owner)
     raw = source.read_bytes()
     if not target.exists() or target.read_bytes() != raw: write(target, raw, 0o600)
+
+
+def install_dispatcher(store):
+    _retain_program(store, store.root/'recover.py')
+
+
+def install_boot_guard(store, units=Path('/etc/systemd/system')):
+    # Old packages overwrite recover.py when configured. Keep the systemd condition
+    # and its standalone stdlib program outside dpkg, including during a downgrade.
+    helper = store.root/'boot-check.py'
+    _retain_program(store, helper)
+    content = f'[Service]\nExecCondition=/usr/bin/python3 -B -I {helper} --allow-boot %n\n'.encode()
+    for service in sorted(BOOT_SERVICES):
+        directory = units/(service+'.d')
+        store._directory(directory, 0o755)
+        path = directory/'90-cmprovision-update-guard.conf'
+        if os.path.lexists(path):
+            store._file(path, 0o644)
+            if path.read_bytes() != content:
+                raise RuntimeError('The station update boot condition was modified: '+service)
+        else: write(path, content, 0o644)
+    fd = os.open(units, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try: os.fsync(fd)
+    finally: os.close(fd)
 
 
 def retain_runner(store, identity, installed=Path('/usr/lib/cmprovision'), names=NAMES,
@@ -73,6 +97,12 @@ def retain_runner(store, identity, installed=Path('/usr/lib/cmprovision'), names
                 raise RuntimeError('Existing retained worker differs.')
         else: write(destination, raw, 0o600)
         hashes[name] = digest
+    # write() flushes the entries inside this operation. Also persist the directories
+    # that make a newly retained runner reachable after a loss of power.
+    for parent in (target.parent, store.private, store.root, store.root.parent):
+        fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try: os.fsync(fd)
+        finally: os.close(fd)
     return {'directory': str(target), 'hashes': hashes}
 
 
@@ -93,13 +123,38 @@ def restore_trust(store, identity, target=Path('/etc/cmprovision-updates')):
         write(destination, raw, 0o644)
 
 
-def dispatch(root=Path('/var/lib/cmprovision-updates'), runtime=Path('/run/cmprovision-updates'), run=subprocess.run, owner=0):
-    root, runtime = Path(root), Path(runtime)
+def read_state(root, owner):
     for path in (root, root/'private'): protected(path, owner, directory=True)
     state_path = root/'private/state.json'
     if protected(state_path, owner).st_size > 4*1024**2: raise RuntimeError('Recovery state is too large.')
     state = json.loads(state_path.read_bytes())
     if state.get('schema') != 1: raise RuntimeError('Unsupported recovery state.')
+    return state
+
+
+def boot_permitted(root, service, owner=0):
+    if service not in BOOT_SERVICES: raise RuntimeError('Unknown boot service.')
+    state = read_state(root, owner)
+    pending = state['critical']
+    if pending is None: return True
+    operation = state['operations'][pending['id']]
+    if operation['id'] != pending['id'] or state['current'] != pending['id']:
+        raise RuntimeError('The current update does not match the recovery journal.')
+    if 'boot_guard' not in operation:
+        # Protocol-1 workers from earlier releases resume services *before* they
+        # commit. Their own pause/resume sequence must still work after a downgrade.
+        return operation['state'] != 'recovery-required'
+    if operation['boot_guard'] is not True or operation.get('committed') is not True:
+        return False
+    saved = operation['services'][service]
+    return (operation['state'] in ('succeeded', 'rolled-back', 'failed')
+            and saved['active'] is True and saved['enabled'] in
+            ('enabled', 'enabled-runtime', 'disabled', 'static', 'indirect'))
+
+
+def dispatch(root=Path('/var/lib/cmprovision-updates'), runtime=Path('/run/cmprovision-updates'), run=subprocess.run, owner=0):
+    root, runtime = Path(root), Path(runtime)
+    state = read_state(root, owner)
     pending = state.get('critical')
     if not pending:
         return # Read-only status polling reconciles interrupted noncritical operations.
@@ -132,7 +187,10 @@ def dispatch(root=Path('/var/lib/cmprovision-updates'), runtime=Path('/run/cmpro
 
 if __name__ == '__main__':
     try:
-        if os.geteuid() != 0 or sys.argv[1:]: raise RuntimeError('Expected the fixed root recovery dispatcher.')
+        if os.geteuid() != 0: raise RuntimeError('Expected the root recovery dispatcher.')
+        if len(sys.argv) == 3 and sys.argv[1] == '--allow-boot':
+            raise SystemExit(0 if boot_permitted(Path(__file__).resolve().parent, sys.argv[2]) else 1)
+        if sys.argv[1:]: raise RuntimeError('Unexpected recovery arguments.')
         dispatch()
     except Exception:
         print('Update recovery needs SSH/local-console attention; maintenance remains enabled.', file=sys.stderr)

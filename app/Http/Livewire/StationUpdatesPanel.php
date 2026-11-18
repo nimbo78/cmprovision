@@ -56,15 +56,24 @@ class StationUpdatesPanel extends Component
     {
         $actor = $this->actor();
         $this->ensurePasswordIsConfirmed();
-        $this->error = null;
+        $this->back();
         try { $this->confirmation = app(StationUpdates::class)->prepare($action, $target, $actor); $this->open = true; }
         catch (\RuntimeException|\InvalidArgumentException $error) { $this->error = $error->getMessage(); }
+    }
+    public function recheckSpace(): void
+    {
+        abort_unless($this->open && isset($this->confirmation['space']), 403);
+        $this->begin($this->confirmation['action'], $this->confirmation['target']);
     }
     public function confirm(): void
     {
         $actor = $this->actor();
         $this->ensurePasswordIsConfirmed();
         abort_unless($this->open && $this->confirmation !== null, 403);
+        if (!isset($this->confirmation['token'])) {
+            $this->error = 'Recheck disk space before confirming.';
+            return;
+        }
         $this->execute(function () use ($actor) {
             $result = app(StationUpdates::class)->confirm($this->confirmation['token'], $actor);
             $this->open = false;
@@ -75,7 +84,7 @@ class StationUpdatesPanel extends Component
     public function back(): void
     {
         $actor = $this->actor();
-        if ($this->confirmation !== null) {
+        if (isset($this->confirmation['token'])) {
             try { app(StationUpdates::class)->abandon($this->confirmation['token'], $actor); }
             catch (\RuntimeException $expired) { /* An expired ticket is already inert. */ }
         }
