@@ -16615,7 +16615,7 @@ index 0000000..c62edce
 +of Raspberry Pi OS Lite. Those require booting a clean target image later.
 diff --git a/tools/build-lite-deb.sh b/tools/build-lite-deb.sh
 new file mode 100644
-index 0000000..392f4b7
+index 0000000..4b8a382
 --- /dev/null
 +++ b/tools/build-lite-deb.sh
 @@ -0,0 +1,66 @@
@@ -16633,7 +16633,7 @@ index 0000000..392f4b7
 +for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py modules/screen/st7735_probe.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py integrations/cmprovision_power.py integrations/cmprovision_rescue.py; do
 +    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
 +done
-+for f in modules/screen/hyperpixel.py integrations/cmprovision_touch.py integrations/cmprovision_touch_style.py; do
++for f in modules/screen/hyperpixel.py integrations/cmprovision_touch.py integrations/cmprovision_touch_style.py integrations/cmprovision_touch_station.py; do
 +    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
 +done
 +install -m 644 "$ROOT/LICENSE" "$DEST/usr/share/doc/fpms-lite/copyright"
@@ -17083,21 +17083,31 @@ index 0000000..922834a
 +    /bin/sh "$0" --inside "$mode" "$root" "$source"
 diff --git a/fpms/integrations/cmprovision_touch.py b/fpms/integrations/cmprovision_touch.py
 new file mode 100644
-index 0000000..106f2f7
+index 0000000..fe6007d
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_touch.py
-@@ -0,0 +1,648 @@
+@@ -0,0 +1,880 @@
 +"""Native landscape station menu for the rectangular HyperPixel 4.0 Touch."""
 +
 +import ipaddress
++import re
 +
 +from PIL import Image, ImageDraw
 +
 +from . import cmprovision_classic as classic
 +from . import cmprovision_new as compact
++from . import cmprovision_touch_station as station_view
 +from .cmprovision import PAGES, first_admin_projection, hardware_lines, identity, number, objects, text
 +from .cmprovision_power import COLOR_MODES, SCREEN_TIMEOUTS, timeout_label
-+from .cmprovision_touch_style import DARK, LIGHT, centered, fit, font, icon, wrap
++from .cmprovision_touch_style import DARK, LIGHT, brand, centered, fit, font, icon, icon_caption, wrap
++
++
++COUNTERS = (
++    ("running", "run", "Running", "activity", "run"),
++    ("done", "ok", "Done", "check", "good"),
++    ("failed", "fail", "Failed", "Errors", "bad"),
++    ("stale", "stale", "Silent", "clock", "warn"),
++)
 +
 +
 +def port_link(row):
@@ -17136,6 +17146,8 @@ index 0000000..106f2f7
 +    def __init__(self, panel):
 +        self.panel = panel
 +        self.offset = 0
++        self.filter_state = None
++        self.port_mode = "map"
 +        self.history = []
 +        self.targets = []
 +        self.presented = None
@@ -17163,6 +17175,45 @@ index 0000000..106f2f7
 +
 +    def mark(self, x, y, name, size, color="muted"):
 +        self.draw.bitmap((x, y), icon(name, size), fill=self.c[color])
++
++    def logo(self, x, y, size, peer=False):
++        tile = brand(size, "peer" if peer else self.panel.color_mode())
++        self.image.paste(tile, (x, y), tile)
++
++    @staticmethod
++    def pill_width(caption, symbol=None):
++        return round(font(14, "bold").getlength(caption)) + (34 if symbol else 14)
++
++    def pill(self, x, y, caption, color="muted", symbol=None):
++        width = self.pill_width(caption, symbol)
++        fill = {"accent": "tint", "muted": "raised"}.get(color, color + "_tint")
++        self.draw.rounded_rectangle((x, y, x + width - 1, y + 23), radius=6, fill=self.c[fill])
++        if symbol:
++            self.mark(x + 6, y + 4, symbol, 16, color)
++        centered(
++            self.draw,
++            (x + (21 if symbol else 0), y, x + width - 1, y + 23),
++            caption,
++            font(14, "bold"),
++            self.c[color],
++        )
++        return x + width
++
++    def header_pager(self, length, step, right, y):
++        last = max(0, (length - 1) // step * step)
++        self.offset = min(max(0, self.offset), last)
++        if not last:
++            return
++        for x, symbol, offset in (
++            (right - 92, "back", self.offset - step),
++            (right - 44, "next", self.offset + step),
++        ):
++            box = (x, y, x + 43, y + 43)
++            allowed = 0 <= offset <= last
++            self.draw.rounded_rectangle(box, radius=8, fill=self.c["surface"], outline=self.c["line"])
++            self.mark(x + 12, y + 12, symbol, 20, "fg" if allowed else "line")
++            if allowed:
++                self.targets.append((box, ("offset", offset)))
 +
 +    def card(self, box, color="surface"):
 +        self.draw.rounded_rectangle(
@@ -17216,27 +17267,42 @@ index 0000000..106f2f7
 +            p = self.panel
 +            if kind == "page":
 +                p.page, p.index, p.detail, p.scroll, self.offset = value, 0, None, 0, 0
++                self.filter_state, self.port_mode = None, "map"
 +                self.history.clear()
 +            elif kind == "offset":
 +                self.offset = value
 +            elif kind == "key":
-+                was_detail = p.detail
++                modal = any(self.presented[i] for i in (3, 6, 7))
 +                p.key(value)
-+                if value == "KEY2" and was_detail and p.detail is None and self.history:
-+                    p.page, p.detail, self.offset = self.history.pop()
++                if value == "KEY2" and not modal and self.history:
++                    p.page, p.detail, self.offset, self.filter_state = self.history.pop()
++                    p.scroll = 0
++            elif kind in ("filter", "health"):
++                self.history.append((p.page, p.detail, self.offset, self.filter_state))
++                if kind == "filter":
++                    p.page, p.detail, self.filter_state = 2, None, value
++                else:
++                    p.detail = ("health", "station")
++                p.scroll = self.offset = 0
++            elif kind == "port_mode":
++                self.port_mode, self.offset = value, 0
++            elif kind == "rescue" and p.rescue_available():
++                p.rescue_menu.show()
 +            elif kind == "port_device":
 +                row = p.detail_row()
 +                device = self.port_device(row) if row else None
 +                if device and identity(device) == value:
-+                    self.history.append((p.page, p.detail, self.offset))
++                    self.history.append((p.page, p.detail, self.offset, self.filter_state))
 +                    p.detail, p.scroll, self.offset = ("module", value), 0, 0
 +            elif kind in ("row", "device"):
-+                previous = (p.page, p.detail, self.offset)
++                previous = (p.page, p.detail, self.offset, self.filter_state)
 +                if kind == "device":
 +                    p.page = 2
 +                for index, row in enumerate(p.rows()):
 +                    key = (row.get("pin") or row.get("name")) if p.page == 1 else identity(row)
 +                    if key == value:
++                        if self.filter_state and row.get("state") != self.filter_state:
++                            break
 +                        p.index = index
 +                        if p.page == 1:
 +                            p.detail, p.scroll = ("port", value), 0
@@ -17278,16 +17344,14 @@ index 0000000..106f2f7
 +            )
 +        self.image = Image.new("RGB", (800, 480), self.c["bg"])
 +        self.draw = ImageDraw.Draw(self.image)
-+        self.draw.rectangle((0, 0, 799, 59), fill=self.c["surface"])
-+        self.draw.line((0, 59, 799, 59), fill=self.c["line"])
-+        logo = (20, 9, 61, 50)
-+        self.draw.rounded_rectangle(logo, radius=10, fill="#F69A50")
-+        centered(self.draw, logo, "cm", font(23, "bold"), "#291B12")
-+        self.label(75, 20, "cmprovision", 22, width=143, weight="bold")
-+        self.draw.line((218, 18, 218, 42), fill=self.c["line"])
-+        self.label(234, 21, p.data.get("host") or "Station", 19, "muted", 274)
++        self.draw.rectangle((0, 0, 799, 55), fill=self.c["surface"])
++        self.draw.line((0, 55, 799, 55), fill=self.c["line"])
++        self.logo(16, 7, 42)
++        self.label(69, 19, "cmprovision", 20, width=132, weight="bold")
++        self.draw.line((200, 17, 200, 38), fill=self.c["line"])
++        self.label(215, 19, p.data.get("host") or "Station", 16, "muted", 274, "mono")
 +        modal = setup or power or rescue
-+        if modal or detail:
++        if modal or detail or self.history:
 +            if not setup or rescue:
 +                self.button((665, 7, 779, 52), "Back", ("key", "KEY2"))
 +        elif p.power_menu:
@@ -17303,6 +17367,8 @@ index 0000000..106f2f7
 +            self.setup()
 +        elif power:
 +            self.system(power)
++        elif detail and detail[0] == "health":
++            station_view.health(self)
 +        elif detail:
 +            self.details()
 +        elif not p.data:
@@ -17319,7 +17385,7 @@ index 0000000..106f2f7
 +        self.draw.line((0, 415, 799, 415), fill=self.c["line"])
 +        for index, title in enumerate(PAGES):
 +            x = 8 + index * 158
-+            active = self.panel.page == index
++            active = (self.history[0][0] if self.history else self.panel.page) == index
 +            box = (x, 421, x + 151, 473)
 +            ink = "accent" if active else "muted"
 +            if active:
@@ -17354,162 +17420,272 @@ index 0000000..106f2f7
 +
 +    def overview(self):
 +        p = self.panel
-+        self.title("Overview")
-+        self.card((20, 127, 370, 397))
-+        self.label(39, 145, "Active project" if p.data.get("project") else "Provisioning", 16, "muted")
-+        self.label(39, 169, compact.batch_line(p)[0], 24, "fg", 313, "bold")
-+        self.draw.line((39, 210, 351, 210), fill=self.c["line"])
++        self.label(19, 76, "Overview", 30, width=320, weight="bold")
++        self.label(20, 110, compact.batch_line(p)[0], 16, "muted", 325)
 +        tally = compact.counts(p)
-+        tiles = (
-+            ("running", "Running", "run"),
-+            ("done", "Done", "good"),
-+            ("failed", "Failed", "bad"),
-+            ("stale", "Silent", "warn"),
++        for i, (key, state, title, symbol, color) in enumerate(COUNTERS):
++            x, y = 18 + (i % 2) * 169, 140 + (i // 2) * 138
++            box = (x, y, x + 160, y + 129)
++            self.card(box)
++            count = tally[key]
++            ink = color if count else "muted"
++            self.label(x + 17, y + 27, count, 52, ink, 130, "bold")
++            icon_caption(
++                self.draw, x + 17, y + 91, symbol, title, self.c[ink], self.c["fg" if count else "muted"]
++            )
++            self.targets.append((box, ("filter", state)))
++
++        def port_order(row):
++            return tuple(
++                int(part) if i % 2 else part.casefold()
++                for i, part in enumerate(re.split(r"(\d+)", text(row.get("port"))))
++            )
++
++        rows = sorted(self.modules(), key=port_order)
++        self.card((363, 67, 781, 123 + 46 * max(1, min(6, len(rows)))))
++        self.draw.rounded_rectangle((364, 68, 780, 123), radius=10, fill=self.c["raised"])
++        self.label(377, 78, "Devices on the stand", 19, width=285, weight="bold")
++        self.header_pager(len(rows), 6, 774, 73)
++        description = (
++            f"{self.offset+1}–{min(self.offset+6,len(rows))} of {len(rows)}"
++            if len(rows) > 6
++            else f"{len(rows)} device" + ("" if len(rows) == 1 else "s")
 +        )
-+        for i, (key, name, color) in enumerate(tiles):
-+            x, y = 40 + (i % 2) * 160, 225 + (i // 2) * 83
-+            self.label(x, y, tally[key], 36, color if tally[key] else "muted", 142, "bold")
-+            self.label(x, y + 42, name, 15, "muted")
-+        rows = self.modules()
-+        self.card((383, 127, 779, 397))
-+        self.label(403, 147, "Devices", 21, "fg", 260, "bold")
-+        self.badge(757, 145, str(len(rows)), "muted")
++        self.label(377, 102, description, 14, "muted", 245)
 +        if not rows:
-+            self.label(403, 216, "No devices connected", 19, "muted")
-+        for i, row in enumerate(rows[:3]):
-+            y = 188 + i * 63
-+            self.draw.line((402, y - 2, 759, y - 2), fill=self.c["line"])
-+            self.device_line((401, y, 759, y + 57), row, ("device", identity(row)))
-+        if len(rows) > 3:
-+            self.targets.append(((390, 132, 774, 181), ("page", 2)))
++            self.label(377, 141, "No devices on the stand", 17, "muted", 372)
++        for i, row in enumerate(rows[self.offset : self.offset + 6]):
++            y = 124 + i * 46
++            self.draw.line((364, y, 780, y), fill=self.c["line"])
++            self.label(373, y + 16, compact.short_port(row), 13, "muted", 67, "mono")
++            state = text(row.get("state"))
++            color, word = compact.STATE.get(state, ("muted", "UNKNOWN"))
++            caption = word if state == "recognized" else word.capitalize()
++            percent = number(row.get("percent"), None)
++            if state == "run" and percent is not None:
++                phase = text(row.get("phase"))
++                caption = (
++                    "Writing" if phase in ("writing", "write", "install", "imaging") else "Running"
++                ) + f" {max(0,min(100,int(percent)))}%"
++            badge_x = 754 - self.pill_width(caption)
++            self.label(
++                446,
++                y + 14,
++                row.get("hostname") or row.get("name") or identity(row),
++                16,
++                width=badge_x - 452,
++                weight="mono",
++            )
++            self.pill(badge_x, y + 11, caption, "muted" if color == "dim" else color)
++            self.mark(761, y + 16, "next", 14)
++            self.targets.append(((364, y, 780, y + 45), ("device", identity(row))))
 +
 +    def rows(self):
 +        p = self.panel
-+        self.title(PAGES[p.page])
 +        rows = p.rows()
-+        self.pager(len(rows), 4)
++        title = PAGES[p.page]
++        if self.filter_state:
++            title = (
++                next(label for _, state, label, _, _ in COUNTERS if state == self.filter_state) + " devices"
++            )
++            rows = [r for r in rows if r.get("state") == self.filter_state]
++        self.label(20, 75, title, 30, width=440, weight="bold")
++        self.header_pager(len(rows), 4, 780, 70)
++        self.label(21, 110, f"{len(rows)} device" + ("" if len(rows) == 1 else "s"), 15, "muted", 300)
 +        if not rows:
-+            self.label(25, 170, "No devices connected" if p.page == 2 else "No errors", 24, "muted")
++            message = (
++                "No " + title.lower()
++                if self.filter_state
++                else ("No devices connected" if p.page == 2 else "No device errors")
++            )
++            self.label(25, 169, message, 22, "muted", 740)
 +        for i, row in enumerate(rows[self.offset : self.offset + 4]):
-+            y = 119 + i * 58
-+            self.draw.line((23, y + 57, 777, y + 57), fill=self.c["line"])
-+            self.device_line((26, y, 773, y + 56), row, ("row", identity(row)))
++            y = 140 + i * 62
++            self.card((18, y, 781, y + 57))
++            self.device_line((25, y + 1, 769, y + 56), row, ("row", identity(row)))
++
++    def connected_ports(self, rows):
++        switches = objects(self.panel.data.get("switches"), 64)
++        result = []
++        for row in rows:
++            if "pin" not in row or switches[int(row["pin"].split(":")[0])].get("answering") is False:
++                continue
++            if (
++                row.get("link_up") is True
++                or row.get("server")
++                or isinstance(row.get("station"), dict)
++                or row.get("state") in ("module", "recognized", "unrecognized", "quiet", "boot", "uplink")
++                or port_power(row)[2] == "good"
++            ):
++                result.append(row)
++        return result
++
++    def port_identity(self, row):
++        station = row.get("station") if isinstance(row.get("station"), dict) else {}
++        if row.get("server"):
++            return text(self.panel.data.get("host")) or "This station", "This station", "accent", None
++        if station:
++            return (
++                text(station.get("name") or station.get("host")) or "Other station",
++                "Other station",
++                "muted",
++                None,
++            )
++        device = self.port_device(row)
++        if device:
++            ink, word = compact.STATE.get(text(device.get("state")), ("muted", "Unknown"))
++            return (
++                text(device.get("hostname") or device.get("name") or identity(device)),
++                word,
++                ("muted" if ink == "dim" else ink),
++                device,
++            )
++        return "No device identified", "", "muted", None
 +
 +    def ports(self):
 +        p = self.panel
 +        rows = p.rows()
-+        cols = 14 if p.ports_map() == "whole" else 10
++        connected = self.connected_ports(rows)
 +        switches = objects(p.data.get("switches"), 64)
++        self.label(19, 76, "Ports", 30, width=330, weight="bold")
++        for x, right, mode, label in (
++            (524, 602, "map", "Map"),
++            (609, 781, "list", f"Connected {len(connected)}"),
++        ):
++            self.button((x, 69, right, 113), label, ("port_mode", mode), mode == self.port_mode)
++        if self.port_mode == "list":
++            switch = text(switches[0].get("name")) if len(switches) == 1 else f"{len(switches)} switches"
++            self.label(20, 109, switch, 15, "muted", 350)
++            self.header_pager(len(connected), 4, 510, 69)
++            self.connections(connected, len(switches) > 1)
++            return
++        cols = 14 if p.ports_map() == "whole" else 10
 +        banks = [
 +            (view, view["columns"][i : i + cols], objects(switches[n].get("blocks"), 32))
 +            for n, view in enumerate(p.map_view())
 +            for i in range(0, max(1, len(view["columns"])), cols)
 +        ]
-+        self.pager(len(banks), 1)
++        self.header_pager(len(banks), 1, 510, 69)
 +        if not banks:
-+            self.title("Ports")
-+            self.label(25, 165, "No switches configured", 23, "muted")
++            self.label(22, 167, "No switches configured", 22, "muted")
 +            return
 +        view, columns, blocks = banks[self.offset]
-+        self.title("Ports", view["name"])
-+        self.card((20, 125, 779, 337))
++        self.label(20, 109, view["name"], 15, "muted", 354)
++        self.card((18, 137, 781, 336))
 +        if not view["answering"]:
-+            self.label(38, 149, "Switch not responding", 22, "warn")
++            self.label(35, 160, "Switch not responding", 21, "warn")
 +            return
 +        count = max(1, len(columns))
-+        splits = sum(columns[i][2] != columns[i - 1][2] for i in range(1, len(columns)))
-+        x, width, gap = 83, 683, 4
-+        extra = max(0, min(14, (width - count * 44 - (count - 1) * gap) // max(1, splits)))
-+        cell = min(84, (width - (count - 1) * gap - extra * splits) // count)
-+        for side in range(2):
-+            if any(col[side] is not None for col in columns):
-+                y = 160 + side * 87
-+                for dy, label in ((9, "Port"), (37, "Link"), (58, "PoE")):
-+                    self.label(32, y + dy, label, 15, "muted", 47, "bold")
++        splits = sum(a[2] != b[2] for a, b in zip(columns, columns[1:]))
++        width, gap = 741, 6
++        extra = max(0, min(12, (width - count * 44 - (count - 1) * gap) // max(1, splits)))
++        cell = min(90, (width - (count - 1) * gap - extra * splits) // count)
++        x = 30
 +        for col, (upper, lower, group) in enumerate(columns):
 +            if col == 0 or columns[col - 1][2] != group:
 +                if col:
 +                    x += extra
 +                group_size = sum(c[2] == group for c in columns)
 +                self.label(
-+                    x, 136, blocks[group].get("label"), 15, "muted", group_size * (cell + gap) - gap, "bold"
++                    x, 146, blocks[group].get("label"), 14, "muted", group_size * (cell + gap) - gap, "bold"
 +                )
 +            for side, index in enumerate((upper, lower)):
 +                if index is None or index >= len(rows):
 +                    continue
 +                row = rows[index]
-+                y = 160 + side * 87
-+                box = (x, y, x + cell - 1, y + 78)
-+                local = bool(row.get("server"))
-+                peer = isinstance(row.get("station"), dict) and not local
-+                fill, edge = compact.port_style(row)
-+                edge = "muted" if peer or edge == "dim" else edge
-+                if peer or not fill or fill == "dim":
-+                    bg = "raised"
-+                else:
-+                    bg = {"accent": "tint"}.get(fill, fill + "_tint")
-+                self.draw.rounded_rectangle(box, 8, fill=self.c[bg], outline=self.c[edge])
-+                name = text(row.get("number")) or text(row.get("portname")).split("/")[-1]
-+                if local or peer:
-+                    name += " cm"
-+                link, _, link_ink = port_link(row)
-+                power, _, power_ink = port_power(row)
-+                for top, bottom, caption, size, ink in (
-+                    (2, 28, name, 19, edge if fill or peer else "fg"),
-+                    (31, 53, link, 16, link_ink),
-+                    (53, 75, power, 16, power_ink),
-+                ):
-+                    face = font(size, "bold")
-+                    if face.getlength(caption) > cell - 6:
-+                        face = font(13, "bold")
-+                    centered(self.draw, (x, y + top, box[2], y + bottom),
-+                             fit(caption, face, cell - 4), face, self.c[ink])
-+                self.targets.append((box, ("row", row.get("pin") or row.get("name"))))
++                y = 167 + side * 83
++                self.map_tile(row, (x, y, x + cell - 1, y + 77))
 +            x += cell + gap
-+        self.label(26, 352, "cm  This station", 16, "accent", 158, "bold")
-+        self.label(188, 352, "cm  Other station", 16, "muted", 180)
-+        self.label(26, 381, "PoE idle = waiting for a device", 15, "muted", 244)
-+        self.label(278, 381, "? = no reading", 15, "muted", 145)
++        self.mark(23, 361, "Ports", 17)
++        self.label(46, 363, "Link", 16, "muted", 47)
++        self.mark(103, 361, "bolt", 17)
++        self.label(126, 363, "PoE", 16, "muted", 45)
++        self.label(183, 363, "?  No reading", 16, "muted", 145)
++        self.logo(427, 358, 23)
++        self.label(456, 363, "This station", 16, "muted", 130)
++        self.logo(589, 358, 23, True)
++        self.label(620, 363, "Other station", 16, "muted", 150)
++
++    def map_tile(self, row, box):
++        x, y, right, bottom = box
++        width = right - x + 1
++        local = bool(row.get("server"))
++        peer = isinstance(row.get("station"), dict) and not local
++        _, edge = compact.port_style(row)
++        if peer or edge == "dim":
++            edge = "muted"
++        if edge == "line" and row.get("link_up") is True:
++            edge = "good"
++        power, _, power_ink = port_power(row)
++        if edge == "line" and power_ink == "good":
++            edge = "warn"
++        bg = "tint" if local else "surface" if row.get("link_up") is True and not peer else "raised"
++        self.draw.rounded_rectangle(box, 8, fill=self.c[bg], outline=self.c[edge])
++        name = text(row.get("number")) or text(row.get("portname")).rsplit("/", 1)[-1]
++        self.label(x + 5, y + 6, name, 17, "accent" if local else "fg", width - 9, "mono")
++        if local or peer:
++            self.logo(right - 23, y + 2, 22, peer)
++        elif width >= 72:
++            _, _, ink, device = self.port_identity(row)
++            if device:
++                tail = text(device.get("mac")).replace(":", "")[-4:].upper()
++                if tail:
++                    if width >= 80 and device.get("state") in ("ok", "recognized"):
++                        self.mark(
++                            right - 51,
++                            y + 9,
++                            "shield" if device.get("state") == "recognized" else "check",
++                            12,
++                            ink,
++                        )
++                    self.label(right - 36, y + 9, tail, 12, ink, 35, "mono")
++        link, _, link_ink = port_link(row)
++        for dy, label, ink, symbol in (
++            (31, link, link_ink, "Ports" if row.get("link_up") is True else "down"),
++            (54, power, "warn" if power_ink == "good" else power_ink, "bolt"),
++        ):
++            if width >= 62:
++                caption = fit(label, font(15, "bold"), width - 25)
++                icon_caption(
++                    self.draw, x + 5, y + dy + 7, symbol, caption, self.c[ink], self.c[ink], 14, 15, 3
++                )
++            else:
++                centered(
++                    self.draw,
++                    (x + 2, y + dy - 4, right - 2, y + dy + 17),
++                    fit(label, font(14, "bold"), width - 4),
++                    font(14, "bold"),
++                    self.c[ink],
++                )
++        self.targets.append((box, ("row", row.get("pin") or row.get("name"))))
++
++    def connections(self, rows, multiple):
++        self.card((18, 135, 781, 167 + 56 * max(1, min(4, len(rows)))))
++        for x, caption in ((31, "Port"), (132, "Device"), (511, "Ethernet"), (645, "PoE")):
++            self.label(x, 145, caption, 14, "muted", 115, "bold")
++        if not rows:
++            self.label(32, 185, "No connected ports", 18, "muted")
++        for i, row in enumerate(rows[self.offset : self.offset + 4]):
++            y = 168 + i * 56
++            self.draw.line((19, y, 780, y), fill=self.c["line"])
++            name, role, ink, _ = self.port_identity(row)
++            self.label(31, y + 10, row["portname"], 16, width=96, weight="mono")
++            if multiple:
++                self.label(31, y + 34, row["name"].rsplit(" ", 1)[0], 13, "muted", 96)
++            self.label(132, y + 9, name, 18, width=368, weight="mono")
++            if role:
++                self.label(133, y + 33, role, 14, ink, 360, "bold")
++            link, _, lk = port_link(row)
++            power, _, pk = port_power(row)
++            self.mark(510, y + 20, "Ports" if row.get("link_up") is True else "down", 16, lk)
++            self.label(533, y + 19, link, 16, lk, 90, "bold")
++            self.mark(645, y + 19, "bolt", 16, "warn" if pk == "good" else pk)
++            self.label(666, y + 19, power, 16, "warn" if pk == "good" else pk, 82, "bold")
++            self.mark(758, y + 19, "next", 15)
++            self.targets.append(((19, y, 780, y + 55), ("row", row["pin"])))
 +
 +    def station(self):
-+        p = self.panel
-+        st = p.data.get("station")
-+        self.title("Station", text(p.data.get("app_version")).split(" · ")[0])
-+        if not isinstance(st, dict):
-+            self.label(26, 170, "Waiting for station data", 22, "muted")
-+            return
-+        up = st.get("uplink")
-+        up = up if isinstance(up, dict) else {}
-+        self.card((20, 127, 370, 347))
-+        self.mark(40, 145, "wifi" if up.get("state") == "wifi" else "Ports", 22, "accent")
-+        self.label(73, 148, "Management uplink", 18, "muted", 275, "bold")
-+        self.label(
-+            40, 192, up.get("ssid") or up.get("device") or "Disconnected", 30, width=310, weight="bold"
-+        )
-+        self.label(
-+            40,
-+            241,
-+            up.get("address") or st.get("management") or "No IP address",
-+            20,
-+            width=310,
-+            weight="mono",
-+        )
-+        facts = [text(up.get("device")), text(up.get("band"))]
-+        if number(up.get("signal"), None) is not None:
-+            facts.append(f"{int(up['signal'])} dBm")
-+        elif up.get("speed"):
-+            facts.append(compact.link_speed(up.get("speed")))
-+        self.label(40, 289, "  ·  ".join(s for s in facts if s), 17, "muted", 309)
-+        self.card((383, 127, 779, 347))
-+        self.label(403, 146, "Station health", 20, width=330, weight="bold")
-+        health = compact.station_rows(p, st)
-+        self.pager(len(health), 5)
-+        for i, (key, label, value) in enumerate(health[self.offset : self.offset + 5]):
-+            y = 193 + i * 29
-+            self.draw.ellipse((405, y + 4, 412, y + 11), fill=self.c[key])
-+            self.label(426, y, "  ".join(v for v in (label, value) if v), 17, width=329)
-+        if p.rescue_available():
-+            self.button((20, 355, 370, 401), "Rescue Wi-Fi access", ("key", "CENTER"), True)
++        station_view.show(self)
 +
 +    def port_device(self, port):
 +        serials = port.get("serials")
@@ -17517,6 +17693,57 @@ index 0000000..106f2f7
 +            return next((d for d in self.modules() if d.get("serial") in serials), None)
 +        others = objects(self.panel.data.get("recognized")) + objects(self.panel.data.get("unknown"))
 +        return next((d for d in others if port.get("name") == d.get("port")), None)
++
++    def port_detail(self, row):
++        p = self.panel
++        switch_index = int(row["pin"].partition(":")[0])
++        switch = p.map_view()[switch_index]
++        self.label(20, 76, row.get("portname") or row.get("name"), 30, width=400, weight="bold")
++        self.label(21, 111, switch["name"], 15, "muted", 740)
++        if not switch["answering"]:
++            self.label(34, 165, "Switch not responding", 22, "warn")
++            return
++        link, link_detail, link_ink = port_link(row)
++        power, power_detail, power_ink = port_power(row)
++        for left, right, title, symbol, value, detail, ink in (
++            (18, 392, "Ethernet link", "Ports", link, link_detail, link_ink),
++            (
++                402,
++                781,
++                "PoE power",
++                "bolt",
++                power,
++                power_detail,
++                "warn" if power_ink == "good" else power_ink,
++            ),
++        ):
++            self.card((left, 139, right, 263))
++            self.mark(left + 16, 155, symbol, 20, ink)
++            self.label(left + 44, 158, title, 17, "muted", right - left - 58, "bold")
++            self.label(left + 16, 186, value, 27, ink, right - left - 28, "bold")
++            self.label(left + 16, 234, detail, 16, "muted", right - left - 28)
++        self.card((18, 276, 781, 392))
++        name, role, ink, device = self.port_identity(row)
++        is_station = row.get("server") or isinstance(row.get("station"), dict)
++        if is_station:
++            self.logo(33, 306, 40, not row.get("server"))
++        else:
++            self.mark(40, 312, "Devices", 27)
++        self.label(87, 289, "Connected device", 15, "muted", 365, "bold")
++        self.label(87, 315, name, 22, width=505, weight="mono" if device or is_station else "bold")
++        info = row.get("station") if isinstance(row.get("station"), dict) else {}
++        description = (
++            text(device.get("mac"))
++            if device
++            else " · ".join(text(info.get(k)) for k in ("address", "version") if text(info.get(k)))
++        )
++        if description:
++            self.label(87, 354, description, 16, "muted", 581)
++        if role:
++            self.pill(749 - self.pill_width(role), 300, role, ink)
++        if device:
++            self.mark(755, 326, "next", 16)
++            self.targets.append(((18, 276, 781, 392), ("port_device", identity(device))))
 +
 +    def details(self):
 +        p = self.panel
@@ -17527,73 +17754,49 @@ index 0000000..106f2f7
 +            self.title(kind + " details")
 +            self.label(25, 167, kind + " is no longer present", 23, "muted")
 +            return
-+        name = (row.get("portname") if is_port else row.get("hostname")) or row.get("name") or identity(row)
-+        self.title(name)
 +        if is_port:
-+            switch_index = int(row["pin"].partition(":")[0])
-+            if not p.map_view()[switch_index]["answering"]:
-+                self.label(38, 149, "Switch not responding", 22, "warn")
-+                return
++            self.port_detail(row)
++            return
++        self.title(row.get("hostname") or row.get("name") or identity(row))
 +        self.card((20, 128, 370, 344))
 +        self.card((383, 128, 779, 344))
-+        if is_port:
-+            key, word = compact.port_state(row, None)
-+            key = "muted" if key == "dim" or isinstance(row.get("station"), dict) else key
-+            self.label(40, 150, "Port", 17, "muted")
-+            if row.get("state") != "free":
-+                self.badge(349, 145, word, key if key in self.c else "muted")
-+            facts = [
-+                ("Link", port_link(row)[1]),
-+                ("PoE", port_power(row)[1]),
-+            ]
-+            desc = row.get("station") if isinstance(row.get("station"), dict) else {}
-+            lines = [text(desc.get(k)) for k in ("name", "description", "address", "host", "version")]
-+            if row.get("server"):
-+                lines.insert(0, "This provisioning station")
-+            device = self.port_device(row)
-+            if device:
-+                lines.extend(text(device.get(k)) for k in ("hostname", "name", "detail", "mac"))
-+                self.button((345, 355, 481, 401), "View device", ("port_device", identity(device)), True)
-+            lines = list(dict.fromkeys(s for s in lines if s)) or ["No device identified"]
-+            right_title = "Connected device"
-+        else:
-+            key, word = compact.STATE.get(text(row.get("state")), ("muted", "UNKNOWN"))
-+            self.label(40, 150, "Provisioning", 17, "muted")
-+            self.badge(349, 145, word, "muted" if key == "dim" else key)
-+            facts = [
-+                ("Port", compact.short_port(row)),
-+                ("MAC", text(row.get("mac"))),
-+                ("Serial", text(row.get("serial"))),
-+            ]
-+            cycle = number(row.get("cycle"), None)
-+            if cycle is not None and cycle >= 0:
-+                mins, secs = divmod(int(cycle), 60)
-+                facts.append(("Cycle", f"{mins}:{secs:02d}"))
-+            elif row.get("cycle"):
-+                facts.append(("Cycle", text(row["cycle"])))
-+            right_title = "Hardware & diagnostics"
-+            lines = hardware_lines(row)
-+            diag = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
-+            issues = objects(diag.get("issues"), 8)
-+            extra = [row.get("reason"), row.get("cause"), row.get("detail"), row.get("advice")]
-+            if row.get("code"):
-+                extra.append("Code " + text(row["code"]))
-+            for issue in issues:
-+                extra.extend((issue.get("title"), issue.get("advice")))
-+            if row.get("flashed_by"):
-+                extra.append("Flashed by " + text(row["flashed_by"]))
-+            details = list(dict.fromkeys(text(v) for v in extra if text(v)))
-+            lines = (details + lines if word in ("FAILED", "SILENT") else lines + details) or [
-+                "No hardware report yet"
-+            ]
-+            if row.get("state") == "run" and number(row.get("percent"), None) is not None:
-+                frac = max(0, min(100, number(row["percent"])))
-+                self.label(40, 314, f"{int(frac)}%", 15, "run")
-+                self.draw.rounded_rectangle((96, 320, 347, 325), 3, fill=self.c["line"])
-+                if frac:
-+                    self.draw.rounded_rectangle(
-+                        (96, 320, 96 + round(frac * 2.51), 325), 3, fill=self.c["run"]
-+                    )
++        key, word = compact.STATE.get(text(row.get("state")), ("muted", "UNKNOWN"))
++        self.label(40, 150, "Provisioning", 17, "muted")
++        self.badge(349, 145, word, "muted" if key == "dim" else key)
++        facts = [
++            ("Port", compact.short_port(row)),
++            ("MAC", text(row.get("mac"))),
++            ("Serial", text(row.get("serial"))),
++        ]
++        cycle = number(row.get("cycle"), None)
++        if cycle is not None and cycle >= 0:
++            mins, secs = divmod(int(cycle), 60)
++            facts.append(("Cycle", f"{mins}:{secs:02d}"))
++        elif row.get("cycle"):
++            facts.append(("Cycle", text(row["cycle"])))
++        right_title = "Hardware & diagnostics"
++        lines = hardware_lines(row)
++        diag = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
++        issues = objects(diag.get("issues"), 8)
++        extra = [row.get("reason"), row.get("cause"), row.get("detail"), row.get("advice")]
++        if row.get("code"):
++            extra.append("Code " + text(row["code"]))
++        for issue in issues:
++            extra.extend((issue.get("title"), issue.get("advice")))
++        if row.get("flashed_by"):
++            extra.append("Flashed by " + text(row["flashed_by"]))
++        details = list(dict.fromkeys(text(v) for v in extra if text(v)))
++        lines = (details + lines if word in ("FAILED", "SILENT") else lines + details) or [
++            "No hardware report yet"
++        ]
++        if row.get("state") == "run" and number(row.get("percent"), None) is not None:
++            frac = max(0, min(100, number(row["percent"])))
++            self.label(40, 314, f"{int(frac)}%", 15, "run")
++            self.draw.rounded_rectangle((96, 320, 347, 325), 3, fill=self.c["line"])
++            if frac:
++                self.draw.rounded_rectangle(
++                    (96, 320, 96 + round(frac * 2.51), 325), 3, fill=self.c["run"]
++                )
 +        for i, (label, value) in enumerate((v for v in facts if v[1])):
 +            y = 194 + i * 30
 +            self.label(40, y, label, 16, "muted", 76)
@@ -17606,19 +17809,43 @@ index 0000000..106f2f7
 +        for i, line in enumerate(wrapped[self.offset : self.offset + 5]):
 +            self.label(403, 190 + i * 28, line, 18, width=351)
 +        if self.history:
-+            page, detail, _ = self.history[-1]
++            page, detail, _, _ = self.history[-1]
 +            self.label(24, 372, "Back to " + ("port" if detail else PAGES[page]), 16, "muted", 308)
 +            self.targets.append(((20, 352, 326, 402), ("key", "KEY2")))
 +
 +    def system(self, stage):
 +        menu = self.panel.power_menu
-+        self.title({"timeout": "Screen timeout", "appearance": "Appearance"}.get(stage.removesuffix("_error"), "System"))
++        self.title(
++            {"timeout": "Screen timeout", "appearance": "Appearance"}.get(
++                stage.removesuffix("_error"), "System"
++            )
++        )
 +        if stage == "menu":
-+            for i, (label, entry) in enumerate(
-+                [("Appearance", 3), ("Screen timeout", 4), ("Restart station", 1), ("Shut down station", 2)]
-+            ):
-+                y = 128 + i * 72
-+                self.button((22, y, 466, y + 62), label, ("system", entry))
++            display_values = {
++                3: self.panel.requested_color_mode().title(),
++                4: timeout_label(self.panel.screen_timeout()),
++            }
++            groups = (
++                (18, 392, "Display", (("Appearance", "Station", 3), ("Screen timeout", "clock", 4))),
++                (402, 781, "Station power", (("Restart", "restart", 1), ("Shut down", "power", 2))),
++            )
++            for x, right, title, items in groups:
++                self.card((x, 136, right, 332))
++                self.label(x + 16, 151, title, 17, "muted", right - x - 30, "bold")
++                for i, (label, symbol, entry) in enumerate(items):
++                    top = 184 + i * 68
++                    if i:
++                        self.draw.line((x + 16, top, right - 16, top), fill=self.c["line"])
++                    ink = "bad" if entry == 2 else "fg"
++                    self.mark(x + 16, top + 21, symbol, 20, ink)
++                    self.label(x + 46, top + 21, label, 18, ink, right - x - 143, "bold")
++                    if entry in display_values:
++                        value = display_values[entry]
++                        self.label(
++                            right - 35 - round(font(15).getlength(value)), top + 23, value, 15, "muted", 110
++                        )
++                    self.mark(right - 29, top + 23, "next", 16)
++                    self.targets.append(((x + 2, top, right - 2, top + 65), ("system", entry)))
 +        elif stage == "appearance":
 +            self.label(24, 139, "Color mode", 19, "muted")
 +            for i, mode in enumerate(COLOR_MODES):
@@ -17631,7 +17858,12 @@ index 0000000..106f2f7
 +        elif stage == "timeout":
 +            for i, seconds in enumerate(SCREEN_TIMEOUTS):
 +                x, y = 24 + i % 3 * 250, 139 + i // 3 * 77
-+                self.button((x, y, x + 230, y + 61), timeout_label(seconds), ("timeout", seconds), seconds == menu.timeout_seconds)
++                self.button(
++                    (x, y, x + 230, y + 61),
++                    timeout_label(seconds),
++                    ("timeout", seconds),
++                    seconds == menu.timeout_seconds,
++                )
 +            if menu.timeout_saved:
 +                self.label(24, 385, "Saved", 19, "good")
 +        else:
@@ -17965,10 +18197,10 @@ index 0000000..6cdd901
 +            self.front = None
 diff --git a/tests/test_hyperpixel.py b/tests/test_hyperpixel.py
 new file mode 100755
-index 0000000..8d3b23c
+index 0000000..bb67cd1
 --- /dev/null
 +++ b/tests/test_hyperpixel.py
-@@ -0,0 +1,343 @@
+@@ -0,0 +1,495 @@
 +from types import SimpleNamespace
 +import pytest
 +from PIL import Image, ImageDraw
@@ -18214,6 +18446,7 @@ index 0000000..8d3b23c
 +    shown = []
 +    monkeypatch.setattr(menu, "label", lambda x, y, value, *a, **kw: shown.append(value))
 +    monkeypatch.setattr(touch, "centered", lambda draw, box, value, *a: shown.append(value))
++    monkeypatch.setattr(touch, "icon_caption", lambda draw, x, y, symbol, value, *a: shown.append(value))
 +
 +    def open_target(action):
 +        (left, top, right, bottom) = next(box for box, target in menu.targets if target == action)
@@ -18312,18 +18545,169 @@ index 0000000..8d3b23c
 +    assert panel.detail == ("port", "0:Gi0/48")
 +    tap(("key", "KEY2"))
 +    assert panel.detail is None and menu.offset == 1
++
++
++@pytest.mark.parametrize("mode", ["light","dark"])
++def test_counter_icon_and_caption_share_their_visible_vertical_center(mode):
++    from PIL import ImageChops
++    from fpms.integrations.cmprovision_touch import COUNTERS
++    from fpms.integrations.cmprovision_touch_style import DARK, LIGHT, icon_caption
++
++    colors = LIGHT if mode == "light" else DARK
++    for _, _, title, symbol, ink in COUNTERS:
++        im = Image.new("RGB", (160, 42), colors["surface"])
++        icon_caption(ImageDraw.Draw(im), 5, 21, symbol, title, colors[ink], colors["fg"])
++        visible = ImageChops.difference(im, Image.new("RGB", im.size, colors["surface"])).convert("L")
++        visible = visible.point(lambda n: 255 if n > 35 else 0)
++        a = visible.crop((0, 0, 29, 42)).getbbox()
++        b = visible.crop((32, 0, 160, 42)).getbbox()
++        assert a and b and abs((a[1] + a[3]) - (b[1] + b[3])) <= 2, (title, a, b)
++
++
++def test_large_batch_pages_filters_and_back_keep_the_selected_board(tmp_path):
++    p = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    p.enabled, p.age = True, 1
++    modules = [
++        {
++            "serial": str(i),
++            "name": f"sensor-{i}",
++            "port": f"sw Gi0/{i}",
++            "state": "run" if i % 2 else "ok",
++            "phase": "install",
++            "percent": 45,
++        }
++        for i in range(1, 15)
++    ]
++    p.data = {"modules": modules, "counts": {"running": 7, "done": 7}}
++    menu = TouchMenu(p)
++
++    def tap(action):
++        box = next(box for box, candidate in menu.targets if candidate == action)
++        menu.tap((box[0] + box[2]) // 2, (box[1] + box[3]) // 2)
++        menu.frame()
++
++    menu.frame()
++    assert [v for _, (k, v) in menu.targets if k == "device"] == [str(i) for i in range(1, 7)]
++    tap(("offset", 6))
++    tap(("offset", 12))
++    tap(("device", "14"))
++    assert p.detail == ("module", "14")
++    tap(("key", "KEY2"))
++    assert p.page == 0 and menu.offset == 12
++    tap(("filter", "run"))
++    assert [v for _, (k, v) in menu.targets if k == "row"] == ["1", "3", "5", "7"]
++    tap(("offset", 4))
++    tap(("row", "13"))
++    tap(("key", "KEY2"))
++    assert menu.filter_state == "run" and menu.offset == 4
++    tap(("key", "KEY2"))
++    assert p.page == 0 and menu.offset == 12
++    tap(("filter", "fail"))
++    assert not any(action[0] == "row" for _, action in menu.targets)
++    tap(("page", 2))
++    assert menu.filter_state is None
++
++
++def test_station_named_services_quality_and_unknown_measurements(tmp_path, monkeypatch):
++    from fpms.integrations import cmprovision_touch_station as station
++
++    p = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    p.page, p.enabled, p.age = 4, True, 1
++    names = ["queue", "image queue", "USB diagnostics", "dnsmasq", "rpiboot", "Wi-Fi spare"]
++    st = {
++        "uplink": {"state": "wifi", "ssid": "78", "signal": -52, "rate": 173, "device": "wlan1"},
++        "services": {"up": 0, "stopped": names[:3], "disabled": names[3:]},
++        "storage": "0.8 GiB free",
++        "storage_low": True,
++    }
++    p.data = {"station": st}
++    menu = TouchMenu(p)
++    pills = []
++    original = menu.pill
++
++    def record(x, y, title, color="muted", symbol=None):
++        right = original(x, y, title, color, symbol)
++        pills.append((title, color, (x, y, right, y + 24)))
++        return right
++
++    monkeypatch.setattr(menu, "pill", record)
++    menu.frame()
++    for i, name in enumerate(names):
++        badge = name + (" stopped" if i < 3 else " disabled")
++        key, box = next((k, b) for t, k, b in pills if t == badge)
++        assert key == ("bad" if i < 3 else "muted")
++        assert 18 <= box[0] < box[2] <= 781 and 285 < box[1] < box[3] <= 408
++    assert any(t == "Disk low · 0.8 GiB free" and k == "warn" for t, k, _ in pills)
++    assert station.uplink(st)[-1] == [("RSSI", "−52 dBm", "good"), ("TX data rate", "173 Mb/s", "fg")]
++    assert [station.signal(n) for n in (-55, -67, -75, -82, -83)] == [
++        ("Excellent", "good", "signal-3"),
++        ("Good", "good", "signal-3"),
++        ("Fair", "warn", "signal-2"),
++        ("Weak", "bad", "signal-1"),
++        ("Weak", "bad", "signal-0"),
++    ]
++    st["uplink"] = {"state": "wifi", "ssid": "Still connected"}
++    assert station.uplink(st)[:2] == (("Unmeasured", "muted", "signal-unknown"), "Still connected")
++    assert station.uplink(st)[-1][1][1] == "—"
++    assert station.service_chips({}) == [("Services unknown", "muted", "services")]
++
++
++def test_connected_ports_include_power_without_carrier_and_use_stable_pin(tmp_path):
++    p = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    p.page, p.enabled, p.age = 1, True, 1
++    p.data = {
++        "host": "d62",
++        "switches": [
++            {
++                "name": "sw",
++                "blocks": [
++                    {
++                        "rows": 2,
++                        "ports": [
++                            {
++                                "name": "Gi0/1",
++                                "link_up": False,
++                                "poe_state": "delivering",
++                                "watts": 2.4,
++                                "state": "free",
++                            },
++                            {"name": "Gi0/2", "link_up": False, "poe_state": "searching", "state": "free"},
++                            {"name": "Gi0/7", "server": True, "state": "uplink"},
++                            {"name": "Gi0/8", "station": {"name": "da2"}, "state": "uplink"},
++                        ],
++                    }
++                ],
++            }
++        ],
++    }
++    menu = TouchMenu(p)
++
++    def tap(action):
++        box = next(box for box, a in menu.targets if a == action)
++        menu.tap((box[0] + box[2]) // 2, (box[1] + box[3]) // 2)
++        menu.frame()
++
++    menu.frame()
++    tap(("port_mode", "list"))
++    assert [a[1] for _, a in menu.targets if a[0] == "row"] == ["0:Gi0/1", "0:Gi0/7", "0:Gi0/8"]
++    assert menu.port_identity(p.rows()[2])[:3] == ("d62", "This station", "accent")
++    assert menu.port_identity(p.rows()[3])[:3] == ("da2", "Other station", "muted")
++    tap(("row", "0:Gi0/1"))
++    assert p.detail == ("port", "0:Gi0/1")
++    tap(("key", "KEY2"))
++    assert menu.port_mode == "list"
 diff --git a/fpms/integrations/cmprovision_touch_style.py b/fpms/integrations/cmprovision_touch_style.py
 new file mode 100644
-index 0000000..34ff4cf
+index 0000000..f37ff68
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_touch_style.py
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,282 @@
 +"""Drawing primitives for the 800 × 480 cmprovision touch panel."""
 +
 +from functools import lru_cache
 +from pathlib import Path
 +
-+from PIL import Image, ImageDraw, ImageFont
++from PIL import Image, ImageColor, ImageDraw, ImageFont
 +
 +from .cmprovision import text
 +
@@ -18392,7 +18776,66 @@ index 0000000..34ff4cf
 +        draw.bitmap((x, y), ink, fill=color)
 +
 +
-+@lru_cache(maxsize=32)
++@lru_cache(maxsize=96)
++def caption_masks(symbol, title, icon_size, text_size):
++    """Centre the actual ink of both shapes. An SVG view box and a font line box have different bearings."""
++    face = font(text_size, "bold")
++    bounds = face.getbbox(title)
++    letters = Image.new("L", (bounds[2] - bounds[0], bounds[3] - bounds[1]))
++    ImageDraw.Draw(letters).text((-bounds[0], -bounds[1]), title, font=face, fill=255)
++    result = []
++    for mask in (icon(symbol, icon_size), letters):
++        visible = mask.point(lambda alpha: 255 if alpha >= 48 else 0).getbbox()
++        result.append((mask, (visible[1] + visible[3] - 1) / 2))
++    return result
++
++
++def icon_caption(draw, x, center_y, symbol, title, symbol_ink, text_ink, icon_size=21, text_size=18, gap=7):
++    for (mask, middle), left, ink in zip(
++        caption_masks(symbol, title, icon_size, text_size), (x, x + icon_size + gap), (symbol_ink, text_ink)
++    ):
++        draw.bitmap((left, round(center_y - middle)), mask, fill=ink)
++
++
++@lru_cache(maxsize=12)
++def brand(size, variant):
++    """The 48-unit application-mark.blade.php centreline, sampled at 1.6 units before antialiasing."""
++    a, b, ink = {
++        "light": ("#ffd37a", "#e2681c", "#2a1a0c"),
++        "dark": ("#ffe3b8", "#e9a661", "#2a1a0c"),
++        "peer": ("#a59b90", "#8f857b", "#231f1c"),
++    }[variant]
++    a, b = ImageColor.getrgb(a), ImageColor.getrgb(b)
++    side = 144
++    tile = Image.new("RGBA", (side, side))
++    draw = ImageDraw.Draw(tile)
++    for i in range(side * 2):
++        t = min(1, max(0, (i - 12) / 264))
++        rgb = tuple(round(c + (d - c) * t) for c, d in zip(a, b))
++        draw.line((i, 0, 0, i), fill=rgb)
++    mask = Image.new("L", tile.size)
++    ImageDraw.Draw(mask).rounded_rectangle((6, 6, 137, 137), radius=39, fill=255)
++    tile.putalpha(mask)
++    # fmt: off
++    paths = (
++        ((19.6,18.5),(18.1,18.2),(16.5,18.3),(15,18.7),(13.7,19.5),(12.6,20.7),
++         (11.8,22),(11.4,23.5),(11.4,25.1),(11.9,26.6),(12.6,28),(13.7,29.1),
++         (15.1,29.9),(16.6,30.3),(18.2,30.4),(19.7,30.2),(21.2,29.6),(22.4,28.7),
++         (23.3,27.4),(23.6,25.9),(23.7,24.3),(23.7,21.2),(24,19.7),(25,18.5),
++         (26.5,18),(28,18.3),(29.2,19.3),(29.7,20.8),(29.7,30.2)),
++        ((29.7,21),(30.1,19.5),(31.2,18.4),(32.6,18),(34.1,18.3),(35.2,19.4),
++         (35.7,20.9),(35.7,30.2)),
++    )
++    # fmt: on
++    for path in paths:
++        points = [(round(x * 3), round(y * 3)) for x, y in path]
++        draw.line(points, fill=ink, width=11, joint="curve")
++        for x, y in (points[0], points[-1]):
++            draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=ink)
++    return tile.resize((size, size), Image.Resampling.LANCZOS)
++
++
++@lru_cache(maxsize=72)
 +def icon(name, size):
 +    scale = 3
 +    mask = Image.new("L", (24 * scale, 24 * scale))
@@ -18439,6 +18882,43 @@ index 0000000..34ff4cf
 +            box(knob - 2, y - 2, 4, 4)
 +    elif name == "next":
 +        line((9, 5), (16, 12), (9, 19))
++    elif name == "back":
++        line((15, 5), (8, 12), (15, 19))
++    elif name == "activity":
++        line((2, 12), (7, 12), (10, 4), (14, 20), (17, 12), (22, 12))
++    elif name == "check":
++        line((3, 13), (9, 18), (21, 5))
++    elif name == "clock":
++        d.ellipse((3 * scale, 3 * scale, 21 * scale, 21 * scale), outline=255, width=2 * scale)
++        line((12, 7), (12, 12), (16, 14))
++    elif name == "bolt":
++        line((14, 2), (5, 14), (11, 14), (10, 22), (20, 10), (14, 10), (14, 2))
++    elif name == "down":
++        line((3, 3), (21, 21))
++        line((3, 8), (3, 15), (8, 15), (8, 20), (16, 20))
++        line((9, 4), (21, 4), (21, 14))
++    elif name == "disk":
++        box(3, 5, 18, 14)
++        line((4, 13), (20, 13))
++        line((16, 16), (18, 16))
++    elif name == "pause":
++        line((8, 4), (8, 20))
++        line((16, 4), (16, 20))
++    elif name == "services":
++        box(3, 4, 18, 6)
++        box(3, 14, 18, 6)
++    elif name == "restart":
++        d.arc((3 * scale, 3 * scale, 21 * scale, 21 * scale), -45, 270, fill=255, width=2 * scale)
++        line((3, 3), (3, 9), (9, 9))
++    elif name == "power":
++        d.arc((3 * scale, 4 * scale, 21 * scale, 22 * scale), -52, 232, fill=255, width=2 * scale)
++        line((12, 2), (12, 12))
++    elif name == "shield":
++        line((12, 2), (20, 6), (19, 13), (16, 18), (12, 21), (8, 18), (5, 13), (4, 6), (12, 2))
++    elif name == "list":
++        for y in (6, 12, 18):
++            line((3, y), (5, y))
++            line((9, y), (21, y))
 +    elif name == "wifi":
 +        for coords in (
 +            ((2, 8), (6, 5), (12, 4), (18, 5), (22, 8)),
@@ -18447,6 +18927,27 @@ index 0000000..34ff4cf
 +            ((11, 19), (13, 19)),
 +        ):
 +            line(*coords)
++    elif name.startswith("signal-"):
++        unknown = name == "signal-unknown"
++        arcs = 0 if unknown else int(name[-1])
++        for i, points in enumerate(
++            (
++                ((8, 15), (10, 14), (12, 13.6), (14, 14), (16, 15)),
++                ((5, 12), (8, 10), (12, 9), (16, 10), (19, 12)),
++                ((2, 8), (6, 5.5), (12, 4), (18, 5.5), (22, 8)),
++            )
++        ):
++            d.line(
++                [(x * scale, y * scale) for x, y in points],
++                fill=255 if i < arcs else 48,
++                width=2 * scale,
++                joint="curve",
++            )
++        if unknown:
++            line((10, 16), (11, 15), (13, 15), (14, 16), (13, 17), (12, 18))
++            line((12, 20), (12, 21))
++        else:
++            d.ellipse((10.7 * scale, 17.7 * scale, 13.3 * scale, 20.3 * scale), fill=255)
 +    return mask.resize((size, size), Image.Resampling.LANCZOS)
 +
 +
@@ -18483,3 +18984,269 @@ index 0000000..34ff4cf
 +    if line:
 +        lines.append(line)
 +    return lines
+diff --git a/fpms/integrations/cmprovision_touch_station.py b/fpms/integrations/cmprovision_touch_station.py
+new file mode 100644
+index 0000000..ca91bd7
+--- /dev/null
++++ b/fpms/integrations/cmprovision_touch_station.py
+@@ -0,0 +1,260 @@
++"""Network and service status on the 800 × 480 panel, from the shared station snapshot."""
++
++from .cmprovision import number, objects, text
++from .cmprovision_rescue import info as rescue_info
++from .cmprovision_touch_style import fit, font, wrap
++
++
++def signal(dbm):
++    # Same thresholds and lit arcs as the web uplink (WifiLink::quality and ::arcs).
++    if dbm is None:
++        return "Unmeasured", "muted", "signal-unknown"
++    if dbm >= -55:
++        return "Excellent", "good", "signal-3"
++    if dbm >= -67:
++        return "Good", "good", "signal-3"
++    if dbm >= -75:
++        return "Fair", "warn", "signal-2"
++    return "Weak", "bad", "signal-1" if dbm >= -82 else "signal-0"
++
++
++def speed(mbps):
++    value = number(mbps, None)
++    if value is None or value <= 0:
++        return "—"
++    return f"{value/1000:g} Gb/s" if value >= 1000 else f"{value:g} Mb/s"
++
++
++def uplink(st):
++    up = st.get("uplink")
++    up = up if isinstance(up, dict) else {}
++    state = up.get("state")
++    dev, addr = text(up.get("device")), text(up.get("address") or st.get("management"))
++    if state == "wifi":
++        dbm, rate = number(up.get("signal"), None), number(up.get("rate"), None)
++        quality = signal(dbm)
++        metrics = [
++            ("RSSI", f"{dbm:g} dBm".replace("-", "−") if dbm is not None else "—", quality[1]),
++            ("TX data rate", f"{rate:g} Mb/s" if rate is not None and rate >= 0 else "—", "fg"),
++        ]
++        return (
++            quality,
++            text(up.get("ssid")) or "Wi-Fi connected",
++            " · ".join(filter(None, (dev, text(up.get("band"))))),
++            addr,
++            metrics,
++        )
++    if state == "wired":
++        return (
++            ("Up", "good", "Ports"),
++            dev or "Ethernet",
++            "Ethernet",
++            addr,
++            [("Link speed", speed(up.get("speed")), "fg")],
++        )
++    if state in ("wifi_down", "none"):
++        return (
++            ("Offline", "warn", "down"),
++            dev or "No uplink",
++            "Wi-Fi" if state == "wifi_down" else "",
++            "",
++            [("Link state", "Disconnected", "muted")],
++        )
++    return (
++        ("Unknown", "muted", "Ports"),
++        dev or "No reading",
++        "",
++        addr,
++        [("Link state", "Unknown", "muted")],
++    )
++
++
++def stand_link(st):
++    link = next((r for r in objects(st.get("links")) if r.get("role") == "stand"), {})
++    name, up = text(link.get("name")), link.get("up")
++    if not link:
++        legacy = text(st.get("provisioning")).rsplit(" ", 1)
++        if len(legacy) == 2 and legacy[1] in ("up", "down"):
++            name, up = legacy[0], legacy[1] == "up"
++    badge = (
++        ("Up", "good", "Ports")
++        if up is True
++        else ("Down", "warn", "down") if up is False else ("Unknown", "muted", "Ports")
++    )
++    return (
++        badge,
++        name or "No interface",
++        "Ethernet" if name else "",
++        text(link.get("address")),
++        [("Link speed", speed(link.get("speed")) if up is True else "—", "fg")],
++    )
++
++
++def service_chips(st):
++    units = st.get("services")
++    if not isinstance(units, dict) or not isinstance(units.get("stopped"), list):
++        return [("Services unknown", "muted", "services")]
++    stopped = [text(n) for n in units["stopped"][:64] if text(n)]
++    disabled = units.get("disabled")
++    disabled = [text(n) for n in disabled[:64] if text(n)] if isinstance(disabled, list) else []
++    up = number(units.get("up"), None)
++    result = [(name + " stopped", "bad", "Errors") for name in stopped]
++    if not stopped and (up or not disabled):
++        label = (
++            "Services unknown" if up is None else f"{int(up)} service" + ("" if up == 1 else "s") + " up"
++        )
++        result.append((label, "good" if up else "muted", "check" if up else "services"))
++    result.extend((name + " disabled", "muted", "pause") for name in disabled)
++    return result
++
++
++def network_card(menu, box, title, fields):
++    status, name, context, address, metrics = fields
++    x, y, right, bottom = box
++    menu.card(box)
++    left, edge = x + 16, right - 16
++    badge_x = edge - menu.pill_width(status[0], status[2])
++    menu.label(left, y + 17, title, 16, "muted", badge_x - left - 6, "bold")
++    menu.pill(badge_x, y + 12, *status)
++    # The network identity and the address stay together when service warnings wrap below.
++    net_y = y + (bottom - y - 48) // 2 - 9
++    name = fit(name, font(27, "bold"), edge - left)
++    menu.label(left, net_y, name, 27, width=edge - left, weight="bold")
++    after = left + round(font(27, "bold").getlength(name)) + 10
++    if context and after + 22 < edge:
++        menu.label(after, net_y + 9, context, 15, "muted", edge - after)
++    menu.label(left, net_y + 32, address or "No IP address", 17, width=edge - left, weight="mono")
++    menu.draw.line((left, bottom - 58, edge, bottom - 58), fill=menu.c["line"])
++    mx = left
++    for i, (label, value, ink) in enumerate(metrics):
++        menu.label(mx, bottom - 49, label, 14, "muted", edge - mx, "bold")
++        menu.label(mx, bottom - 28, value, 18, ink, edge - mx, "mono")
++        if i + 1 < len(metrics):
++            mx += max(110, round(font(18, "mono").getlength(value)) + 30)
++            menu.draw.line((mx - 10, bottom - 46, mx - 10, bottom - 12), fill=menu.c["line"])
++
++
++def show(menu):
++    panel = menu.panel
++    st = panel.data.get("station")
++    menu.label(19, 76, "Station", 30, width=330, weight="bold")
++    if not isinstance(st, dict):
++        menu.label(24, 165, "Waiting for station data", 22, "muted")
++        return
++    packed = [[]]
++    x = 33
++    chips = service_chips(st)
++    for i, (caption, ink, symbol) in enumerate(chips):
++        caption = fit(caption, font(14, "bold"), 385)
++        width = menu.pill_width(caption, symbol)
++        if x + width > 767:
++            if len(packed) == 2:
++                remaining = len(chips) - i
++                while packed[-1] and x + menu.pill_width(f"+{remaining} more") > 767:
++                    x = packed[-1].pop()[0]
++                    remaining += 1
++                packed[-1].append((x, f"+{remaining} more", "muted", None))
++                break
++            packed.append([])
++            x = 33
++        packed[-1].append((x, caption, ink, symbol))
++        x += width + 6
++    top = 331 - 28 * (len(packed) - 1)
++    network_card(menu, (18, 116, 464, top - 11), "Management uplink", uplink(st))
++    network_card(menu, (475, 116, 781, top - 11), "Stand link", stand_link(st))
++    menu.card((18, top, 781, 407))
++    menu.label(33, top + 14, "Station health", 18, width=190, weight="bold")
++    menu.mark(757, top + 12, "next", 16)
++    rescue = rescue_info(panel.data)
++    available = panel.rescue_available()
++    right = 744
++    if rescue:
++        label = rescue["summary"]
++        if label == "AP ready":
++            label = "AP standby"
++        if available:
++            label += " · QR"
++        key = "accent" if available else "muted" if label == "AP standby" else "warn"
++        start = right - menu.pill_width(label, "wifi")
++        menu.pill(start, top + 9, label, key, "wifi")
++        if available:
++            menu.targets.append(((start - 3, top, 746, top + 44), ("rescue", None)))
++        right = start - 7
++    disk = text(st.get("storage"))
++    low = bool(st.get("storage_low") and disk)
++    disk = ("Disk low · " if low else "") + disk if disk else "Disk unknown"
++    disk = fit(disk, font(14, "bold"), max(40, right - 220))
++    menu.pill(right - menu.pill_width(disk, "disk"), top + 9, disk, "warn" if low else "muted", "disk")
++    for j, row in enumerate(packed):
++        for x, caption, ink, symbol in row:
++            menu.pill(x, top + 43 + j * 28, caption, ink, symbol)
++    # The dedicated QR control above wins only inside its own hit area.
++    menu.targets.append(((18, top, 781, 407), ("health", None)))
++
++
++def health(menu):
++    p = menu.panel
++    st = p.data.get("station")
++    st = st if isinstance(st, dict) else {}
++    rows = [
++        ("Free space", text(st.get("storage")) or "No reading", "warn" if st.get("storage_low") else "fg")
++    ]
++    for name, color, _ in service_chips(st):
++        rows.append(("Services", name, color))
++    up, stand = uplink(st), stand_link(st)
++    rows.append(("Uplink", " · ".join(filter(None, (up[1], up[2], up[3]))), "fg"))
++    rows.append(("Stand link", " · ".join((stand[1], stand[0][0], stand[4][0][1])), "fg"))
++    for link in objects(st.get("links")):
++        if link.get("role") in ("backup", "other"):
++            rows.append(
++                (
++                    text(link.get("name")),
++                    text(link.get("ssid") or link.get("address"))
++                    or (
++                        "Up" if link.get("up") is True else "Down" if link.get("up") is False else "Unknown"
++                    ),
++                    "muted",
++                )
++            )
++    for sw in objects(p.data.get("switches"), 64):
++        ok = sw.get("answering") is not False
++        rows.append(
++            (
++                "Switch",
++                text(sw.get("name")) + (" · Answering" if ok else " · No response"),
++                "good" if ok else "bad",
++            )
++        )
++    rescue = rescue_info(p.data)
++    if rescue:
++        rows.append(
++            (
++                "Rescue Wi-Fi",
++                " · ".join(
++                    filter(
++                        None,
++                        (
++                            rescue["summary"],
++                            rescue["ssid"],
++                            rescue["address"],
++                            rescue["clients"] if rescue["active"] else "",
++                        ),
++                    )
++                ),
++                "accent" if rescue["active"] else "muted",
++            )
++        )
++    lines = [
++        (name if i == 0 else "", line, color)
++        for name, value, color in rows
++        for i, line in enumerate(wrap(value, font(16, "bold"), 545))
++    ]
++    menu.label(20, 76, "Station health", 30, weight="bold")
++    menu.header_pager(len(lines), 6, 780, 69)
++    menu.card((18, 126, 781, 397))
++    for i, (name, value, color) in enumerate(lines[menu.offset : menu.offset + 6]):
++        y = 127 + i * 45
++        if i:
++            menu.draw.line((32, y, 767, y), fill=menu.c["line"])
++        menu.label(34, y + 14, name, 16, "muted", 144)
++        menu.label(190, y + 14, value, 16, color, 570, "bold")

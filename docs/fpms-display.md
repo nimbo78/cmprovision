@@ -31,7 +31,13 @@ FPMS shows provisioning and station data on the Waveshare 1.44-inch 128×128 pan
    ```
 
 3. Reboot and enable **Settings → System → FPMS display**. The detected panel appears as **HyperPixel 4.0 Touch · 800 × 480 · GT911**. Changing panel families requires selecting the appropriate boot configuration and rebooting. FPMS identifies the controller on the configured interface. The menu uses landscape orientation. For the opposite mounting, the existing `fpms.lite --rotate 180` option flips the picture and touch coordinates together.
-4. Tap a tab at the bottom. **Ports** shows each port's Ethernet **Link** (`Up` or `Down`) and **PoE** separately. Watts or `On` mean the port is supplying power, even when the link is down. `Idle` means it is waiting for a device, `Off` means PoE is disabled, and `?` means the switch supplied no usable reading. Tap a port for details, then **View device** for the attached sensor. **Devices** also opens diagnostics. **System** provides appearance and power controls. The first tap after the screen goes dark wakes it. The square and non-touch HyperPixel models use different hardware.
+4. Tap the tabs at the bottom to navigate. The first tap after the screen goes dark wakes it. The square and non-touch HyperPixel models use different hardware.
+
+- **Overview** shows four batch counters and six devices at a time. Tap a counter to filter by status or a row to open a device. The arrows page through the stand. **Back** returns to the same list and page.
+- **Ports** opens on the physical map. **Connected** lists names, Ethernet link and PoE separately, including a powered port with no carrier. Watts or `On` indicate delivered power, `Idle` means waiting for a device, `Off` means disabled and `?` means no reading. Tap a port and then its device name for diagnostics.
+- Open **Devices** and tap a name for diagnostics. **Errors** brings failed, silent and unrecognized devices into one list.
+- **Station** shows the management network, address, Wi-Fi RSSI and transmit link rate, or Ethernet speed. In **Station health**, each stopped service has a red badge with its name. Services disabled by configuration have neutral badges. Tap the strip for details, or tap the active rescue AP badge for its Wi-Fi QR.
+- **System** groups appearance and screen timeout under **Display** and separates the station power controls.
 
 HyperPixel uses a dedicated DPI overlay. If HDMI mirrors the same display pipeline or no overlay plane is free, FPMS waits. The station and device data come from the same snapshot as the HDMI wallboard. [Pimoroni display setup](https://github.com/pimoroni/hyperpixel4)
 
