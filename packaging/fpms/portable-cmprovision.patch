@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..c475146
+index 0000000..aaf37c5
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,548 @@
+@@ -0,0 +1,550 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10199,6 +10199,8 @@ index 0000000..c475146
 +                and len(identity) == 6 and identity.startswith("7c")
 +                and all(c in "0123456789abcdef" for c in identity) and int(identity[2:4], 16) >= 0x80):
 +            record["display"] = {"profile": "waveshare-1.44", "id": identity}
++        elif display.get("profile") == "hyperpixel-4-touch" and identity == "gt911":
++            record["display"] = {"profile": "hyperpixel-4-touch", "id": "gt911"}
 +    try:
 +        path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
 +        fd, name = tempfile.mkstemp(prefix=".cmprovision-", dir=path.parent)
@@ -12772,10 +12774,10 @@ index 0000000..b348bf3
 +    return result
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..b7515ec
+index 0000000..20006e3
 --- /dev/null
 +++ b/fpms/lite.py
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,258 @@
 +"""Compact station menu. No imports from the WLAN Pi application/provider."""
 +
 +import argparse
@@ -12790,6 +12792,7 @@ index 0000000..b7515ec
 +from .integrations.cmprovision_power import request as power_request
 +from .integrations.cmprovision_rescue import request as rescue_request
 +from .modules.screen.st7735_probe import probe_st7735
++from .modules.screen import hyperpixel
 +
 +BUTTONS = {
 +    6: "UP",
@@ -12810,7 +12813,11 @@ index 0000000..b7515ec
 +        now = time.monotonic()
 +        if until is not None and now >= until:
 +            return None
-+        if Path("/dev/spidev0.0").exists():
++        if hyperpixel.configured():
++            event = hyperpixel.find_touch()
++            if event:
++                return {**hyperpixel.DISPLAY, "event": event}
++        elif Path("/dev/spidev0.0").exists():
 +            if now >= next_probe:
 +                display = probe_st7735()
 +                if display:
@@ -12821,6 +12828,78 @@ index 0000000..b7515ec
 +        heartbeat(False)
 +        time.sleep(min(3, max(0, until - now)) if until is not None else 3)
 +    return None
++
++
++def run_hyperpixel(panel, args, stopping, started):
++    from PIL import Image
++    from .integrations.cmprovision_touch import TouchMenu
++    menu = TouchMenu(panel)
++    last_error = None
++
++    def running():
++        return not stopping() and (not args.seconds or time.monotonic() < started + args.seconds)
++
++    while running():
++        screen = touch = None
++        try:
++            event = hyperpixel.find_touch()
++            if not event:
++                raise OSError("HyperPixel touch controller unavailable")
++            touch = hyperpixel.TouchInput(event, args.rotate)
++            screen = hyperpixel.DpiScreen.open()
++            last_key = time.monotonic()
++            next_frame = next_heartbeat = 0
++            sleeping = False
++            ready = False
++            while running():
++                now = time.monotonic()
++                panel.refresh()
++                panel.expire_access()
++                if FIRST_ADMIN.is_file():
++                    last_key = now
++                    if sleeping:
++                        sleeping, next_frame = False, 0
++                if args.sleep and not sleeping and now-last_key >= args.sleep:
++                    screen.show(Image.new('RGB', (hyperpixel.SCAN_WIDTH, hyperpixel.SCAN_HEIGHT)))
++                    sleeping = True
++                if not sleeping and now >= next_frame:
++                    frame = menu.frame()
++                    screen.show(hyperpixel.to_scanout(frame, args.rotate))
++                    next_frame = now+2
++                    if not ready:
++                        print("FPMS_DISPLAY_DETECTED HyperPixel 4.0 Touch GT911", flush=True)
++                        print("FPMS_LITE_READY", flush=True)
++                        ready, last_error = True, None
++                if sleeping and now >= next_heartbeat and not screen.dedicated(screen.card, screen.connector, screen.crtc):
++                    raise OSError("DPI output changed")
++                if ready and now >= next_heartbeat:
++                    heartbeat(True, display=hyperpixel.DISPLAY)
++                    next_heartbeat = now+3
++                taps = touch.read(0.2)
++                if taps:
++                    last_key, next_frame = time.monotonic(), 0
++                    if sleeping:
++                        sleeping = False
++                    else:
++                        menu.tap(*taps[0])
++                        if args.seconds:
++                            print(f"Touch page={panel.page} detail={bool(panel.detail)}", flush=True)
++        except (ImportError, OSError, RuntimeError, ValueError) as exc:
++            if str(exc) != last_error:
++                logging.getLogger(__name__).warning("HyperPixel unavailable: %s", exc)
++                last_error = str(exc)
++        finally:
++            if panel.rescue_menu and panel.rescue_menu.open:
++                panel.rescue_menu.close()
++            if touch:
++                touch.close()
++            if screen:
++                screen.close()
++            heartbeat(False)
++        # Release the card before retrying after an output or ownership change.
++        screen = None
++        if running():
++            time.sleep(3)
 +
 +
 +def main():
@@ -12861,6 +12940,9 @@ index 0000000..b7515ec
 +    started = time.monotonic()
 +    display = wait_for_display(lambda: stop, until=started + args.seconds if args.seconds else None)
 +    if display is None or stop:
++        return
++    if display.get("profile") == "hyperpixel-4-touch":
++        run_hyperpixel(panel, args, lambda: stop, started)
 +        return
 +    print("FPMS_DISPLAY_DETECTED ST7735S " + display['id'], flush=True)
 +
@@ -16381,10 +16463,10 @@ index 0000000..c62edce
 +of Raspberry Pi OS Lite. Those require booting a clean target image later.
 diff --git a/tools/build-lite-deb.sh b/tools/build-lite-deb.sh
 new file mode 100644
-index 0000000..b453f57
+index 0000000..392f4b7
 --- /dev/null
 +++ b/tools/build-lite-deb.sh
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,66 @@
 +#!/bin/sh
 +# Build the portable subset only; none of the full WLAN Pi applications/dependencies.
 +set -eu
@@ -16397,6 +16479,9 @@ index 0000000..b453f57
 +DEST=$WORK/pkg
 +mkdir -p "$DEST/DEBIAN" "$DEST/usr/lib/fpms-lite/fpms/integrations" "$DEST/usr/lib/fpms-lite/fpms/modules/screen" "$DEST/usr/lib/fpms-lite/fpms/fonts/cmprovision" "$DEST/usr/share/doc/fpms-lite/fonts" "$DEST/usr/share/fpms" "$DEST/usr/lib/systemd/system" "$OUT"
 +for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py modules/screen/st7735_probe.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py integrations/cmprovision_power.py integrations/cmprovision_rescue.py; do
++    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
++done
++for f in modules/screen/hyperpixel.py integrations/cmprovision_touch.py integrations/cmprovision_touch_style.py; do
 +    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
 +done
 +install -m 644 "$ROOT/LICENSE" "$DEST/usr/share/doc/fpms-lite/copyright"
@@ -16412,9 +16497,10 @@ index 0000000..b453f57
 +Maintainer: cmprovision contributors
 +Depends: init-system-helpers, python3 (>= 3.13), python3-pil (>= 10.1), python3-qrcode, python3-libgpiod (>= 2), python3-spidev, raspi-utils-core
 +Conflicts: wlanpi-fpms
++Recommends: python3-kms++
 +Description: Compact FPMS station panel for cmprovision
 + Portable subset of WLAN Pi FPMS for a dedicated provisioning station.
-+ Supports the Waveshare 1.44 ST7735 panel on qualified CM4 hardware.
++ Supports the Waveshare 1.44 ST7735 and the rectangular HyperPixel 4.0 Touch.
 + No WLAN Pi applications or services are required.
 +EOF
 +cat > "$DEST/DEBIAN/postinst" <<'EOF'
@@ -16843,3 +16929,1186 @@ index 0000000..922834a
 +fi
 +timeout --kill-after=5s 200s unshare --mount --pid --fork --kill-child --propagation private \
 +    /bin/sh "$0" --inside "$mode" "$root" "$source"
+diff --git a/fpms/integrations/cmprovision_touch.py b/fpms/integrations/cmprovision_touch.py
+new file mode 100644
+index 0000000..d6e3ece
+--- /dev/null
++++ b/fpms/integrations/cmprovision_touch.py
+@@ -0,0 +1,577 @@
++"""Native landscape station menu for the rectangular HyperPixel 4.0 Touch."""
++
++import ipaddress
++
++from PIL import Image, ImageDraw
++
++from . import cmprovision_classic as classic
++from . import cmprovision_new as compact
++from .cmprovision import PAGES, first_admin_projection, hardware_lines, identity, number, objects, text
++from .cmprovision_power import COLOR_MODES
++from .cmprovision_touch_style import DARK, LIGHT, centered, fit, font, icon, wrap
++
++
++class TouchMenu:
++    def __init__(self, panel):
++        self.panel = panel
++        self.offset = 0
++        self.origin = None
++        self.targets = []
++        self.presented = None
++
++    def state(self):
++        p = self.panel
++        power, rescue = p.power_menu, p.rescue_menu
++        if power and power.open:
++            power.expire()
++            current = p.requested_color_mode()
++            if current != power.appearance_mode:
++                power.appearance_saved = False
++            power.appearance_mode = current
++        return (
++            p.page,
++            p.detail,
++            p.theme(),
++            bool(first_admin_projection()),
++            bool(p.data),
++            p.enabled,
++            power.stage if power and power.open else None,
++            rescue.stage if rescue and rescue.open else None,
++        )
++
++    def label(self, x, y, value, size=20, color="fg", width=730, weight="regular"):
++        face = font(size, weight)
++        self.draw.text((x, y), fit(value, face, width), font=face, fill=self.c[color], anchor="lt")
++
++    def mark(self, x, y, name, size, color="muted"):
++        self.draw.bitmap((x, y), icon(name, size), fill=self.c[color])
++
++    def card(self, box, color="surface"):
++        self.draw.rounded_rectangle(
++            box, radius=3 if self.classic else 12, fill=self.c[color], outline=self.c["line"]
++        )
++
++    def button(self, box, title, action, accent=False):
++        fill, ink = ("tint", "accent") if accent else ("raised", "fg")
++        self.draw.rounded_rectangle(box, radius=9, fill=self.c[fill], outline=self.c["line"])
++        centered(self.draw, box, title, font(18, "bold"), self.c[ink])
++        self.targets.append((box, action))
++
++    def badge(self, right, y, caption, color):
++        face = font(14, "bold")
++        width = round(face.getlength(caption)) + 22
++        fill = {"accent": "tint", "muted": "raised"}.get(color, color + "_tint")
++        box = (right - width, y, right, y + 24)
++        self.draw.rounded_rectangle(box, radius=7, fill=self.c[fill])
++        centered(self.draw, box, caption, face, self.c[color])
++
++    def title(self, value, aside=""):
++        self.label(24, 77, value, 32, width=465, weight="bold")
++        if aside:
++            self.label(495, 88, aside, 16, "muted", 278)
++
++    def pager(self, length, step, left=500):
++        last = max(0, (length - 1) // step * step)
++        self.offset = max(0, min(self.offset, last))
++        if not last:
++            return
++        if self.offset:
++            self.button((left, 355, left + 79, 401), "Prev", ("offset", self.offset - step))
++        centered(
++            self.draw,
++            (left + 85, 355, left + 176, 401),
++            f"{self.offset//step+1} / {last//step+1}",
++            font(16),
++            self.c["muted"],
++        )
++        if self.offset < last:
++            self.button((left + 180, 355, left + 265, 401), "Next", ("offset", self.offset + step))
++
++    def tap(self, x, y):
++        if self.state() != self.presented:
++            return
++        for (x0, y0, x1, y1), action in self.targets:
++            if not (x0 <= x <= x1 and y0 <= y <= y1):
++                continue
++            self.targets = []
++            kind, value = action
++            p = self.panel
++            if kind == "page":
++                p.page, p.index, p.detail, p.scroll, self.offset, self.origin = value, 0, None, 0, 0, None
++            elif kind == "offset":
++                self.offset = value
++            elif kind == "key":
++                was_detail = p.detail
++                p.key(value)
++                if value == "KEY2" and was_detail and p.detail is None and self.origin is not None:
++                    p.page, self.offset, self.origin = self.origin[0], self.origin[1], None
++            elif kind in ("row", "device"):
++                previous = (p.page, self.offset)
++                if kind == "device":
++                    p.page = 2
++                for index, row in enumerate(p.rows()):
++                    key = (row.get("pin") or row.get("name")) if p.page == 1 else identity(row)
++                    if key == value:
++                        p.index = index
++                        p.key("CENTER")
++                        self.origin, self.offset = previous, 0
++                        break
++                else:
++                    p.page = previous[0]
++            elif kind == "system":
++                p.power_menu.index = value
++                p.key("CENTER")
++            elif kind == "mode":
++                p.power_menu.mode_index = COLOR_MODES.index(value)
++                p.key("CENTER")
++            return
++
++    def frame(self):
++        p = self.panel
++        self.presented = self.state()
++        _, detail, theme, setup, _, _, power, rescue = self.presented
++        self.targets = []
++        self.c = LIGHT if p.color_mode() == "light" else DARK
++        self.classic = theme == "classic"
++        if self.classic:
++            palette = classic.LIGHT if p.color_mode() == "light" else classic.DARK
++            self.c = dict(
++                self.c,
++                bg=palette["bg"],
++                surface=palette["panel"],
++                fg=palette["text"],
++                muted=palette["muted"],
++                accent=palette["accent"],
++                line=palette["line"],
++            )
++        self.image = Image.new("RGB", (800, 480), self.c["bg"])
++        self.draw = ImageDraw.Draw(self.image)
++        self.draw.rectangle((0, 0, 799, 59), fill=self.c["surface"])
++        self.draw.line((0, 59, 799, 59), fill=self.c["line"])
++        logo = (20, 9, 61, 50)
++        self.draw.rounded_rectangle(logo, radius=10, fill="#F69A50")
++        centered(self.draw, logo, "cm", font(23, "bold"), "#291B12")
++        self.label(75, 20, "cmprovision", 22, width=143, weight="bold")
++        self.draw.line((218, 18, 218, 42), fill=self.c["line"])
++        self.label(234, 21, p.data.get("host") or "Station", 19, "muted", 274)
++        modal = setup or power or rescue
++        if modal or detail:
++            if not setup or rescue:
++                self.button((665, 7, 779, 52), "Back", ("key", "KEY2"))
++        elif p.power_menu:
++            self.draw.rounded_rectangle((665, 7, 779, 52), radius=9, fill=self.c["raised"])
++            self.mark(680, 19, "System", 20, "fg")
++            self.label(708, 21, "System", 17, "fg", 64, "bold")
++            self.targets.append(((665, 7, 779, 52), ("key", "KEY3")))
++        if p.age_label() and not modal:
++            self.label(517, 23, p.age_label() + " old", 15, "warn", 139)
++        if rescue:
++            self.rescue()
++        elif setup:
++            self.setup()
++        elif power:
++            self.system(power)
++        elif detail:
++            self.details()
++        elif not p.data:
++            self.title(PAGES[p.page])
++            self.label(25, 165, p.problem or "Waiting for data", 24, "muted")
++        else:
++            (self.overview, self.ports, self.rows, self.rows, self.station)[p.page]()
++        if not modal:
++            self.nav()
++        return self.image
++
++    def nav(self):
++        self.draw.rectangle((0, 415, 799, 479), fill=self.c["surface"])
++        self.draw.line((0, 415, 799, 415), fill=self.c["line"])
++        for index, title in enumerate(PAGES):
++            x = 8 + index * 158
++            active = self.panel.page == index
++            box = (x, 421, x + 151, 473)
++            ink = "accent" if active else "muted"
++            if active:
++                self.draw.rounded_rectangle(box, radius=9, fill=self.c["tint"])
++            face = font(17, "bold" if active else "regular")
++            start = x + (151 - round(face.getlength(title)) - 32) // 2
++            self.mark(start, 437, title, 21, ink)
++            self.label(start + 30, 440, title, 17, ink, 116, "bold" if active else "regular")
++            self.targets.append((box, ("page", index)))
++
++    def modules(self):
++        return objects(self.panel.data.get("modules")) + objects(self.panel.data.get("recognized"))
++
++    def device_line(self, box, row, action):
++        x, y, right, bottom = box
++        state = text(row.get("state"))
++        key, word = compact.STATE.get(state, ("muted", "UNKNOWN"))
++        key = "muted" if key == "dim" else key
++        self.draw.rounded_rectangle((x + 1, y + 8, x + 4, bottom - 8), radius=2, fill=self.c[key])
++        self.label(
++            x + 16,
++            y + 6,
++            row.get("hostname") or row.get("name") or identity(row),
++            20,
++            width=right - x - 145,
++            weight="bold",
++        )
++        self.label(x + 16, y + 34, compact.short_port(row) or row.get("mac"), 15, "muted", right - x - 156)
++        self.badge(right - 24, y + 13, word, key)
++        self.mark(right - 16, y + 16, "next", 16)
++        self.targets.append((box, action))
++
++    def overview(self):
++        p = self.panel
++        self.title("Overview")
++        self.card((20, 127, 370, 397))
++        self.label(39, 145, "Active project" if p.data.get("project") else "Provisioning", 16, "muted")
++        self.label(39, 169, compact.batch_line(p)[0], 24, "fg", 313, "bold")
++        self.draw.line((39, 210, 351, 210), fill=self.c["line"])
++        tally = compact.counts(p)
++        tiles = (
++            ("running", "Running", "run"),
++            ("done", "Done", "good"),
++            ("failed", "Failed", "bad"),
++            ("stale", "Silent", "warn"),
++        )
++        for i, (key, name, color) in enumerate(tiles):
++            x, y = 40 + (i % 2) * 160, 225 + (i // 2) * 83
++            self.label(x, y, tally[key], 36, color if tally[key] else "muted", 142, "bold")
++            self.label(x, y + 42, name, 15, "muted")
++        rows = self.modules()
++        self.card((383, 127, 779, 397))
++        self.label(403, 147, "Devices", 21, "fg", 260, "bold")
++        self.badge(757, 145, str(len(rows)), "muted")
++        if not rows:
++            self.label(403, 216, "No devices connected", 19, "muted")
++        for i, row in enumerate(rows[:3]):
++            y = 188 + i * 63
++            self.draw.line((402, y - 2, 759, y - 2), fill=self.c["line"])
++            self.device_line((401, y, 759, y + 57), row, ("device", identity(row)))
++        if len(rows) > 3:
++            self.targets.append(((390, 132, 774, 181), ("page", 2)))
++
++    def rows(self):
++        p = self.panel
++        self.title(PAGES[p.page])
++        rows = p.rows()
++        self.pager(len(rows), 4)
++        if not rows:
++            self.label(25, 170, "No devices connected" if p.page == 2 else "No errors", 24, "muted")
++        for i, row in enumerate(rows[self.offset : self.offset + 4]):
++            y = 119 + i * 58
++            self.draw.line((23, y + 57, 777, y + 57), fill=self.c["line"])
++            self.device_line((26, y, 773, y + 56), row, ("row", identity(row)))
++
++    def ports(self):
++        p = self.panel
++        rows = p.rows()
++        cols = 14 if p.ports_map() == "whole" else 10
++        switches = objects(p.data.get("switches"), 64)
++        banks = [
++            (view, view["columns"][i : i + cols], objects(switches[n].get("blocks"), 32))
++            for n, view in enumerate(p.map_view())
++            for i in range(0, max(1, len(view["columns"])), cols)
++        ]
++        self.pager(len(banks), 1)
++        if not banks:
++            self.title("Ports")
++            self.label(25, 165, "No switches configured", 23, "muted")
++            return
++        view, columns, blocks = banks[self.offset]
++        self.title("Ports", view["name"])
++        self.card((20, 125, 779, 337))
++        if not view["answering"]:
++            self.label(38, 149, "Switch not responding", 22, "warn")
++            return
++        count = max(1, len(columns))
++        splits = sum(columns[i][2] != columns[i - 1][2] for i in range(1, len(columns)))
++        gap = 4
++        extra = max(0, min(14, (728 - count * 44 - (count - 1) * gap) // max(1, splits)))
++        cell = min(74, (728 - (count - 1) * gap - extra * splits) // count)
++        x = 38
++        for col, (upper, lower, group) in enumerate(columns):
++            if col == 0 or columns[col - 1][2] != group:
++                if col:
++                    x += extra
++                group_size = sum(c[2] == group for c in columns)
++                self.label(
++                    x, 144, blocks[group].get("label"), 15, "muted", group_size * (cell + gap) - gap, "bold"
++                )
++            for side, index in enumerate((upper, lower)):
++                if index is None or index >= len(rows):
++                    continue
++                row = rows[index]
++                y = 180 + side * 69
++                box = (x, y, x + cell - 1, y + 56)
++                local = bool(row.get("server"))
++                peer = isinstance(row.get("station"), dict) and not local
++                fill, edge = compact.port_style(row)
++                edge = "muted" if peer or edge in ("dim", "line") else edge
++                if peer or not fill or fill == "dim":
++                    bg = "raised"
++                else:
++                    bg = {"accent": "tint"}.get(fill, fill + "_tint")
++                self.draw.rounded_rectangle(box, 8, fill=self.c[bg], outline=self.c[edge])
++                self.draw.line((x + 9, y + 5, x + cell - 10, y + 5), width=3, fill=self.c[edge])
++                name = text(row.get("portname")).split("/")[-1][-4:]
++                centered(
++                    self.draw,
++                    box,
++                    "cm" if local or peer else name,
++                    font(20, "bold"),
++                    self.c[edge if fill or peer else "fg"],
++                )
++                self.targets.append((box, ("row", row.get("pin") or row.get("name"))))
++            x += cell + gap
++        self.label(26, 371, "cm  This station", 16, "accent", 158, "bold")
++        self.label(188, 371, "cm  Other station", 16, "muted", 200)
++
++    def station(self):
++        p = self.panel
++        st = p.data.get("station")
++        self.title("Station", text(p.data.get("app_version")).split(" · ")[0])
++        if not isinstance(st, dict):
++            self.label(26, 170, "Waiting for station data", 22, "muted")
++            return
++        up = st.get("uplink")
++        up = up if isinstance(up, dict) else {}
++        self.card((20, 127, 370, 347))
++        self.mark(40, 145, "wifi" if up.get("state") == "wifi" else "Ports", 22, "accent")
++        self.label(73, 148, "Management uplink", 18, "muted", 275, "bold")
++        self.label(
++            40, 192, up.get("ssid") or up.get("device") or "Disconnected", 30, width=310, weight="bold"
++        )
++        self.label(
++            40,
++            241,
++            up.get("address") or st.get("management") or "No IP address",
++            20,
++            width=310,
++            weight="mono",
++        )
++        facts = [text(up.get("device")), text(up.get("band"))]
++        if number(up.get("signal"), None) is not None:
++            facts.append(f"{int(up['signal'])} dBm")
++        elif up.get("speed"):
++            facts.append(compact.link_speed(up.get("speed")))
++        self.label(40, 289, "  ·  ".join(s for s in facts if s), 17, "muted", 309)
++        self.card((383, 127, 779, 347))
++        self.label(403, 146, "Station health", 20, width=330, weight="bold")
++        health = compact.station_rows(p, st)
++        self.pager(len(health), 5)
++        for i, (key, label, value) in enumerate(health[self.offset : self.offset + 5]):
++            y = 193 + i * 29
++            self.draw.ellipse((405, y + 4, 412, y + 11), fill=self.c[key])
++            self.label(426, y, "  ".join(v for v in (label, value) if v), 17, width=329)
++        if p.rescue_available():
++            self.button((20, 355, 370, 401), "Rescue Wi-Fi access", ("key", "CENTER"), True)
++
++    def details(self):
++        p = self.panel
++        row = p.detail_row()
++        if row is None:
++            self.title("Device details")
++            self.label(25, 167, "Device is no longer present", 23, "muted")
++            return
++        is_port = p.detail[0] == "port"
++        name = (row.get("portname") if is_port else row.get("hostname")) or row.get("name") or identity(row)
++        self.title(name)
++        self.card((20, 128, 370, 344))
++        self.card((383, 128, 779, 344))
++        if is_port:
++            key, word = compact.port_state(row, None)
++            key = "muted" if key == "dim" or isinstance(row.get("station"), dict) else key
++            self.label(40, 150, "Port", 17, "muted")
++            self.badge(349, 145, word, key if key in self.c else "muted")
++            facts = [
++                ("Link", compact.link_speed(row.get("speed"))),
++                ("PoE", f"{row['watts']} W" if number(row.get("watts"), None) is not None else ""),
++            ]
++            desc = row.get("station") if isinstance(row.get("station"), dict) else {}
++            lines = [text(desc.get(k)) for k in ("name", "description", "address", "host", "version")]
++            if row.get("server"):
++                lines.insert(0, "This provisioning station")
++            device = next(
++                (
++                    d
++                    for d in self.modules() + objects(p.data.get("unknown"))
++                    if d.get("port") == row.get("name")
++                ),
++                {},
++            )
++            lines.extend(text(device.get(k)) for k in ("name", "detail", "mac"))
++            lines = [s for s in lines if s] or [
++                "Nothing connected" if row.get("state") == "free" else word.title()
++            ]
++            right_title = "Connected device"
++        else:
++            key, word = compact.STATE.get(text(row.get("state")), ("muted", "UNKNOWN"))
++            self.label(40, 150, "Provisioning", 17, "muted")
++            self.badge(349, 145, word, "muted" if key == "dim" else key)
++            facts = [
++                ("Port", compact.short_port(row)),
++                ("MAC", text(row.get("mac"))),
++                ("Serial", text(row.get("serial"))),
++            ]
++            cycle = number(row.get("cycle"), None)
++            if cycle is not None and cycle >= 0:
++                mins, secs = divmod(int(cycle), 60)
++                facts.append(("Cycle", f"{mins}:{secs:02d}"))
++            elif row.get("cycle"):
++                facts.append(("Cycle", text(row["cycle"])))
++            right_title = "Hardware & diagnostics"
++            lines = hardware_lines(row)
++            diag = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
++            issues = objects(diag.get("issues"), 8)
++            extra = [row.get("reason"), row.get("cause"), row.get("detail"), row.get("advice")]
++            if row.get("code"):
++                extra.append("Code " + text(row["code"]))
++            for issue in issues:
++                extra.extend((issue.get("title"), issue.get("advice")))
++            if row.get("flashed_by"):
++                extra.append("Flashed by " + text(row["flashed_by"]))
++            details = list(dict.fromkeys(text(v) for v in extra if text(v)))
++            lines = (details + lines if word in ("FAILED", "SILENT") else lines + details) or [
++                "No hardware report yet"
++            ]
++            if row.get("state") == "run" and number(row.get("percent"), None) is not None:
++                frac = max(0, min(100, number(row["percent"])))
++                self.label(40, 314, f"{int(frac)}%", 15, "run")
++                self.draw.rounded_rectangle((96, 320, 347, 325), 3, fill=self.c["line"])
++                if frac:
++                    self.draw.rounded_rectangle(
++                        (96, 320, 96 + round(frac * 2.51), 325), 3, fill=self.c["run"]
++                    )
++        for i, (label, value) in enumerate((v for v in facts if v[1])):
++            y = 194 + i * 30
++            self.label(40, y, label, 16, "muted", 76)
++            self.label(
++                117, y, value, 16, width=232, weight="mono" if label in ("Serial", "MAC") else "bold"
++            )
++        self.label(403, 147, right_title, 19, width=352, weight="bold")
++        wrapped = [line for value in lines for line in wrap(value, font(18), 348)]
++        self.pager(len(wrapped), 5)
++        for i, line in enumerate(wrapped[self.offset : self.offset + 5]):
++            self.label(403, 190 + i * 28, line, 18, width=351)
++        if self.origin is not None:
++            self.label(24, 372, "Back to " + PAGES[self.origin[0]], 16, "muted", 350)
++            self.targets.append(((20, 352, 350, 402), ("key", "KEY2")))
++
++    def system(self, stage):
++        menu = self.panel.power_menu
++        self.title("Appearance" if stage.startswith("appearance") else "System")
++        if stage == "menu":
++            for i, (label, entry) in enumerate(
++                [("Appearance", 3), ("Restart station", 1), ("Shut down station", 2)]
++            ):
++                y = 136 + i * 79
++                self.button((22, y, 466, y + 62), label, ("system", entry))
++        elif stage == "appearance":
++            self.label(24, 139, "Color mode", 19, "muted")
++            for i, mode in enumerate(COLOR_MODES):
++                x = 24 + i * 249
++                self.button(
++                    (x, 182, x + 230, 258), mode.title(), ("mode", mode), mode == menu.appearance_mode
++                )
++            if menu.appearance_saved:
++                self.label(24, 294, "Saved", 19, "good")
++        else:
++            action = "Restart" if menu.action == "reboot" else "Shut down"
++            headings = {
++                "confirm": action + " this station?",
++                "interrupt": "Interrupt active jobs?",
++                "scheduled": action + " requested",
++                "error": "Request not confirmed",
++                "expired": "Confirmation expired",
++                "appearance_error": "Theme not confirmed",
++            }
++            message = {
++                "confirm": (
++                    "The station will restart."
++                    if menu.action == "reboot"
++                    else "Cycle PoE or external power to start it again."
++                ),
++                "interrupt": f"{menu.active_count} active modules. Interrupted image or EEPROM writes may require recovery.",
++                "scheduled": "The station has accepted the request.",
++                "error": menu.message,
++                "expired": "Choose the action again.",
++                "appearance_error": "Reopen Appearance to check the saved mode.",
++            }
++            self.label(
++                24,
++                164,
++                headings.get(stage, "Station status"),
++                27,
++                "warn" if stage == "interrupt" else "fg",
++                740,
++                "bold",
++            )
++            for i, line in enumerate(wrap(message.get(stage, ""), font(21), 720)):
++                self.label(24, 218 + i * 29, line, 21, "muted")
++            if stage == "confirm":
++                self.button((510, 331, 762, 396), "Confirm " + action.lower(), ("key", "KEY1"), True)
++            elif stage == "interrupt":
++                self.button((24, 331, 344, 396), "Interrupt and continue", ("key", "KEY1"), True)
++
++    def setup(self):
++        card = first_admin_projection()
++        if not card:
++            return
++        host = card["host"]
++        try:
++            host = str(ipaddress.IPv4Interface(self.panel.data["station"]["uplink"]["address"]).ip)
++        except (KeyError, TypeError, ValueError):
++            pass
++        self.title("Set up this station")
++        self.card((20, 131, 779, 344))
++        self.label(42, 158, "Open in your browser", 18, "muted")
++        self.label(42, 193, "http://" + host + "/setup", 24, width=713, weight="bold")
++        self.label(42, 249, "One-time setup code", 18, "muted")
++        self.label(
++            42, 284, "  ".join(card["code"][i : i + 4] for i in range(0, 16, 4)), 32, "accent", 711, "mono"
++        )
++        if self.panel.rescue_available():
++            self.button((22, 363, 294, 423), "Rescue Wi-Fi access", ("key", "CENTER"))
++
++    def rescue(self):
++        card = self.panel.rescue_menu
++        self.title("Rescue Wi-Fi")
++        if not card.credentials:
++            self.label(24, 177, "Access details unavailable", 24, "warn")
++            return
++        creds = card.credentials
++        self.label(24, 158, "Network", 17, "muted")
++        self.label(24, 190, creds["ssid"], 27, width=365, weight="bold")
++        self.label(
++            24, 250, "Closes in " + str(max(0, int(card.deadline - self.panel.clock()))) + " s", 18, "muted"
++        )
++        self.button(
++            (24, 295, 344, 353),
++            "Show password" if card.stage == "qr" else "Show QR code",
++            ("key", "CENTER"),
++        )
++        if card.stage == "qr":
++            matrix = creds["matrix"]
++            scale = 318 // len(matrix)
++            extent = scale * len(matrix)
++            x, y = 400 + (360 - extent) // 2, 118 + (322 - extent) // 2
++            self.draw.rectangle((x, y, x + extent - 1, y + extent - 1), fill="white")
++            for j, row in enumerate(matrix):
++                for i, dark in enumerate(row):
++                    if dark:
++                        a, b = x + i * scale, y + j * scale
++                        self.draw.rectangle((a, b, a + scale - 1, b + scale - 1), fill="black")
++        else:
++            self.label(406, 159, "Password", 18, "muted")
++            # Preserve the exact printable ASCII passphrase, including spaces.
++            face = font(21, "mono")
++            line = ""
++            lines = []
++            for char in creds["password"]:
++                if line and face.getlength(line + char) > 352:
++                    lines.append(line)
++                    line = ""
++                line += char
++            for i, value in enumerate(lines + [line]):
++                self.draw.text((406, 197 + i * 33), value, font=face, fill=self.c["fg"], anchor="lt")
+diff --git a/fpms/modules/screen/hyperpixel.py b/fpms/modules/screen/hyperpixel.py
+new file mode 100644
+index 0000000..6cdd901
+--- /dev/null
++++ b/fpms/modules/screen/hyperpixel.py
+@@ -0,0 +1,222 @@
++"""Rectangular HyperPixel 4.0 Touch on the Raspberry Pi KMS overlay."""
++
++import array
++import fcntl
++import math
++import os
++import re
++import select
++import struct
++from pathlib import Path
++
++WIDTH, HEIGHT = 800, 480
++SCAN_WIDTH, SCAN_HEIGHT = HEIGHT, WIDTH
++DISPLAY = {"profile": "hyperpixel-4-touch", "id": "gt911"}
++EVENT = struct.Struct("@llHHi")
++
++
++def compatible(path, value):
++    try:
++        return value.encode() in path.read_bytes().split(b"\0")
++    except OSError:
++        return False
++
++
++def configured(tree=Path("/proc/device-tree")):
++    return compatible(tree / "spi/display@0/compatible", "pimoroni,hyperpixel4")
++
++
++def find_touch(tree=Path("/proc/device-tree"), inputs=Path("/sys/class/input")):
++    if not configured(tree):
++        return None
++    for event in sorted(inputs.glob("event[0-9]*")):
++        device = (event / "device").resolve()
++        try:
++            name = (device / "name").read_text().strip()
++            product = (device / "id/product").read_text().strip()
++            controller = device.parents[1]
++            if (
++                re.fullmatch(r"\d+-(0014|005d)", controller.name)
++                and name == controller.name + " Goodix Capacitive TouchScreen"
++                and product == "038f"
++                and (controller / "of_node").resolve().parent == (tree / "i2c@0").resolve()
++                and compatible(controller / "of_node/compatible", "goodix,gt911")
++            ):
++                return event.name
++        except OSError:
++            continue
++    return None
++
++
++def point(x, y, xs, ys, rotate):
++    # The GT911 reports landscape-sized ranges but the overlay has already
++    # oriented both axes. Three physical targets confirm independent scaling.
++    def axis(value, bounds, pixels):
++        low, high = bounds
++        return round((max(low, min(high, value)) - low) * (pixels - 1) / (high - low))
++
++    # The tested Mcuzone mounting needs clockwise portrait scanout.
++    x, y = axis(y, ys, SCAN_HEIGHT), HEIGHT - 1 - axis(x, xs, SCAN_WIDTH)
++    return (WIDTH - 1 - x, HEIGHT - 1 - y) if rotate == 180 else (x, y)
++
++
++def to_scanout(image, rotate):
++    from PIL import Image
++
++    return image.transpose(Image.Transpose.ROTATE_90 if rotate == 180 else Image.Transpose.ROTATE_270)
++
++
++class Touches:
++    def __init__(self, xs, ys, rotate):
++        self.xs, self.ys, self.rotate = xs, ys, rotate
++        self.x = self.y = self.start = None
++        self.down = self.contact = self.blocked = False
++        self.slot = 0
++
++    def feed(self, kind, code, value):
++        if kind == 0 and code == 3:  # SYN_DROPPED: suppress until a clean release
++            self.start = self.x = self.y = None
++            self.blocked = True
++        elif kind == 3:
++            if code == 0:
++                self.x = value
++            elif code == 1:
++                self.y = value
++            elif code == 47:
++                self.slot = value
++            elif code == 57 and self.slot and value >= 0:
++                self.blocked = True
++        elif kind == 1 and code == 330:  # BTN_TOUCH
++            self.down = bool(value)
++        elif kind == 0 and code == 0:  # complete evdev report
++            position = None
++            if self.x is not None and self.y is not None:
++                position = point(self.x, self.y, self.xs, self.ys, self.rotate)
++            if self.down:
++                self.contact = True
++                if self.start is None:
++                    self.start = position
++                elif position and math.dist(self.start, position) > 24:
++                    self.blocked = True
++            elif self.contact:
++                tap = self.start if not self.blocked else None
++                self.start, self.contact, self.blocked = None, False, False
++                return tap
++            elif not self.down:
++                self.blocked = False
++        return None
++
++
++class TouchInput:
++    def __init__(self, event, rotate):
++        self.fd = os.open(Path("/dev/input") / event, os.O_RDONLY | os.O_NONBLOCK)
++        try:
++            bounds = []
++            for code in (0, 1):
++                # EVIOCGABS returns six native 32-bit integers from Linux input.h.
++                values = array.array("i", [0] * 6)
++                fcntl.ioctl(self.fd, 0x80184540 + code, values, True)
++                if values[2] <= values[1]:
++                    raise OSError("Invalid Goodix axis range")
++                bounds.append((values[1], values[2]))
++            self.touches = Touches(*bounds, rotate)
++        except BaseException:
++            self.close()
++            raise
++
++    def read(self, timeout):
++        result = []
++        if select.select([self.fd], [], [], timeout)[0]:
++            data = os.read(self.fd, EVENT.size * 64)
++            if not data:
++                raise OSError("Goodix disconnected")
++            for _, _, kind, code, value in EVENT.iter_unpack(data):
++                tap = self.touches.feed(kind, code, value)
++                if tap is not None:
++                    result.append(tap)
++        return result
++
++    def close(self):
++        os.close(self.fd)
++
++
++class DpiScreen:
++    """Place one overlay on the active DPI output. Never modeset or blank HDMI."""
++
++    def __init__(self, kms, card, connector, crtc, plane):
++        self.kms, self.card, self.connector = kms, card, connector
++        self.crtc, self.plane = crtc, plane
++        self.buffers = [kms.DumbFramebuffer(card, SCAN_WIDTH, SCAN_HEIGHT, "XR24") for _ in range(2)]
++        self.front = None
++
++    @staticmethod
++    def dedicated(card, connector, crtc):
++        for output in card.connectors:
++            output.refresh_props()
++            route = output.get_prop_value("CRTC_ID")
++            if output.id == connector.id and route != crtc.id:
++                return False
++            if output.id != connector.id and route == crtc.id:
++                return False
++        return True
++
++    @classmethod
++    def open(cls):
++        import pykms as kms
++
++        for status in sorted(Path("/sys/class/drm").glob("card[0-9]*-DPI-*/status")):
++            if status.read_text().strip() != "connected":
++                continue
++            device, name = status.parent.name.split("-", 1)
++            card = kms.Card("/dev/dri/" + device)
++            for connector in card.connectors:
++                if connector.fullname != name or not connector.connected():
++                    continue
++                crtc = connector.get_current_crtc()
++                if (
++                    crtc is None
++                    or (crtc.mode.hdisplay, crtc.mode.vdisplay) != (SCAN_WIDTH, SCAN_HEIGHT)
++                    or not cls.dedicated(card, connector, crtc)
++                ):
++                    continue
++                for plane in crtc.possible_planes:
++                    if (
++                        plane.plane_type == kms.PlaneType.Overlay
++                        and plane.get_prop_value("CRTC_ID") == 0
++                        and kms.PixelFormat.XRGB8888 in plane.formats
++                    ):
++                        return cls(kms, card, connector, crtc, plane)
++        raise OSError("No dedicated active HyperPixel DPI output or free overlay")
++
++    def show(self, image):
++        if not self.dedicated(self.card, self.connector, self.crtc):
++            raise OSError("DPI output changed")
++        self.plane.refresh_props()
++        current = self.plane.get_prop_value("FB_ID")
++        if current != (self.buffers[self.front].id if self.front is not None else 0):
++            raise OSError("DPI plane changed owner")
++        next_buffer = 1 if self.front == 0 else 0
++        fb = self.buffers[next_buffer]
++        pixels = image.tobytes("raw", "BGRX")
++        width = SCAN_WIDTH * 4
++        stride = fb.stride(0)
++        target = fb.map(0).cast("B")
++        if stride == width:
++            target[: len(pixels)] = pixels
++        else:
++            for y in range(SCAN_HEIGHT):
++                target[y * stride : y * stride + width] = pixels[y * width : (y + 1) * width]
++        request = self.kms.AtomicReq(self.card)
++        request.add_plane(self.plane, fb, self.crtc)
++        if request.commit_sync() != 0:
++            raise OSError("Cannot present the HyperPixel overlay")
++        self.front = next_buffer
++
++    def close(self):
++        if self.front is not None:
++            self.plane.refresh_props()
++            if self.plane.get_prop_value("FB_ID") == self.buffers[self.front].id:
++                request = self.kms.AtomicReq(self.card)
++                request.add(self.plane, {"FB_ID": 0, "CRTC_ID": 0})
++                request.commit_sync()
++            self.front = None
+diff --git a/tests/test_hyperpixel.py b/tests/test_hyperpixel.py
+new file mode 100755
+index 0000000..17b5579
+--- /dev/null
++++ b/tests/test_hyperpixel.py
+@@ -0,0 +1,195 @@
++from types import SimpleNamespace
++from PIL import Image, ImageDraw
++
++from fpms.integrations.cmprovision import Panel, heartbeat
++from fpms.integrations.cmprovision_touch import TouchMenu, centered, font
++from fpms.modules.screen.hyperpixel import DISPLAY, DpiScreen, Touches, find_touch, point, to_scanout
++
++
++def test_physical_targets_and_rotation():
++    for raw, target in [((105, 111), (62, 179)), ((676, 109), (412, 170)), ((146, 409), (76, 683))]:
++        x, y = point(*raw, (0, 799), (0, 479), 0)
++        assert abs(x - target[1]) < 15 and abs(y - (479 - target[0])) < 15
++        assert point(*raw, (0, 799), (0, 479), 180) == (799 - x, 479 - y)
++    assert point(150, 400, (100, 200), (200, 600), 0) == (400, 239)
++
++
++def test_all_four_display_corners_match_touch_in_both_landscape_mountings():
++    for rotate in (0, 180):
++        frame = Image.new("RGB", (800, 480))
++        for n, (raw, native) in enumerate(
++            [((0, 0), (0, 0)), ((799, 0), (479, 0)), ((0, 479), (0, 799)), ((799, 479), (479, 799))],
++            start=1,
++        ):
++            frame.putpixel(point(*raw, (0, 799), (0, 479), rotate), (n, 50, 80))
++            scan = to_scanout(frame, rotate)
++            assert scan.size == (480, 800)
++            assert scan.getpixel(native) == (n, 50, 80)
++
++
++def test_touch_commits_once_on_release_and_discards_drag_multitouch_or_lost_sync():
++    def gesture(extra=()):
++        touch = Touches((0, 799), (0, 479), 0)
++        events = [
++            (3, 0, 100),
++            (3, 1, 100),
++            (1, 330, 1),
++            (0, 0, 0),
++            *extra,
++            (1, 330, 0),
++            (0, 0, 0),
++            (0, 0, 0),
++        ]
++        return [p for k, c, v in events if (p := touch.feed(k, c, v)) is not None]
++
++    assert gesture() == [point(100, 100, (0, 799), (0, 479), 0)]
++    assert gesture([(3, 0, 500), (0, 0, 0), (3, 0, 100), (0, 0, 0)]) == []
++    assert gesture([(3, 47, 1), (3, 57, 88), (0, 0, 0)]) == []
++    assert gesture([(0, 3, 0), (0, 0, 0)]) == []
++
++
++def test_identity_requires_rectangular_panel_and_its_device_tree_touchscreen(tmp_path):
++    node = tmp_path / "tree/spi/display@0"
++    node.mkdir(parents=True)
++    (node / "compatible").write_bytes(b"pimoroni,hyperpixel4\0")
++    device = tmp_path / "sys/bus/i2c/devices/22-0014/input/input5"
++    device.mkdir(parents=True)
++    controller = tmp_path / "tree/i2c@0/ft6236@14"
++    controller.mkdir(parents=True)
++    (device.parents[1] / "of_node").symlink_to(controller)
++    (controller / "compatible").write_bytes(b"goodix,gt911\0")
++    (device / "name").write_text("22-0014 Goodix Capacitive TouchScreen")
++    (device / "id").mkdir()
++    (device / "id/product").write_text("038f")
++    event = tmp_path / "inputs/event7"
++    event.mkdir(parents=True)
++    (event / "device").symlink_to(device)
++    assert find_touch(tmp_path / "tree", event.parent) == "event7"
++    (controller / "compatible").write_bytes(b"another,touch\0")
++    assert find_touch(tmp_path / "tree", event.parent) is None
++    (controller / "compatible").write_bytes(b"goodix,gt911\0")
++    (node / "compatible").write_bytes(b"pimoroni,hyperpixel4sq\0")
++    assert find_touch(tmp_path / "tree", event.parent) is None
++
++
++def test_live_device_and_stable_touch_row(tmp_path):
++    panel = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    panel.enabled, panel.problem, panel.age = True, "", 1
++    panel.data = {
++        "station": {"hostname": "test-station"},
++        "project": "stage1",
++        "counts": {"done": 1},
++        "modules": [{"serial": "aaa", "name": "sensor-a", "state": "ok"}],
++    }
++    menu = TouchMenu(panel)
++
++    def select(action):
++        for (x0, y0, x1, y1), candidate in menu.targets:
++            if candidate == action:
++                menu.tap((x0 + x1) // 2, (y0 + y1) // 2)
++                return
++        raise AssertionError((action, menu.targets))
++
++    assert menu.frame().size == (800, 480)
++    select(("page", 2))
++    menu.frame()
++    panel.data["modules"].insert(0, {"serial": "bbb", "name": "sensor-b", "state": "run"})
++    select(("row", "aaa"))
++    assert panel.detail == ("module", "aaa")
++    menu.frame()
++    select(("key", "KEY2"))
++    assert panel.detail is None and panel.page == 2
++    menu.frame()
++    panel.data["modules"] = []
++    select(("row", "bbb"))
++    assert panel.detail is None
++
++
++def test_heartbeat_never_exports_input_or_graphics_paths(tmp_path):
++    import json
++
++    status = tmp_path / "heartbeat"
++    heartbeat(True, status, display={**DISPLAY, "input": "/dev/input/event7"})
++    assert json.loads(status.read_text())["display"] == {"profile": "hyperpixel-4-touch", "id": "gt911"}
++
++
++def test_logo_uses_ink_center():
++    image = Image.new("L", (60, 54))
++    centered(ImageDraw.Draw(image), (0, 0, 59, 53), "cm", font(28), 255)
++    left, top, right, bottom = image.getbbox()
++    assert abs(left - (60 - right)) <= 1 and abs(top - (54 - bottom)) <= 1
++
++
++def test_cloned_hdmi_is_rejected_and_a_separate_hdmi_crtc_is_untouched():
++    def connector(number, route):
++        return SimpleNamespace(id=number, refresh_props=lambda: None, get_prop_value=lambda prop: route)
++
++    dpi, crtc = connector(49, 81), SimpleNamespace(id=81)
++
++    def allowed(*outputs):
++        return DpiScreen.dedicated(SimpleNamespace(connectors=outputs), dpi, crtc)
++
++    assert allowed(dpi, connector(35, 0))
++    assert allowed(dpi, connector(35, 37))
++    assert not allowed(dpi, connector(35, 81))
++    assert not allowed(connector(49, 0))
++
++
++def test_power_selection_confirm_and_interrupt_have_distinct_touch_targets(tmp_path):
++    panel = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False, power_client=lambda _: None)
++    panel.power_menu.show()
++    menu = TouchMenu(panel)
++
++    def bounds(stage, action):
++        panel.power_menu.stage, panel.power_menu.deadline = stage, panel.clock() + 120
++        menu.frame()
++        return next(box for box, entry in menu.targets if action == entry)
++
++    def separate(a, b):
++        return a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1]
++
++    select = bounds("menu", ("system", 1))
++    confirm = bounds("confirm", ("key", "KEY1"))
++    interrupt = bounds("interrupt", ("key", "KEY1"))
++    assert separate(select, confirm) and separate(confirm, interrupt)
++
++
++def test_pages_have_in_bounds_finger_sized_controls_and_both_color_modes(tmp_path):
++    panel = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    panel.enabled, panel.age = True, 1
++    port = {"name": "Gi0/1", "number": 1, "state": "module", "filter": "ok", "serials": ["aaa"]}
++    panel.data = {
++        "station": {"uplink": {"state": "wifi", "address": "192.0.2.4", "ssid": "test"}},
++        "switches": [{"name": "sw1", "blocks": [{"rows": 2, "ports": [port]}]}],
++        "modules": [{"serial": "aaa", "name": "sensor-a", "state": "ok", "port": "sw1 Gi0/1"}],
++    }
++    menu = TouchMenu(panel)
++    for theme in ("classic", "new"):
++        for mode in ("dark", "light"):
++            panel.data["panel"] = {"theme": theme, "color_mode": mode}
++            for page in range(5):
++                panel.page = page
++                assert menu.frame().size == (800, 480)
++                for (x0, y0, x1, y1), _ in menu.targets:
++                    assert 0 <= x0 < x1 < 800 and 0 <= y0 < y1 < 480
++                    assert min(x1 - x0 + 1, y1 - y0 + 1) >= 44
++
++
++def test_real_cycle_and_switch_group_labels_are_readable(tmp_path, monkeypatch):
++    panel = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    panel.enabled, panel.age = True, 1
++    panel.data = {
++        "modules": [{"serial": "abc", "name": "sensor", "cycle": 427, "state": "ok"}],
++        "switches": [
++            {"name": "sw", "blocks": [{"label": "SFP", "rows": 1, "ports": [{"name": "Gi0/11"}]}]}
++        ],
++    }
++    menu = TouchMenu(panel)
++    labels = []
++    monkeypatch.setattr(menu, "label", lambda x, y, value, *args, **kwargs: labels.append(value))
++    panel.page, panel.detail = 2, ("module", "abc")
++    menu.frame()
++    assert "7:07" in labels
++    panel.page, panel.detail = 1, None
++    menu.frame()
++    assert "SFP" in labels
+diff --git a/fpms/integrations/cmprovision_touch_style.py b/fpms/integrations/cmprovision_touch_style.py
+new file mode 100644
+index 0000000..34ff4cf
+--- /dev/null
++++ b/fpms/integrations/cmprovision_touch_style.py
+@@ -0,0 +1,165 @@
++"""Drawing primitives for the 800 × 480 cmprovision touch panel."""
++
++from functools import lru_cache
++from pathlib import Path
++
++from PIL import Image, ImageDraw, ImageFont
++
++from .cmprovision import text
++
++
++LIGHT = dict(
++    bg="#F8F5F0",
++    surface="#FFFDFA",
++    raised="#F4EDE4",
++    line="#DED6CC",
++    fg="#29241F",
++    muted="#6E655B",
++    accent="#A94812",
++    tint="#FBE7D5",
++    good="#216747",
++    good_tint="#E1F1E7",
++    run="#285F9B",
++    run_tint="#E4EEF9",
++    warn="#8A5B12",
++    warn_tint="#FAEAC6",
++    bad="#A33931",
++    bad_tint="#F8E2DF",
++)
++DARK = dict(
++    bg="#161412",
++    surface="#211E1B",
++    raised="#2C2824",
++    line="#403A34",
++    fg="#FAF4EC",
++    muted="#B6A99B",
++    accent="#FFA565",
++    tint="#3E2B1E",
++    good="#8AD4AD",
++    good_tint="#23392E",
++    run="#A0C8F6",
++    run_tint="#263444",
++    warn="#EBBF72",
++    warn_tint="#3B3121",
++    bad="#FAA69A",
++    bad_tint="#422A27",
++)
++
++
++@lru_cache(maxsize=40)
++def font(size, weight="regular"):
++    names = {
++        "regular": "nunito-v16-latin-regular.woff",
++        "bold": "nunito-v16-latin-700.woff",
++        "mono": "jetbrains-mono-700.woff2",
++    }
++    try:
++        return ImageFont.truetype(str(Path("/var/lib/cmprovision/public/fonts") / names[weight]), size)
++    except OSError:
++        return ImageFont.load_default(size=size)
++
++
++def centered(draw, box, value, face, color):
++    # Ink bounds give the monogram even margins despite the font's side bearings.
++    left, top, right, bottom = face.getbbox(value)
++    mask = Image.new("L", (max(1, right - left), max(1, bottom - top)))
++    ImageDraw.Draw(mask).text((-left, -top), value, font=face, fill=255)
++    bounds = mask.getbbox()
++    if bounds:
++        ink = mask.crop(bounds)
++        x = box[0] + (box[2] - box[0] + 1 - ink.width) // 2
++        y = box[1] + (box[3] - box[1] + 1 - ink.height) // 2
++        draw.bitmap((x, y), ink, fill=color)
++
++
++@lru_cache(maxsize=32)
++def icon(name, size):
++    scale = 3
++    mask = Image.new("L", (24 * scale, 24 * scale))
++    d = ImageDraw.Draw(mask)
++
++    def line(*points):
++        d.line([(x * scale, y * scale) for x, y in points], fill=255, width=2 * scale, joint="curve")
++
++    def box(x, y, w, h):
++        d.rounded_rectangle(
++            (x * scale, y * scale, (x + w) * scale, (y + h) * scale),
++            radius=scale,
++            outline=255,
++            width=2 * scale,
++        )
++
++    if name == "Overview":
++        for x, y in ((3, 3), (13, 3), (3, 13), (13, 13)):
++            box(x, y, 7, 7)
++    elif name == "Ports":
++        line((3, 4), (21, 4), (21, 15), (16, 15), (16, 20), (8, 20), (8, 15), (3, 15), (3, 4))
++        for x in (7, 10, 13, 16):
++            line((x, 5), (x, 9))
++    elif name == "Devices":
++        box(6, 6, 12, 12)
++        box(10, 10, 4, 4)
++        for n in (8, 12, 16):
++            line((n, 2), (n, 5))
++            line((n, 19), (n, 22))
++            line((2, n), (5, n))
++            line((19, n), (22, n))
++    elif name == "Errors":
++        line((12, 3), (22, 20), (2, 20), (12, 3))
++        line((12, 9), (12, 13))
++        line((12, 16), (12, 17))
++    elif name == "Station":
++        box(3, 4, 18, 13)
++        line((12, 17), (12, 21))
++        line((7, 21), (17, 21))
++    elif name == "System":
++        for y, knob in ((5, 8), (12, 16), (19, 10)):
++            line((3, y), (knob - 3, y))
++            line((knob + 3, y), (21, y))
++            box(knob - 2, y - 2, 4, 4)
++    elif name == "next":
++        line((9, 5), (16, 12), (9, 19))
++    elif name == "wifi":
++        for coords in (
++            ((2, 8), (6, 5), (12, 4), (18, 5), (22, 8)),
++            ((5, 12), (9, 9), (15, 9), (19, 12)),
++            ((8, 15), (12, 13), (16, 15)),
++            ((11, 19), (13, 19)),
++        ):
++            line(*coords)
++    return mask.resize((size, size), Image.Resampling.LANCZOS)
++
++
++def fit(value, face, width):
++    value = text(value)
++    if face.getlength(value) <= width:
++        return value
++    lo, hi = 0, len(value)
++    while lo < hi:
++        mid = (lo + hi + 1) // 2
++        if face.getlength(value[:mid] + "…") <= width:
++            lo = mid
++        else:
++            hi = mid - 1
++    return value[:lo] + "…"
++
++
++def wrap(value, face, width):
++    # Preserve long unbroken values (for example generated Wi-Fi passwords).
++    lines, line = [], ""
++    for word in text(value).split(" "):
++        candidate = (line + " " + word).strip()
++        if face.getlength(candidate) <= width:
++            line = candidate
++            continue
++        if line:
++            lines.append(line)
++        line = ""
++        for char in word:
++            if line and face.getlength(line + char) > width:
++                lines.append(line)
++                line = ""
++            line += char
++    if line:
++        lines.append(line)
++    return lines

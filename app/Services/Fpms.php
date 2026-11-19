@@ -26,8 +26,11 @@ class Fpms
         $status = ['state' => in_array($data['state'] ?? '', ['off', 'running', 'not installed', 'incompatible', 'no hardware', 'waiting for FPMS', 'stale', 'error'], true)
             ? $data['state'] : 'unavailable'];
         $display = $data['display'] ?? null;
-        if (in_array($status['state'], ['running', 'stale', 'error'], true) && is_array($display)
-            && ($display['profile'] ?? null) === 'waveshare-1.44' && is_string($display['id'] ?? null)
+        if (!in_array($status['state'], ['running', 'stale', 'error'], true) || !is_array($display))
+            return $status;
+        if (($display['profile'] ?? null) === 'hyperpixel-4-touch' && ($display['id'] ?? null) === 'gt911')
+            $status['display'] = ['profile' => 'hyperpixel-4-touch', 'id' => 'gt911'];
+        elseif (($display['profile'] ?? null) === 'waveshare-1.44' && is_string($display['id'] ?? null)
             && preg_match('/\A7c[89a-f][0-9a-f]{3}\z/D', $display['id']))
             $status['display'] = ['profile' => 'waveshare-1.44', 'id' => $display['id']];
         return $status;

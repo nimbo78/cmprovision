@@ -193,6 +193,12 @@ class WatcherTest(unittest.TestCase):
 
 
 class DisplayIdentityTest(unittest.TestCase):
+    def test_hyperpixel_touch_is_reported_only_with_its_recognized_controller(self):
+        display = dict(profile='hyperpixel-4-touch', id='gt911')
+        self.assertEqual(display, control.display_identity(dict(BEAT, display=display), 101))
+        for identity in ('', '7c89f0', '<unknown>'):
+            self.assertIsNone(control.display_identity(dict(BEAT, display=dict(display, id=identity)), 101))
+
     def test_identity_is_allowlisted_without_breaking_legacy_heartbeats(self):
         display = dict(profile='waveshare-1.44', id='7c89f0')
         self.assertEqual(display, control.display_identity(dict(BEAT, display=display), 101))

@@ -1,12 +1,16 @@
 <x-settings-card title="FPMS display" id="fpms-display" wire:poll.10s
     description="Show provisioning progress, ports and device diagnostics on a small front panel display.">
     <x-slot name="help">
-        Requires fpms-lite with cmprovision support on Raspberry Pi OS Lite. The panel is read-only and can work alongside HDMI.
+        Requires fpms-lite with cmprovision support on Raspberry Pi OS Lite. The front panel can work alongside HDMI.
     </x-slot>
     <form wire:submit="save" class="space-y-4">
         <p class="text-sm text-fg-muted" role="status">FPMS: {{ $status['state'] }}</p>
         @if(isset($status['display']))
-            <p class="text-sm text-fg-muted">Waveshare 1.44 profile · ST7735S · ID {{ strtoupper($status['display']['id']) }}</p>
+            @if($status['display']['profile'] === 'hyperpixel-4-touch')
+                <p class="text-sm text-fg-muted">HyperPixel 4.0 Touch · 800 × 480 · GT911</p>
+            @else
+                <p class="text-sm text-fg-muted">Waveshare 1.44 profile · ST7735S · ID {{ strtoupper($status['display']['id']) }}</p>
+            @endif
         @endif
         <label class="flex items-center gap-2"><input type="checkbox" wire:model="enabled" class="form-checkbox">Enable cmprovision in FPMS</label>
         @error('enabled') <p class="text-sm text-neg" role="alert">{{ $message }}</p> @enderror

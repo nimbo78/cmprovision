@@ -25,13 +25,18 @@ ST7735-compatible controller before initializing the display/buttons and adds it
 Missing SPI, busy control pins or no supported reply leave the service idle; failed identification
 is retried at most every 30 seconds. Older heartbeats without identity keep their previous semantics. The
 cmprovision watcher starts a data consumer only when enabled and that heartbeat is current. Old
-FPMS packages are not assumed compatible. Raspberry Pi OS needs `dtparam=spi=on` for the Lite package.
+FPMS packages are not assumed compatible. The Waveshare profile needs `dtparam=spi=on`.
 
 Identification uses SPI_3WIRE half-duplex readback on the existing GPIO10 data wire. RESET stays an
 input with a weak pull-up; backlight and buttons are taken only after a positive response. An active
 DPI profile is left alone. `raspi-utils-core` supplies read-only `pinctrl get` for kernels that report
 unknown GPIO bias; missing or ambiguous configuration is not guessed. This selects the supported Waveshare 1.44-inch layout; a controller ID does
-not uniquely identify panel dimensions. HyperPixel detection is not implemented or qualified.
+not uniquely identify panel dimensions.
+
+The rectangular HyperPixel 4.0 Touch profile checks the Raspberry Pi DPI overlay, the bound Goodix GT911
+input device and the active 480×800 output before publishing its identity. The native landscape menu uses the station’s existing Nunito and JetBrains Mono fonts. Its optional KMS Python binding
+comes from `python3-kms++`; the FPMS station image installs it. Only the dedicated DPI overlay is used.
+See [installation and touch controls](../../docs/fpms-display.md#hyperpixel-40-touch).
 
 ## Validation status
 

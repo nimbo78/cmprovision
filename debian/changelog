@@ -1,3 +1,10 @@
+cmprovision4 (2.30.8~hyperpixel3) UNRELEASED; urgency=medium
+
+  * Add a landscape touch menu on the rectangular HyperPixel 4.0 and
+    show the detected front panel in the station's FPMS settings.
+
+ -- cmprovision contributors <cmprovision@localhost>  Thu, 19 Nov 2026 16:00:00 +0300
+
 cmprovision4 (2.30.7) trixie; urgency=medium
 
   * Resolve Re-provision targets without a local DHCP lease using a

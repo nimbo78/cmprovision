@@ -96,12 +96,15 @@ def display_identity(heartbeat, now):
             or heartbeat.get('hardware') is not True or not fresh(heartbeat.get('at'), now, HEARTBEAT_FRESH)):
         return None
     display = heartbeat.get('display')
-    if not isinstance(display, dict) or display.get('profile') != 'waveshare-1.44':
+    if not isinstance(display, dict):
         return None
     identity = display.get('id')
-    if not isinstance(identity, str) or not re.fullmatch(r'7c[89a-f][0-9a-f]{3}', identity):
-        return None
-    return dict(profile='waveshare-1.44', id=identity)
+    profile = display.get('profile')
+    if profile == 'hyperpixel-4-touch' and identity == 'gt911':
+        return dict(profile=profile, id=identity)
+    if profile == 'waveshare-1.44' and isinstance(identity, str) and re.fullmatch(r'7c[89a-f][0-9a-f]{3}', identity):
+        return dict(profile=profile, id=identity)
+    return None
 
 
 def snapshot_age(now):

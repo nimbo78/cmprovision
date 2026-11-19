@@ -71,6 +71,16 @@ class FpmsTest extends TestCase
             ->assertSee('Waveshare 1.44')->assertSee('7C89F0');
     }
 
+    public function test_settings_recognizes_the_hyperpixel_touch_controller()
+    {
+        $display = ['profile' => 'hyperpixel-4-touch', 'id' => 'gt911'];
+        $service = new StoredFpmsStatus(['state' => 'running', 'checked_at' => time(), 'display' => $display]);
+        $this->assertSame($display, $service->status()['display'] ?? null);
+        $this->app->instance(Fpms::class, $service);
+        Livewire::actingAs(User::factory()->create())->test(FpmsSettings::class)
+            ->assertSee('HyperPixel 4.0 Touch')->assertSee('800 × 480')->assertSee('GT911')->assertDontSee('ST7735S');
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

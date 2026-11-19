@@ -7,7 +7,7 @@ chmod 0755 /run
 apt-get -o Acquire::Retries=3 update
 apt-get -o Acquire::Retries=3 install --no-install-recommends -y network-manager wpasupplicant iw nftables
 if [ -f /opt/cmprovision-image-fpms.deb ]; then
-    apt-get -o Acquire::Retries=3 install --no-install-recommends -y firmware-iwlwifi lldpd /opt/cmprovision-image.deb /opt/cmprovision-image-fpms.deb
+    apt-get -o Acquire::Retries=3 install --no-install-recommends -y firmware-iwlwifi lldpd python3-kms++ /opt/cmprovision-image.deb /opt/cmprovision-image-fpms.deb
     systemctl disable fpms-lite.service
     systemctl enable cmprovision-image-fpms.path cmprovision-image-fpms.timer
 else

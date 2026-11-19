@@ -17,7 +17,25 @@ image writing and SHA256, the first-boot OS check, and a cold PoE boot after res
 station data and networking. Update recovery started without manual repair; FPMS
 reported `running` after SPI restoration. Raspberry Pi Imager customization remains untested.
 
-FPMS shows a compact read-only view on a Waveshare 1.44-inch 128×128 display.
+FPMS shows provisioning and station data on the Waveshare 1.44-inch 128×128 panel or the rectangular HyperPixel 4.0 Touch. The controls below refer to the Waveshare.
+
+## HyperPixel 4.0 Touch
+
+1. Power down the CM4 station, disconnect PoE and USB power, and fit the display to the 40-pin header with pin 1 aligned.
+2. On Raspberry Pi OS Lite Trixie, install the matching `fpms-lite` package and `python3-kms++`. Keep the existing full KMS overlay (`vc4-kms-v3d`). In the active CM4 or `[all]` section of `/boot/firmware/config.txt`, set the following lines once and remove conflicting SPI or I²C enable lines.
+
+   ```ini
+   dtparam=i2c_arm=off
+   dtparam=spi=off
+   dtoverlay=vc4-kms-dpi-hyperpixel4
+   ```
+
+3. Reboot and enable **Settings → System → FPMS display**. The detected panel appears as **HyperPixel 4.0 Touch · 800 × 480 · GT911**. Changing panel families requires selecting the appropriate boot configuration and rebooting. FPMS identifies the controller on the configured interface. The menu uses landscape orientation. For the opposite mounting, the existing `fpms.lite --rotate 180` option flips the picture and touch coordinates together.
+4. Tap a tab at the bottom. **Ports** opens a port or its attached sensor. **Devices** opens diagnostics. **System** provides appearance and power controls. The first tap after the screen goes dark wakes it. The square and non-touch HyperPixel models use different hardware.
+
+HyperPixel uses a dedicated DPI overlay. If HDMI mirrors the same display pipeline or no overlay plane is free, FPMS waits. The station and device data come from the same snapshot as the HDMI wallboard. [Pimoroni display setup](https://github.com/pimoroni/hyperpixel4)
+
+## Waveshare controls
 
 The Station page in Classic and New also shows [rescue Wi-Fi](rescue-wifi.md): its search countdown or active SSID, gateway and associated-client count. In Lite, press **OK** while the AP is active to open its Wi-Fi QR code. Press **OK** again to see the SSID and password; up/down scrolls long credentials. **KEY2** closes the card. The same QR and connection details appear temporarily on HDMI. Both screens return to their normal view after **60 seconds**, or when the card is closed. A normal status page never shows the password.
 The first hardware target is CM4. A display is optional: web provisioning works
@@ -55,7 +73,7 @@ shutdown still require their separate **KEY1** confirmation.
 3. Check **Enable cmprovision in FPMS**, then **Save FPMS settings**.
 4. Check the displayed status. With the current Lite package, `running` means the controller answered
    identification requests, FPMS is alive and the shared snapshot is fresh. Settings also shows the
-   **Waveshare 1.44 profile** and controller ID. Older FPMS packages without identification still report
+   detected panel and controller ID. Older FPMS packages without identification still report
    process/SPI availability only. `not installed`, `incompatible`, `no hardware` (SPI unavailable or no
    supported controller response) and `waiting for FPMS` distinguish missing support from a stopped process.
 
@@ -64,7 +82,7 @@ The integration settings are included in normal cmprovision backups (a `--data-o
 enable the panel again). A restore stops both display consumers before replacing the database, then starts their watchers
 again. `apt remove` keeps `/etc/default/cmprovision-fpms.json`; `apt purge` removes the file.
 
-## Raspberry Pi OS Lite: turn SPI on first
+## Enable SPI for the Waveshare panel
 
 Raspberry Pi OS ships with SPI off. Add `dtparam=spi=on` to `/boot/firmware/config.txt` and reboot, or the
 service stays idle and the status says `no hardware`. While `/dev/spidev0.0` does not exist the service
@@ -86,7 +104,7 @@ configurations that cannot be safely restored are not probed. No button press or
 The CM4/Waveshare fixture on `wlanpi-d62` returned **7C89F0**, including before FPMS initialization
 after a 15-second PoE power cut. The ID identifies the controller; it does not uniquely establish panel
 dimensions or confirm that its backlight and pixels work. This selects the supported 1.44-inch wiring
-and layout. HyperPixel autodetection is not included and still needs its own hardware qualification.
+and layout.
 
 Headless startup was checked on `wlanpi-da2` using the packaged Lite code: with SPI disabled,
 no GPIO requests occurred; with SPI temporarily enabled and no panel fitted, three probes over
