@@ -35,6 +35,8 @@ FPMS shows provisioning and station data on the Waveshare 1.44-inch 128×128 pan
 
 HyperPixel uses a dedicated DPI overlay. If HDMI mirrors the same display pipeline or no overlay plane is free, FPMS waits. The station and device data come from the same snapshot as the HDMI wallboard. [Pimoroni display setup](https://github.com/pimoroni/hyperpixel4)
 
+On `wlanpi-d62` the matched controller provided three physical calibration points. After a normal reboot on 19 November 2026, FPMS identified the GT911, opened the landscape menu and resumed receiving live station and switch data.
+
 ## Waveshare controls
 
 The Station page in Classic and New also shows [rescue Wi-Fi](rescue-wifi.md): its search countdown or active SSID, gateway and associated-client count. In Lite, press **OK** while the AP is active to open its Wi-Fi QR code. Press **OK** again to see the SSID and password; up/down scrolls long credentials. **KEY2** closes the card. The same QR and connection details appear temporarily on HDMI. Both screens return to their normal view after **60 seconds**, or when the card is closed. A normal status page never shows the password.
