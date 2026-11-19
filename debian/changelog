@@ -1,14 +1,15 @@
-cmprovision4 (2.30.8~hyperpixel6) UNRELEASED; urgency=medium
+cmprovision4 (2.30.8) trixie; urgency=medium
 
-  * Add a landscape touch menu on the rectangular HyperPixel 4.0 and
-    show the detected front panel in the station's FPMS settings.
-  * Show Ethernet link and PoE delivery separately for each HyperPixel port.
-  * Configure the front panel's idle timeout from the web or either FPMS display.
-  * Port the reviewed HyperPixel screens to the native touch menu: batch filters,
-    named service alerts, uplink quality, connected ports and separate display
-    and power controls. Align status icons with their labels.
+  * Add an 800x480 touch dashboard for the rectangular HyperPixel 4.0 Touch
+    and identify its GT911 controller in the web settings.
+  * Filter devices by provisioning status and show Ethernet link and PoE
+    delivery separately on the switch map and in the connected-port list.
+  * Show uplink signal and transmit rate, free disk space and service names
+    on the station health page.
+  * Set the screen timeout from the web or from a HyperPixel or Waveshare panel.
+  * Include the KMS Python bindings in the ARM64 station image with FPMS.
 
- -- cmprovision contributors <cmprovision@localhost>  Thu, 19 Nov 2026 16:00:00 +0300
+ -- cmprovision contributors <cmprovision@localhost>  Thu, 19 Nov 2026 22:53:38 +0300
 
 cmprovision4 (2.30.7) trixie; urgency=medium
 
