@@ -17805,11 +17805,12 @@ index 0000000..6cdd901
 +            self.front = None
 diff --git a/tests/test_hyperpixel.py b/tests/test_hyperpixel.py
 new file mode 100755
-index 0000000..47ecaff
+index 0000000..69b733e
 --- /dev/null
 +++ b/tests/test_hyperpixel.py
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,313 @@
 +from types import SimpleNamespace
++import pytest
 +from PIL import Image, ImageDraw
 +
 +from fpms.integrations.cmprovision import Panel, heartbeat
@@ -18058,6 +18059,41 @@ index 0000000..47ecaff
 +        (None, 1.8, "1.8 W"),
 +    ]:
 +        assert port_power({"poe_state": state, "watts": watts})[0] == short
++
++
++@pytest.mark.parametrize("theme", ["classic", "new"])
++@pytest.mark.parametrize("mode", ["light", "dark"])
++def test_tapping_free_ports_renders_the_card_and_returns_to_the_map(tmp_path, theme, mode):
++    panel = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    panel.enabled, panel.age = True, 1
++    panel.data = {
++        "panel": {"theme": theme, "color_mode": mode},
++        "switches": [{"name": "sw", "answering": True, "blocks": [
++            {"label": "RJ45", "rows": 2, "ports": [
++                {"name": "Gi0/2", "number": 2, "state": "free", "serials": [], "link_up": False,
++                 "speed": 10, "poe_state": "searching", "watts": 0},
++            ]},
++            {"label": "SFP", "rows": 1, "ports": [
++                {"name": "Gi0/11", "number": 1, "state": "free", "serials": [], "link_up": False,
++                 "speed": 10, "poe_state": None, "watts": None},
++            ]},
++        ]}],
++    }
++    menu = TouchMenu(panel)
++
++    def tap(action):
++        (left, top, right, bottom) = next(box for box, target in menu.targets if target == action)
++        menu.tap((left + right) // 2, (top + bottom) // 2)
++        return menu.frame()
++
++    menu.frame()
++    port_map = tap(("page", 1)).tobytes()
++    for pin in ("0:Gi0/2", "0:Gi0/11"):
++        card = tap(("row", pin))
++        assert panel.detail == ("port", pin) and card.tobytes() != port_map
++        assert not any(action[0] == "port_device" for _, action in menu.targets)
++        assert tap(("key", "KEY2")).tobytes() == port_map
++        assert panel.page == 1 and panel.detail is None
 +
 +
 +def test_dense_map_keeps_every_port_tappable_and_returns_to_its_bank(tmp_path):
