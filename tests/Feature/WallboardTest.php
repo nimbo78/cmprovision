@@ -7,6 +7,7 @@ use App\Models\Cm;
 use App\Models\User;
 use App\Models\UsbDiagnosticReport;
 use App\Services\Switch\MacTable;
+use App\Services\Switch\SwitchSnapshot;
 use App\Services\Wallboard;
 use App\Support\ModuleDiagnostics;
 use App\Support\WallboardSnapshot;
@@ -70,6 +71,26 @@ class WallboardTest extends TestCase
         $this->assertTrue($ports['XGE0/0/1']['server'], 'the provisioner\'s MAC is on this port');
         foreach (['GE0/0/1', 'GE0/0/2', 'GE0/0/3'] as $name)
             $this->assertFalse($ports[$name]['server'], $name);
+    }
+
+    public function test_display_reports_physical_link_and_poe_independently()
+    {
+        $this->stand();
+        $table =& $this->fake->tables[''];
+        $table[SwitchSnapshot::OID_IFOPERSTATUS.'.8'] = 2; // Still delivering 6.9 W.
+        $table[SwitchSnapshot::OID_IFOPERSTATUS.'.6'] = 4; // Agent reports unknown.
+        unset($table[SwitchSnapshot::OID_IFOPERSTATUS.'.7']);
+
+        $switch = app(WallboardSnapshot::class)->current()['switches'][0];
+        $ports = array_column(array_merge(...array_column($switch['blocks'], 'ports')), null, 'name');
+        $this->assertFalse($ports['GE0/0/3']['link_up']);
+        $this->assertSame('delivering', $ports['GE0/0/3']['poe_state']);
+        $this->assertEquals(6.9, $ports['GE0/0/3']['watts']);
+        $this->assertNull($ports['GE0/0/1']['link_up']);
+        $this->assertNull($ports['GE0/0/2']['link_up']);
+        $this->assertSame('searching', $ports['GE0/0/2']['poe_state']);
+        $this->assertTrue($ports['XGE0/0/1']['link_up']);
+        $this->assertNull($ports['XGE0/0/1']['poe_state']);
     }
 
     public function test_a_device_on_a_port_that_is_not_a_module_is_listed_for_the_display_with_what_it_says_or_its_maker()

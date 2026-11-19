@@ -26,6 +26,8 @@ class StationPower extends Command
                 'cancel' => $this->cancel($power, $request['token'] ?? ''),
                 'appearance' => $this->appearance($request, false),
                 'set-appearance' => $this->appearance($request, true),
+                'screen-timeout' => $this->screenTimeout($request, false),
+                'set-screen-timeout' => $this->screenTimeout($request, true),
                 default => throw new \InvalidArgumentException('Unknown power operation.'),
             };
             $this->line(json_encode(['ok' => true, 'result' => $result], JSON_THROW_ON_ERROR));
@@ -54,5 +56,17 @@ class StationPower extends Command
         }
         return ['stage' => 'appearance', 'mode' => FpmsPanelSettings::get()['color_mode'],
             'observed_at' => now()->getTimestamp()];
+    }
+
+    private function screenTimeout(array $request, bool $save): array
+    {
+        $keys = $save ? ['operation', 'seconds'] : ['operation'];
+        if (count($request) !== count($keys) || array_diff(array_keys($request), $keys))
+            throw new \InvalidArgumentException('Invalid screen timeout request.');
+        if ($save) {
+            if (!is_int($request['seconds'])) throw new \InvalidArgumentException('Screen timeout must be an integer.');
+            FpmsPanelSettings::saveScreenTimeout($request['seconds']);
+        }
+        return ['stage' => 'screen-timeout', 'seconds' => FpmsPanelSettings::get()['screen_timeout'], 'observed_at' => now()->getTimestamp()];
     }
 }

@@ -1,3 +1,15 @@
+cmprovision4 (2.30.8~hyperpixel6) UNRELEASED; urgency=medium
+
+  * Add a landscape touch menu on the rectangular HyperPixel 4.0 and
+    show the detected front panel in the station's FPMS settings.
+  * Show Ethernet link and PoE delivery separately for each HyperPixel port.
+  * Configure the front panel's idle timeout from the web or either FPMS display.
+  * Port the reviewed HyperPixel screens to the native touch menu: batch filters,
+    named service alerts, uplink quality, connected ports and separate display
+    and power controls. Align status icons with their labels.
+
+ -- cmprovision contributors <cmprovision@localhost>  Thu, 19 Nov 2026 16:00:00 +0300
+
 cmprovision4 (2.30.7) trixie; urgency=medium
 
   * Resolve Re-provision targets without a local DHCP lease using a

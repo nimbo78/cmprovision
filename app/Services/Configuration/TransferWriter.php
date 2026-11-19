@@ -130,7 +130,8 @@ class TransferWriter
                 $followups['usb_prep'] = true;
                 break;
             case 'display':
-                FpmsPanelSettings::save($values['fpms']['theme'], $values['fpms']['ports_map'], $values['fpms']['color_mode']);
+                FpmsPanelSettings::save($values['fpms']['theme'], $values['fpms']['ports_map'], $values['fpms']['color_mode'],
+                    $values['fpms']['screen_timeout'] ?? null);
                 $followups['display'] = ['wallboard' => $values['wallboard'], 'fpms_service' => $values['fpms_service'],
                     'hdmi_auto' => $values['hdmi_auto']];
                 break;

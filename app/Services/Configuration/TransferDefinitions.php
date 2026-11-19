@@ -57,9 +57,10 @@ class TransferDefinitions
             'updates' => ['application' => 'required|boolean', 'utility-os' => 'required|boolean'],
             'netbox' => array_fill_keys(array_keys(NetBoxExport::DEFAULTS), 'required|string|max:100|not_regex:/[\x00-\x1f]/'),
             'display' => [
-                'fpms' => 'required|array:theme,ports_map,color_mode', 'fpms.theme' => ['required', Rule::in(FpmsPanelSettings::THEMES)],
+                'fpms' => 'required|array:theme,ports_map,color_mode,screen_timeout', 'fpms.theme' => ['required', Rule::in(FpmsPanelSettings::THEMES)],
                 'fpms.ports_map' => ['required', Rule::in(FpmsPanelSettings::PORTS_MAPS)],
                 'fpms.color_mode' => ['required', Rule::in(FpmsPanelSettings::COLOR_MODES)],
+                'fpms.screen_timeout' => ['sometimes', 'required', 'integer', Rule::in(array_keys(FpmsPanelSettings::SCREEN_TIMEOUTS))],
                 'wallboard' => 'required|array:mode,palette,view,rotation', 'wallboard.mode' => 'required|in:off,auto,on',
                 'wallboard.palette' => 'required|in:warm,warm-light,neutral,neutral-light',
                 'wallboard.view' => 'required|in:auto,desk,flow,engineer', 'wallboard.rotation' => 'required|integer|between:5,60',
