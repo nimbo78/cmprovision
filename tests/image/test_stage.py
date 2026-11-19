@@ -52,6 +52,16 @@ class ImageStagingTest(unittest.TestCase):
             self.assertIn('Requires=cmprovision-image-firstboot.service', dropin.read_text())
         self.assertTrue((self.rootfs / 'opt/cmprovision-image.deb').is_file())
 
+    def test_wifi_names_are_installed_before_networkmanager_starts(self):
+        result = self.run_stage()
+        self.assertEqual(0, result.returncode, result.stderr)
+        units = self.rootfs / 'etc/systemd/system'
+        name = 'cmprovision-image-wifi-names.service'
+        helper = self.rootfs / 'usr/lib/cmprovision/image-wifi-names'
+        self.assertTrue(helper.is_file() and helper.stat().st_mode & 0o100)
+        self.assertIn('Before=NetworkManager.service', (units / name).read_text().splitlines())
+        self.assertEqual('../' + name, os.readlink(units / 'NetworkManager.service.wants' / name))
+
     def test_wrong_checksum_stops_before_any_files_are_installed(self):
         self.environment['CMP_IMAGE_DEB_SHA256'] = '0' * 64
         self.assertNotEqual(0, self.run_stage().returncode)

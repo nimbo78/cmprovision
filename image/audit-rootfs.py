@@ -141,6 +141,16 @@ def audit(root):
     info = helper.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or not (info.st_mode & 0o100):
         raise ValueError('The image first-boot helper is missing or not executable by root.')
+    wifi_unit = 'cmprovision-image-wifi-names.service'
+    wifi_ordering = read_regular(units / wifi_unit).splitlines()
+    wifi_enabled = units / 'NetworkManager.service.wants' / wifi_unit
+    wifi_helper = (root / 'usr/lib/cmprovision/image-wifi-names').lstat()
+    if ('Before=NetworkManager.service' not in wifi_ordering or
+            'ExecStart=/usr/lib/cmprovision/image-wifi-names' not in wifi_ordering or
+            not wifi_enabled.is_symlink() or os.readlink(wifi_enabled) != '../' + wifi_unit or
+            not stat.S_ISREG(wifi_helper.st_mode) or wifi_helper.st_uid != 0 or
+            not wifi_helper.st_mode & 0o100 or wifi_helper.st_mode & 0o022):
+        raise ValueError('The station Wi-Fi naming service is missing, unsafe or out of order.')
     if os.path.lexists(root / 'usr/lib/systemd/system/fpms-lite.service'):
         dropin = read_regular(units / 'fpms-lite.service.d/cmprovision-image.conf')
         if 'ConditionPathExists=/run/cmprovision-image-fpms/enabled' not in dropin.splitlines():

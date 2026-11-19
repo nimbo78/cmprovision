@@ -48,6 +48,14 @@ class RootfsAuditTest(unittest.TestCase):
                    '[Unit]\nAfter=sshd-keygen.service\n[Service]\nExecStart=/usr/lib/cmprovision/image-firstboot\n')
         self.write('usr/lib/cmprovision/image-firstboot', '#!/bin/sh\nexit 0\n')
         (self.root / 'usr/lib/cmprovision/image-firstboot').chmod(0o755)
+        wifi_unit = 'cmprovision-image-wifi-names.service'
+        self.write('etc/systemd/system/' + wifi_unit,
+                   '[Unit]\nBefore=NetworkManager.service\n[Service]\nExecStart=/usr/lib/cmprovision/image-wifi-names\n')
+        self.wifi_wants = self.units / 'NetworkManager.service.wants' / wifi_unit
+        self.wifi_wants.parent.mkdir()
+        self.wifi_wants.symlink_to('../' + wifi_unit)
+        self.write('usr/lib/cmprovision/image-wifi-names', '#!/usr/bin/python3\n')
+        (self.root / 'usr/lib/cmprovision/image-wifi-names').chmod(0o755)
         self.write('usr/lib/cmprovision/image-setup-schema', '1\n')
         self.write('usr/lib/cmprovision/image-setup-capabilities', '2\n')
         self.web_db = self.root / 'var/lib/cmprovision/database/database.sqlite'
@@ -67,6 +75,17 @@ class RootfsAuditTest(unittest.TestCase):
 
     def test_safe_image_passes(self):
         audit.audit(self.root)
+
+    def test_wifi_naming_must_run_before_networkmanager(self):
+        unit = self.units / self.wifi_wants.name
+        original = unit.read_text()
+        unit.write_text(original.replace('Before=NetworkManager.service', 'After=NetworkManager.service'))
+        with self.assertRaisesRegex(ValueError, 'Wi-Fi naming'):
+            audit.audit(self.root)
+        unit.write_text(original)
+        self.wifi_wants.unlink()
+        with self.assertRaisesRegex(ValueError, 'Wi-Fi naming'):
+            audit.audit(self.root)
 
     def test_missing_insecure_or_mismatched_boot_recovery_dispatcher_is_rejected(self):
         dispatcher = self.root / 'var/lib/cmprovision-updates/recover.py'

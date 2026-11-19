@@ -158,6 +158,9 @@ The image setup currently:
 - Masks cmprovision DHCP/TFTP and USB boot services until an operator configures the station.
 - Installs Intel Wi-Fi firmware for supported adapters such as AX200; Pi OS Lite already includes
   firmware for the onboard Broadcom Wi-Fi and supported MediaTek adapters.
+- On a CM4 with the onboard Broadcom radio, assigns it `wlan0` before NetworkManager starts and
+  assigns a single additional radio `wlan1`. The image identifies the onboard radio by its SDIO
+  driver. Systems without that radio or with multiple additional adapters use their Linux names.
 - Includes and enables `lldpd`, so other stations can recognise this provisioner on a switch port.
 - Optionally installs `fpms-lite`. Its display service stays off until FPMS is enabled in Settings;
   the image setting watcher stops it again when FPMS is disabled. Enable SPI separately for a
