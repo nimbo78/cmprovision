@@ -42,6 +42,12 @@ if [ -n "${CMP_IMAGE_FPMS:-}" ]; then
 fi
 install -D -m 0755 "${CMP_IMAGE_SOURCE}/image/firstboot/cmprovision-image-firstboot.py" "${ROOTFS_DIR}/usr/lib/cmprovision/image-firstboot"
 install -D -m 0755 "${CMP_IMAGE_SOURCE}/image/setup/cmprovision-image-setup.py" "${ROOTFS_DIR}/usr/lib/cmprovision/image-setup"
+wifi_unit=cmprovision-image-wifi-names.service
+units="${ROOTFS_DIR}/etc/systemd/system"
+install -D -m 0755 "${CMP_IMAGE_SOURCE}/image/network/cmprovision-image-wifi-names.py" "${ROOTFS_DIR}/usr/lib/cmprovision/image-wifi-names"
+install -D -m 0644 "${CMP_IMAGE_SOURCE}/image/network/${wifi_unit}" "${units}/${wifi_unit}"
+install -d "${units}/NetworkManager.service.wants"
+ln -sfn "../${wifi_unit}" "${units}/NetworkManager.service.wants/${wifi_unit}"
 printf '1\n' >"${ROOTFS_DIR}/usr/lib/cmprovision/image-setup-schema"
 printf '2\n' >"${ROOTFS_DIR}/usr/lib/cmprovision/image-setup-capabilities"
 install -D -m 0644 "${CMP_IMAGE_SOURCE}/image/firstboot/cmprovision-image-firstboot.service" "${ROOTFS_DIR}/etc/systemd/system/cmprovision-image-firstboot.service"

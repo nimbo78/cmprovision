@@ -1,0 +1,15 @@
+[Unit]
+Description=Assign station Wi-Fi interface names
+After=systemd-udev-trigger.service
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/cmprovision/image-wifi-names
+TimeoutStartSec=20s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=NetworkManager.service

@@ -25,6 +25,8 @@ flowchart LR
 
 ## Before opening the wizard
 
+On a CM4 running the station image, the onboard SDIO Broadcom radio receives `wlan0` before NetworkManager starts. A single additional Wi-Fi radio receives `wlan1`. Linux assigns the names on systems without the onboard radio or with several additional radios.
+
 1. Open the management address shown on HDMI or the front panel. A fresh station opens **Set up this station**. You can also open `/setup` directly.
 2. Enter the 16-character code shown on the display. If the imaging project enabled **First web administrator in browser**, open the flashed device's card on the source station, select **Open setup code** and confirm your web password. The source keeps the code for 12 hours. The station accepts it until used or rotated.
 3. Enter your name, sign-in email and a new web password. **Create administrator** signs you in and opens the wizard. Further visits use the normal login.

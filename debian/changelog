@@ -1,3 +1,12 @@
+cmprovision4 (2.30.7) trixie; urgency=medium
+
+  * Resolve Re-provision targets without a local DHCP lease using a
+    fresh neighbor that matches the address, MAC and stand interface.
+  * Assign wlan0 to the onboard CM4 radio and wlan1 to a single additional
+    radio in the station image before NetworkManager starts.
+
+ -- cmprovision contributors <cmprovision@localhost>  Thu, 19 Nov 2026 11:15:00 +0300
+
 cmprovision4 (2.30.6) trixie; urgency=medium
 
   * Check recovery space on each filesystem before pausing the stand and
