@@ -348,8 +348,15 @@ class ConfigurationImportTest extends TestCase
         $this->assertNull(Project::getActiveId());
     }
 
-    public function test_network_and_root_owned_display_changes_remain_explicit_owned_followups(): void
+    public static function displayTimeouts(): array
     {
+        return ['older export keeps receiver timeout' => [[], '300'], 'explicit Never transfers' => [['screen_timeout' => 0], '0']];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('displayTimeouts')]
+    public function test_network_and_root_owned_display_changes_remain_explicit_owned_followups(array $timeout, string $expected): void
+    {
+        \App\Support\FpmsPanelSettings::saveScreenTimeout(300);
         $this->mock(\App\Services\NetworkProfiles::class)->shouldReceive('ethernetDevices')->andReturn(['eth0']);
         $properties = array_fill_keys(\App\Services\NetworkProfiles::PROPERTIES, '');
         $manifest = $this->manifest();
@@ -361,7 +368,7 @@ class ConfigurationImportTest extends TestCase
                 'ipv6' => array_replace($properties, ['method' => 'disabled']),
             ]],
             ['ref' => 'settings-1', 'type' => 'settings', 'omitted_secrets' => [], 'data' => ['group' => 'display', 'values' => [
-                'fpms' => ['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'light'],
+                'fpms' => ['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'light'] + $timeout,
                 'wallboard' => ['mode' => 'auto', 'palette' => 'warm-light', 'view' => 'flow', 'rotation' => 15],
                 'fpms_service' => ['enabled' => true, 'open_on_start' => true], 'hdmi_auto' => true,
             ]]],
@@ -375,6 +382,7 @@ class ConfigurationImportTest extends TestCase
         $this->assertTrue($result['followups']['network']);
         $this->assertTrue($result['followups']['display']['hdmi_auto']);
         $this->assertSame('light', Setting::find('fpms_color_mode')->value);
+        $this->assertSame($expected, Setting::find('fpms_screen_timeout')->value);
         $this->assertSame('eth0', $operation->fresh()->options['drafts']['network-1']['interface']['parent']);
         $this->assertStringNotContainsString('192.0.2.2', json_encode($operation->fresh()));
     }

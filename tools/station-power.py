@@ -107,7 +107,8 @@ def panel(request, run=subprocess.run):
     operation = request.get('operation')
     allowed = {'status': {'operation'}, 'prepare': {'operation', 'action'},
                'confirm': {'operation', 'token', 'interrupt'}, 'cancel': {'operation', 'token'},
-               'appearance': {'operation'}, 'set-appearance': {'operation', 'mode'}}
+               'appearance': {'operation'}, 'set-appearance': {'operation', 'mode'},
+               'screen-timeout': {'operation'}, 'set-screen-timeout': {'operation', 'seconds'}}
     if not isinstance(operation, str) or operation not in allowed or set(request) != allowed[operation]:
         raise PowerError('Invalid panel operation.')
     if operation == 'prepare' and request['action'] not in ACTIONS: raise PowerError('Unknown power action.')
@@ -116,6 +117,8 @@ def panel(request, run=subprocess.run):
     if operation == 'confirm' and type(request['interrupt']) is not bool: raise PowerError('Invalid interruption confirmation.')
     if operation == 'set-appearance' and (not isinstance(request['mode'], str) or request['mode'] not in ('light', 'dark', 'auto')):
         raise PowerError('Unknown FPMS color mode.')
+    if operation == 'set-screen-timeout' and (type(request['seconds']) is not int or not 0 <= request['seconds'] <= 3600):
+        raise PowerError('Invalid FPMS screen timeout.')
     # The system manager starts this short-lived command OUTSIDE the display's sandbox,
     # under www-data. Thus SQLite is never opened by root and FPMS keeps ProtectSystem/NNP.
     command = ['/usr/bin/systemd-run', '--quiet', '--pipe', '--wait', '--collect', '--uid=www-data',

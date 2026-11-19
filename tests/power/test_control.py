@@ -141,5 +141,19 @@ class PowerControlTest(unittest.TestCase):
                 power.panel(request, self.run)
         self.run.assert_not_called()
 
+    def test_screen_timeout_uses_only_the_fixed_unprivileged_panel_protocol(self):
+        self.run.return_value = subprocess.CompletedProcess([], 0, '{"ok":true}', '')
+        for payload in ({'operation': 'screen-timeout'}, {'operation': 'set-screen-timeout', 'seconds': 0}):
+            self.assertTrue(power.panel(payload, self.run)['ok'])
+            self.assertIn('--uid=www-data', self.run.call_args.args[0])
+            self.assertEqual(payload, json.loads(self.run.call_args.kwargs['input']))
+        self.run.reset_mock()
+        for value in (True, -1, 3601, '60', [], None):
+            with self.assertRaises(power.PowerError):
+                power.panel({'operation': 'set-screen-timeout', 'seconds': value}, self.run)
+        with self.assertRaises(power.PowerError):
+            power.panel({'operation': 'screen-timeout', 'action': 'poweroff'}, self.run)
+        self.run.assert_not_called()
+
 
 if __name__ == '__main__': unittest.main()

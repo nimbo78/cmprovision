@@ -66,7 +66,7 @@ class FpmsAppearanceCommandTest extends TestCase
             $response = $this->request(['operation' => 'set-appearance', 'mode' => $mode]);
             $this->assertTrue($response['ok']);
             $this->assertSame($mode, $response['result']['mode']);
-            $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => $mode], FpmsPanelSettings::get());
+            $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => $mode, 'screen_timeout' => 60], FpmsPanelSettings::get());
             $this->assertSame('auto', Setting::find('hdmi_color_mode')->value);
             $this->assertSame('write', $cm->fresh()->phase);
         }
@@ -94,5 +94,27 @@ class FpmsAppearanceCommandTest extends TestCase
         $component->mount(app(\App\Services\Fpms::class));
         $this->assertSame('light', $component->color_mode);
         $this->assertSame('new', $component->theme);
+    }
+
+    public function test_panel_and_web_share_the_screen_timeout_and_reject_invalid_values(): void
+    {
+        $this->assertSame(60, $this->request(['operation' => 'screen-timeout'])['result']['seconds']);
+        FpmsPanelSettings::save('classic', 'whole', 'auto');
+        foreach ([15, 30, 60, 120, 300, 600, 1800, 3600, 0] as $seconds) {
+            $response = $this->request(['operation' => 'set-screen-timeout', 'seconds' => $seconds]);
+            $this->assertTrue($response['ok']);
+            $this->assertSame($seconds, $response['result']['seconds']);
+            $this->assertIsInt($response['result']['observed_at']);
+        }
+        foreach ([-1, 61, 3601, true, null, '60', []] as $invalid) {
+            $this->assertFalse($this->request(['operation' => 'set-screen-timeout', 'seconds' => $invalid])['ok']);
+        }
+        $this->assertFalse($this->request(['operation' => 'set-screen-timeout', 'seconds' => 60, 'action' => 'reboot'])['ok']);
+        $values = FpmsPanelSettings::get();
+        $this->assertSame(0, $values['screen_timeout']);
+        $this->assertSame('auto', $values['color_mode']);
+        $component = app(\App\Http\Livewire\FpmsSettings::class);
+        $component->mount(app(\App\Services\Fpms::class));
+        $this->assertSame(0, $component->screen_timeout);
     }
 }

@@ -68,6 +68,12 @@ its own color mode. Auto continues to follow the station's sunrise/sunset calcul
 If saving is not confirmed, reopen Appearance to read the saved mode. Restart and
 shutdown still require their separate **KEY1** confirmation.
 
+## Screen timeout
+
+In **Settings → System → FPMS display → Screen timeout**, choose an idle interval and select **Save FPMS settings**. On HyperPixel, tap **System → Screen timeout** and the desired interval. On Waveshare, open **KEY3 → Screen timeout**, use the joystick to choose, and press its centre to save. **KEY2** goes back.
+
+Both menus use the same station setting. The default is **1 minute**. Choose **15 seconds** through **1 hour**, or **Never** to keep the panel on. The first touch or button press wakes a blank screen. The first-administrator setup code keeps the panel awake while pairing.
+
 ## Enable the panel
 
 1. Install the matching FPMS package and cmprovision package on the station.
@@ -179,8 +185,8 @@ See [station power](operations.md#restart-and-shut-down-the-provisioner) for the
 Inside a device card, the identity stays pinned: if it disconnects, the display says
 it left the stand instead of silently showing another device.
 
-Lite blanks after 60 seconds of inactivity; a button wakes it without performing an
-action. Its service can use `--sleep 0` to stay on or `--rotate 180` for a reversed
+For a one-off run, `--sleep SECONDS` overrides the saved timeout (0 keeps the screen on).
+Use `--rotate 180` for a reversed
 installation (buttons 1 and 3 swap with the screen; button 2 stays in the middle).
 
 ## Data freshness and resource use

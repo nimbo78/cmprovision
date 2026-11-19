@@ -1,8 +1,9 @@
-cmprovision4 (2.30.8~hyperpixel4) UNRELEASED; urgency=medium
+cmprovision4 (2.30.8~hyperpixel5) UNRELEASED; urgency=medium
 
   * Add a landscape touch menu on the rectangular HyperPixel 4.0 and
     show the detected front panel in the station's FPMS settings.
   * Show Ethernet link and PoE delivery separately for each HyperPixel port.
+  * Configure the front panel's idle timeout from the web or either FPMS display.
 
  -- cmprovision contributors <cmprovision@localhost>  Thu, 19 Nov 2026 16:00:00 +0300
 

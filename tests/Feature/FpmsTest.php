@@ -198,22 +198,43 @@ class FpmsTest extends TestCase
         $service->shouldReceive('settings')->andReturn(Fpms::DEFAULTS);
         $service->shouldReceive('status')->andReturn(['state' => 'off']);
         $service->shouldReceive('save')->andThrow(new \RuntimeException('Could not save FPMS settings.'));
-        $this->assertSame(['theme' => 'new', 'ports_map' => 'pages', 'color_mode' => 'dark'], FpmsPanelSettings::get());
+        $this->assertSame(['theme' => 'new', 'ports_map' => 'pages', 'color_mode' => 'dark', 'screen_timeout' => 60], FpmsPanelSettings::get());
 
         Livewire::actingAs(User::factory()->create())->test(FpmsSettings::class)
             ->assertSet('theme', 'new')->assertSet('ports_map', 'pages')
             ->set('theme', 'x')->call('save')->assertHasErrors('theme')
             ->set('theme', 'new')->set('color_mode', 'invalid')->call('save')->assertHasErrors('color_mode')
-            ->set('theme', 'classic')->set('ports_map', 'whole')->set('color_mode', 'auto')->call('save')->assertHasErrors('enabled');
+            ->set('screen_timeout', 61)->call('save')->assertHasErrors('screen_timeout')
+            ->set('screen_timeout', '0')->set('theme', 'classic')->set('ports_map', 'whole')->set('color_mode', 'auto')->call('save')->assertHasErrors('enabled');
 
         // the root helper failed, the panel's look is the server's own setting and is kept
-        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'auto'], FpmsPanelSettings::get());
-        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'auto'], app(WallboardSnapshot::class)->current()['panel']);
+        $this->assertSame(['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'auto', 'screen_timeout' => 0], FpmsPanelSettings::get());
+        $this->assertSame(FpmsPanelSettings::get(), app(WallboardSnapshot::class)->current()['panel']);
 
         Setting::updateOrCreate(['key' => 'fpms_theme'], ['value' => 'rainbow']);
         $this->assertSame('new', FpmsPanelSettings::get()['theme']);
         Setting::updateOrCreate(['key' => 'fpms_color_mode'], ['value' => 'invalid']);
         $this->assertSame('dark', FpmsPanelSettings::get()['color_mode']);
+        Setting::updateOrCreate(['key' => 'fpms_screen_timeout'], ['value' => 'broken']);
+        $this->assertSame(60, FpmsPanelSettings::get()['screen_timeout']);
+    }
+
+    public function test_open_web_form_preserves_panel_changes_and_pending_edits()
+    {
+        $service = $this->mock(Fpms::class);
+        $service->shouldReceive('settings')->andReturn(Fpms::DEFAULTS);
+        $service->shouldReceive('status')->andReturn(['state' => 'off']);
+        $service->shouldReceive('save');
+        $form = Livewire::actingAs(User::factory()->create())->test(FpmsSettings::class);
+        FpmsPanelSettings::saveScreenTimeout(300);
+        $form->call('refreshDisplayPreferences')->assertSet('screen_timeout', 300);
+        $form->set('screen_timeout', '120');
+        FpmsPanelSettings::saveColorMode('light');
+        $form->call('refreshDisplayPreferences')->assertSet('screen_timeout', '120')->assertSet('color_mode', 'light');
+        $form->call('save')->assertHasNoErrors();
+        FpmsPanelSettings::saveScreenTimeout(0);
+        $form->set('theme', 'classic')->call('save')->assertHasNoErrors()->assertSet('screen_timeout', 0);
+        $this->assertSame('light', FpmsPanelSettings::get()['color_mode']);
     }
 
     public function test_modules_carry_step_and_short_cause()

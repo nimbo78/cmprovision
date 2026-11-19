@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..aaf37c5
+index 0000000..5d8b817
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,550 @@
+@@ -0,0 +1,572 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10282,7 +10282,8 @@ index 0000000..aaf37c5
 +        self.can_leave, self.clock = can_leave, clock
 +        from .cmprovision_power import PowerMenu
 +        self.power_menu = PowerMenu(power_client, clock) if power_client else None
-+        self.appearance_override = None
++        self.setting_overrides = {}
++        self.last_screen_timeout = 60
 +        from .cmprovision_rescue import AccessCard
 +        self.rescue_menu = AccessCard(rescue_client, clock) if rescue_client else None
 +        # button 2 on a page asks first: until this time a second press leaves (PROMPT_SECONDS)
@@ -10341,19 +10342,44 @@ index 0000000..aaf37c5
 +        """new or classic (Settings → Provisioning → FPMS display); new when the server does not say."""
 +        return self._panel_setting("theme", ("new", "classic"))
 +
-+    def requested_color_mode(self):
-+        mode = self._panel_setting("color_mode", ("dark", "light", "auto"))
-+        if self.appearance_override:
-+            chosen, observed = self.appearance_override
++    def _confirmed_setting(self, name, value):
++        if name in self.setting_overrides:
++            chosen, observed = self.setting_overrides[name]
 +            generated = number(self.data.get('generated_at'), -1)
 +            # The server records generated_at before reading panel settings. A
 +            # later snapshot can supersede our acknowledgement (including a web
 +            # edit); an older snapshot must not undo a successfully saved choice.
-+            if generated > observed or (generated >= observed and mode == chosen):
-+                self.appearance_override = None
++            if generated > observed or (generated >= observed and value == chosen):
++                del self.setting_overrides[name]
 +            else:
 +                return chosen
-+        return mode
++        return value
++
++    def requested_color_mode(self):
++        return self._confirmed_setting('appearance', self._panel_setting("color_mode", ("dark", "light", "auto")))
++
++    def screen_timeout(self):
++        from .cmprovision_power import SCREEN_TIMEOUTS
++        settings = self.data.get('panel')
++        seconds = settings.get('screen_timeout') if isinstance(settings, dict) else None
++        if type(seconds) is int and seconds in SCREEN_TIMEOUTS:
++            self.last_screen_timeout = self._confirmed_setting('screen-timeout', seconds)
++        elif 'screen-timeout' in self.setting_overrides:
++            self.last_screen_timeout = self.setting_overrides['screen-timeout'][0]
++        return self.last_screen_timeout
++
++    def should_sleep(self, idle_seconds, override=None):
++        seconds = self.screen_timeout() if override is None else override
++        return seconds > 0 and idle_seconds >= seconds
++
++    def sync_display_menu(self):
++        menu = self.power_menu
++        mode, seconds = self.requested_color_mode(), self.screen_timeout()
++        if mode != menu.appearance_mode:
++            menu.appearance_saved = False
++        if seconds != menu.timeout_seconds:
++            menu.timeout_saved = False
++        menu.appearance_mode, menu.timeout_seconds = mode, seconds
 +
 +    def color_mode(self):
 +        mode = self.requested_color_mode()
@@ -10439,9 +10465,8 @@ index 0000000..aaf37c5
 +                return True
 +            if self.power_menu and self.power_menu.open:
 +                self.power_menu.key(key)
-+                if self.power_menu.appearance_observation:
-+                    self.appearance_override = self.power_menu.appearance_observation
-+                    self.power_menu.appearance_observation = None
++                self.setting_overrides.update(self.power_menu.observations)
++                self.power_menu.observations.clear()
 +                return True
 +            if key == "KEY3" and self.power_menu:
 +                self.prompt_until = None
@@ -10555,10 +10580,7 @@ index 0000000..aaf37c5
 +    def frame(self):
 +        with self.lock, PALETTE_LOCK:
 +            if self.power_menu and self.power_menu.open:
-+                current = self.requested_color_mode()
-+                if current != self.power_menu.appearance_mode:
-+                    self.power_menu.appearance_saved = False
-+                self.power_menu.appearance_mode = current
++                self.sync_display_menu()
 +            if self.rescue_menu:
 +                self.expire_access()
 +                if self.rescue_menu.open:
@@ -12378,10 +12400,10 @@ index 0000000..2aa966a
 +        y += step
 diff --git a/fpms/integrations/cmprovision_power.py b/fpms/integrations/cmprovision_power.py
 new file mode 100644
-index 0000000..9bbba61
+index 0000000..32d6366
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_power.py
-@@ -0,0 +1,169 @@
+@@ -0,0 +1,208 @@
 +"""Lite station menu: appearance preferences and separately confirmed power actions."""
 +import json
 +import re
@@ -12391,6 +12413,16 @@ index 0000000..9bbba61
 +from . import cmprovision_fonts as fonts
 +
 +COLOR_MODES = ('light', 'dark', 'auto')
++SCREEN_TIMEOUTS = (15, 30, 60, 120, 300, 600, 1800, 3600, 0)
++SYSTEM_ITEMS = ('Cancel', 'Restart', 'Shut down', 'Appearance >', 'Screen timeout >')
++
++
++def timeout_label(seconds):
++    if seconds == 0:
++        return 'Never'
++    if seconds == 3600:
++        return '1 h'
++    return f'{seconds // 60} min' if seconds >= 60 else f'{seconds} s'
 +
 +
 +def request(payload):
@@ -12414,12 +12446,14 @@ index 0000000..9bbba61
 +        self.token, self.deadline, self.active_count = None, 0, 0
 +        self.message = "Check station status before retrying."
 +        self.appearance_mode, self.mode_index = 'dark', 1
-+        self.appearance_observation, self.appearance_saved = None, False
++        self.appearance_saved = False
++        self.timeout_seconds, self.timeout_index, self.timeout_saved = 60, SCREEN_TIMEOUTS.index(60), False
++        self.observations = {}
 +
 +    def show(self):
 +        self.open, self.stage, self.index = True, "menu", 0
 +        self.token = None
-+        self.appearance_observation = None
++        self.observations.clear()
 +
 +    def expire(self):
 +        if self.stage in ("confirm", "interrupt") and self.clock() >= self.deadline:
@@ -12443,20 +12477,25 @@ index 0000000..9bbba61
 +            raise ValueError("Changed token")
 +        self.stage, self.token, self.active_count = stage, token, count
 +
-+    def _appearance_reply(self, result, expected=None):
-+        if not isinstance(result, dict) or result.get('stage') != 'appearance':
-+            raise ValueError('Invalid appearance response')
-+        mode, observed = result.get('mode'), result.get('observed_at')
-+        if mode not in COLOR_MODES or type(observed) is not int or not 0 <= observed < 2**53:
-+            raise ValueError('Invalid appearance setting')
-+        if expected is not None and mode != expected:
-+            raise ValueError('Appearance change was not confirmed')
-+        self.appearance_mode = mode
-+        self.appearance_observation = (mode, observed)
++    def _preference(self, stage, field, choices, value=None):
++        payload = {'operation': stage} if value is None else {'operation': 'set-' + stage, field: value}
++        result = self.client(payload)
++        if not isinstance(result, dict) or result.get('stage') != stage:
++            raise ValueError('Invalid display setting response')
++        confirmed, observed = result.get(field), result.get('observed_at')
++        if type(confirmed) is not type(choices[0]) or confirmed not in choices or type(observed) is not int or not 0 <= observed < 2**53:
++            raise ValueError('Invalid display setting')
++        if value is not None and confirmed != value:
++            raise ValueError('Display change was not confirmed')
++        self.observations[stage] = (confirmed, observed)
++        return confirmed
 +
 +    def key(self, key):
 +        self.expire()
 +        if key == "KEY2":
++            if self.stage in ('timeout', 'timeout_error'):
++                self.stage, self.index = 'menu', 4
++                return
 +            if self.stage in ('appearance', 'appearance_error'):
 +                self.stage, self.index = 'menu', 3
 +                return
@@ -12470,15 +12509,20 @@ index 0000000..9bbba61
 +        try:
 +            if self.stage == "menu":
 +                if key in ("UP", "DOWN"):
-+                    self.index = (self.index + (1 if key == "DOWN" else -1)) % 4
++                    self.index = (self.index + (1 if key == "DOWN" else -1)) % len(SYSTEM_ITEMS)
 +                elif key == "CENTER":
 +                    if self.index == 0:
 +                        self.open = False
 +                        return
 +                    if self.index == 3:
 +                        self.stage, self.appearance_saved = 'appearance', False
-+                        self._appearance_reply(self.client(dict(operation='appearance')))
++                        self.appearance_mode = self._preference('appearance', 'mode', COLOR_MODES)
 +                        self.mode_index = COLOR_MODES.index(self.appearance_mode)
++                        return
++                    if self.index == 4:
++                        self.stage, self.timeout_saved = 'timeout', False
++                        self.timeout_seconds = self._preference('screen-timeout', 'seconds', SCREEN_TIMEOUTS)
++                        self.timeout_index = SCREEN_TIMEOUTS.index(self.timeout_seconds)
 +                        return
 +                    self.action = ("reboot", "poweroff")[self.index - 1]
 +                    self._reply(self.client(dict(operation="prepare", action=self.action)), preparing=True)
@@ -12488,15 +12532,22 @@ index 0000000..9bbba61
 +                    self.mode_index = (self.mode_index + (1 if key == 'DOWN' else -1)) % len(COLOR_MODES)
 +                elif key == 'CENTER':
 +                    mode = COLOR_MODES[self.mode_index]
-+                    self._appearance_reply(self.client(dict(operation='set-appearance', mode=mode)), expected=mode)
++                    self.appearance_mode = self._preference('appearance', 'mode', COLOR_MODES, mode)
 +                    self.appearance_saved = True
++            elif self.stage == 'timeout':
++                if key in ('UP', 'DOWN'):
++                    self.timeout_index = (self.timeout_index + (1 if key == 'DOWN' else -1)) % len(SCREEN_TIMEOUTS)
++                elif key == 'CENTER':
++                    seconds = SCREEN_TIMEOUTS[self.timeout_index]
++                    self.timeout_seconds = self._preference('screen-timeout', 'seconds', SCREEN_TIMEOUTS, seconds)
++                    self.timeout_saved = True
 +            elif self.stage in ("confirm", "interrupt") and key == "KEY1":
 +                self._reply(self.client(dict(operation="confirm", token=self.token,
 +                                             interrupt=self.stage == "interrupt")))
 +        except Exception:
 +            # A lost reply may mean the action was scheduled. Never retry a confirmation
 +            # automatically, and never show private command output on the display.
-+            self.stage = 'appearance_error' if self.stage == 'appearance' else 'error'
++            self.stage = self.stage + '_error' if self.stage in ('appearance', 'timeout') else 'error'
 +
 +
 +def render(menu, palette):
@@ -12510,31 +12561,40 @@ index 0000000..9bbba61
 +    legend = fonts.font("tiny")
 +    draw.rectangle((0, 0, 17, 13), fill=p["accent"])
 +    fonts.draw_centered(small, img, (0, 0, 17, 13), "cm", p["bg"])
-+    caption = 'Appearance' if menu.stage in ('appearance', 'appearance_error') else ('Station' if menu.stage == 'menu' else 'Power')
++    caption = {'menu': 'Station', 'timeout': 'Timeout', 'appearance': 'Appearance'}.get(menu.stage.removesuffix('_error'), 'Power')
 +    title.draw(img, 22, 0, caption, p["fg"])
 +    draw.line((0, 16, 127, 16), fill=p["line"])
 +    action = "Restart" if menu.action == "reboot" else "Shut down"
 +    stage = menu.stage
 +    if stage == "menu":
-+        for n, word in enumerate(("Cancel", "Restart", "Shut down", "Appearance >")):
-+            y = 24 + n * 18
++        for n, word in enumerate(SYSTEM_ITEMS):
++            y = 21 + n * 16
 +            if n == menu.index:
 +                draw.rectangle((1, y - 3, 126, y + 14), outline=p["accent"])
 +            body.draw(img, 8, y, word, p["accent"] if n == menu.index else p["fg"])
 +        lines = ["CENTER Select", "KEY2 Back"]
-+    elif stage == 'appearance':
-+        for n, mode in enumerate(COLOR_MODES):
-+            y = 25 + n * 21
-+            if n == menu.mode_index:
++    elif stage in ('appearance', 'timeout'):
++        if stage == 'appearance':
++            choices, index, current = COLOR_MODES, menu.mode_index, menu.appearance_mode
++            label, hint = str.title, 'Saved' if menu.appearance_saved else 'Choose color mode'
++        else:
++            choices, index, current = SCREEN_TIMEOUTS, menu.timeout_index, menu.timeout_seconds
++            label, hint = timeout_label, 'Saved' if menu.timeout_saved else 'Up/down to choose'
++        first = min(max(index - 1, 0), len(choices) - 3)
++        for n in range(first, first + 3):
++            y = 25 + (n - first) * 21
++            if n == index:
 +                draw.rectangle((1, y - 3, 126, y + 14), outline=p['accent'])
-+            draw.ellipse((8, y + 3, 13, y + 8), outline=p['accent'], fill=p['accent'] if mode == menu.appearance_mode else p['bg'])
-+            body.draw(img, 22, y, mode.title(), p['accent'] if n == menu.mode_index else p['fg'])
-+        small.draw(img, 2, 88, 'Saved' if menu.appearance_saved else 'Choose color mode', p['muted'])
++            value = choices[n]
++            draw.ellipse((8, y + 3, 13, y + 8), outline=p['accent'], fill=p['accent'] if value == current else p['bg'])
++            body.draw(img, 22, y, label(value), p['accent'] if n == index else p['fg'])
++        small.draw(img, 2, 88, hint, p['muted'])
 +        lines = ['CENTER Apply', 'KEY2 Back']
 +    else:
 +        heading = {"confirm": action + "?", "interrupt": "Interrupt flashing?",
 +                   "scheduled": action + " requested", "error": "Not confirmed",
-+                   "expired": "Confirmation expired", 'appearance_error': 'Theme not confirmed'}.get(stage, "Power")
++                   "expired": "Confirmation expired", 'appearance_error': 'Theme not confirmed',
++                   'timeout_error': 'Timeout not saved'}.get(stage, "Power")
 +        body.draw(img, 2, 23, fonts.fit(body, heading, 124), p["warn"] if stage == "interrupt" else p["fg"])
 +        message = {
 +            "confirm": "This station will restart." if menu.action == "reboot" else "To start again, cycle PoE or external power.",
@@ -12543,6 +12603,7 @@ index 0000000..9bbba61
 +            "error": menu.message,
 +            "expired": "Choose the action again.",
 +            'appearance_error': 'Reopen Appearance to check the saved mode.',
++            'timeout_error': 'Reopen Screen timeout to check the saved value.',
 +        }.get(stage, "")
 +        for n, line in enumerate(fonts.wrap(small, message, 124)[:5]):
 +            small.draw(img, 2, 42 + 12 * n, line, p["muted"])
@@ -12774,10 +12835,10 @@ index 0000000..b348bf3
 +    return result
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..20006e3
+index 0000000..3ba0aa5
 --- /dev/null
 +++ b/fpms/lite.py
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,259 @@
 +"""Compact station menu. No imports from the WLAN Pi application/provider."""
 +
 +import argparse
@@ -12857,11 +12918,11 @@ index 0000000..20006e3
 +                panel.expire_access()
 +                if FIRST_ADMIN.is_file():
 +                    last_key = now
++                idle = panel.should_sleep(now - last_key, args.sleep)
++                if idle != sleeping:
++                    sleeping, next_frame = idle, 0
 +                    if sleeping:
-+                        sleeping, next_frame = False, 0
-+                if args.sleep and not sleeping and now-last_key >= args.sleep:
-+                    screen.show(Image.new('RGB', (hyperpixel.SCAN_WIDTH, hyperpixel.SCAN_HEIGHT)))
-+                    sleeping = True
++                        screen.show(Image.new('RGB', (hyperpixel.SCAN_WIDTH, hyperpixel.SCAN_HEIGHT)))
 +                if not sleeping and now >= next_frame:
 +                    frame = menu.frame()
 +                    screen.show(hyperpixel.to_scanout(frame, args.rotate))
@@ -12912,8 +12973,8 @@ index 0000000..20006e3
 +        "--sleep",
 +        type=int,
 +        choices=range(0, 3601),
-+        default=60,
-+        help="Idle seconds before blanking; 0 stays on",
++        default=None,
++        help="Override the FPMS screen timeout for this run (seconds, 0 stays on)",
 +    )
 +    parser.add_argument(
 +        "--seconds", type=int, choices=range(1, 601), help="Bounded hardware test"
@@ -12983,12 +13044,13 @@ index 0000000..20006e3
 +                setup_visible = FIRST_ADMIN.is_file()
 +                if setup_visible:
 +                    last_key = now
++                idle = panel.should_sleep(now - last_key, args.sleep)
++                if idle != sleeping:
++                    sleeping, last_frame = idle, 0
 +                    if sleeping:
++                        screen.sleep()
++                    else:
 +                        screen.wakeup()
-+                        sleeping = False
-+                if args.sleep and now - last_key >= args.sleep and not sleeping:
-+                    screen.sleep()
-+                    sleeping = True
 +                if not sleeping and now - last_frame >= 2:
 +                    try:
 +                        screen.drawImage(panel.frame().rotate(args.rotate))
@@ -13863,10 +13925,10 @@ index 0000000..8a75964
 +    assert abs(cx - (x + (cmprovision.CUBE - 1) / 2)) <= 0.5 and abs(cy - (y + (cmprovision.CUBE - 1) / 2)) <= 0.5
 diff --git a/tests/test_cmprovision_appearance.py b/tests/test_cmprovision_appearance.py
 new file mode 100644
-index 0000000..906c696
+index 0000000..1b7e1d6
 --- /dev/null
 +++ b/tests/test_cmprovision_appearance.py
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,238 @@
 +"""Appearance is a persisted preference, separate from destructive power confirmation."""
 +import json
 +
@@ -14015,6 +14077,96 @@ index 0000000..906c696
 +    assert img.size == (128, 128)
 +    assert not fonts.overlaps(ink)
 +    assert not fonts.off_centre(centred)
++
++
++@pytest.mark.parametrize('layout', ['new', 'classic'])
++def test_timeout_menu_saves_never_and_a_later_web_edit_updates_the_idle_timer(tmp_path, layout):
++    settings = {'seconds': 120}
++    calls = []
++
++    def client(payload):
++        calls.append(payload)
++        if payload['operation'] == 'set-screen-timeout':
++            settings['seconds'] = payload['seconds']
++        else:
++            assert payload == {'operation': 'screen-timeout'}
++        return dict(stage='screen-timeout', seconds=settings['seconds'], observed_at=100)
++
++    p = panel(tmp_path, client, layout)
++    assert not p.should_sleep(59) and p.should_sleep(60)
++    p.data['panel']['screen_timeout'] = 120
++    assert not p.should_sleep(119) and p.should_sleep(120)
++    p.key('KEY3')
++    for _ in range(4): p.key('DOWN')
++    p.key('CENTER')
++    assert p.power_menu.stage == 'timeout'
++    for _ in range(5): p.key('DOWN')  # 2 min -> 5, 10, 30, 60 min -> Never
++    p.key('CENTER')
++    assert calls[-1] == {'operation': 'set-screen-timeout', 'seconds': 0}
++    assert not p.should_sleep(86400)
++    fonts.start_recording()
++    assert p.frame().size == (128, 128)
++    ink, _ = fonts.stop_recording()
++    assert not fonts.overlaps(ink)
++    p.key('KEY2')
++    assert p.power_menu.stage == 'menu' and p.power_menu.index == 4
++    p.key('KEY2')
++    p.data.update(generated_at=101)
++    p.data['panel']['screen_timeout'] = 30
++    assert not p.should_sleep(29) and p.should_sleep(30)
++    assert not p.should_sleep(100, 0) and p.should_sleep(2, 2)  # explicit CLI override
++    p.data = {}
++    assert p.should_sleep(30)  # keep the last valid policy during a publisher interruption
++
++
++def test_timeout_rejects_a_failed_save_and_keeps_the_previous_choice(tmp_path):
++    def client(payload):
++        if payload['operation'] == 'screen-timeout':
++            return dict(stage='screen-timeout', seconds=60, observed_at=100)
++        return dict(stage='screen-timeout', seconds=True, observed_at=101)
++    p = panel(tmp_path, client)
++    p.key('KEY3')
++    for _ in range(4): p.key('DOWN')
++    p.key('CENTER'); p.key('DOWN'); p.key('CENTER')
++    assert p.power_menu.stage == 'timeout_error' and p.screen_timeout() == 60
++    p.key('KEY2')
++    assert p.power_menu.stage == 'menu' and p.power_menu.index == 4
++
++
++def test_waveshare_sleeps_at_saved_timeout_consumes_first_key_and_wakes_for_never(tmp_path, monkeypatch):
++    from types import SimpleNamespace
++    import sys
++    from fpms import lite
++
++    now, transitions = [0], []
++    p = panel(tmp_path, Client())
++    p.refresh = lambda **kw: p.data['panel'].update(screen_timeout=0 if now[0] >= 35 else 15)
++    monkeypatch.setattr(lite, 'Panel', lambda *a, **kw: p)
++    monkeypatch.setattr(lite, 'time', SimpleNamespace(monotonic=lambda: now[0]))
++    monkeypatch.setattr(lite, 'heartbeat', lambda *a, **kw: None)
++    monkeypatch.setattr(lite, 'wait_for_display', lambda stopped, until=None: {'profile': 'waveshare-1.44', 'id': '7c89f0'})
++    monkeypatch.setattr(lite.signal, 'signal', lambda *a: None)
++    monkeypatch.setattr(sys, 'argv', ['fpms', '--seconds', '41'])
++
++    class Buttons:
++        def __enter__(self): return self
++        def __exit__(self, *a): pass
++        def wait_edge_events(self, timeout):
++            now[0] += 1
++            return now[0] == 17
++        def read_edge_events(self):
++            return [SimpleNamespace(line_offset=26)]  # RIGHT would change page on an awake panel
++
++    screen = SimpleNamespace(init=lambda: None, drawImage=lambda frame: None,
++                             sleep=lambda: transitions.append((now[0], 'sleep')),
++                             wakeup=lambda: transitions.append((now[0], 'wake')))
++    monkeypatch.setitem(sys.modules, 'gpiod', SimpleNamespace(request_lines=lambda *a, **kw: Buttons(), LineSettings=lambda **kw: None))
++    monkeypatch.setitem(sys.modules, 'gpiod.line', SimpleNamespace(Bias=SimpleNamespace(PULL_UP=1), Edge=SimpleNamespace(FALLING=1)))
++    monkeypatch.setitem(sys.modules, 'fpms.modules.gpiochip', SimpleNamespace(get_gpiochip=lambda: 'test'))
++    monkeypatch.setitem(sys.modules, 'fpms.modules.screen.st7735', SimpleNamespace(ST7735=lambda: screen))
++    lite.main()
++    assert transitions == [(15, 'sleep'), (17, 'wake'), (32, 'sleep'), (35, 'wake')]
++    assert p.page == 0
 diff --git a/tests/test_cmprovision_fonts.py b/tests/test_cmprovision_fonts.py
 new file mode 100644
 index 0000000..d024b09
@@ -16931,10 +17083,10 @@ index 0000000..922834a
 +    /bin/sh "$0" --inside "$mode" "$root" "$source"
 diff --git a/fpms/integrations/cmprovision_touch.py b/fpms/integrations/cmprovision_touch.py
 new file mode 100644
-index 0000000..1fd152e
+index 0000000..106f2f7
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_touch.py
-@@ -0,0 +1,640 @@
+@@ -0,0 +1,648 @@
 +"""Native landscape station menu for the rectangular HyperPixel 4.0 Touch."""
 +
 +import ipaddress
@@ -16944,7 +17096,7 @@ index 0000000..1fd152e
 +from . import cmprovision_classic as classic
 +from . import cmprovision_new as compact
 +from .cmprovision import PAGES, first_admin_projection, hardware_lines, identity, number, objects, text
-+from .cmprovision_power import COLOR_MODES
++from .cmprovision_power import COLOR_MODES, SCREEN_TIMEOUTS, timeout_label
 +from .cmprovision_touch_style import DARK, LIGHT, centered, fit, font, icon, wrap
 +
 +
@@ -16993,10 +17145,7 @@ index 0000000..1fd152e
 +        power, rescue = p.power_menu, p.rescue_menu
 +        if power and power.open:
 +            power.expire()
-+            current = p.requested_color_mode()
-+            if current != power.appearance_mode:
-+                power.appearance_saved = False
-+            power.appearance_mode = current
++            p.sync_display_menu()
 +        return (
 +            p.page,
 +            p.detail,
@@ -17103,6 +17252,9 @@ index 0000000..1fd152e
 +                p.key("CENTER")
 +            elif kind == "mode":
 +                p.power_menu.mode_index = COLOR_MODES.index(value)
++                p.key("CENTER")
++            elif kind == "timeout":
++                p.power_menu.timeout_index = SCREEN_TIMEOUTS.index(value)
 +                p.key("CENTER")
 +            return
 +
@@ -17460,12 +17612,12 @@ index 0000000..1fd152e
 +
 +    def system(self, stage):
 +        menu = self.panel.power_menu
-+        self.title("Appearance" if stage.startswith("appearance") else "System")
++        self.title({"timeout": "Screen timeout", "appearance": "Appearance"}.get(stage.removesuffix("_error"), "System"))
 +        if stage == "menu":
 +            for i, (label, entry) in enumerate(
-+                [("Appearance", 3), ("Restart station", 1), ("Shut down station", 2)]
++                [("Appearance", 3), ("Screen timeout", 4), ("Restart station", 1), ("Shut down station", 2)]
 +            ):
-+                y = 136 + i * 79
++                y = 128 + i * 72
 +                self.button((22, y, 466, y + 62), label, ("system", entry))
 +        elif stage == "appearance":
 +            self.label(24, 139, "Color mode", 19, "muted")
@@ -17476,6 +17628,12 @@ index 0000000..1fd152e
 +                )
 +            if menu.appearance_saved:
 +                self.label(24, 294, "Saved", 19, "good")
++        elif stage == "timeout":
++            for i, seconds in enumerate(SCREEN_TIMEOUTS):
++                x, y = 24 + i % 3 * 250, 139 + i // 3 * 77
++                self.button((x, y, x + 230, y + 61), timeout_label(seconds), ("timeout", seconds), seconds == menu.timeout_seconds)
++            if menu.timeout_saved:
++                self.label(24, 385, "Saved", 19, "good")
 +        else:
 +            action = "Restart" if menu.action == "reboot" else "Shut down"
 +            headings = {
@@ -17485,6 +17643,7 @@ index 0000000..1fd152e
 +                "error": "Request not confirmed",
 +                "expired": "Confirmation expired",
 +                "appearance_error": "Theme not confirmed",
++                "timeout_error": "Timeout not saved",
 +            }
 +            message = {
 +                "confirm": (
@@ -17497,6 +17656,7 @@ index 0000000..1fd152e
 +                "error": menu.message,
 +                "expired": "Choose the action again.",
 +                "appearance_error": "Reopen Appearance to check the saved mode.",
++                "timeout_error": "Reopen Screen timeout to check the saved value.",
 +            }
 +            self.label(
 +                24,
@@ -17805,10 +17965,10 @@ index 0000000..6cdd901
 +            self.front = None
 diff --git a/tests/test_hyperpixel.py b/tests/test_hyperpixel.py
 new file mode 100755
-index 0000000..69b733e
+index 0000000..8d3b23c
 --- /dev/null
 +++ b/tests/test_hyperpixel.py
-@@ -0,0 +1,313 @@
+@@ -0,0 +1,343 @@
 +from types import SimpleNamespace
 +import pytest
 +from PIL import Image, ImageDraw
@@ -17964,6 +18124,36 @@ index 0000000..69b733e
 +    confirm = bounds("confirm", ("key", "KEY1"))
 +    interrupt = bounds("interrupt", ("key", "KEY1"))
 +    assert separate(select, confirm) and separate(confirm, interrupt)
++
++
++def test_touch_screen_timeout_offers_all_choices_and_persists_never(tmp_path):
++    calls = []
++
++    def client(payload):
++        calls.append(payload)
++        return {"stage": "screen-timeout", "seconds": payload.get("seconds", 120), "observed_at": 100}
++
++    panel = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False, power_client=client)
++    panel.data = {"generated_at": 90, "panel": {"screen_timeout": 120}}
++    menu = TouchMenu(panel)
++
++    def tap(action):
++        box = next(box for box, entry in menu.targets if entry == action)
++        menu.tap((box[0] + box[2]) // 2, (box[1] + box[3]) // 2)
++        menu.frame()
++
++    menu.frame()
++    tap(("key", "KEY3"))
++    tap(("system", 4))
++    choices = {entry[1]: box for box, entry in menu.targets if entry[0] == "timeout"}
++    assert set(choices) == {0, 15, 30, 60, 120, 300, 600, 1800, 3600}
++    for x0, y0, x1, y1 in choices.values():
++        assert 0 <= x0 < x1 < 800 and 0 <= y0 < y1 < 480 and min(x1-x0+1, y1-y0+1) >= 44
++    tap(("timeout", 0))
++    assert calls == [{"operation": "screen-timeout"}, {"operation": "set-screen-timeout", "seconds": 0}]
++    assert panel.power_menu.timeout_saved and not panel.should_sleep(86400)
++    tap(("key", "KEY2"))
++    assert panel.power_menu.stage == "menu"
 +
 +
 +def test_pages_have_in_bounds_finger_sized_controls_and_both_color_modes(tmp_path):
