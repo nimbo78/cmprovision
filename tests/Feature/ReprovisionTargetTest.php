@@ -23,7 +23,19 @@ class ReprovisionTargetTest extends TestCase
     private function resolver(): ReprovisionTarget {
         return new ReprovisionTarget(new SensorAddress($this->leases,[]),$this->station,function(array $argv): ?string {
             $this->commands[]=$argv;
-            return in_array('neigh',$argv,true) ? json_encode($this->neighbor) : '';
+            if (!in_array('neigh',$argv,true)) return '';
+
+            $deviceFilter = array_search('dev', $argv, true);
+            if ($deviceFilter === false) return json_encode($this->neighbor);
+
+            // iproute2 can omit the device name when the query already filters by device.
+            $rows = [];
+            foreach ($this->neighbor as $row) {
+                if (($row['dev'] ?? null) !== $argv[$deviceFilter + 1]) continue;
+                unset($row['dev']);
+                $rows[] = $row;
+            }
+            return json_encode($rows);
         },['172.20.0.1','172.20.0.2','172.20.0.50']);
     }
     public function test_unique_lease_is_enough_without_local_history(): void {
@@ -35,6 +47,16 @@ class ReprovisionTargetTest extends TestCase
     public function test_manual_ip_requires_matching_fresh_l2_evidence_on_stand(): void {
         $target=$this->resolver()->resolve(null,'172.20.0.20');
         $this->assertSame('02:00:00:00:00:20',$target['mac']); $this->assertSame('neighbor',$target['proof']);
+    }
+    public function test_manual_ip_ignores_reachable_neighbors_on_other_interfaces(): void
+    {
+        $this->neighbor[] = ['dst'=>'172.20.0.20','dev'=>'eth1','lladdr'=>'02:00:00:00:00:21','state'=>['REACHABLE']];
+
+        $target = $this->resolver()->resolve('02:00:00:00:00:20', '172.20.0.20');
+
+        $this->assertSame('02:00:00:00:00:20', $target['mac']);
+        $this->assertSame('neighbor', $target['proof']);
+        $this->assertSame(['ping','-n','-c','1','-W','1','-I','eth0','172.20.0.20'], $this->commands[0]);
     }
     public function test_stale_or_wrong_interface_evidence_is_refused(): void {
         foreach ([['STALE'],'eth1'] as $bad) {

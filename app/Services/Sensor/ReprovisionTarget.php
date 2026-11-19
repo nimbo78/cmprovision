@@ -39,7 +39,8 @@ class ReprovisionTarget
         if ($address === null) throw new RuntimeException('No unambiguous current DHCP lease. Enter the module IPv4 address to verify its stand binding.');
         // Refresh only this destination on this interface; never scan or let routing choose an uplink.
         ($this->run)(['ping','-n','-c','1','-W','1','-I',$stand['device'],$address]);
-        $out = ($this->run)(['ip','-j','neigh','show','to',$address,'dev',$stand['device']]);
+        // Filtering by device can omit the dev field that we need to verify the binding.
+        $out = ($this->run)(['ip','-j','neigh','show','to',$address]);
         $rows = $out === null ? null : json_decode($out,true);
         $found = [];
         foreach (is_array($rows) ? $rows : [] as $row) {
