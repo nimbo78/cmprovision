@@ -31,7 +31,7 @@ FPMS shows provisioning and station data on the Waveshare 1.44-inch 128×128 pan
    ```
 
 3. Reboot and enable **Settings → System → FPMS display**. The detected panel appears as **HyperPixel 4.0 Touch · 800 × 480 · GT911**. Changing panel families requires selecting the appropriate boot configuration and rebooting. FPMS identifies the controller on the configured interface. The menu uses landscape orientation. For the opposite mounting, the existing `fpms.lite --rotate 180` option flips the picture and touch coordinates together.
-4. Tap a tab at the bottom. **Ports** opens a port or its attached sensor. **Devices** opens diagnostics. **System** provides appearance and power controls. The first tap after the screen goes dark wakes it. The square and non-touch HyperPixel models use different hardware.
+4. Tap a tab at the bottom. **Ports** shows each port's Ethernet **Link** (`Up` or `Down`) and **PoE** separately. Watts or `On` mean the port is supplying power, even when the link is down. `Idle` means it is waiting for a device, `Off` means PoE is disabled, and `?` means the switch supplied no usable reading. Tap a port for details, then **View device** for the attached sensor. **Devices** also opens diagnostics. **System** provides appearance and power controls. The first tap after the screen goes dark wakes it. The square and non-touch HyperPixel models use different hardware.
 
 HyperPixel uses a dedicated DPI overlay. If HDMI mirrors the same display pipeline or no overlay plane is free, FPMS waits. The station and device data come from the same snapshot as the HDMI wallboard. [Pimoroni display setup](https://github.com/pimoroni/hyperpixel4)
 

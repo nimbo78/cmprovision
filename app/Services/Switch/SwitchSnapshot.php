@@ -62,7 +62,7 @@ class SwitchSnapshot
     /**
      * ['id', 'model', 'identity' => ['revision', 'serial', 'name', 'mac'] (null when the switch does not say),
      *  'taken_at' (unix time), 'duration' (seconds), 'mac_method', 'poe' (any PoE data),
-     *  'ports' => [ifIndex => ['ifIndex', 'name', 'alias', 'up', 'speed' (Mbit/s as the switch reports
+     *  'ports' => [ifIndex => ['ifIndex', 'name', 'alias', 'up', 'link_up' (null if undetermined), 'speed' (Mbit/s as the switch reports
      *  it, also without a link; null when unknown), 'changed' (seconds in the current link state, null
      *  when unknown), 'macs' => the first MAC_KEEP, 'mac_count', 'poe' => Poe::read() entry or null,
      *  'neighbors' => what LLDP and CDP say about the devices on it (Neighbors)]],
@@ -96,11 +96,17 @@ class SwitchSnapshot
             if ($connectors && (int) ($c['connector'][$ifIndex] ?? 2) !== 1)
                 continue;   // no connector: a virtual interface
             $name = $this->text($c['name'][$ifIndex] ?? null);
+            $linkUp = match ((int) ($c['oper'][$ifIndex] ?? 0)) {
+                1 => true,
+                2, 6, 7 => false, // Down, absent or lower layer down.
+                default => null,  // Missing, testing, unknown or dormant.
+            };
             $ports[$ifIndex] = [
                 'ifIndex' => $ifIndex,
                 'name' => $name !== '' ? $name : ($this->text($c['descr'][$ifIndex] ?? null) ?: 'port '.$ifIndex),
                 'alias' => $this->text($c['alias'][$ifIndex] ?? null),
-                'up' => (int) ($c['oper'][$ifIndex] ?? 2) === 1,
+                'up' => $linkUp === true,
+                'link_up' => $linkUp,
                 'speed' => $this->speed($c['high'][$ifIndex] ?? null, $c['speed'][$ifIndex] ?? null),
                 'changed' => $this->age($uptime, $c['changed'][$ifIndex] ?? null),
                 'macs' => [],

@@ -486,6 +486,7 @@ class StandMap
             'alias' => $port['alias'],
             'number' => preg_match('/(\d+)\D*$/', $port['name'], $m) ? (int) $m[1] : null,
             'up' => $port['up'],
+            'link_up' => $port['link_up'] ?? ($port['up'] ? true : null),
             'speed' => $port['speed'],
             'changed' => $port['changed'] ?? null,
             'poe' => $port['poe'],

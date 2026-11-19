@@ -47,7 +47,8 @@ class WallboardSnapshot
                         'mark' => $tile['mark'], 'filter' => $tile['filter'], 'serials' => $serials, 'server' => $tile['server'],
                         // another cmprovision station on the port: its name, address, whether it is the stand's provisioner
                         'station' => $tile['station'] ?? null,
-                        'speed' => $tile['speed'], 'watts' => $tile['poe']['watts'] ?? null];
+                        'link_up' => $tile['link_up'], 'speed' => $tile['speed'],
+                        'poe_state' => $tile['poe']['state'] ?? null, 'watts' => $tile['poe']['watts'] ?? null];
                 }
                 $blocks[] = ['rows' => $block['rows'], 'label' => $block['label'] ?? ($block['uplinks'] ? 'UPLINK' : 'PORTS'),
                     'ports' => $ports];

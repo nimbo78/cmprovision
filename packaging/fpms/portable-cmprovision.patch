@@ -16931,10 +16931,10 @@ index 0000000..922834a
 +    /bin/sh "$0" --inside "$mode" "$root" "$source"
 diff --git a/fpms/integrations/cmprovision_touch.py b/fpms/integrations/cmprovision_touch.py
 new file mode 100644
-index 0000000..d6e3ece
+index 0000000..1fd152e
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_touch.py
-@@ -0,0 +1,577 @@
+@@ -0,0 +1,640 @@
 +"""Native landscape station menu for the rectangular HyperPixel 4.0 Touch."""
 +
 +import ipaddress
@@ -16948,11 +16948,43 @@ index 0000000..d6e3ece
 +from .cmprovision_touch_style import DARK, LIGHT, centered, fit, font, icon, wrap
 +
 +
++def port_link(row):
++    """Short label, detail and ink from the switch's operational state."""
++    if row.get("link_up") is True:
++        speed = compact.link_speed(row.get("speed"))
++        return "Up", "Up · " + speed if speed else "Up", "good"
++    if row.get("link_up") is False:
++        return "Down", "Down", "muted"
++    return "?", "No reading", "muted"
++
++
++def port_power(row):
++    """Zero watts alone does not say whether a port is searching, disabled or in fault."""
++    state = text(row.get("poe_state"))
++    watts = number(row.get("watts"), None)
++    reading = f"{watts:g} W" if watts is not None and watts >= 0 else ""
++    if state == "delivering":
++        short = reading if watts is not None and watts > 0 else "On"
++        detail = "Delivering · " + reading if reading else "Delivering"
++        return short, detail, "good"
++    labels = {
++        "searching": ("Idle", "Waiting for device", "muted"),
++        "disabled": ("Off", "Disabled", "muted"),
++        "fault": ("Fault", "Fault", "bad"),
++        "test": ("Test", "Testing", "warn"),
++    }
++    if state in labels:
++        return labels[state]
++    if watts is not None and watts > 0:  # A measured draw is useful even on an older snapshot.
++        return reading, "Measured · " + reading, "good"
++    return "?", "No reading", "muted"
++
++
 +class TouchMenu:
 +    def __init__(self, panel):
 +        self.panel = panel
 +        self.offset = 0
-+        self.origin = None
++        self.history = []
 +        self.targets = []
 +        self.presented = None
 +
@@ -17034,24 +17066,35 @@ index 0000000..d6e3ece
 +            kind, value = action
 +            p = self.panel
 +            if kind == "page":
-+                p.page, p.index, p.detail, p.scroll, self.offset, self.origin = value, 0, None, 0, 0, None
++                p.page, p.index, p.detail, p.scroll, self.offset = value, 0, None, 0, 0
++                self.history.clear()
 +            elif kind == "offset":
 +                self.offset = value
 +            elif kind == "key":
 +                was_detail = p.detail
 +                p.key(value)
-+                if value == "KEY2" and was_detail and p.detail is None and self.origin is not None:
-+                    p.page, self.offset, self.origin = self.origin[0], self.origin[1], None
++                if value == "KEY2" and was_detail and p.detail is None and self.history:
++                    p.page, p.detail, self.offset = self.history.pop()
++            elif kind == "port_device":
++                row = p.detail_row()
++                device = self.port_device(row) if row else None
++                if device and identity(device) == value:
++                    self.history.append((p.page, p.detail, self.offset))
++                    p.detail, p.scroll, self.offset = ("module", value), 0, 0
 +            elif kind in ("row", "device"):
-+                previous = (p.page, self.offset)
++                previous = (p.page, p.detail, self.offset)
 +                if kind == "device":
 +                    p.page = 2
 +                for index, row in enumerate(p.rows()):
 +                    key = (row.get("pin") or row.get("name")) if p.page == 1 else identity(row)
 +                    if key == value:
 +                        p.index = index
-+                        p.key("CENTER")
-+                        self.origin, self.offset = previous, 0
++                        if p.page == 1:
++                            p.detail, p.scroll = ("port", value), 0
++                        else:
++                            p.key("CENTER")
++                        self.history.append(previous)
++                        self.offset = 0
 +                        break
 +                else:
 +                    p.page = previous[0]
@@ -17223,46 +17266,58 @@ index 0000000..d6e3ece
 +            return
 +        count = max(1, len(columns))
 +        splits = sum(columns[i][2] != columns[i - 1][2] for i in range(1, len(columns)))
-+        gap = 4
-+        extra = max(0, min(14, (728 - count * 44 - (count - 1) * gap) // max(1, splits)))
-+        cell = min(74, (728 - (count - 1) * gap - extra * splits) // count)
-+        x = 38
++        x, width, gap = 83, 683, 4
++        extra = max(0, min(14, (width - count * 44 - (count - 1) * gap) // max(1, splits)))
++        cell = min(84, (width - (count - 1) * gap - extra * splits) // count)
++        for side in range(2):
++            if any(col[side] is not None for col in columns):
++                y = 160 + side * 87
++                for dy, label in ((9, "Port"), (37, "Link"), (58, "PoE")):
++                    self.label(32, y + dy, label, 15, "muted", 47, "bold")
 +        for col, (upper, lower, group) in enumerate(columns):
 +            if col == 0 or columns[col - 1][2] != group:
 +                if col:
 +                    x += extra
 +                group_size = sum(c[2] == group for c in columns)
 +                self.label(
-+                    x, 144, blocks[group].get("label"), 15, "muted", group_size * (cell + gap) - gap, "bold"
++                    x, 136, blocks[group].get("label"), 15, "muted", group_size * (cell + gap) - gap, "bold"
 +                )
 +            for side, index in enumerate((upper, lower)):
 +                if index is None or index >= len(rows):
 +                    continue
 +                row = rows[index]
-+                y = 180 + side * 69
-+                box = (x, y, x + cell - 1, y + 56)
++                y = 160 + side * 87
++                box = (x, y, x + cell - 1, y + 78)
 +                local = bool(row.get("server"))
 +                peer = isinstance(row.get("station"), dict) and not local
 +                fill, edge = compact.port_style(row)
-+                edge = "muted" if peer or edge in ("dim", "line") else edge
++                edge = "muted" if peer or edge == "dim" else edge
 +                if peer or not fill or fill == "dim":
 +                    bg = "raised"
 +                else:
 +                    bg = {"accent": "tint"}.get(fill, fill + "_tint")
 +                self.draw.rounded_rectangle(box, 8, fill=self.c[bg], outline=self.c[edge])
-+                self.draw.line((x + 9, y + 5, x + cell - 10, y + 5), width=3, fill=self.c[edge])
-+                name = text(row.get("portname")).split("/")[-1][-4:]
-+                centered(
-+                    self.draw,
-+                    box,
-+                    "cm" if local or peer else name,
-+                    font(20, "bold"),
-+                    self.c[edge if fill or peer else "fg"],
-+                )
++                name = text(row.get("number")) or text(row.get("portname")).split("/")[-1]
++                if local or peer:
++                    name += " cm"
++                link, _, link_ink = port_link(row)
++                power, _, power_ink = port_power(row)
++                for top, bottom, caption, size, ink in (
++                    (2, 28, name, 19, edge if fill or peer else "fg"),
++                    (31, 53, link, 16, link_ink),
++                    (53, 75, power, 16, power_ink),
++                ):
++                    face = font(size, "bold")
++                    if face.getlength(caption) > cell - 6:
++                        face = font(13, "bold")
++                    centered(self.draw, (x, y + top, box[2], y + bottom),
++                             fit(caption, face, cell - 4), face, self.c[ink])
 +                self.targets.append((box, ("row", row.get("pin") or row.get("name"))))
 +            x += cell + gap
-+        self.label(26, 371, "cm  This station", 16, "accent", 158, "bold")
-+        self.label(188, 371, "cm  Other station", 16, "muted", 200)
++        self.label(26, 352, "cm  This station", 16, "accent", 158, "bold")
++        self.label(188, 352, "cm  Other station", 16, "muted", 180)
++        self.label(26, 381, "PoE idle = waiting for a device", 15, "muted", 244)
++        self.label(278, 381, "? = no reading", 15, "muted", 145)
 +
 +    def station(self):
 +        p = self.panel
@@ -17304,43 +17359,50 @@ index 0000000..d6e3ece
 +        if p.rescue_available():
 +            self.button((20, 355, 370, 401), "Rescue Wi-Fi access", ("key", "CENTER"), True)
 +
++    def port_device(self, port):
++        serials = port.get("serials")
++        if isinstance(serials, list) and serials:
++            return next((d for d in self.modules() if d.get("serial") in serials), None)
++        others = objects(self.panel.data.get("recognized")) + objects(self.panel.data.get("unknown"))
++        return next((d for d in others if port.get("name") == d.get("port")), None)
++
 +    def details(self):
 +        p = self.panel
 +        row = p.detail_row()
-+        if row is None:
-+            self.title("Device details")
-+            self.label(25, 167, "Device is no longer present", 23, "muted")
-+            return
 +        is_port = p.detail[0] == "port"
++        if row is None:
++            kind = "Port" if is_port else "Device"
++            self.title(kind + " details")
++            self.label(25, 167, kind + " is no longer present", 23, "muted")
++            return
 +        name = (row.get("portname") if is_port else row.get("hostname")) or row.get("name") or identity(row)
 +        self.title(name)
++        if is_port:
++            switch_index = int(row["pin"].partition(":")[0])
++            if not p.map_view()[switch_index]["answering"]:
++                self.label(38, 149, "Switch not responding", 22, "warn")
++                return
 +        self.card((20, 128, 370, 344))
 +        self.card((383, 128, 779, 344))
 +        if is_port:
 +            key, word = compact.port_state(row, None)
 +            key = "muted" if key == "dim" or isinstance(row.get("station"), dict) else key
 +            self.label(40, 150, "Port", 17, "muted")
-+            self.badge(349, 145, word, key if key in self.c else "muted")
++            if row.get("state") != "free":
++                self.badge(349, 145, word, key if key in self.c else "muted")
 +            facts = [
-+                ("Link", compact.link_speed(row.get("speed"))),
-+                ("PoE", f"{row['watts']} W" if number(row.get("watts"), None) is not None else ""),
++                ("Link", port_link(row)[1]),
++                ("PoE", port_power(row)[1]),
 +            ]
 +            desc = row.get("station") if isinstance(row.get("station"), dict) else {}
 +            lines = [text(desc.get(k)) for k in ("name", "description", "address", "host", "version")]
 +            if row.get("server"):
 +                lines.insert(0, "This provisioning station")
-+            device = next(
-+                (
-+                    d
-+                    for d in self.modules() + objects(p.data.get("unknown"))
-+                    if d.get("port") == row.get("name")
-+                ),
-+                {},
-+            )
-+            lines.extend(text(device.get(k)) for k in ("name", "detail", "mac"))
-+            lines = [s for s in lines if s] or [
-+                "Nothing connected" if row.get("state") == "free" else word.title()
-+            ]
++            device = self.port_device(row)
++            if device:
++                lines.extend(text(device.get(k)) for k in ("hostname", "name", "detail", "mac"))
++                self.button((345, 355, 481, 401), "View device", ("port_device", identity(device)), True)
++            lines = list(dict.fromkeys(s for s in lines if s)) or ["No device identified"]
 +            right_title = "Connected device"
 +        else:
 +            key, word = compact.STATE.get(text(row.get("state")), ("muted", "UNKNOWN"))
@@ -17391,9 +17453,10 @@ index 0000000..d6e3ece
 +        self.pager(len(wrapped), 5)
 +        for i, line in enumerate(wrapped[self.offset : self.offset + 5]):
 +            self.label(403, 190 + i * 28, line, 18, width=351)
-+        if self.origin is not None:
-+            self.label(24, 372, "Back to " + PAGES[self.origin[0]], 16, "muted", 350)
-+            self.targets.append(((20, 352, 350, 402), ("key", "KEY2")))
++        if self.history:
++            page, detail, _ = self.history[-1]
++            self.label(24, 372, "Back to " + ("port" if detail else PAGES[page]), 16, "muted", 308)
++            self.targets.append(((20, 352, 326, 402), ("key", "KEY2")))
 +
 +    def system(self, stage):
 +        menu = self.panel.power_menu
@@ -17742,10 +17805,10 @@ index 0000000..6cdd901
 +            self.front = None
 diff --git a/tests/test_hyperpixel.py b/tests/test_hyperpixel.py
 new file mode 100755
-index 0000000..17b5579
+index 0000000..47ecaff
 --- /dev/null
 +++ b/tests/test_hyperpixel.py
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,277 @@
 +from types import SimpleNamespace
 +from PIL import Image, ImageDraw
 +
@@ -17941,6 +18004,88 @@ index 0000000..17b5579
 +    panel.page, panel.detail = 1, None
 +    menu.frame()
 +    assert "SFP" in labels
++
++
++def test_ports_show_independent_link_and_power_and_open_the_tapped_port(tmp_path, monkeypatch):
++    import fpms.integrations.cmprovision_touch as touch
++
++    panel = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    panel.page, panel.enabled, panel.age = 1, True, 1
++    ports = [
++        {"name": "Gi0/1", "number": 1, "state": "module", "serials": ["abc"], "link_up": False,
++         "speed": 10, "poe_state": "delivering", "watts": 4.2},
++        {"name": "Gi0/2", "number": 2, "link_up": True, "speed": 1000, "poe_state": "searching"},
++        {"name": "Gi0/3", "number": 3, "speed": 10, "watts": 0},  # Old snapshot, no carrier or PoE state.
++    ]
++    panel.data = {"switches": [{"name": "sw", "blocks": [{"label": "RJ45", "rows": 2, "ports": ports}]}],
++                  "modules": [{"name": "sensor", "serial": "abc", "port": "sw Gi0/1"}]}
++    menu = TouchMenu(panel)
++    shown = []
++    monkeypatch.setattr(menu, "label", lambda x, y, value, *a, **kw: shown.append(value))
++    monkeypatch.setattr(touch, "centered", lambda draw, box, value, *a: shown.append(value))
++
++    def open_target(action):
++        (left, top, right, bottom) = next(box for box, target in menu.targets if target == action)
++        menu.tap((left + right) // 2, (top + bottom) // 2)
++        shown.clear()
++        menu.frame()
++
++    menu.frame()
++    for expected in ("Link", "PoE", "Down", "4.2 W", "Up", "Idle", "?"):
++        assert expected in shown
++    open_target(("row", "0:Gi0/1"))
++    assert panel.detail == ("port", "0:Gi0/1")
++    assert "Down" in shown and "Delivering · 4.2 W" in shown and "10M" not in shown
++    open_target(("port_device", "abc"))
++    assert panel.detail == ("module", "abc")
++    open_target(("key", "KEY2"))
++    assert panel.detail == ("port", "0:Gi0/1")
++    open_target(("key", "KEY2"))
++    assert panel.page == 1 and panel.detail is None
++    open_target(("row", "0:Gi0/2"))
++    assert "Up · 1G" in shown and "Waiting for device" in shown
++    open_target(("key", "KEY2"))
++    open_target(("row", "0:Gi0/3"))
++    assert shown.count("No reading") == 2 and "10M" not in shown
++
++
++def test_poe_states_distinguish_power_without_metering_fault_disabled_and_no_reading():
++    from fpms.integrations.cmprovision_touch import port_power
++
++    for state, watts, short in [
++        ("delivering", None, "On"), ("delivering", 0, "On"), ("fault", 0, "Fault"),
++        ("disabled", None, "Off"), ("test", 0, "Test"), (None, None, "?"), (None, 0, "?"),
++        (None, 1.8, "1.8 W"),
++    ]:
++        assert port_power({"poe_state": state, "watts": watts})[0] == short
++
++
++def test_dense_map_keeps_every_port_tappable_and_returns_to_its_bank(tmp_path):
++    panel = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    panel.page, panel.enabled, panel.age = 1, True, 1
++    ports = [{"name": f"Gi0/{i}", "number": i, "link_up": True} for i in range(1, 49)]
++    panel.data = {"panel": {"ports_map": "whole"}, "switches": [{"name": "sw", "blocks": [
++        {"label": "RJ45", "rows": 2, "ports": ports[:24]},
++        {"label": "RJ45", "rows": 2, "ports": ports[24:]},
++    ]}]}
++    menu = TouchMenu(panel)
++
++    def tap(action):
++        box = next(box for box, target in menu.targets if target == action)
++        menu.tap((box[0] + box[2]) // 2, (box[1] + box[3]) // 2)
++        menu.frame()
++
++    menu.frame()
++    tiles = [box for box, action in menu.targets if action[0] == "row"]
++    assert len(tiles) == 28
++    for x0, y0, x1, y1 in tiles:
++        assert x1 - x0 + 1 >= 44 and y1 - y0 + 1 >= 44 and x1 < 780 and y1 < 337
++        assert sum(x0 <= a <= x1 and y0 <= b <= y1 for a, b, _, _ in tiles) == 1
++    tap(("offset", 1))
++    tap(("row", "0:Gi0/48"))
++    assert panel.detail == ("port", "0:Gi0/48")
++    tap(("key", "KEY2"))
++    assert panel.detail is None and menu.offset == 1
 diff --git a/fpms/integrations/cmprovision_touch_style.py b/fpms/integrations/cmprovision_touch_style.py
 new file mode 100644
 index 0000000..34ff4cf
