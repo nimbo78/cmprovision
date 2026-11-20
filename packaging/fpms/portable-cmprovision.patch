@@ -17969,19 +17969,21 @@ index 0000000..fe6007d
 +                self.draw.text((406, 197 + i * 33), value, font=face, fill=self.c["fg"], anchor="lt")
 diff --git a/fpms/modules/screen/hyperpixel.py b/fpms/modules/screen/hyperpixel.py
 new file mode 100644
-index 0000000..6cdd901
+index 0000000..bd0ea5a
 --- /dev/null
 +++ b/fpms/modules/screen/hyperpixel.py
-@@ -0,0 +1,222 @@
+@@ -0,0 +1,247 @@
 +"""Rectangular HyperPixel 4.0 Touch on the Raspberry Pi KMS overlay."""
 +
 +import array
++import ctypes
 +import fcntl
 +import math
 +import os
 +import re
 +import select
 +import struct
++from contextlib import contextmanager
 +from pathlib import Path
 +
 +WIDTH, HEIGHT = 800, 480
@@ -18123,6 +18125,27 @@ index 0000000..6cdd901
 +        self.crtc, self.plane = crtc, plane
 +        self.buffers = [kms.DumbFramebuffer(card, SCAN_WIDTH, SCAN_HEIGHT, "XR24") for _ in range(2)]
 +        self.front = None
++        self._libdrm = ctypes.CDLL("libdrm.so.2", use_errno=True)
++        for name in ("drmIsMaster", "drmSetMaster", "drmDropMaster"):
++            method = getattr(self._libdrm, name)
++            method.argtypes = [ctypes.c_int]
++            method.restype = ctypes.c_int
++        if self._libdrm.drmIsMaster(self.card.fd):
++            self._master_call("drmDropMaster")
++
++    def _master_call(self, name):
++        result = getattr(self._libdrm, name)(self.card.fd)
++        if result != 0:
++            raise OSError(ctypes.get_errno() or abs(result), name)
++
++    @contextmanager
++    def _master(self):
++        # fbcon needs the same DRM master to apply HDMI palette changes.
++        self._master_call("drmSetMaster")
++        try:
++            yield
++        finally:
++            self._master_call("drmDropMaster")
 +
 +    @staticmethod
 +    def dedicated(card, connector, crtc):
@@ -18164,12 +18187,6 @@ index 0000000..6cdd901
 +        raise OSError("No dedicated active HyperPixel DPI output or free overlay")
 +
 +    def show(self, image):
-+        if not self.dedicated(self.card, self.connector, self.crtc):
-+            raise OSError("DPI output changed")
-+        self.plane.refresh_props()
-+        current = self.plane.get_prop_value("FB_ID")
-+        if current != (self.buffers[self.front].id if self.front is not None else 0):
-+            raise OSError("DPI plane changed owner")
 +        next_buffer = 1 if self.front == 0 else 0
 +        fb = self.buffers[next_buffer]
 +        pixels = image.tobytes("raw", "BGRX")
@@ -18181,26 +18198,34 @@ index 0000000..6cdd901
 +        else:
 +            for y in range(SCAN_HEIGHT):
 +                target[y * stride : y * stride + width] = pixels[y * width : (y + 1) * width]
-+        request = self.kms.AtomicReq(self.card)
-+        request.add_plane(self.plane, fb, self.crtc)
-+        if request.commit_sync() != 0:
-+            raise OSError("Cannot present the HyperPixel overlay")
-+        self.front = next_buffer
++        with self._master():
++            if not self.dedicated(self.card, self.connector, self.crtc):
++                raise OSError("DPI output changed")
++            self.plane.refresh_props()
++            current = self.plane.get_prop_value("FB_ID")
++            if current != (self.buffers[self.front].id if self.front is not None else 0):
++                raise OSError("DPI plane changed owner")
++            request = self.kms.AtomicReq(self.card)
++            request.add_plane(self.plane, fb, self.crtc)
++            if request.commit_sync() != 0:
++                raise OSError("Cannot present the HyperPixel overlay")
++            self.front = next_buffer
 +
 +    def close(self):
 +        if self.front is not None:
-+            self.plane.refresh_props()
-+            if self.plane.get_prop_value("FB_ID") == self.buffers[self.front].id:
-+                request = self.kms.AtomicReq(self.card)
-+                request.add(self.plane, {"FB_ID": 0, "CRTC_ID": 0})
-+                request.commit_sync()
-+            self.front = None
++            with self._master():
++                self.plane.refresh_props()
++                if self.plane.get_prop_value("FB_ID") == self.buffers[self.front].id:
++                    request = self.kms.AtomicReq(self.card)
++                    request.add(self.plane, {"FB_ID": 0, "CRTC_ID": 0})
++                    request.commit_sync()
++                self.front = None
 diff --git a/tests/test_hyperpixel.py b/tests/test_hyperpixel.py
 new file mode 100755
-index 0000000..bb67cd1
+index 0000000..207f586
 --- /dev/null
 +++ b/tests/test_hyperpixel.py
-@@ -0,0 +1,495 @@
+@@ -0,0 +1,547 @@
 +from types import SimpleNamespace
 +import pytest
 +from PIL import Image, ImageDraw
@@ -18696,6 +18721,58 @@ index 0000000..bb67cd1
 +    assert p.detail == ("port", "0:Gi0/1")
 +    tap(("key", "KEY2"))
 +    assert menu.port_mode == "list"
++
++
++
++@pytest.mark.parametrize("commit_fails", [False, True])
++def test_frame_gives_drm_master_back_to_the_console(monkeypatch, commit_fails):
++    import ctypes
++    from fpms.modules.screen.hyperpixel import SCAN_HEIGHT, SCAN_WIDTH
++
++    events = []
++
++    def record(name):
++        def call(fd):
++            assert fd == 3
++            events.append(name)
++            return 0
++        return call
++
++    libdrm = SimpleNamespace(
++        drmIsMaster=lambda fd: 1,
++        drmSetMaster=record("acquire"),
++        drmDropMaster=record("release"),
++    )
++    monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: libdrm)
++
++    class Buffer:
++        id = 42
++
++        def stride(self, index):
++            return SCAN_WIDTH * 4
++
++        def map(self, index):
++            return memoryview(bytearray(SCAN_WIDTH * SCAN_HEIGHT * 4))
++
++    def commit():
++        events.append("commit")
++        return -1 if commit_fails else 0
++
++    request = SimpleNamespace(add_plane=lambda *args: None, commit_sync=commit)
++    kms = SimpleNamespace(DumbFramebuffer=lambda *args: Buffer(), AtomicReq=lambda *args: request)
++    output = SimpleNamespace(id=1, refresh_props=lambda: None, get_prop_value=lambda key: 2)
++    plane = SimpleNamespace(refresh_props=lambda: None, get_prop_value=lambda key: 0)
++    card = SimpleNamespace(fd=3, connectors=[output])
++    screen = DpiScreen(kms, card, output, SimpleNamespace(id=2), plane)
++
++    assert events == ["release"]
++    image = Image.new("RGB", (SCAN_WIDTH, SCAN_HEIGHT))
++    if commit_fails:
++        with pytest.raises(OSError, match="Cannot present"):
++            screen.show(image)
++    else:
++        screen.show(image)
++    assert events == ["release", "acquire", "commit", "release"]
 diff --git a/fpms/integrations/cmprovision_touch_style.py b/fpms/integrations/cmprovision_touch_style.py
 new file mode 100644
 index 0000000..f37ff68
