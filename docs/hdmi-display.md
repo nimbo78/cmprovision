@@ -69,6 +69,8 @@ For the Waveshare use `waveshare-144` as the last argument. Unmount the boot par
 
 ## Screens and navigation
 
+On the graphical port map, names that fit are stationary. A longer device name scrolls horizontally inside its port, pausing for 1.5 seconds at the beginning and end. If automatic rotation shows another switch, scrolling resumes when the port returns. The port number, Ethernet link, PoE reading and any `+N` device count stay visible throughout.
+
 Choose the view in Settings or press **V** on the station keyboard.
 
 - **Stand console** shows a switch front panel, a selected device and the stand's module list. Each port tile shows the connected device, Ethernet link and PoE readings.

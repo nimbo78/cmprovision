@@ -1197,10 +1197,16 @@ def display(screen):
     switch_offset = 0
     graphical = False
     palette_name, inks = None, None
+    next_poll = 0
     try:
         while not STOP:
-            config = read_config()
-            update = reader.poll()
+            monotonic, now = time.monotonic(), time.time()
+            update = None
+            poll = monotonic >= next_poll
+            if poll:
+                config = read_config()
+                update = reader.poll()
+                next_poll = monotonic + 0.25
             if update is not None:
                 cards = data['modules'] + data.get('recognized', [])
                 previous = cards[selected % len(cards)] if cards else None
@@ -1213,8 +1219,8 @@ def display(screen):
                 tick += 1
                 switch_offset = 0
                 last_rotation = time.monotonic()
-            now = time.time()
-            access, setup = display_cards(data, now)
+            if poll:
+                access, setup = display_cards(data, now)
             view = view_override or config['view']
             palette = resolved_palette(config['palette'], data)
             showing = graphics.present(board, data, time.monotonic(), now, selected=selected, tick=tick,
@@ -1225,7 +1231,7 @@ def display(screen):
                     # A previous text-only access card must not reappear underneath the overlay.
                     screen.erase()
                     screen.refresh()
-                screen.timeout(250)
+                screen.timeout(max(1, round(1000 * graphics.motion.delay(time.monotonic(), 0.25))))
             else:
                 rows, cols = screen.getmaxyx()
                 width, height, ox, oy = viewport(cols, rows)

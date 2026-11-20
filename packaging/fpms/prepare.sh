@@ -1,5 +1,5 @@
 #!/bin/sh
-# Materialize the exact upstream base plus our reviewed patch. Never modifies an installed FPMS.
+# Prepare the pinned FPMS sources and the hostname renderer shared with HDMI.
 set -eu
 DEST=${1:?new source directory required}
 PATCH_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -17,4 +17,5 @@ git -C "$DEST" checkout --quiet --detach "$BASE"
 test "$(git -C "$DEST" rev-parse HEAD)" = "$BASE"
 git -C "$DEST" apply --check "$PATCH_DIR/portable-cmprovision.patch"
 git -C "$DEST" apply "$PATCH_DIR/portable-cmprovision.patch"
+install -m 644 "$PATCH_DIR/../../tools/display_marquee.py" "$DEST/fpms/integrations/display_marquee.py"
 printf '%s\n' "$BASE" > "$DEST/.cmprovision-upstream"

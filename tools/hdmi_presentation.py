@@ -6,6 +6,7 @@ import os
 import signal
 import struct
 import sys
+from display_marquee import Marquee
 
 # linux/uapi/linux/vt.h. The kernel waits for VT_RELDISP before actually switching.
 VT_GETMODE = 0x5601
@@ -75,6 +76,7 @@ class Presentation:
         self.render = render
         self.output = None
         self.last_frame = None
+        self.motion = Marquee()
         self.retry_at = 0
         self.last_error = None
 
@@ -94,6 +96,7 @@ class Presentation:
     def drop_output(self):
         output, self.output = self.output, None
         self.last_frame = None
+        self.motion = Marquee()
         if output is not None:
             try:
                 output.close()
@@ -114,9 +117,14 @@ class Presentation:
                 access, remaining = None, None
             key = (id(data), int(now), view, remaining, access and access['created_at'], setup)
             if key == self.last_frame:
-                return True
-            frame = self.render(board, data, self.output.size, now=now, access=access,
-                                setup=setup, remaining=remaining, **view)
+                if not self.motion.advance(monotonic):
+                    return True
+                frame = self.motion.image
+            else:
+                if access or setup:
+                    self.motion = Marquee()
+                frame = self.render(board, data, self.output.size, now=now, access=access,
+                                    setup=setup, remaining=remaining, motion=self.motion, monotonic=monotonic, **view)
             # A switch may have been requested while Pillow was composing this frame.
             if not self.terminal.ready(self.drop_output):
                 self.drop_output()

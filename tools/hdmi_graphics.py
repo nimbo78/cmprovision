@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from hdmi_port_info import link_reading, port_endpoint, power_reading
+from display_marquee import Marquee
 
 
 PUBLIC = Path(__file__).resolve().parent.parent / "public"
@@ -156,7 +157,7 @@ def icon(name, px):
 
 class Painter:
     """A 900-unit-high workspace; ultrawide displays gain columns at the same reading distance."""
-    def __init__(self, size, palette, now, cache_text=True):
+    def __init__(self, size, palette, now, cache_text=True, *, motion=None, monotonic=None, scene=None, slide=0):
         self.scale = min(size[0]/1536, size[1]/900)
         self.w, self.h = (value/self.scale for value in size)
         self.light = palette.endswith("-light")
@@ -168,6 +169,9 @@ class Painter:
         self.draw = ImageDraw.Draw(self.image)
         self.now = now
         self.cache_text = cache_text
+        self.motion = motion if motion is not None else Marquee()
+        self.motion.begin(self.image, now if monotonic is None else monotonic, scene,
+                          start=0 if motion is None else None, slide=slide)
 
     def px(self, value):
         return round(self.scale*value)
@@ -190,11 +194,15 @@ class Painter:
         self.draw.text(xy,text,font=face(px,weight),fill=self.c[ink],anchor=anchor)
 
     def label(self, x, y, value, size=18, ink="fg", weight="regular", width=None, align="left",
-              scroll=False, indicate_start=False):
+              scroll=False, indicate_start=False, hostname=False):
         text = clean(value)
         if not text:
             return
         px = max(1, self.px(size))
+        anchor = {"left":"lm","right":"rm","center":"mm"}[align]
+        if hostname and width is not None and self.motion.label(
+                (self.px(x), self.px(y)), text, face(px, weight), self.c[ink], self.px(width), anchor):
+            return
         if width is not None and self.text_width(text,px,weight) > self.px(width):
             # Clip at a character boundary. Long operational values move within
             # their own column; compact overview chips retain their numeric IDs.
@@ -225,7 +233,7 @@ class Painter:
                     hi = mid-1
             tail = "…" if lo < len(text) else ""
             text = prefix + text[start:lo] + tail if lo > start else "…"
-        self.paint_label((self.px(x),self.px(y)),text,px,weight,ink,{"left":"lm","right":"rm","center":"mm"}[align])
+        self.paint_label((self.px(x),self.px(y)),text,px,weight,ink,anchor)
 
     def rect(self, x, y, w, h, fill="surface", line=None, radius=0, stroke=1):
         if w <= 0 or h <= 0:
@@ -350,7 +358,7 @@ class PortMap:
         anchor = "#%d · %s" % (index+1,port)
         pinned = min(width,p.measure(anchor,size,"mono")+2)
         p.label(x,y,anchor,size,ink,"mono",pinned)
-        p.label(x+pinned+9,y,self.switches[index].get("name"),size,ink,"mono",width-pinned-9,scroll=True)
+        p.label(x+pinned+9,y,self.switches[index].get("name"),size,ink,"mono",width-pinned-9,hostname=True)
 
     def page(self, card, card_count, tick, offset, whole=()):
         if not self.pages:
@@ -447,7 +455,7 @@ def header(p, board, data):
     p.mark(margin, 13, 39)
     p.label(97, 33, "cmprovision", 26, weight="bold")
     p.line(247, 21, 247, 45)
-    p.label(266, 33, data.get("host"), 18, "muted", "mono", width=p.w*.36, scroll=True)
+    p.label(266, 33, data.get("host"), 18, "muted", "mono", width=p.w*.36, hostname=True)
     clock = clean(data.get("clock"))
     if len(clock) >= 11 and clock[4:5] == "-":
         clock = clock[11:]
@@ -586,7 +594,7 @@ def roster(p, switches, active, y):
         p.label(x+13, y+14, number, 16, ink, "mono")
         nx = x+23+p.measure(number,16,"mono")
         p.label(nx, y+14, switch.get("name") or "Unnamed switch", 16, weight="mono",
-                width=x+width-92-nx, scroll=i == active)
+                width=x+width-92-nx, hostname=True)
         p.rect(x+width-78, y+11, 6, 6, tone, radius=3)
         p.label(x+width-65, y+14, state, 15, tone, "bold")
         switch_serial(p, switch, x+13, y+35, width-26)
@@ -622,7 +630,7 @@ def switch_panel(p, board, stand, page_idx, card, x, y, w, h, map_fallback=False
         page_name = "Full map unavailable · "+page_name
     chip_x = x+w-38-p.measure(page_name,14,"bold")
     p.chip(chip_x, y+27, page_name, size=14, outlined=True)
-    p.label(x+71, y+27, switch.get("name") or "Switch %d" % (index+1), 21, weight="mono", width=chip_x-x-84, scroll=True)
+    p.label(x+71, y+27, switch.get("name") or "Switch %d" % (index+1), 21, weight="mono", width=chip_x-x-84, hostname=True)
     switch_details(p, switch, x+71, y+51, w-91, bool(groups))
     legend_y = y+h-40
     if groups:
@@ -675,7 +683,7 @@ def endpoint_label(p, x, y, endpoint, width, ink):
         p.label(x+width, y, tail, size, ink, "bold", tail_w, align="right")
         width -= tail_w+4
         endpoint = name
-    p.label(x, y, endpoint, size, ink, "bold", width, scroll=True, indicate_start=True)
+    p.label(x, y, endpoint, size, ink, "bold", width, hostname=True)
 
 
 def port_tile(p, board, stand, index, port, group, x, y, w, h, selected, *, compact=False):
@@ -735,7 +743,7 @@ def card_title(p, board, m, x, y, w, size=24):
     chip_w = p.measure(status,15,"bold")+18+(21 if symbol else 0)
     p.chip(x+w-chip_w, y, status, tone(m), 15, symbol)
     p.label(x, y, m.get("name") or m.get("mac") or m.get("serial") or "Unknown device", size, "fg", "mono",
-            width=w-chip_w-14, scroll=True)
+            width=w-chip_w-14, hostname=True)
 
 
 def metric(board, m):
@@ -831,7 +839,7 @@ def device_table(p, board, stand, cards, unknown, selected, tick, x, y, w, h):
             symbol, percent = None, None
         location_w = min(p.measure(location,14,"mono")+12,(b-a)*.56)
         stand.draw_location(p,cards[idx] if idx<len(cards) else unknown[idx-len(cards)],a,cy,location_w-6,14)
-        p.label(a+location_w,cy,name,17,"fg","mono",b-a-location_w-15,scroll=True)
+        p.label(a+location_w,cy,name,17,"fg","mono",b-a-location_w-15,hostname=True)
         p.chip(b,cy,status,color,14,symbol)
         value_x = c
         if percent is not None:
@@ -875,7 +883,7 @@ def full_switch_map(p, board, data, stand, index, cards, selected, tick):
     bottom = fiber_y+70
     p.rect(x,y,width,bottom-y,"surface","line",14)
     p.icon_box("switch",x+17,y+12)
-    p.label(x+71,y+22,switch.get("name") or f"Switch {index+1}",22,"fg","mono", width-530,scroll=True)
+    p.label(x+71,y+22,switch.get("name") or f"Switch {index+1}",22,"fg","mono", width-530,hostname=True)
     switch_details(p,switch,x+71,y+46,width-421,True)
     count = 12*len(copper)
     order = "1–24 above 25–48" if count == 48 else "Odd ports above even ports"
@@ -907,7 +915,7 @@ def full_switch_map(p, board, data, stand, index, cards, selected, tick):
     if owner and owner[0] == index:
         name = card.get("name") or card.get("mac") or card.get("serial") or "Unknown device"
         p.label(right-18,fiber_y+25,owner[1]+"  ·  "+clean(name),17,"fg","mono",right-sx-28,
-                align="right",scroll=True,indicate_start=True)
+                align="right",hostname=True)
         p.label(right-18,fiber_y+49,phase(board,card),15,tone(card),"bold",right-sx-28,align="right")
     else:
         p.label(right-18,fiber_y+35,"No selected card on this switch",15,"muted",width=right-sx-28,align="right")
@@ -969,7 +977,7 @@ def engineer(p, board, stand, m):
         return
     name = clean(m.get("name") or m.get("mac") or "Unknown device")
     title_width = min(p.measure(name,27,"mono"), w*.40)
-    p.label(x,y+20,name,27,"fg","mono",title_width+1,scroll=True)
+    p.label(x,y+20,name,27,"fg","mono",title_width+1,hostname=True)
     stand.draw_location(p,m,x+title_width+14,y+21,w-title_width-215,17)
     p.chip(x+w-18-p.measure("Device diagnostics",15,"bold"),y+18,"Device diagnostics",size=15,outlined=True)
     cy = y+53
@@ -1154,12 +1162,13 @@ def private_frame(p, access, setup, remaining):
 
 
 def render_frame(board, data, size, *, selected=0, tick=0, view="auto", paused=False, palette="warm",
-                 now=None, switch_offset=0, access=None, setup=None, remaining=None):
+                 now=None, switch_offset=0, access=None, setup=None, remaining=None, motion=None, monotonic=None):
     """Render one RGB frame at the output backend's bounded working resolution."""
     data = data or {}
     now = time.time() if now is None else now
     private = access is not None or setup is not None
-    p = Painter(size,board.resolved_palette(palette,data),now,cache_text=not private)
+    p = Painter(size,board.resolved_palette(palette,data),now,cache_text=not private,
+                motion=None if private else motion, monotonic=monotonic, scene=(view, switch_offset), slide=tick)
     if private:
         return private_frame(p,access,setup,remaining)
     cards = list(data.get("modules") or [])+list(data.get("recognized") or [])
