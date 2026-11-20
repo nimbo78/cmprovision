@@ -1,6 +1,6 @@
 # Illustrated guide assets
 
-`hdmi-two-switches.png` is a Full HD frame from the native HDMI renderer with a synthetic two-switch stand. Both switches have a device on Gi0/1.
+`hdmi-two-switches.png` is a 1920 × 1080 frame from the native Pillow HDMI renderer. The two demo switches have synthetic chassis serials `DEM2645E001` and `DEM2645W002`. Each has a sensor on Gi0/1. On assembly-west, port 3 supplies 6.2 W with no Ethernet carrier and port 4 is empty with PoE idle. The English and Russian HDMI guides use this same frame.
 
 `station-setup.png` shows the station wizard Overview at 1440 px, using an isolated demonstration database and the real Blade/Livewire page. Network and SSH controllers are test doubles for this capture; no station or credentials were changed. Captured for 2.30.4.
 

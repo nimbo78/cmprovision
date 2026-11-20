@@ -55,7 +55,7 @@ whether someone is watching or whether the TV has selected this input. Use Off w
 
 Choose the view in Settings or press **V** on the station keyboard.
 
-- **Stand console** shows a switch front panel, a selected device and the stand's module list. Each port has a number and a status.
+- **Stand console** shows a switch front panel, a selected device and the stand's module list. Each port tile shows the connected device, Ethernet link and PoE readings.
 - **All device cards** shows several modules together. Read host names, physical ports, phases and progress across the batch. Larger batches use additional pages.
 - **Large device card and diagnostics** shows the selected module, provisioning steps, saved diagnostic evidence and advice. Use the web UI to request a fresh snapshot or start recovery.
 - **Automatic** normally shows the stand console and opens diagnostics for a failed or silent selected module.
@@ -65,24 +65,33 @@ Cards advance every 12 seconds by default, adjustable from 5 to 60 seconds. **�
 
 ### Finding a port on a multi-switch stand
 
-![Port Gi0/1 on assembly-west is selected. The other Gi0/1 belongs to assembly-east.](assets/guides/hdmi-two-switches.png)
+![Two switch serials distinguish assembly-east and assembly-west. On assembly-west, Gi0/1 has sensor-02 and port 3 draws PoE power with its Ethernet link down.](assets/guides/hdmi-two-switches.png)
 
-On the graphical stand console, the switch list numbers and names the switches and marks the one whose ports are open.
-The selected device card keeps its own switch number, name and port visible. For example, a card showing
-`#1 · assembly-east Gi0/1` still points to that port while you inspect `assembly-west`. The `[` key steps back
-through switch pages and `]` steps forward. A large switch
-can occupy several port pages. Use the arrow keys to select a device and return the map to its switch. During
-automatic rotation the map follows the device cards, then visits every switch page, including switches with no responding ports.
+Match the chassis label to the **S/N** in the switch list or the open panel's header. `S/N unavailable` means the switch has supplied no serial. If a switch goes offline after a successful reading, its last known serial stays visible alongside its offline status. In the example, both switches have a Gi0/1. The device card identifies `sensor-02` as `#2 · assembly-west Gi0/1`.
+
+The switch list highlights the open panel. Press `[` for the previous page or `]` for the next. A large switch can occupy several pages. The device card keeps its own switch and port visible as you browse. Use the arrow keys to select a device and return the map to its switch. During automatic rotation the map follows the device cards, then visits every switch page, including switches with no responding ports.
+
+### Reading a port tile
+
+Look below the physical port number for the module's host name, the station name or a name reported over LLDP/CDP. A MAC address can identify an unnamed device. When several known modules share a port, the tile names the one whose status it shows. `+N` counts the additional modules. `No ID` means the port shows activity, such as link or supplied power, and the device identity is unknown. A dash marks a port with no detected device.
+
+| Reading | What it tells you |
+| --- | --- |
+| Ethernet | `1G` and `100M` are negotiated link speeds in Gbit/s and Mbit/s. `Up` means carrier is present and the speed is unknown. `Down` means no carrier. `?` means the switch supplied no reading. |
+| PoE | Watts show measured power. `On` means the switch is supplying power and the wattage is unknown. `Idle` means it is waiting for a powered device. `Off` means PoE is disabled. `Fault` and `Test` identify a fault and a test in progress. `?` means no PoE reading. |
+
+Read the two rows independently. On assembly-west, `sensor-02` on port 1 has a gigabit link and draws 3.2 W. Port 3 supplies 6.2 W with its link down. Port 4 is empty and shows `Down` and `Idle`.
 
 Verified models use the physical port banks from the Ports page, including the 2960CX's odd/even rows and separate
-RJ45/SFP uplinks. Other models use automatic layout. The local provisioner's port carries the `cm` mark. An uplink
-to another switch can show `UP`. `UNR` identifies an unrecognized device. [Switch front panels](switch-front-panels.md) · [Discovery troubleshooting](unrecognized-devices.md)
+RJ45/SFP uplinks. Other models use automatic layout. The local provisioner's port carries an orange `cm` mark. A neighbouring station has a grey `cm` mark. `Uplink` identifies a switch uplink and `UNR` an unrecognized device. [Switch front panels](switch-front-panels.md) · [Discovery troubleshooting](unrecognized-devices.md)
 
 ### Text console
 
 If an HDMI output is inactive, shares its display pipeline with another connector, or has no free overlay plane,
-the service uses the tty8 text console. Its panel identifies the current and next switch. The same keys control
-switch pages, device cards, rotation and views.
+the service uses the tty8 text console. Its panel identifies the current and next switch. The same keys control switch pages, device cards, rotation and views.
+
+The current switch's S/N appears under the panel title when available. Each port shows its number and provisioning status, the attached device, and a line such as `Link Down  PoE 6.2 W`. Older snapshots that predate switch identity and port readings use single-line port tiles.
+
 The console automatically sizes its font from the current visible HDMI resolution. With the bundled Terminus fonts,
 1920×1080 uses 14×28-pixel cells, 3440×1440 uses 20×36 cells, and 3840×2160 uses 28×56 cells. This keeps about 38–40 rows
 of readable text instead of shrinking the entire interface at high resolution. The watcher adjusts tty8 when the HDMI

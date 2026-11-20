@@ -55,7 +55,12 @@ class PackageRuntimeLayoutTest(unittest.TestCase):
         self.assertTrue({'libdrm2', 'python3-pil'}.issubset(required), required)
         self.assertNotIn('python3-kms++', required)
         self.assertIn('python3-kms++', dependencies('Recommends'))
-        for name in ('hdmi_graphics.py', 'hdmi_output.py', 'hdmi_presentation.py'):
+        modules = ['hdmi_graphics.py', 'hdmi_output.py', 'hdmi_presentation.py']
+        graphics = runtime / 'hdmi_graphics.py'
+        # Earlier graphical releases had no port detail helper.
+        if graphics.is_file() and 'hdmi_port_info' in graphics.read_text():
+            modules.append('hdmi_port_info.py')
+        for name in modules:
             with self.subTest(module=name):
                 path = runtime / name
                 self.assertTrue(path.is_file(), f'missing HDMI module: {name}')

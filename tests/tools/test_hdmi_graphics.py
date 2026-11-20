@@ -71,9 +71,127 @@ class GraphicsTest(unittest.TestCase):
         labels = "\n".join(text for text, _ in items)
         for value in ("assembly-east", "assembly-west", "assembly-spare", "Offline", "Device card",
                       "assembly-west Gi0/1", "Gi0/1", "63%", "25.0 MiB/s", "ETA 1:00", "Lab 78", "172.20.0.2",
-                      "This station", "Other station", "Empty port"):
+                      "This station", "Other station"):
             self.assertIn(value, labels)
         self.assertGreaterEqual(labels.count("assembly-west"), 3)  # roster, current front panel and card
+
+    def test_front_panel_shows_each_endpoint_with_independent_link_and_poe_rows(self):
+        ports = [
+            port(21, "module", ["s1"], endpoint="writer", link_up=False, speed=1000, poe_state="delivering", watts=6.5),
+            port(22, endpoint="AP +2", link_up=True, speed=1000, poe_state="disabled", watts=0),
+            port(23, endpoint="bridge", link_up=True, poe_state="delivering"),
+            port(24, endpoint=None, link_up=None, watts=0),
+            port(25, endpoint="relay", link_up=False, poe_state="fault"),
+            port(26, endpoint="tester", link_up=False, poe_state="test"),
+            port(27, endpoint=None, link_up=False, poe_state="searching"),
+            port(28, endpoint=None, link_up=True),
+        ]
+        data = example()
+        data["switches"] = [switch("bench", bank("Copper", 2, ports))]
+        for size in ((1920, 1080), (3440, 1440)):
+            with self.subTest(size=size):
+                frame, items = self.draw(data, size, view="desk")
+                positions = dict(items)
+                dx = positions["23"][0] - positions["21"][0]
+                dy = positions["22"][1] - positions["21"][1]
+                for n, endpoint, link, poe in ((21, "writer", "Down", "6.5 W"), (22, "AP +2", "1G", "Off"),
+                                                (23, "bridge", "Up", "On"), (24, "—", "?", "?"),
+                                                (25, "relay", "Down", "Fault"), (26, "tester", "Down", "Test"),
+                                                (27, "—", "Down", "Idle"), (28, "No ID", "Up", "?")):
+                    x, y = positions[str(n)]
+                    labels = [(word, xy) for word, xy in items if x <= xy[0] < x+dx-3 and y < xy[1] < y+dy-3]
+                    self.assertEqual([word for word, _ in labels], [endpoint, link, poe], f"port {n}")
+                    (_, ey), (lx, ly), (px, py) = [xy for _, xy in labels]
+                    self.assertTrue(y < ey < ly < py)
+                    self.assertEqual(lx, px)
+                    if n == 22:
+                        # A link glyph is painted to the left of the speed. Its pixels
+                        # stay within this socket even when adjacent sockets disagree.
+                        patch = frame.crop((x, ly-10, lx-2, ly+10))
+                        self.assertIn((138, 212, 173), set(patch.getdata()))
+                    if n == 21:
+                        patch = frame.crop((x, py-10, px-2, py+10))
+                        self.assertIn((235, 191, 114), set(patch.getdata()))
+                for legend in ("Ethernet link", "PoE", "? No reading", "— No device seen"):
+                    self.assertIn(legend, positions)
+
+    def test_older_snapshots_match_devices_to_their_own_physical_ports(self):
+        data = example()
+        data["modules"][0].update(name="writer", hostname="writer")
+        data["host"] = "local-box"
+        data["recognized"][0].update(name="verified", port="assembly-west Gi0/32")
+        data["unknown"] = [dict(name="camera", port="assembly-west Gi0/33", state="unrecognized"),
+                           dict(name="wrong-box", port="Gi0/38", state="unrecognized")]
+        data["switches"][1]["blocks"] = [bank("Copper", 2, [
+            port(31, "module", ["s1"]), port(32, "recognized"), port(33, "unrecognized"), port(34, "uplink", server=True),
+            port(35, "uplink", station={"host": "peer-box"}), port(36, "free"),
+            port(37, "unrecognized", endpoint=None), port(38, "unrecognized"),
+        ])]
+        data["unknown"].append(dict(name="obsolete", port="assembly-west Gi0/37", state="unrecognized"))
+        _, items = self.draw(data, view="desk")
+        positions = dict(items)
+        dy = positions["32"][1] - positions["31"][1]
+        for n, name in ((31, "writer"), (32, "verified"), (33, "camera"), (34, "local-box"),
+                        (35, "peer-box"), (36, "—"), (37, "No ID"), (38, "No ID")):
+            x, y = positions[str(n)]
+            self.assertIn(name, [word for word, (px, py) in items if px == x and y < py < y+dy])
+
+        # Identical hostnames and interface names on two switches make even a
+        # fully qualified legacy observation ambiguous. Neither tile claims it.
+        data["switches"][0] = switch("assembly-west", bank("Copper", 1, [port(33, "unrecognized")]))
+        _, items = self.draw(data, view="desk")
+        x, y = dict(items)["33"]
+        self.assertNotIn("camera", [word for word, (px, py) in items if px == x and y < py < y+dy])
+
+    def test_switch_serials_identify_the_roster_and_the_selected_saved_panel(self):
+        data = example()
+        data["switches"][0].update(name="assembly", serial="EAST0042")
+        data["switches"][1].update(name="assembly", serial="WEST0088", answering=False)
+        _, items = self.draw(data, view="desk")
+        captions = [word for word, _ in items]
+        self.assertEqual(captions.count("S/N EAST0042"), 1)
+        self.assertEqual(captions.count("S/N WEST0088"), 2)
+        self.assertIn("S/N unavailable", captions)
+        self.assertTrue(any("last known ports" in word for word in captions))
+        roster = [xy for word, xy in items if word in ("S/N EAST0042", "S/N WEST0088", "S/N unavailable")]
+        self.assertEqual(roster[0][1], roster[1][1])
+        self.assertEqual(roster[1][1], roster[2][1])
+        self.assertGreater(roster[3][1], roster[0][1])
+
+    def test_long_endpoint_keeps_its_additional_device_count_inside_the_tile(self):
+        data = example()
+        ports = [port(i, endpoint=("west-assembly-cell-" * 5 + " +12") if i == 41 else None) for i in range(41, 57)]
+        data["switches"] = [switch("assembly", bank("Copper", 2, ports))]
+        _, items = self.draw(data, view="desk")
+        positions = dict(items)
+        x, y = positions["41"]
+        other_x = positions["43"][0]
+        other_y = positions["42"][1]
+        tail = [(word, xy) for word, xy in items if x <= xy[0] < other_x and y < xy[1] < other_y]
+        self.assertTrue(any(word == "+12" for word, _ in tail))
+        self.assertTrue(any("…" in word for word, _ in tail))
+
+    def test_dense_bank_keeps_measured_watts_and_unknown_identity_readable(self):
+        ports = [port(i, link_up=True, speed=1000, poe_state="delivering", watts=23.7) for i in range(21, 41)]
+        ports[0]["endpoint"] = "west-repair-station"
+        data = {"switches": [switch("assembly", bank("Copper", 2, ports))]}
+        _, items = self.draw(data, view="desk")
+        labels = [word for word, _ in items]
+        self.assertEqual(labels.count("23.7 W"), 20)
+        self.assertEqual(labels.count("No ID"), 19)
+        x, y = dict(items)["21"]
+        lower = dict(items)["22"][1]
+        endpoint = next(word for word, (px, py) in items if px == x and y < py < lower)
+        self.assertIn("…", endpoint, "A clipped hostname should stay visibly incomplete at either end of its scroll.")
+
+    def test_station_hostnames_fit_an_eight_column_faceplate_without_scrolling(self):
+        ports = [port(i) for i in range(21, 37)]
+        ports[0].update(endpoint="lab-station-1")
+        ports[1].update(endpoint="lab-station-2")
+        data = {"switches": [switch("assembly", bank("Copper", 2, ports))]}
+        _, items = self.draw(data, size=(1920, 1080), view="desk")
+        self.assertIn("lab-station-1", dict(items))
+        self.assertIn("lab-station-2", dict(items))
 
     def test_bank_pages_follow_serial_even_if_other_switch_uses_same_interface(self):
         data = example()

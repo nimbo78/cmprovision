@@ -22,6 +22,7 @@ class WallboardSnapshot
         $stand = Stand::current(null, 0, [], self::WALLBOARD_SECONDS);
         $batch = BatchSummary::forDashboard();
         $map = $stand['map'] ?? null;
+        $host = gethostname();
         $modules = $switches = $unknown = $recognized = [];
         foreach ($map['switches'] ?? [] as $id => $switch)
         {
@@ -46,7 +47,7 @@ class WallboardSnapshot
                         'state' => $tile['filter'] === 'recognized' ? 'recognized' : ($tile['state'] === 'foreign' ? 'unrecognized' : $tile['state']),
                         'mark' => $tile['mark'], 'filter' => $tile['filter'], 'serials' => $serials, 'server' => $tile['server'],
                         // another cmprovision station on the port: its name, address, whether it is the stand's provisioner
-                        'station' => $tile['station'] ?? null,
+                        'station' => $tile['station'] ?? null, 'endpoint' => $this->endpoint($tile, $host),
                         'link_up' => $tile['link_up'], 'speed' => $tile['speed'],
                         'poe_state' => $tile['poe']['state'] ?? null, 'watts' => $tile['poe']['watts'] ?? null];
                 }
@@ -54,13 +55,14 @@ class WallboardSnapshot
                     'ports' => $ports];
             }
             $switches[] = ['name' => $switch['name'], 'model' => $switch['panel']['model'] ?? ($state['snapshot']['model'] ?? ''),
+                'serial' => $state['snapshot']['identity']['serial'] ?? null,
                 'verified_layout' => $switch['panel'] !== null, 'answering' => Stand::answering($state),
                 'checked_at' => $state['checked_at'], 'silent_since' => $state['error']['since'] ?? null, 'blocks' => $blocks];
         }
         // A switch which has never answered has no map yet. Keep its outage visible too.
         foreach ($stand['switches'] ?? [] as $id => $state)
             if (!isset($map['switches'][$id]) && !$state['same_as'])
-                $switches[] = ['name' => $state['switch']->hostname(), 'model' => '', 'verified_layout' => false,
+                $switches[] = ['name' => $state['switch']->hostname(), 'model' => '', 'serial' => null, 'verified_layout' => false,
                     'answering' => false, 'checked_at' => $state['checked_at'], 'silent_since' => $state['error']['since'] ?? null,
                     'blocks' => []];
 
@@ -88,7 +90,7 @@ class WallboardSnapshot
             $counts[['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'stale'][$module['state']] ?? 'unknown']++;
         $project = Project::getActive();
         return ['version' => 1, 'generated_at' => now()->getTimestamp(), 'clock' => now()->local()->format('Y-m-d H:i:s T'),
-            'host' => gethostname(), 'app_version' => AppVersion::text(), 'project' => $project?->name,
+            'host' => $host, 'app_version' => AppVersion::text(), 'project' => $project?->name,
             'batch' => $batch ? ['title' => $batch->title(), 'open' => $batch->open, 'counts' => $batch->counts,
                 'left_seconds' => $batch->leftSeconds] : null,
             'counts' => $counts, 'switches' => $switches, 'modules' => $modules, 'unknown' => $unknown, 'recognized' => $recognized,
@@ -101,6 +103,32 @@ class WallboardSnapshot
             'rescue_wifi' => app(\App\Services\RescueWifi::class)->status(),
             // Both displays share the bounded, secret-free 30-second network snapshot, independently of FPMS enablement.
             'station' => DisplayStation::current()];
+    }
+
+    protected function endpoint(array $tile, string $host): ?string
+    {
+        if ($tile['state'] === 'free')
+            return null; // A lost link can leave the former device in the forwarding table.
+        if ($tile['state'] === 'uplink')
+            return $tile['server'] ? ($host ?: null) : (($tile['station']['name'] ?? '') ?: $tile['link']);
+        if ($tile['modules'])
+        {
+            $extra = count($tile['modules']) - 1;
+            return $tile['modules'][0]->displayName().($extra ? ' +'.$extra : '');
+        }
+
+        $macs = $tile['macs']; // StandMap removed module MACs assigned to another port.
+        foreach ($tile['neighbors'] as $neighbor)
+        {
+            $advertised = array_filter([$neighbor['mac'] ?? null, $neighbor['port_mac'] ?? null]);
+            if ($tile['mac_count'] && (!$macs || ($advertised && !array_intersect($macs, $advertised))))
+                continue; // An old LLDP neighbor can outlive a cable swap.
+            if ($neighbor['name'] !== '')
+                return $neighbor['name'];
+            if (!$tile['mac_count'] && isset($neighbor['mac']))
+                return $neighbor['mac'];
+        }
+        return count($macs) === 1 ? $macs[0] : null;
     }
 
     /* A port with a device that is not a module and is not booting: what it says about itself over LLDP or CDP, or else

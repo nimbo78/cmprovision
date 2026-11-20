@@ -3,12 +3,15 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location('wallboard', Path(__file__).resolve().parents[2] / 'tools/hdmi-wallboard.py')
+TOOLS = Path(__file__).resolve().parents[2] / 'tools'
+sys.path.insert(0, str(TOOLS))
+spec = importlib.util.spec_from_file_location('wallboard', TOOLS / 'hdmi-wallboard.py')
 w = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(w)
 
@@ -620,6 +623,27 @@ class RenderingTest(unittest.TestCase):
         self.assertGreater(len(pages), 1)
         # Adjacent entries occupy a column: 1 above 2, then 3 above 4.
         self.assertEqual([1, 2, 3, 4], [p['number'] for p in pages[0][0][2]['ports'][:4]])
+
+    def test_console_port_tiles_show_switch_serial_endpoint_and_independent_readings(self):
+        ports = [
+            dict(number=1, name='Gi0/1', state='uplink', station={'name':'peer'}, endpoint='peer',
+                 link_up=True, speed=1000, poe_state='delivering', watts=3.2),
+            dict(number=2, name='Gi0/2', state='free', endpoint=None,
+                 link_up=False, speed=10, poe_state='delivering', watts=23.7),
+        ]
+        sw = dict(name='bench-west', model='2960CX', serial='DEMO-WEST-02', answering=True,
+                  blocks=[dict(label='RJ45', rows=2, ports=ports)])
+        canvas = w.Canvas(110, 22)
+        w.ports(canvas, 0, 0, 90, 17, [sw], [], 0)
+        lines = canvas.plain().splitlines()
+        for value in ('S/N DEMO-WEST-02', 'peer', 'Link 1G  PoE 3.2 W', 'Link Down  PoE 23.7 W', 'No ID'):
+            self.assertTrue(any(value in line for line in lines), value)
+        self.assertFalse(any('10M' in line for line in lines))
+        sw['answering'] = False
+        canvas = w.Canvas(110, 22)
+        w.ports(canvas, 0, 0, 90, 17, [sw], [], 0)
+        self.assertIn('last known', canvas.plain())
+        self.assertIn('S/N DEMO-WEST-02', canvas.plain())
 
     def test_cisco_uplinks_align_with_bottom_row_and_double_digit_labels_fit(self):
         ports = [dict(number=i, name='Gi0/' + str(i), serials=[], state='free') for i in range(1, 13)]
