@@ -11,10 +11,16 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-# Its own user: it draws on tty8 and reads one JSON file, nothing else (created by postinst). systemd gives it the
-# terminal; the database and the application's writable directories are not its business.
+# Only this service gets DRM access for its HDMI overlay. The VT helpers also use the console and fb geometry.
 User=cmprovision-wallboard
 Group=cmprovision-wallboard
+SupplementaryGroups=video
+DevicePolicy=closed
+DeviceAllow=char-drm rw
+DeviceAllow=/dev/tty0 rw
+DeviceAllow=/dev/tty8 rw
+DeviceAllow=/dev/console rw
+DeviceAllow=/dev/fb0 r
 WorkingDirectory=/
 Environment=TERM=linux
 Environment=LC_ALL=C.UTF-8

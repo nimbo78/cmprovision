@@ -121,6 +121,21 @@ sudo bash image/build.sh /path/to/empty-build-directory /path/to/cmprovision4.de
     /path/to/fpms-lite.deb FPMS_SHA256
 ```
 
+For a station with a GPIO screen, choose its boot display before building the image:
+
+```sh
+sudo env CMP_IMAGE_DISPLAY=hyperpixel-4-touch bash image/build.sh /path/to/empty-build-directory \
+    /path/to/cmprovision4.deb CMP_SHA256 /path/to/fpms-lite.deb FPMS_SHA256
+```
+
+- `hyperpixel-4-touch` configures DPI for the rectangular HyperPixel 4.0 Touch and disables the competing SPI and I²C interfaces.
+- `waveshare-144` enables SPI for the Waveshare 1.44″ panel.
+- `default` keeps the generic image settings. It is the release build default.
+
+The selected profile is recorded in the build manifest and the image filename. Both panel
+profiles enable FPMS before the first boot. The panel can show a one-time setup code when
+that code is provisioned, and the FPMS setting remains available after onboarding.
+
 pi-gen's documented build dependencies are required, including arm64 QEMU/binfmt on an x86
 builder. Build paths must not contain spaces. The source tree and package must already be present
 on the builder. The build directory is retained for investigation; the script does not write
@@ -162,9 +177,10 @@ The image setup currently:
   assigns a single additional radio `wlan1`. The image identifies the onboard radio by its SDIO
   driver. Systems without that radio or with multiple additional adapters use their Linux names.
 - Includes and enables `lldpd`, so other stations can recognise this provisioner on a switch port.
-- Optionally installs `fpms-lite`. Its display service stays off until FPMS is enabled in Settings;
-  the image setting watcher stops it again when FPMS is disabled. Enable SPI separately for a
-  compatible display and restart the station before using it; SPI is not enabled by this image.
+- Optionally installs `fpms-lite`. The image setting watcher starts it when enabled in
+  Settings, when a display profile is selected at build time, or while it needs to show a
+  first-admin setup code. The watcher stops FPMS when the setting is disabled and onboarding is
+  closed. With the generic image, enable SPI separately for Waveshare and restart the station.
 - Audits the root filesystem before export for unlocked build-time accounts, shared keys,
   missing first-boot dependencies and provisioning services that are not masked.
 

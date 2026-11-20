@@ -5,6 +5,7 @@ namespace App\Http\Livewire;
 use App\Services\Wallboard;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use Livewire\Component;
 
 class WallboardSettings extends Component
@@ -24,7 +25,8 @@ class WallboardSettings extends Component
     {
         abort_unless(Auth::check(), 403);
         $valid = $this->validate(['mode' => 'required|in:off,auto,on', 'style' => 'required|in:warm,neutral',
-            'color_mode' => 'required|in:light,dark,auto', 'view' => 'required|in:auto,desk,flow,engineer', 'rotation' => 'required|integer|min:5|max:60']);
+            'color_mode' => 'required|in:light,dark,auto', 'view' => ['required', Rule::in(array_keys(Wallboard::VIEWS))],
+            'rotation' => 'required|integer|min:5|max:60']);
         $palette = $valid['style'].($valid['color_mode'] === 'light' ? '-light' : '');
         $settings = ['mode' => $valid['mode'], 'palette' => $palette, 'view' => $valid['view'], 'rotation' => (int) $valid['rotation']];
         try {

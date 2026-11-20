@@ -1,9 +1,9 @@
 name: FPMS and HDMI displays
 on:
   pull_request:
-    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tools/hdmi-wallboard.py', 'tools/rescue_wifi*.py', 'tests/tools/*fpms*', 'tests/tools/test_hdmi_wallboard.py', 'tests/network/test_rescue_wifi*.py', 'tests/tools/check_display_systemd.py', 'debian/control', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
+    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tools/hdmi*.py', 'tools/rescue_wifi*.py', 'public/apple-touch-icon.png', 'public/fonts/*.woff*', 'tests/tools/*fpms*', 'tests/tools/test_hdmi*.py', 'tests/network/test_rescue_wifi*.py', 'tests/tools/check_display_systemd.py', 'debian/control', 'debian/rules', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
   push:
-    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tools/hdmi-wallboard.py', 'tools/rescue_wifi*.py', 'tests/tools/*fpms*', 'tests/tools/test_hdmi_wallboard.py', 'tests/network/test_rescue_wifi*.py', 'tests/tools/check_display_systemd.py', 'debian/control', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
+    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tools/hdmi*.py', 'tools/rescue_wifi*.py', 'public/apple-touch-icon.png', 'public/fonts/*.woff*', 'tests/tools/*fpms*', 'tests/tools/test_hdmi*.py', 'tests/network/test_rescue_wifi*.py', 'tests/tools/check_display_systemd.py', 'debian/control', 'debian/rules', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,7 +17,7 @@ jobs:
           python-version: '3.13'
       - run: python -m pip install 'Pillow>=10.1,<13' 'pytest>=8,<10' 'qrcode>=7.4,<9'
       - run: python -m unittest discover -s tests/tools -p test_fpms_control.py -v
-      - run: python -m unittest discover -s tests/tools -p test_hdmi_wallboard.py -v
+      - run: python -m unittest discover -s tests/tools -p 'test_hdmi*.py' -v
       - run: python -m unittest discover -s tests/network -p 'test_rescue_wifi*.py' -v
       - run: sudo python3 tests/tools/check_display_systemd.py
       - run: sh packaging/fpms/prepare.sh /tmp/cmprovision-fpms-source

@@ -350,11 +350,12 @@ class ConfigurationImportTest extends TestCase
 
     public static function displayTimeouts(): array
     {
-        return ['older export keeps receiver timeout' => [[], '300'], 'explicit Never transfers' => [['screen_timeout' => 0], '0']];
+        return ['older export keeps receiver timeout' => [[], '300', 'flow'],
+            'full map and explicit Never transfer' => [['screen_timeout' => 0], '0', 'map']];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('displayTimeouts')]
-    public function test_network_and_root_owned_display_changes_remain_explicit_owned_followups(array $timeout, string $expected): void
+    public function test_network_and_root_owned_display_changes_remain_explicit_owned_followups(array $timeout, string $expected, string $view): void
     {
         \App\Support\FpmsPanelSettings::saveScreenTimeout(300);
         $this->mock(\App\Services\NetworkProfiles::class)->shouldReceive('ethernetDevices')->andReturn(['eth0']);
@@ -369,7 +370,7 @@ class ConfigurationImportTest extends TestCase
             ]],
             ['ref' => 'settings-1', 'type' => 'settings', 'omitted_secrets' => [], 'data' => ['group' => 'display', 'values' => [
                 'fpms' => ['theme' => 'classic', 'ports_map' => 'whole', 'color_mode' => 'light'] + $timeout,
-                'wallboard' => ['mode' => 'auto', 'palette' => 'warm-light', 'view' => 'flow', 'rotation' => 15],
+                'wallboard' => ['mode' => 'auto', 'palette' => 'warm-light', 'view' => $view, 'rotation' => 15],
                 'fpms_service' => ['enabled' => true, 'open_on_start' => true], 'hdmi_auto' => true,
             ]]],
         ];
@@ -381,6 +382,7 @@ class ConfigurationImportTest extends TestCase
         $result = app(TransferImporter::class)->apply($operation, $preview['fingerprint']);
         $this->assertTrue($result['followups']['network']);
         $this->assertTrue($result['followups']['display']['hdmi_auto']);
+        $this->assertSame($view, $result['followups']['display']['wallboard']['view']);
         $this->assertSame('light', Setting::find('fpms_color_mode')->value);
         $this->assertSame($expected, Setting::find('fpms_screen_timeout')->value);
         $this->assertSame('eth0', $operation->fresh()->options['drafts']['network-1']['interface']['parent']);

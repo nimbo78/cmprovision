@@ -9,6 +9,11 @@ class Wallboard
     const CONFIG = '/etc/default/cmprovision-wallboard.json';
     const STATUS = '/run/cmprovision-wallboard/status.json';
     const DEFAULTS = ['mode' => 'off', 'palette' => 'warm', 'view' => 'auto', 'rotation' => 12];
+    const VIEWS = [
+        'auto' => 'Auto — stand overview, full switch map or failure diagnostics',
+        'desk' => 'Stand console', 'map' => 'Full switch map',
+        'flow' => 'All device cards', 'engineer' => 'Large device card and diagnostics',
+    ];
 
     public function settings(): array
     {

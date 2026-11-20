@@ -61,10 +61,15 @@ class UtilityOsWorkflowTest extends TestCase
     {
         return [
             'HDMI test' => [['tests/tools/test_hdmi_wallboard.py'], ['fpms']],
+            'HDMI graphics test' => [['tests/tools/test_hdmi_graphics.py'], ['fpms']],
             'FPMS test' => [['tests/tools/test_fpms_control.py'], ['fpms']],
             'future FPMS test' => [['tests/tools/test_fpms_touch.py'], ['fpms']],
             'display units' => [['tests/tools/check_display_systemd.py'], ['fpms']],
             'display source' => [['tools/hdmi-wallboard.py'], ['fpms']],
+            'HDMI output module' => [['tools/hdmi_output.py'], ['fpms']],
+            'HDMI brand image' => [['public/apple-touch-icon.png'], ['fpms']],
+            'HDMI font' => [['public/fonts/nunito-v16-latin-700.woff'], ['fpms']],
+            'display packaging rules' => [['debian/rules'], ['fpms']],
             'image access owns its checks' => [['tests/tools/test_image_access.py'], []],
             'wizard PHP test' => [['tests/Feature/StationSetupWizardTest.php'], []],
             'docs' => [['docs/rescue-wifi.md'], []],

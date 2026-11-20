@@ -1,5 +1,5 @@
 <x-settings-card title="HDMI display" id="hdmi-display" wire:poll.10s
-    description="An optional terminal dashboard for the support bench: switch ports, provisioning progress and saved device diagnostics.">
+    description="Show switch ports, provisioning progress and device diagnostics on a monitor connected to the station.">
     <x-slot name="help">
         No desktop or browser required. Auto starts the display at boot or when HDMI is connected, without login or key presses. Read-only display on tty8 (Alt+F8); Alt+F1 returns to the system console. Disconnecting HDMI in Auto stops the renderer; data collection stops when neither HDMI nor FPMS needs it. A TV in standby may still report HDMI connected.
     </x-slot>
@@ -16,8 +16,9 @@
         <div>
             <label for="wallboard-view" class="block text-sm text-fg mb-2">Screen</label>
             <select id="wallboard-view" wire:model="view" class="cmp-field w-full">
-                <option value="auto">Stand console; diagnostics when a device fails</option><option value="desk">Stand console</option>
-                <option value="flow">All device cards</option><option value="engineer">Large device card and diagnostics</option>
+                @foreach(\App\Services\Wallboard::VIEWS as $value => $caption)
+                    <option value="{{ $value }}">{{ $caption }}</option>
+                @endforeach
             </select>
             @error('view') <p class="text-sm text-neg" role="alert">{{ $message }}</p> @enderror
         </div>

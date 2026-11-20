@@ -60,6 +60,75 @@ class WallboardTest extends TestCase
         $this->assertSame('failed', $cm->fresh()->phase, 'a snapshot does not restart or alter a run');
     }
 
+    public function test_each_switch_keeps_its_own_chassis_serial_after_a_poll_times_out()
+    {
+        $this->stand();
+        $this->secondSwitch();
+        $this->fake->tables[''] += [SwitchSnapshot::OID_ENT_CLASS.'.1' => 3, SwitchSnapshot::OID_ENT_SERIAL.'.1' => 'SW01-0123'];
+        $this->fake2->tables[''] += [SwitchSnapshot::OID_ENT_CLASS.'.1' => 3, SwitchSnapshot::OID_ENT_SERIAL.'.1' => 'SW02-9876'];
+
+        $reader = app(WallboardSnapshot::class);
+        $this->assertSame(['sw01' => 'SW01-0123', 'sw02' => 'SW02-9876'], array_column($reader->current()['switches'], 'serial', 'name'));
+
+        $this->travel(20)->seconds();
+        $this->fake2->timeout = true;
+        $switches = array_column($reader->current()['switches'], null, 'name');
+        $this->assertFalse($switches['sw02']['answering']);
+        $this->assertSame('SW02-9876', $switches['sw02']['serial']);
+    }
+
+    public function test_multiple_modules_share_the_endpoint_label_in_severity_order()
+    {
+        $ready = $this->stand();
+        $ready->update(['hostname' => 'sensor-ready', 'phase' => 'done', 'polled_at' => now()]);
+        $failed = $this->secondModule();
+        $failed->update(['hostname' => 'sensor-failed', 'polled_at' => now()]);
+        $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.98.159.212.10.0'] = 8;
+
+        $switch = app(WallboardSnapshot::class)->current()['switches'][0];
+        $ports = array_column(array_merge(...array_column($switch['blocks'], 'ports')), null, 'name');
+        $this->assertSame('fail', $ports['GE0/0/3']['filter']);
+        $this->assertSame([$failed->serial, $ready->serial], $ports['GE0/0/3']['serials']);
+        $this->assertSame('sensor-failed +1', $ports['GE0/0/3']['endpoint'] ?? null);
+    }
+
+    public function test_a_discovered_identity_follows_the_current_device_even_before_it_registers()
+    {
+        $this->stand();
+        $table =& $this->fake->tables[''];
+        $table[MacTable::OID_HUAWEI_FDB_PORT.'.16.233.146.18.52.86.10.0'] = 6;
+        foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 9 => 'previous-device'] as $column => $value)
+            $table[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+
+        $table[SwitchSnapshot::OID_SYSUPTIME.'.0'] = 100000;
+        $table[SwitchSnapshot::OID_IFLASTCHANGE.'.7'] = 99000;
+        $table[MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.1.2.3.10.0'] = 7;
+
+        $switch = app(WallboardSnapshot::class)->current()['switches'][0];
+        $ports = array_column(array_merge(...array_column($switch['blocks'], 'ports')), null, 'name');
+        $this->assertSame('boot', $ports['GE0/0/2']['state']);
+        $this->assertSame('10:e9:92:12:34:56', $ports['GE0/0/1']['endpoint'] ?? null);
+        $this->assertSame('e4:5f:01:01:02:03', $ports['GE0/0/2']['endpoint'] ?? null);
+    }
+
+    public function test_an_uplink_names_its_peer_switch_and_never_a_module_seen_through_it()
+    {
+        $this->stand();
+        $this->secondSwitch();
+        $this->fake2->tables[''][SwitchSnapshot::OID_BRIDGE_ADDRESS.'.0'] = hex2bin('0057d297a180');
+        $table =& $this->fake->tables[''];
+        $table[MacTable::OID_HUAWEI_FDB_PORT.'.0.87.210.151.161.128.1.0'] = 6;
+        $table[MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.98.159.213.10.0'] = 6;
+        // Four unrelated addresses make port 2 an uplink with no identified peer.
+        foreach ([1, 2, 3, 4] as $end)
+            $table[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.0.0.'.$end.'.10.0'] = 7;
+
+        $switch = app(WallboardSnapshot::class)->current()['switches'][0];
+        $ports = array_merge(...array_column($switch['blocks'], 'ports'));
+        $this->assertSame(['GE0/0/1' => 'sw02', 'GE0/0/2' => null, 'GE0/0/3' => 'e4:5f:01:62:9f:d3', 'XGE0/0/1' => gethostname()],
+            array_column($ports, 'endpoint', 'name'));
+    }
+
     public function test_the_port_with_the_provisioner_is_marked_for_the_display()
     {
         $this->stand();
@@ -91,6 +160,8 @@ class WallboardTest extends TestCase
         $this->assertSame('searching', $ports['GE0/0/2']['poe_state']);
         $this->assertTrue($ports['XGE0/0/1']['link_up']);
         $this->assertNull($ports['XGE0/0/1']['poe_state']);
+        $this->assertSame([null, null, null, gethostname()], array_column($ports, 'endpoint'),
+            'A port with only power, an unknown link or a stale module MAC has no endpoint');
     }
 
     public function test_a_device_on_a_port_that_is_not_a_module_is_listed_for_the_display_with_what_it_says_or_its_maker()
@@ -105,7 +176,10 @@ class WallboardTest extends TestCase
             $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
         $t[\App\Services\Switch\Neighbors::OID_LLDP_MAN.'.0.6.1.1.4.192.168.1.5'] = 2;
 
-        $unknown = app(WallboardSnapshot::class)->current()['unknown'];
+        $snapshot = app(WallboardSnapshot::class)->current();
+        $unknown = $snapshot['unknown'];
+        $ports = array_merge(...array_column($snapshot['switches'][0]['blocks'], 'ports'));
+        $this->assertSame(['ap-lobby [31m', '10:e9:92:12:34:56'], array_slice(array_column($ports, 'endpoint'), 0, 2));
         $this->assertSame(['ap-lobby [31m', 'INGRAM MICRO SERVICES'], array_column($unknown, 'name'), 'the name is cleaned: no control character');
         $this->assertSame(['unrecognized', 'unrecognized'], array_column($unknown, 'state'));
         $this->assertSame('Cisco AP firmware / 192.168.1.5 / wlan-ap', $unknown[0]['detail']);
@@ -131,6 +205,7 @@ class WallboardTest extends TestCase
         $ports = array_column(array_merge(...array_column($data['switches'][0]['blocks'], 'ports')), null, 'name');
         $this->assertSame(['name' => 'wlanpi-da2', 'address' => '172.20.0.1', 'version' => '2.23.0', 'provisioner' => true], $ports['GE0/0/1']['station']);
         $this->assertNull($ports['GE0/0/2']['station']);
+        $this->assertSame('wlanpi-da2', $ports['GE0/0/1']['endpoint'] ?? null);
         $this->assertStringNotContainsString('wlanpi-da2', json_encode($data['unknown']));
     }
 
@@ -150,6 +225,7 @@ class WallboardTest extends TestCase
         $this->assertSame(['recognized', 'recognized', []], [$ports['GE0/0/1']['state'], $ports['GE0/0/1']['filter'], $ports['GE0/0/1']['serials']]);
         $this->assertSame([$cm->serial], array_column($data['modules'], 'serial'));
         $this->assertSame(['wlanpi-fd3'], array_column($data['recognized'], 'name'));
+        $this->assertSame('wlanpi-fd3', $ports['GE0/0/1']['endpoint'] ?? null);
         $this->assertSame('Flashed by wlanpi-da2 / boot 1 of 20', $data['recognized'][0]['detail']);
         $this->assertTrue($data['recognized'][0]['flashed_by']['verified']);
         $this->assertStringNotContainsString('wlanpi-fd3', json_encode($data['unknown']));
@@ -189,6 +265,8 @@ class WallboardTest extends TestCase
         $data = app(WallboardSnapshot::class)->current();
         $this->assertSame([$cm->serial], array_column($data['modules'], 'serial'));
         $this->assertFalse($data['switches'][0]['answering']);
+        $this->assertArrayHasKey('serial', $data['switches'][0]);
+        $this->assertNull($data['switches'][0]['serial']);
         // since when it has not answered: the front panel says "silent 2 min"
         $this->assertSame(now()->getTimestamp(), $data['switches'][0]['silent_since']);
     }
@@ -334,7 +412,10 @@ class WallboardTest extends TestCase
         }
         $this->assertSame('auto', \App\Models\Setting::find('hdmi_color_mode')->value);
         $this->assertTrue(app(WallboardSnapshot::class)->current()['hdmi_auto_mode']);
-        $component->set('style', 'invalid')->call('save')->assertHasErrors('style');
+        $service->shouldReceive('save')->once()->with(['mode' => 'auto', 'palette' => 'neutral', 'view' => 'map', 'rotation' => 12]);
+        $component->assertSee('Full switch map')->set('view', 'map')->call('save')->assertHasNoErrors();
+        $component->set('view', 'invalid')->call('save')->assertHasErrors('view');
+        $component->set('view', 'auto')->set('style', 'invalid')->call('save')->assertHasErrors('style');
         $component->set('style', 'warm')->set('color_mode', 'invalid')->call('save')->assertHasErrors('color_mode');
     }
 }

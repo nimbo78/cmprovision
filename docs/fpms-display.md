@@ -21,6 +21,11 @@ FPMS shows provisioning and station data on the Waveshare 1.44-inch 128×128 pan
 
 ## HyperPixel 4.0 Touch
 
+For a new station image with the panel enabled on its first boot, select the
+`hyperpixel-4-touch` boot display profile when building the image.
+[Station image build options](../image/README.md#build-on-a-disposable-debian-host)
+
+
 1. Power down the CM4 station, disconnect PoE and USB power, and fit the display to the 40-pin header with pin 1 aligned.
 2. On Raspberry Pi OS Lite Trixie, install the matching `fpms-lite` package and `python3-kms++`. Keep the existing full KMS overlay (`vc4-kms-v3d`). In the active CM4 or `[all]` section of `/boot/firmware/config.txt`, set the following lines once and remove conflicting SPI or I²C enable lines.
 
