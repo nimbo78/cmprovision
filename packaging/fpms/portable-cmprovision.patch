@@ -12835,10 +12835,10 @@ index 0000000..b348bf3
 +    return result
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..3ba0aa5
+index 0000000..ab1b6e1
 --- /dev/null
 +++ b/fpms/lite.py
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,261 @@
 +"""Compact station menu. No imports from the WLAN Pi application/provider."""
 +
 +import argparse
@@ -12954,9 +12954,11 @@ index 0000000..3ba0aa5
 +                panel.rescue_menu.close()
 +            if touch:
 +                touch.close()
-+            if screen:
-+                screen.close()
-+            heartbeat(False)
++            try:
++                if screen:
++                    screen.close()
++            finally:
++                heartbeat(False)
 +        # Release the card before retrying after an output or ownership change.
 +        screen = None
 +        if running():
@@ -17969,20 +17971,22 @@ index 0000000..fe6007d
 +                self.draw.text((406, 197 + i * 33), value, font=face, fill=self.c["fg"], anchor="lt")
 diff --git a/fpms/modules/screen/hyperpixel.py b/fpms/modules/screen/hyperpixel.py
 new file mode 100644
-index 0000000..bd0ea5a
+index 0000000..a29b239
 --- /dev/null
 +++ b/fpms/modules/screen/hyperpixel.py
-@@ -0,0 +1,247 @@
+@@ -0,0 +1,273 @@
 +"""Rectangular HyperPixel 4.0 Touch on the Raspberry Pi KMS overlay."""
 +
 +import array
 +import ctypes
++import errno
 +import fcntl
 +import math
 +import os
 +import re
 +import select
 +import struct
++import time
 +from contextlib import contextmanager
 +from pathlib import Path
 +
@@ -18134,16 +18138,30 @@ index 0000000..bd0ea5a
 +            self._master_call("drmDropMaster")
 +
 +    def _master_call(self, name):
++        ctypes.set_errno(0)
 +        result = getattr(self._libdrm, name)(self.card.fd)
 +        if result != 0:
 +            raise OSError(ctypes.get_errno() or abs(result), name)
 +
 +    @contextmanager
-+    def _master(self):
-+        # fbcon needs the same DRM master to apply HDMI palette changes.
-+        self._master_call("drmSetMaster")
++    def _master(self, *, optional=False):
++        # HDMI can briefly hold the same card while committing to its own overlay.
++        deadline = time.monotonic() + 0.075
++        while True:
++            try:
++                self._master_call("drmSetMaster")
++                break
++            except OSError as exc:
++                if exc.errno != errno.EBUSY:
++                    raise
++                if time.monotonic() >= deadline:
++                    if optional:
++                        yield False
++                        return
++                    raise
++                time.sleep(0.004)
 +        try:
-+            yield
++            yield True
 +        finally:
 +            self._master_call("drmDropMaster")
 +
@@ -18212,20 +18230,30 @@ index 0000000..bd0ea5a
 +            self.front = next_buffer
 +
 +    def close(self):
-+        if self.front is not None:
-+            with self._master():
++        if self.front is None:
++            return
++        try:
++            # Erase our scanout before waiting: a setup code or rescue QR must
++            # disappear even if another DRM master prevents an explicit detach.
++            pixels = self.buffers[self.front].map(0).cast("B")
++            pixels[:] = bytes(len(pixels))
++            with self._master(optional=True) as acquired:
++                if not acquired:
++                    return
 +                self.plane.refresh_props()
 +                if self.plane.get_prop_value("FB_ID") == self.buffers[self.front].id:
 +                    request = self.kms.AtomicReq(self.card)
 +                    request.add(self.plane, {"FB_ID": 0, "CRTC_ID": 0})
 +                    request.commit_sync()
-+                self.front = None
++        finally:
++            self.front = None
++            self.buffers.clear()
 diff --git a/tests/test_hyperpixel.py b/tests/test_hyperpixel.py
 new file mode 100755
-index 0000000..207f586
+index 0000000..e9e8ce7
 --- /dev/null
 +++ b/tests/test_hyperpixel.py
-@@ -0,0 +1,547 @@
+@@ -0,0 +1,613 @@
 +from types import SimpleNamespace
 +import pytest
 +from PIL import Image, ImageDraw
@@ -18724,8 +18752,8 @@ index 0000000..207f586
 +
 +
 +
-+@pytest.mark.parametrize("commit_fails", [False, True])
-+def test_frame_gives_drm_master_back_to_the_console(monkeypatch, commit_fails):
++@pytest.mark.parametrize("commit_fails, initially_busy", [(False, False), (True, False), (False, True)])
++def test_frame_gives_drm_master_back_to_the_console(monkeypatch, commit_fails, initially_busy):
 +    import ctypes
 +    from fpms.modules.screen.hyperpixel import SCAN_HEIGHT, SCAN_WIDTH
 +
@@ -18738,9 +18766,16 @@ index 0000000..207f586
 +            return 0
 +        return call
 +
++    def acquire(fd):
++        import errno
++        if initially_busy and "busy" not in events:
++            events.append("busy")
++            return -errno.EBUSY
++        return record("acquire")(fd)
++
 +    libdrm = SimpleNamespace(
 +        drmIsMaster=lambda fd: 1,
-+        drmSetMaster=record("acquire"),
++        drmSetMaster=acquire,
 +        drmDropMaster=record("release"),
 +    )
 +    monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: libdrm)
@@ -18772,7 +18807,66 @@ index 0000000..207f586
 +            screen.show(image)
 +    else:
 +        screen.show(image)
-+    assert events == ["release", "acquire", "commit", "release"]
++    assert events == ["release"] + (["busy"] if initially_busy else []) + ["acquire", "commit", "release"]
++
++
++@pytest.mark.parametrize("contention", ["brief", "persistent", "denied"])
++def test_hyperpixel_exit_during_an_hdmi_commit(monkeypatch, tmp_path, contention):
++    import errno
++    from fpms import lite
++    from fpms.modules.screen import hyperpixel
++
++    # The live KMS framebuffer represents the last private setup/QR frame.
++    pixels = bytearray(b"code")
++    buffer = SimpleNamespace(id=42, map=lambda index: memoryview(pixels))
++    screen = DpiScreen.__new__(DpiScreen)
++    screen.card = SimpleNamespace(fd=3)
++    screen.buffers = [buffer]
++    screen.front = None
++    screen.show = lambda image: setattr(screen, "front", 0)
++    commits, attempts, drops, heartbeats, pauses = [], [], [], [], []
++
++    def acquire(fd):
++        attempts.append(fd)
++        if contention == "denied":
++            return -errno.EACCES
++        if contention == "brief" and len(attempts) == 2:
++            return 0
++        return -errno.EBUSY
++
++    screen._libdrm = SimpleNamespace(drmSetMaster=acquire, drmDropMaster=lambda fd: drops.append(fd) or 0)
++    screen.plane = SimpleNamespace(refresh_props=lambda: None, get_prop_value=lambda key: buffer.id)
++    request = SimpleNamespace(add=lambda plane, values: commits.append(values), commit_sync=lambda: 0)
++    screen.kms = SimpleNamespace(AtomicReq=lambda card: request)
++
++    stop = []
++    touch = SimpleNamespace(read=lambda timeout: stop.append(True) or [], close=lambda: None)
++    monkeypatch.setattr(hyperpixel, "find_touch", lambda: "event-panel")
++    monkeypatch.setattr(hyperpixel, "TouchInput", lambda *args: touch)
++    monkeypatch.setattr(DpiScreen, "open", lambda: screen)
++    monkeypatch.setattr(TouchMenu, "frame", lambda self: Image.new("RGB", (800, 480)))
++    monkeypatch.setattr(lite, "FIRST_ADMIN", tmp_path / "first-admin")
++    monkeypatch.setattr(lite, "heartbeat", lambda live, **kwargs: heartbeats.append(live))
++    # A clock shared by the loop and DRM acquisition proves that retries sleep and finish.
++    clock = SimpleNamespace(monotonic=lambda: 1.0 + sum(pauses), sleep=lambda seconds: pauses.append(seconds))
++    monkeypatch.setattr(lite, "time", clock)
++    monkeypatch.setattr(hyperpixel, "time", clock)
++    args = SimpleNamespace(seconds=0, rotate=0, sleep=0)
++    panel = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++
++    if contention == "denied":
++        with pytest.raises(OSError, match="drmSetMaster") as exc:
++            lite.run_hyperpixel(panel, args, lambda: bool(stop), 0)
++        assert exc.value.errno == errno.EACCES
++        assert attempts == [3] and pauses == []
++    else:
++        lite.run_hyperpixel(panel, args, lambda: bool(stop), 0)
++        assert 0 < sum(pauses) < 0.5
++    assert heartbeats == [True, False]
++    assert commits == ([{"FB_ID": 0, "CRTC_ID": 0}] if contention == "brief" else [])
++    assert drops == ([3] if contention == "brief" else [])
++    assert pixels == bytes(4)
++    assert screen.front is None and not screen.buffers
 diff --git a/fpms/integrations/cmprovision_touch_style.py b/fpms/integrations/cmprovision_touch_style.py
 new file mode 100644
 index 0000000..f37ff68
