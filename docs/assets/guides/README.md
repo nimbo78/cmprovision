@@ -2,6 +2,8 @@
 
 `hdmi-two-switches.png` is a 1920 × 1080 frame from the native Pillow HDMI renderer. The two demo switches have synthetic chassis serials `DEM2645E001` and `DEM2645W002`. Each has a sensor on Gi0/1. On assembly-west, port 3 supplies 6.2 W with no Ethernet carrier and port 4 is empty with PoE idle. The English and Russian HDMI guides use this same frame.
 
+`hdmi-full-switch-48.png` is a 1920 × 1080 frame from **Full switch map** in the same renderer. A synthetic Catalyst C9200L-48P-4X snapshot supplies the four groups of twelve copper ports and four SFP+ uplinks. Port 47 supplies 6.2 W with the link down, and port 48 is writing an image. Both language editions use this frame for 2.30.9.
+
 `station-setup.png` shows the station wizard Overview at 1440 px, using an isolated demonstration database and the real Blade/Livewire page. Network and SSH controllers are test doubles for this capture; no station or credentials were changed. Captured for 2.30.4.
 
 These captures show the actual cmprovision UI using a disposable local database. The USB and transfer captures come from the configuration-transfer implementation (b271451); the image-access capture comes from its SSH-access follow-up. The EEPROM and image fixtures are demo data; no hardware was flashed. UI labels remain English in both guide languages; captions and diagrams are localized.

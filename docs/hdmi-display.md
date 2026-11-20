@@ -51,17 +51,45 @@ port with an active video mode. Display settings take effect while provisioning 
 A TV in standby, a KVM or an HDMI adapter can keep reporting `connected`. Detection describes the connector, not
 whether someone is watching or whether the TV has selected this input. Use Off when this distinction matters.
 
+### Use HDMI with a HyperPixel panel
+
+Connect the monitor to HDMI and the rectangular HyperPixel 4.0 Touch to the GPIO header. Enable **HDMI display** and **FPMS display** under **Settings → System**. The touch menu and the HDMI wallboard can show different screens at the same time. Each needs its own active display pipeline and a free overlay plane. With a mirrored output or no suitable HDMI plane, HDMI uses tty8. On the CM4 station `wlanpi-d62`, the HDMI monitor ran at 3440 × 1440 alongside the 800 × 480 landscape HyperPixel. [HyperPixel setup](fpms-display.md#hyperpixel-40-touch)
+
+### Choose a GPIO panel before first boot
+
+The ready-to-flash ARM64 release image uses the generic `default` profile. For a custom build with `fpms-lite`, set `CMP_IMAGE_DISPLAY=hyperpixel-4-touch` for the rectangular HyperPixel or `waveshare-144` for the 1.44-inch Waveshare. Either profile configures the GPIO interface and enables FPMS before the first boot. A pending first-administrator code can then appear on the panel. [Station image build options](../image/README.md#build-on-a-disposable-debian-host)
+
+You can also configure an unbooted image that contains `fpms-lite`. On a Linux machine, mount its root partition read/write at `/mnt/cmprovision-image` and its boot partition at `/mnt/cmprovision-image/boot/firmware`. Run the helper from the cmprovision source directory for the image version.
+
+```sh
+sudo python3 image/fpms/prepare-display.py /mnt/cmprovision-image hyperpixel-4-touch
+```
+
+For the Waveshare use `waveshare-144` as the last argument. Unmount the boot partition and then the root partition before starting the station. Application updates on a running station preserve its current boot display profile. [Image preparation helper](../image/fpms/prepare-display.py)
+
 ## Screens and navigation
 
 Choose the view in Settings or press **V** on the station keyboard.
 
 - **Stand console** shows a switch front panel, a selected device and the stand's module list. Each port tile shows the connected device, Ethernet link and PoE readings.
+- **Full switch map** shows all 24 or 48 copper ports and four uplinks of a supported Catalyst 9200L in one frame. Use `[` and `]` to move between switches.
 - **All device cards** shows several modules together. Read host names, physical ports, phases and progress across the batch. Larger batches use additional pages.
 - **Large device card and diagnostics** shows the selected module, provisioning steps, saved diagnostic evidence and advice. Use the web UI to request a fresh snapshot or start recovery.
-- **Automatic** normally shows the stand console and opens diagnostics for a failed or silent selected module.
+- **Automatic** opens diagnostics for a selected module that failed or stopped reporting. Otherwise it opens the full map for a supported 24- or 48-port switch and the stand console for other layouts.
 
 Cards advance every 12 seconds by default, adjustable from 5 to 60 seconds. **←** and **→** select a device.
 **Space** pauses or resumes rotation. A local view choice lasts until the renderer stops. Settings defines the next start.
+
+### Full switch map
+
+In **Settings → System → HDMI display**, set **Screen** to **Full switch map**, or press **V** on the station keyboard to cycle to it. The switch list and **S/N** identify the chassis. On the map, `[` and `]` select the previous and next switch. In **Stand console** those keys page through port banks, so you can keep a device card beside the ports.
+
+- **24 copper ports** fit in two banks of twelve. Odd ports sit above even ports, and the device table fits below the four SFP or SFP+ uplinks.
+- **48 copper ports** occupy four banks of twelve. Read ports 1–24 across the upper half, then 25–48 across the lower half. The four uplinks have their own row below the copper ports.
+
+![Demonstration Catalyst 9200L showing all 48 copper ports, their devices, Ethernet and PoE, and four SFP+ uplinks on a single HDMI screen.](assets/guides/hdmi-full-switch-48.png)
+
+The full map uses the verified front-panel layouts for Cisco Catalyst C9200L-24P/24T and C9200L-48P/48T with four fixed uplinks. Both sizes fit on Full HD and ultrawide HDMI. The screenshot uses a synthetic switch snapshot. If the reported ports do not match a supported panel, the display uses the paged stand console. The tty8 text fallback also uses the stand console. [Supported models and physical port order](switch-front-panels.md)
 
 ### Finding a port on a multi-switch stand
 

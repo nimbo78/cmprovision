@@ -1,3 +1,16 @@
+cmprovision4 (2.30.9) trixie; urgency=medium
+
+  * Render the HDMI wallboard with the station palette, with a text console
+    fallback. Share the display hardware with a HyperPixel on a separate output.
+    Retry brief DRM contention and erase the last panel frame on shutdown.
+  * Identify switches by their chassis serial and show device names, Ethernet
+    link and PoE on each port. Show all ports on supported 24- and 48-port
+    Catalyst 9200L panels in the automatic or full switch map view.
+  * Let image builders select the HyperPixel 4.0 Touch or Waveshare 1.44
+    GPIO display profile before the first boot.
+
+ -- cmprovision contributors <cmprovision@localhost>  Fri, 20 Nov 2026 18:38:04 +0300
+
 cmprovision4 (2.30.8) trixie; urgency=medium
 
   * Add an 800x480 touch dashboard for the rectangular HyperPixel 4.0 Touch
