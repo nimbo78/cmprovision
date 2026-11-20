@@ -431,10 +431,10 @@ def link_summary(label, link):
     return ' / '.join(parts)
 
 
-def network_strip(c, data, y, limit=2):
+def network_segments(data):
     station = data.get('station')
     if not isinstance(station, dict):
-        return 0
+        return [], False
     uplink = station.get('uplink') if isinstance(station.get('uplink'), dict) else {}
     links = [link for link in (station.get('links') or [])[:32] if isinstance(link, dict) and isinstance(link.get('name'), str)]
     rescue = data.get('rescue_wifi')
@@ -457,6 +457,11 @@ def network_strip(c, data, y, limit=2):
         label = {'stand':'STAND', 'backup':'BACKUP'}.get(link.get('role'), 'LINK')
         segments.append(link_summary(label, link))
         seen.add(link['name'])
+    return segments, bool(connected)
+
+
+def network_strip(c, data, y, limit=2):
+    segments, connected = network_segments(data)
     lines = []
     for segment in segments:
         if lines and (len(lines[-1]) + len(segment) + 3 <= c.cols or len(lines) == limit):
@@ -577,8 +582,11 @@ def ports(c, x, y, width, height, switches, modules, tick):
             c.text(px, py + 1, '|%s|' % (number + ' ' + mark)[:7].ljust(7), ink)
             c.text(px, py + 2, "'-------'", 'dim')
     if len(pages) > 1 or len(switches) > 1:
-        c.text(x + 2, y + height - 2, 'SWITCH %d/%d / PORT PAGE %d/%d' %
-               (tick % len(switches) + 1, len(switches), page_no + 1, len(pages)), 'dim', width - 4)
+        label = 'SWITCH %d/%d / PORT PAGE %d/%d' % (
+            tick % len(switches) + 1, len(switches), page_no + 1, len(pages))
+        if len(switches) > 1:
+            label += ' / Next: ' + safe(switches[(tick + 1) % len(switches)]['name'])
+        c.marquee(x + 2, y + height - 2, label, width - 4, 'dim')
 
 
 def hardware_lines(module):
@@ -640,7 +648,7 @@ def detail(c, x, y, width, module, now, height=15):
         c.marquee(x, y + 11 + offset, line, width, 'fg')
 
 
-def desk(c, data, module, now, tick):
+def desk(c, data, module, now, tick, switch_offset=0):
     y = header(c, data, now)
     switches = data.get('switches', [])
     # Fit compact physical panels beside a readable card; larger banks paginate.
@@ -649,10 +657,10 @@ def desk(c, data, module, now, tick):
     width = max(30, min(c.cols - 42, max(round(c.cols * 0.60), natural)))
     height = min(17, max(11, c.rows - y - 10))
     if c.cols < 100:
-        ports(c, 0, y, c.cols, height, data.get('switches', []), data.get('modules', []), tick)
+        ports(c, 0, y, c.cols, height, switches, data.get('modules', []), tick + switch_offset)
         table_y = y + height + 1
     else:
-        ports(c, 0, y, width, height, data.get('switches', []), data.get('modules', []), tick)
+        ports(c, 0, y, width, height, switches, data.get('modules', []), tick + switch_offset)
         c.box(width + 2, y, c.cols - width - 2, height, 'DEVICE CARD')
         detail(c, width + 4, y + 1, c.cols - width - 6, module, now, height=height - 2)
         table_y = y + height + 1
@@ -785,7 +793,7 @@ def engineer(c, data, module, now, tick):
             c.wrap(0, next_y, text, c.cols, lines, 'warn')
 
 
-def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=False, step=0):
+def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=False, step=0, switch_offset=0):
     now = now or time.time()
     c = Canvas(max(1, cols), max(1, rows), step)
     if cols < 60 or rows < 24:
@@ -796,7 +804,10 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
     module = cards[selected % len(cards)] if cards else None
     if view == 'auto':
         view = 'engineer' if module and module['state'] in ('fail', 'stale') else 'desk'
-    {'desk': desk, 'flow': flow, 'engineer': engineer}.get(view, desk)(c, data, module, now, tick)
+    if view in ('flow', 'engineer'):
+        (flow if view == 'flow' else engineer)(c, data, module, now, tick)
+    else:
+        desk(c, data, module, now, tick, switch_offset)
     problems = [m for m in modules if m['state'] in ('fail', 'stale')]
     stale = now - data.get('generated_at', 0) > 10
     c.line(rows - 5)
@@ -816,6 +827,8 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
     c.text(0, rows - 2, ('PAUSED' if paused else 'AUTO ROTATION') + ' / CARD %d/%d / %s' %
            ((selected % len(cards)) + 1 if cards else 0, len(cards), view.upper()), 'dim')
     keys = 'Alt+F1 console / Alt+F8 board / <- -> / Space pause / V view'
+    if len(data.get('switches', [])) > 1:
+        keys += ' / [ ] switches'
     c.text(max(0, cols - len(keys)), rows - 1, keys, 'dim')
     return c
 
@@ -904,7 +917,9 @@ def rescue_closed(started, now):
     return type(closed) in (int, float) and started <= closed <= now
 
 
-def first_admin_frame(card, cols, rows, data=None):
+def first_admin_details(card, data=None):
+    if not isinstance(card, dict):
+        return None
     code, host = card.get('code'), card.get('host')
     if not isinstance(code, str) or not re.fullmatch('[A-Z2-7]{16}', code):
         return None
@@ -916,14 +931,24 @@ def first_admin_frame(card, cols, rows, data=None):
         host = str(ipaddress.IPv4Interface(uplink.get('address', '')).ip)
     except (ValueError, TypeError):
         pass
+    return {'code': code, 'host': host, 'url': 'http://' + host + '/setup'}
+
+
+def setup_canvas(details, cols, rows):
+    code = details['code']
     canvas = Canvas(cols, rows)
-    lines = [('cm  Set up this station', 'accent'), ('Open http://'+host+'/setup', 'fg'),
+    lines = [('cm  Set up this station', 'accent'), ('Open ' + details['url'], 'fg'),
              ('Setup code', 'dim'), (' '.join(code[i:i+4] for i in range(0, 16, 4)), 'accent'),
              ('Create your first web administrator', 'fg')]
     top = max(0, (rows - 9) // 2)
     for i, (line, ink) in enumerate(lines):
         canvas.text(max(0, (cols-len(line))//2), top+i*2, line, ink)
     return canvas
+
+
+def first_admin_frame(card, cols, rows, data=None):
+    details = first_admin_details(card, data)
+    return setup_canvas(details, cols, rows) if details else None
 
 
 def publish_rescue_qr(status):
@@ -1012,6 +1037,20 @@ def rescue_access(path=RESCUE_ACCESS, now=None):
         return None
 
 
+def display_cards(data, now):
+    """Both presentations use the same root-owned markers, AP identity and freshness checks."""
+    access = rescue_access()
+    if access is None:
+        access = rescue_access(RESCUE_AUTO)
+        if access and rescue_closed(access['created_at'], time.monotonic()):
+            access = None
+    ap = data.get('rescue_wifi') or {}
+    if (access and ap.get('active') is True and ap.get('ssid') == access['ssid']
+            and 0 <= now - data.get('generated_at', 0) <= 20):
+        return access, None
+    return None, first_admin_details(root_json(FIRST_ADMIN), data)
+
+
 def access_frame(value, cols, rows, now=None):
     """Pack two square QR modules into each 1:2 console cell, including the quiet zone."""
     now = time.monotonic() if now is None else now
@@ -1087,13 +1126,36 @@ def viewport(cols, rows):
     return width, height, max(0, (cols - width) // 2), max(0, (rows - height) // 2)
 
 
+def paint_console(screen, canvas, ox, oy, inks):
+    screen.erase()
+    for y, row in enumerate(canvas.cells):
+        x = 0
+        while x < canvas.cols:
+            ink = row[x][1]
+            end = x + 1
+            while end < canvas.cols and row[end][1] == ink:
+                end += 1
+            try:
+                screen.addstr(oy + y, ox + x, ''.join(char for char, _ in row[x:end]), inks[ink])
+            except curses.error:
+                pass  # lower-right cell and a concurrent resize are normal curses errors
+            x = end
+    screen.refresh()
+
+
 def display(screen):
+    from hdmi_presentation import Presentation
+
     curses.curs_set(0)
     screen.timeout(1000)
     screen.keypad(True)
     reader = Reader()
+    graphics = Presentation.for_console(sys.stdin.fileno(), active_vt)
+    board = sys.modules[__name__]
     data = dict(version=1, generated_at=0, modules=[], switches=[], counts={})
     selected, tick, last_rotation, paused, view_override = 0, 0, time.monotonic(), False, None
+    switch_offset = 0
+    graphical = False
     palette_name, inks = None, None
     try:
         while not STOP:
@@ -1109,51 +1171,47 @@ def display(screen):
             if not paused and time.monotonic() - last_rotation >= config['rotation']:
                 selected += 1
                 tick += 1
+                switch_offset = 0
                 last_rotation = time.monotonic()
-            rows, cols = screen.getmaxyx()
-            width, height, ox, oy = viewport(cols, rows)
-            canvas = frame(data, width, height, selected, view_override or config['view'], tick=tick, paused=paused,
-                           step=int(time.monotonic() / SCROLL_SECONDS))
-            access = rescue_access()
-            if access is None:
-                access = rescue_access(RESCUE_AUTO)
-                if access and rescue_closed(access['created_at'], time.monotonic()):
-                    access = None
-            ap = data.get('rescue_wifi', {})
-            if access and ap.get('active') is True and ap.get('ssid') == access['ssid'] and time.time()-data.get('generated_at', 0) <= 20:
-                canvas = access_frame(access, width, height)
-            else:
-                access = None
-                setup = root_json(FIRST_ADMIN)
-                if setup:
-                    canvas = first_admin_frame(setup, width, height, data) or canvas
-            screen.timeout(int(SCROLL_SECONDS * 1000) if canvas.scrolls else 1000)   # faster only while a text runs
+            now = time.time()
+            access, setup = display_cards(data, now)
+            view = view_override or config['view']
             palette = resolved_palette(config['palette'], data)
-            if (palette, bool(access)) != palette_name:
-                inks = colors(palette, qr=bool(access))
-                palette_name = (palette, bool(access))
-                screen.bkgd(' ', inks['fg'])
-                screen.clearok(True)
-            screen.erase()
-            for y, row in enumerate(canvas.cells):
-                x = 0
-                while x < width:
-                    ink = row[x][1]
-                    end = x + 1
-                    while end < width and row[end][1] == ink:
-                        end += 1
-                    try:
-                        screen.addstr(oy + y, ox + x, ''.join(char for char, _ in row[x:end]), inks[ink])
-                    except curses.error:
-                        pass  # lower-right cell and a concurrent resize are normal curses errors
-                    x = end
-            screen.refresh()
+            showing = graphics.present(board, data, time.monotonic(), now, selected=selected, tick=tick,
+                                       paused=paused, view=view, palette=palette, switch_offset=switch_offset,
+                                       access=access, setup=setup)
+            if showing:
+                if not graphical:
+                    # A previous text-only access card must not reappear underneath the overlay.
+                    screen.erase()
+                    screen.refresh()
+                screen.timeout(250)
+            else:
+                rows, cols = screen.getmaxyx()
+                width, height, ox, oy = viewport(cols, rows)
+                if access:
+                    canvas = access_frame(access, width, height)
+                elif setup:
+                    canvas = setup_canvas(setup, width, height)
+                else:
+                    canvas = frame(data, width, height, selected, view, now=now, tick=tick, paused=paused,
+                                   step=int(time.monotonic() / SCROLL_SECONDS), switch_offset=switch_offset)
+                screen.timeout(int(SCROLL_SECONDS * 1000) if canvas.scrolls else 1000)
+                if graphical or (palette, bool(access)) != palette_name:
+                    inks = colors(palette, qr=bool(access))
+                    palette_name = (palette, bool(access))
+                    screen.bkgd(' ', inks['fg'])
+                    screen.clearok(True)
+                paint_console(screen, canvas, ox, oy, inks)
+            graphical = showing
             key = screen.getch()
-            if key in (curses.KEY_RIGHT, ord('n')):
-                selected += 1
+            if key in (curses.KEY_RIGHT, ord('n'), curses.KEY_LEFT, ord('b')):
+                delta = 1 if key in (curses.KEY_RIGHT, ord('n')) else -1
+                selected = (selected + delta) % max(1, len(data['modules']) + len(data.get('recognized', [])))
+                tick, switch_offset = 0, 0
                 last_rotation = time.monotonic()
-            elif key in (curses.KEY_LEFT, ord('b')):
-                selected = (selected - 1) % max(1, len(data['modules']) + len(data.get('recognized', [])))
+            elif key in (ord('['), ord(']')):
+                switch_offset += 1 if key == ord(']') else -1
                 last_rotation = time.monotonic()
             elif key == ord(' '):
                 paused = not paused
@@ -1162,7 +1220,10 @@ def display(screen):
                 views = ('auto', 'desk', 'flow', 'engineer')
                 view_override = views[(views.index(view_override or config['view']) + 1) % len(views)]
     finally:
-        reader.close()
+        try:
+            graphics.close()
+        finally:
+            reader.close()
 
 
 def main():

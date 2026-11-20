@@ -14,14 +14,21 @@ RECIPE = SOURCE/'image/pi-gen/stage-cmprovision/00-install/01-run-chroot.sh'
 
 @unittest.skipUnless(os.name == 'posix' and shutil.which('bash'), 'POSIX shell required')
 class ChrootRecoveryRuntimeTest(unittest.TestCase):
-    def run_recipe(self, mode):
+    def run_recipe(self, mode, fpms=False):
         with tempfile.TemporaryDirectory(prefix='cmp-chroot-runtime-', dir='/tmp') as tmp:
             root = Path(tmp)
             binary, runtime = root/'bin', root/'run'
             binary.mkdir()
             runtime.mkdir(mode=mode)
             runtime.chmod(mode)  # pi-gen mounts tmpfs without mode=, producing 1777.
-            for name in ('apt-get', 'systemctl', 'passwd', 'rm'):
+            if fpms:
+                (root/'opt').mkdir()
+                (root/'opt/cmprovision-image-fpms.deb').touch()
+            apt = binary/'apt-get'
+            apt.write_text('#!/bin/sh\nfor arg do\n  if [ "$arg" = install ]; then\n'
+                           '    printf "%s\\n" "$@" >> "$CASE_ROOT/installed"\n    break\n  fi\ndone\n')
+            apt.chmod(0o755)
+            for name in ('systemctl', 'passwd', 'rm'):
                 path = binary/name
                 path.write_text('#!/bin/sh\nexit 0\n')
                 path.chmod(0o755)
@@ -50,12 +57,18 @@ UpdateStore(root=root/'var/lib/cmprovision-updates',runtime=root/'run/cmprovisio
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertTrue((root/'initialized').is_file(), 'Required recovery initialization did not run')
             self.assertEqual(0o755, runtime.stat().st_mode & 0o7777)
+            return (root/'installed').read_text().splitlines()
 
     def test_pigen_sticky_runtime_is_normalized_before_protected_initialization(self):
         self.run_recipe(0o1777)
 
     def test_regular_runtime_remains_private_from_untrusted_writers(self):
         self.run_recipe(0o755)
+
+    def test_both_image_profiles_install_the_hdmi_kms_bindings(self):
+        for fpms in (False, True):
+            with self.subTest(fpms=fpms):
+                self.assertIn('python3-kms++', self.run_recipe(0o755, fpms))
 
 
 if __name__ == '__main__':

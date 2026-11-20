@@ -2,11 +2,18 @@
 
 # HDMI stand display
 
-When the rescue Wi-Fi AP starts, HDMI automatically shows a Wi-Fi QR plus SSID/password for 60 seconds, even without FPMS. The timer starts at AP activation and does not reset on dashboard polling or renderer restart. The normal view returns automatically; FPMS KEY2 also dismisses the card.
+Connect a monitor or TV to the **provisioner** to follow the bench. The native graphical display shows the active
+project, switch front panels, modules, write progress and saved diagnostics. It draws directly on an active HDMI output
+and falls back to the text display on tty8 when graphics are unavailable. Both run offline on a console-only Raspberry Pi OS Lite installation.
 
-Connect a monitor or TV to the **provisioner** to follow the bench without a browser. The optional terminal display
-shows the active project, connected modules, switch ports, progress, failures and saved diagnostic snapshots. It runs
-on a Linux virtual console; it does not need a graphical desktop, Chromium or an internet connection.
+When the wallboard is enabled and the rescue Wi-Fi access point starts, HDMI automatically shows its QR code, SSID and password for 60 seconds,
+even without FPMS. The timer starts at AP activation and survives dashboard polling and renderer restarts.
+The normal view returns when the timer expires. FPMS KEY2 can also dismiss the card.
+
+A new station with a pending first-administrator code shows its setup address and the 16-character code on a connected
+display, even with HDMI set to Off. An active rescue Wi-Fi card takes precedence until it closes.
+Open the address on the management network and enter the code in the browser.
+Creating the account completes this step. [First web administrator](station-setup.md)
 
 This is separate from the target module's [tty2 troubleshooting console](local-console.md).
 
@@ -14,7 +21,7 @@ When [rescue Wi-Fi](rescue-wifi.md) is enabled, the header also shows its countd
 
 The connection strip is visible in every normal screen. **UPLINK** identifies the default-route interface: Wi-Fi shows
 its SSID, signal in dBm and IPv4 address; Ethernet shows link speed and IPv4 address. **STAND** identifies the flashing
-network, **BACKUP** another default-route interface, and **LINK** other connected interfaces. For example:
+network, **BACKUP** another default-route interface, and **LINK** other connected interfaces.
 
 ```text
 UPLINK wlan1 / Wi-Fi "Lab 78" / -53 dBm / 192.0.2.4
@@ -22,9 +29,8 @@ STAND eth0 / UP 1 Gb/s / 172.20.0.1 | LINK eth1 / UP 100 Mb/s / 198.51.100.7
 ```
 
 These are the same secret-free network readings as FPMS, cached for 30 seconds, including when FPMS is disabled.
-Missing addresses show `no IP`; an absent default route is explicit. An active rescue AP keeps its separate status
-instead of appearing as a management uplink. The strip fits into one or two header rows; long details scroll. Short
-consoles use the spare footer row to preserve device-card height.
+Missing addresses show `no IP`. The rescue AP has its own status. On the text console, long details scroll in the header
+and short consoles use a footer row to preserve device-card height.
 
 ## Enable it
 
@@ -37,16 +43,46 @@ consoles use the spare footer row to preserve device-card height.
 After saving Auto once, no keyboard or login is needed: the enabled watcher starts at boot, detects HDMI and switches
 to the display automatically. Connecting HDMI later also starts it. The saved mode survives package updates and reboots.
 
-The default is **Off**. **Auto** starts the renderer and its application data reader only while a DRM HDMI connector
-reports `connected`. Disconnecting the cable stops both. **On** renders regardless of HDMI detection, useful for
-testing a connector whose detection is unreliable. Neither mode changes a module, project, PoE state or provisioning
-job. Display settings take effect without restarting the provisioning services.
+The default is **Off**. In **Auto**, a DRM HDMI connector reporting `connected` starts the renderer.
+Disconnecting the last HDMI cable stops it. FPMS can still use the shared data reader.
+**On** keeps the renderer running even when cable detection is unreliable. Graphical output needs a connected HDMI
+port with an active video mode. Display settings take effect while provisioning continues.
 
 A TV in standby, a KVM or an HDMI adapter can keep reporting `connected`. Detection describes the connector, not
 whether someone is watching or whether the TV has selected this input. Use Off when this distinction matters.
 
 ## Screens and navigation
 
+Choose the view in Settings or press **V** on the station keyboard.
+
+- **Stand console** shows a switch front panel, a selected device and the stand's module list. Each port has a number and a status.
+- **All device cards** shows several modules together. Read host names, physical ports, phases and progress across the batch. Larger batches use additional pages.
+- **Large device card and diagnostics** shows the selected module, provisioning steps, saved diagnostic evidence and advice. Use the web UI to request a fresh snapshot or start recovery.
+- **Automatic** normally shows the stand console and opens diagnostics for a failed or silent selected module.
+
+Cards advance every 12 seconds by default, adjustable from 5 to 60 seconds. **←** and **→** select a device.
+**Space** pauses or resumes rotation. A local view choice lasts until the renderer stops. Settings defines the next start.
+
+### Finding a port on a multi-switch stand
+
+![Port Gi0/1 on assembly-west is selected. The other Gi0/1 belongs to assembly-east.](assets/guides/hdmi-two-switches.png)
+
+On the graphical stand console, the switch list numbers and names the switches and marks the one whose ports are open.
+The selected device card keeps its own switch number, name and port visible. For example, a card showing
+`#1 · assembly-east Gi0/1` still points to that port while you inspect `assembly-west`. The `[` key steps back
+through switch pages and `]` steps forward. A large switch
+can occupy several port pages. Use the arrow keys to select a device and return the map to its switch. During
+automatic rotation the map follows the device cards, then visits every switch page, including switches with no responding ports.
+
+Verified models use the physical port banks from the Ports page, including the 2960CX's odd/even rows and separate
+RJ45/SFP uplinks. Other models use automatic layout. The local provisioner's port carries the `cm` mark. An uplink
+to another switch can show `UP`. `UNR` identifies an unrecognized device. [Switch front panels](switch-front-panels.md) · [Discovery troubleshooting](unrecognized-devices.md)
+
+### Text console
+
+If an HDMI output is inactive, shares its display pipeline with another connector, or has no free overlay plane,
+the service uses the tty8 text console. Its panel identifies the current and next switch. The same keys control
+switch pages, device cards, rotation and views.
 The console automatically sizes its font from the current visible HDMI resolution. With the bundled Terminus fonts,
 1920×1080 uses 14×28-pixel cells, 3440×1440 uses 20×36 cells, and 3840×2160 uses 28×56 cells. This keeps about 38–40 rows
 of readable text instead of shrinking the entire interface at high resolution. The watcher adjusts tty8 when the HDMI
@@ -82,8 +118,11 @@ the others) with the MAC itself. Texts that come from a device are cleaned befor
 finished ones of its batch took (2.19.0, [how it is decided](operations.md#a-module-that-takes-longer-than-the-rest)) gets
 `/ SLOW +3:20` after its time left, and its row is drawn in the warning colour.
 
+### Colors
+
 HDMI has independent **Style** (Warm or Neutral) and **Color mode** (Dark, Light or Auto) settings, matching the web UI.
-The renderer reads the same `resources/css/app.css` tokens for the page, text, muted text, accent and status colors.
+The graphical views use orange accents in Warm and indigo in Neutral. The text console reads the web UI's
+`resources/css/app.css` tokens for the page, text, muted text, accent and status colors.
 Warm dark uses the web's `#ff8a3d` orange; neutral dark uses `#818cf8` indigo. Alpha text colors are composited over the
 page background. On the Linux console, the eight palette entries are redefined to these RGB values without changing
 other virtual terminals; stopping the display resets tty8's palette. A terminal without programmable colors falls back
@@ -91,23 +130,6 @@ to basic ANSI colors. Auto follows the same sunrise/sunset calculation as the we
 polar day/night it falls back to Dark. HDMI settings are shared; browser appearance is selected independently per browser.
 Existing configurations retain their previous style and mode.
 The earlier Phosphor/Monochrome choices migrate to Warm dark/Neutral dark when read, preserving Auto and other settings.
-
-- **Stand console:** switch front panels, selected module and a table of modules on the stand.
-- **All device cards:** several cards at once, with additional pages for larger batches.
-- **Large device card and diagnostics:** a carrier-board ASCII diagram, reported provisioning steps, saved diagnostic
-  evidence and advice. The display does not request a new snapshot or execute recovery actions.
-- **Automatic:** the stand console for a working/ready module, the large card for a failed or silent one.
-
-Cards change every 12 seconds by default (configurable from 5 to 60). Left/right arrows select a card, **Space** pauses
-rotation and **V** cycles the screens locally. Failures remain visible in the footer while other cards are shown.
-The local screen choice lasts until the renderer stops; Settings defines its next start.
-
-Verified switch models use the same physical port banks as the [Ports page](switch-front-panels.md), including the
-2960CX's odd/even rows and separate RJ45/SFP uplinks. Other models use the application's automatic layout. Large
-panels and multiple switches rotate through pages, without dropping ports. A free port is an empty frame with its number,
-so the panel keeps its shape and nothing on it flickers; the port where the provisioner itself is connected says `cm`, and
-the other uplinks (a link to another switch, a port with many devices) say `UP`. `UNR` means **Unrecognized**; it does not
-mean a module has been registered. See [discovery troubleshooting](unrecognized-devices.md).
 
 ## What the numbers mean
 
@@ -127,10 +149,10 @@ screen is intended for a trusted support area: it shows device names, MAC addres
 
 Three units work together. `cmprovision-wallboard` is a small root watcher of connector state and the fixed settings
 file; it starts and stops `cmprovision-wallboard-display`, and only it does (the display and the data units are not
-enabled at boot). The display's renderer runs as `cmprovision-wallboard`, a system user of its own made by the
-package: it draws on tty8 and reads one JSON file, nothing else. That file is kept current by
+enabled at boot). The renderer runs as the dedicated `cmprovision-wallboard` system user. It displays on tty8,
+using a free DRM/KMS overlay on the active HDMI output when available. Provisioning data comes from
 `cmprovision-wallboard-data`, which runs `wallboard:snapshot --watch --output=/run/cmprovision-wallboard-data/snapshot.json`
-as the web user, without a terminal; it starts and stops with the display.
+as the web user. The setup and rescue Wi-Fi cards use separate local files.
 
 The data unit updates the file every two seconds and shares the web UI's SNMP cache: it takes a stored switch snapshot
 up to 15 seconds old and polls a switch itself only when that has run out, so with a monitor attached each switch is asked
@@ -142,20 +164,26 @@ not start and stop the display. A new connection (or boot) takes the console for
 package upgrade does not, and a display unit that keeps failing is retried every ten seconds three times, then once a
 minute.
 
-Settings are stored in `/etc/default/cmprovision-wallboard.json` and included in a normal provisioner backup. The
-screen uses tty8, with a readable Terminus font when available; other virtual consoles retain their fonts. On stopping,
-the previous console is restored if tty8 is still active. Switching away manually is respected.
+Settings are stored in `/etc/default/cmprovision-wallboard.json` and included in a normal provisioner backup.
+Switching to another virtual console releases the HDMI overlay. On stopping, the previous console is restored if tty8
+is still active. The text fallback uses Terminus when available.
+
+The station image includes the `python3-kms++` bindings with or without FPMS. The application package depends on
+`python3-pil` and `libdrm2` and recommends `python3-kms++`. A Debian installation without those optional bindings
+uses the text console. To check which display packages are installed, run `dpkg-query -W python3-pil libdrm2 python3-kms++`.
 
 ```sh
 systemctl status cmprovision-wallboard cmprovision-wallboard-display cmprovision-wallboard-data
 journalctl -u cmprovision-wallboard -u cmprovision-wallboard-display -u cmprovision-wallboard-data -n 50 --no-pager
 cat /sys/class/drm/card*-HDMI-A-*/status
+cat /sys/class/tty/tty0/active
 sudo -u www-data /var/lib/cmprovision/artisan wallboard:snapshot
 ```
 
-An unexpectedly blank screen: check HDMI detection, the selected TV input, and Auto/Off first. If needed, select On
-temporarily and use Alt+F8. A missing font or too small terminal is reported on the console; a higher resolution or
-smaller console font leaves more rows for detail. Full diagnostic reports and recovery actions remain in the web UI.
+If the screen is blank, check the TV input, the HDMI connector status and the saved mode. Press **Alt+F8** to select
+the wallboard again. If you see the text console, check the graphics packages and the display service journal.
+Look for `HDMI graphical display active` or `HDMI text fallback`.
+The graphical display uses the current HDMI video mode. The web UI has the full diagnostic reports and recovery actions.
 
 The display unit is deliberately not enabled/started directly at boot: only the watcher starts it. When removing or
 downgrading the package, all three units stop; restore stops the data unit before replacing the SQLite database. No reboot is
