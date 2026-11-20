@@ -21,6 +21,17 @@ if [ "$#" -eq 5 ]; then
     FPMS_SHA=$5
 fi
 PIN=c851f00178c64b87a86c06c2be216bd89d62e55b
+DISPLAY_PROFILE=${CMP_IMAGE_DISPLAY:-default}
+case "$DISPLAY_PROFILE" in
+    default) ;;
+    waveshare-144|hyperpixel-4-touch)
+        if [ -z "$FPMS" ]; then
+            echo 'A boot display profile requires the fpms-lite package.' >&2
+            exit 2
+        fi
+        ;;
+    *) echo 'CMP_IMAGE_DISPLAY must be default, waveshare-144 or hyperpixel-4-touch.' >&2; exit 2 ;;
+esac
 
 if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]] || [ "$(sha256sum "$DEB" | cut -d ' ' -f 1)" != "$EXPECTED" ]; then
     echo 'The package checksum does not match.' >&2
@@ -47,6 +58,9 @@ chmod +x "$WORK/pi-gen/stage-cmprovision/prerun.sh" "$WORK/pi-gen/stage-cmprovis
 touch "$WORK/pi-gen/stage2/SKIP_IMAGES" "$WORK/pi-gen/stage2/04-cloud-init/SKIP"
 cat > "$WORK/pi-gen/config-cmprovision" <<'CONFIG'
 IMG_NAME='cmprovision-lite'
+if [ "${CMP_IMAGE_DISPLAY:-default}" != default ]; then
+    IMG_NAME="cmprovision-lite-$CMP_IMAGE_DISPLAY"
+fi
 RELEASE='trixie'
 STAGE_LIST='stage0 stage1 stage2 stage-cmprovision'
 ENABLE_CLOUD_INIT=0
@@ -65,13 +79,14 @@ CONFIG
 cd "$WORK/pi-gen"
 env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LC_ALL=C.UTF-8 \
     CMP_IMAGE_SOURCE="$SOURCE" CMP_IMAGE_DEB="$DEB" CMP_IMAGE_DEB_SHA256="$EXPECTED" \
-    CMP_IMAGE_FPMS="$FPMS" CMP_IMAGE_FPMS_SHA256="$FPMS_SHA" \
+    CMP_IMAGE_FPMS="$FPMS" CMP_IMAGE_FPMS_SHA256="$FPMS_SHA" CMP_IMAGE_DISPLAY="$DISPLAY_PROFILE" \
     ./build.sh -c config-cmprovision
 (
     cd deploy
     sha256sum ./*.img.xz > SHA256SUMS
     printf 'pi-gen %s\ncmprovision package sha256 %s\n' "$PIN" "$EXPECTED" > cmprovision-build-manifest.txt
     if [ -n "$FPMS" ]; then printf 'fpms-lite package sha256 %s\n' "$FPMS_SHA" >> cmprovision-build-manifest.txt; fi
+    if [ "$DISPLAY_PROFILE" != default ]; then printf 'FPMS boot display %s\n' "$DISPLAY_PROFILE" >> cmprovision-build-manifest.txt; fi
 )
 (cd "$SOURCE" && find image -type f ! -path '*/__pycache__/*' ! -name '*.pyc' -print0 | \
     LC_ALL=C sort -z | xargs -0 sha256sum) > "$WORK/pi-gen/deploy/cmprovision-image-source.sha256"

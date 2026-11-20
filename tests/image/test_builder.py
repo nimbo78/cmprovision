@@ -66,7 +66,7 @@ test -f stage2/SKIP_IMAGES
 test -f "$CMP_IMAGE_FPMS"
 test -n "$CMP_IMAGE_FPMS_SHA256"
 mkdir -p deploy
-printf image > deploy/test.img.xz
+printf image > "deploy/$IMG_NAME.img.xz"
 BUILD
     chmod +x "$target/build.sh"
 elif [ "$1" != -C ]; then
@@ -77,19 +77,29 @@ fi
         env = dict(os.environ, PATH=str(fakebin) + ':' + os.environ['PATH'],
                    TEST_SECRET='not for the image', FIRST_USER_PASS='not for the image',
                    WPA_PASSPHRASE='not for the image', PUBKEY_SSH_FIRST_USER='not for the image')
-        work = self.root / 'fresh-work'
         fpms_package = self.root / 'fpms.deb'
         fpms_package.write_bytes(b'test optional package')
         fpms_hash = hashlib.sha256(fpms_package.read_bytes()).hexdigest()
-        result = subprocess.run(['bash', str(BUILDER), str(work), str(self.package), self.digest,
-                                 str(fpms_package), fpms_hash],
-                                env=env, capture_output=True, text=True, timeout=10)
-        self.assertEqual(0, result.returncode, result.stderr)
-        deploy = work / 'pi-gen/deploy'
-        self.assertTrue((deploy / 'SHA256SUMS').is_file())
-        self.assertTrue((deploy / 'cmprovision-image-source.sha256').is_file())
-        self.assertIn(self.digest, (deploy / 'cmprovision-build-manifest.txt').read_text())
-        self.assertIn(fpms_hash, (deploy / 'cmprovision-build-manifest.txt').read_text())
+        for profile, image_name in (
+                ('default', 'cmprovision-lite'), ('hyperpixel-4-touch', 'cmprovision-lite-hyperpixel-4-touch')):
+            with self.subTest(profile=profile):
+                work = self.root / profile
+                result = subprocess.run(['bash', str(BUILDER), str(work), str(self.package), self.digest,
+                                         str(fpms_package), fpms_hash],
+                                        env=dict(env, CMP_IMAGE_DISPLAY=profile),
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(0, result.returncode, result.stderr)
+                deploy = work / 'pi-gen/deploy'
+                self.assertTrue((deploy / (image_name + '.img.xz')).is_file())
+                self.assertTrue((deploy / 'SHA256SUMS').is_file())
+                self.assertTrue((deploy / 'cmprovision-image-source.sha256').is_file())
+                manifest = (deploy / 'cmprovision-build-manifest.txt').read_text()
+                self.assertIn(self.digest, manifest)
+                self.assertIn(fpms_hash, manifest)
+                if profile != 'default':
+                    self.assertIn('FPMS boot display ' + profile, manifest)
+                else:
+                    self.assertNotIn('FPMS boot display', manifest)
 
 
 if __name__ == '__main__':
