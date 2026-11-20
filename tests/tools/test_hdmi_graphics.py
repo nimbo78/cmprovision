@@ -26,6 +26,22 @@ def switch(name, *blocks, online=True):
     return dict(name=name, model="WS-C2960CX-8PC-L", answering=online, blocks=list(blocks))
 
 
+def catalyst(count, suffix="P-4X", name="rack"):
+    # WallboardSnapshot keeps the panel_number from each verified SwitchFrontPanel bank.
+    blocks = []
+    for start in range(1, count+1, 12):
+        ports = [dict(number=n, name=f"Gi2/0/{n}", endpoint=f"node-{n}", state="free",
+                      link_up=True, speed=1000, poe_state="delivering", watts=3.1) for n in range(start, start+12)]
+        blocks.append(bank("RJ45", 2, ports))
+    fiber = "SFP+" if "4X" in suffix else "SFP"
+    prefix = "Te" if fiber == "SFP+" else "Gi"
+    blocks.append(bank(fiber, 1, [dict(number=n, name=f"{prefix}2/1/{n}", endpoint=f"fiber-{n}",
+                                       state="uplink", link_up=n == 1, speed=10000 if n == 1 else None)
+                                  for n in range(1, 5)]))
+    return dict(name=name, model=f"C9200L-{count}{suffix}", serial=f"SN-{count}", verified_layout=True,
+                answering=True, blocks=blocks)
+
+
 def example():
     a = switch("assembly-east", bank("RJ45", 2, [port(1), port(2)]))
     b = switch("assembly-west", bank("RJ45", 2, [port(1, "module", ["s1"]), port(2, "recognized"),
@@ -74,6 +90,105 @@ class GraphicsTest(unittest.TestCase):
                       "This station", "Other station"):
             self.assertIn(value, labels)
         self.assertGreaterEqual(labels.count("assembly-west"), 3)  # roster, current front panel and card
+
+    def test_verified_catalyst_chassis_displays_every_socket_in_physical_order(self):
+        for count, suffix, size, palette in ((24, "P-4X", (1600, 900), "warm"), (48, "T-4G-E", (1600, 670), "warm-light"),
+                                            (24, "T-4G-A", (1280, 720), "neutral-light"), (48, "P-4X", (1920, 1080), "neutral")):
+            with self.subTest(count=count, suffix=suffix, size=size, palette=palette):
+                sw = catalyst(count, suffix)
+                # Keep an independent second observation on a fiber socket too.
+                sw["blocks"][-1]["ports"][1].update(poe_state="fault")
+                frame, items = self.draw({"switches": [sw]}, size, view="map", palette=palette)
+                xy = dict(items)
+                self.assertTrue(any("Full switch map" in word for word, _ in items))
+                self.assertIn("S/N SN-"+str(count), xy)
+                self.assertIn("SFP+ uplinks" if "4X" in suffix else "SFP uplinks", xy)
+                for n in range(1, count+1):
+                    self.assertIn(f"node-{n}", xy)
+                self.assertEqual(xy["node-1"][0], xy["node-2"][0])
+                self.assertLess(xy["node-1"][1], xy["node-2"][1])
+                self.assertEqual(xy["node-1"][1], xy["node-13"][1])
+                self.assertLess(xy["node-11"][0], xy["node-13"][0])
+                if count == 48:
+                    self.assertGreater(xy["node-25"][1], xy["node-24"][1])
+                    self.assertEqual(xy["node-1"][0], xy["node-25"][0])
+                for n in range(1, 5):
+                    self.assertGreater(xy[f"fiber-{n}"][1], xy[f"node-{count}"][1])
+                self.assertIn("10G", xy)
+                self.assertIn("Fault", xy)
+                self.assertIn("3.1 W", xy)
+                self.assertTrue(all(0 <= x < frame.width and 0 <= y < frame.height for _, (x,y) in items))
+                self.assertEqual("Devices on the stand" in xy, count == 24)
+
+    def test_explicit_map_visits_distinct_switches_and_uses_the_actual_selected_socket(self):
+        first, last = catalyst(24, name="east"), catalyst(48, name="west")
+        last["blocks"][2]["ports"][4].update(serials=["s1"], state="module", endpoint="writer")
+        data = example()
+        data.update(switches=[first, switch("spare", online=False), last], recognized=[])
+        data["modules"][0].update(name="writer", port="old label")
+        for offset, wanted in ((0, "Gi2/0/29"), (1, "No selected card on this switch"), (2, "No port data available"),
+                               (3, "Gi2/0/29"), (-1, "No port data available")):
+            with self.subTest(offset=offset):
+                _, items = self.draw(data, view="map", switch_offset=offset)
+                labels = [word for word, _ in items]
+                self.assertTrue(any(wanted in word for word in labels))
+                if offset in (2, -1):
+                    self.assertTrue(any("Stand console" in word for word in labels))
+                    self.assertTrue(any("Full map unavailable" in word for word in labels))
+                else:
+                    self.assertTrue(any("Full switch map" in word for word in labels))
+                    self.assertEqual("Devices on the stand" in labels, offset == 1)
+
+    def test_auto_uses_current_switch_and_keeps_failure_diagnostics_and_saved_data(self):
+        data = example()
+        sw = catalyst(48)
+        sw.update(answering=False, serial=None)
+        sw["blocks"][0]["ports"][0].update(serials=["s1"], state="module")
+        data["switches"] = [sw, switch("small", bank("Copper", 2, [port(1)]))]
+        for offset, expected in ((0, "Full switch map"), (1, "Stand console")):
+            _, items = self.draw(data, view="auto", switch_offset=offset)
+            labels = [word for word, _ in items]
+            self.assertTrue(any(expected in word for word in labels))
+            if offset == 0:
+                self.assertIn("S/N unavailable", labels)
+                self.assertIn("Offline · last known ports", labels)
+        for state in ("fail", "stale"):
+            data["modules"][0]["state"] = state
+            _, items = self.draw(data, view="auto")
+            self.assertIn("Device diagnostics", [word for word, _ in items])
+        _, items = self.draw(data, view="desk")
+        self.assertIn("Device card", dict(items))
+
+    def test_a_partial_or_unverified_chassis_falls_back_without_claiming_a_full_map(self):
+        for problem in ("unverified", "model", "short", "extra", "missing fiber", "duplicate", "reordered", "wrong media",
+                        "null bank", "null socket", "no switches"):
+            with self.subTest(problem=problem):
+                sw = catalyst(24)
+                groups = sw["blocks"]
+                if problem == "unverified":
+                    sw.pop("verified_layout")
+                elif problem == "model":
+                    sw["model"] = "Unknown"
+                elif problem == "short":
+                    groups[0]["ports"].pop()
+                elif problem == "extra":
+                    groups.append(bank("Other", 1, [port(33)]))
+                elif problem == "missing fiber":
+                    groups.pop()
+                elif problem == "duplicate":
+                    groups[0]["ports"][1]["name"] = groups[0]["ports"][0]["name"]
+                elif problem == "reordered":
+                    groups[0]["ports"].reverse()
+                elif problem == "wrong media":
+                    groups[-1]["label"] = "SFP"
+                elif problem == "null bank":
+                    groups[0] = None
+                    sw["answering"] = False
+                elif problem == "null socket":
+                    groups[0]["ports"][0] = None
+                _, items = self.draw({"switches": [] if problem == "no switches" else [sw]}, view="map")
+                self.assertIn("Device card", dict(items))
+                self.assertTrue(any("Full map unavailable" in word for word, _ in items))
 
     def test_front_panel_shows_each_endpoint_with_independent_link_and_poe_rows(self):
         ports = [

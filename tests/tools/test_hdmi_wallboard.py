@@ -419,6 +419,17 @@ class ConsoleTest(unittest.TestCase):
 
 
 class SettingsTest(unittest.TestCase):
+    def test_full_map_setting_and_view_key_fall_back_to_the_console_on_tty(self):
+        config = w.valid_config(dict(w.DEFAULTS, mode='auto', view='map'))
+        self.assertEqual('map', config['view'])
+        self.assertEqual('map', w.next_view('desk', graphical=True))
+        self.assertEqual('flow', w.next_view('desk', graphical=False))
+        self.assertEqual('flow', w.next_view('map', graphical=False))
+        self.assertEqual('auto', w.next_view('engineer', graphical=True))
+        data = snapshot()
+        self.assertEqual(w.frame(data, 132, 37, view='desk', now=1002).plain(),
+                         w.frame(data, 132, 37, view='map', now=1002).plain())
+
     def test_old_palettes_preserve_unattended_auto_on_upgrade(self):
         for old, new in [('phosphor', 'warm'), ('mono', 'neutral')]:
             data = w.valid_config(dict(w.DEFAULTS, mode='auto', palette=old))

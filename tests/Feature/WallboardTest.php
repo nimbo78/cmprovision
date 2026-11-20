@@ -412,7 +412,10 @@ class WallboardTest extends TestCase
         }
         $this->assertSame('auto', \App\Models\Setting::find('hdmi_color_mode')->value);
         $this->assertTrue(app(WallboardSnapshot::class)->current()['hdmi_auto_mode']);
-        $component->set('style', 'invalid')->call('save')->assertHasErrors('style');
+        $service->shouldReceive('save')->once()->with(['mode' => 'auto', 'palette' => 'neutral', 'view' => 'map', 'rotation' => 12]);
+        $component->assertSee('Full switch map')->set('view', 'map')->call('save')->assertHasNoErrors();
+        $component->set('view', 'invalid')->call('save')->assertHasErrors('view');
+        $component->set('view', 'auto')->set('style', 'invalid')->call('save')->assertHasErrors('style');
         $component->set('style', 'warm')->set('color_mode', 'invalid')->call('save')->assertHasErrors('color_mode');
     }
 }

@@ -10,6 +10,7 @@ use App\Services\Sensor\SavedAccounts;
 use App\Services\Snmp\PhpSnmpClient;
 use App\Services\SwitchPortFinder;
 use App\Services\TlsTrust;
+use App\Services\Wallboard;
 use App\Support\FpmsPanelSettings;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -63,7 +64,7 @@ class TransferDefinitions
                 'fpms.screen_timeout' => ['sometimes', 'required', 'integer', Rule::in(array_keys(FpmsPanelSettings::SCREEN_TIMEOUTS))],
                 'wallboard' => 'required|array:mode,palette,view,rotation', 'wallboard.mode' => 'required|in:off,auto,on',
                 'wallboard.palette' => 'required|in:warm,warm-light,neutral,neutral-light',
-                'wallboard.view' => 'required|in:auto,desk,flow,engineer', 'wallboard.rotation' => 'required|integer|between:5,60',
+                'wallboard.view' => ['required', Rule::in(array_keys(Wallboard::VIEWS))], 'wallboard.rotation' => 'required|integer|between:5,60',
                 'fpms_service' => 'required|array:enabled,open_on_start', 'fpms_service.enabled' => 'required|boolean',
                 'fpms_service.open_on_start' => 'required|boolean', 'hdmi_auto' => 'required|boolean',
             ],

@@ -45,7 +45,7 @@ WEB_THEMES = {'warm': ('warm', 'dark'), 'warm-light': ('warm', 'light'),
 PALETTE_ALIASES = {'phosphor': 'warm', 'mono': 'neutral'}
 WEB_CSS = Path('/var/lib/cmprovision/resources/css/app.css')
 CHOICES = dict(mode=('off', 'auto', 'on'), palette=tuple(WEB_THEMES),
-               view=('auto', 'desk', 'flow', 'engineer'))
+               view=('auto', 'desk', 'map', 'flow', 'engineer'))
 STOP = False
 SCROLL_SECONDS = .35   # a text that does not fit runs one column per step
 MARQUEE_REST = 4       # steps it rests at each end
@@ -822,6 +822,15 @@ def engineer(c, data, module, now, tick):
             c.wrap(0, next_y, text, c.cols, lines, 'warn')
 
 
+def next_view(view, graphical):
+    views = CHOICES['view']
+    if not graphical:
+        views = tuple(name for name in views if name != 'map')
+        if view == 'map':
+            view = 'desk'
+    return views[(views.index(view) + 1) % len(views)]
+
+
 def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=False, step=0, switch_offset=0):
     now = now or time.time()
     c = Canvas(max(1, cols), max(1, rows), step)
@@ -833,6 +842,8 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
     module = cards[selected % len(cards)] if cards else None
     if view == 'auto':
         view = 'engineer' if module and module['state'] in ('fail', 'stale') else 'desk'
+    elif view == 'map':
+        view = 'desk'  # The text console paginates the physical panel.
     if view in ('flow', 'engineer'):
         (flow if view == 'flow' else engineer)(c, data, module, now, tick)
     else:
@@ -1246,8 +1257,7 @@ def display(screen):
                 paused = not paused
                 last_rotation = time.monotonic()
             elif key in (ord('v'), ord('V')):
-                views = ('auto', 'desk', 'flow', 'engineer')
-                view_override = views[(views.index(view_override or config['view']) + 1) % len(views)]
+                view_override = next_view(view_override or config['view'], graphical)
     finally:
         try:
             graphics.close()
