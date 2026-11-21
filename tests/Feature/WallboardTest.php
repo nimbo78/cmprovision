@@ -54,6 +54,11 @@ class WallboardTest extends TestCase
         $this->assertSame([$cm->serial], array_column($snapshot['modules'], 'serial'));
         $this->assertSame(1, $snapshot['counts']['failed']);
         $this->assertSame('sw01 GE0/0/3', $snapshot['modules'][0]['port']);
+        $port = collect($snapshot['switches'][0]['blocks'])->pluck('ports')->flatten(1)->firstWhere('name', 'GE0/0/3');
+        $this->assertNotEmpty($port['port_id']);
+        $this->assertSame($port['port_id'], $snapshot['modules'][0]['port_id']);
+        $this->assertContains($cm->mac, $port['info']['macs']);
+        $this->assertArrayNotHasKey('media', $port['info'], 'The fallback front panel layout does not identify a physical connector.');
         $this->assertStringNotContainsString('private-run-token', json_encode($snapshot));
         $this->assertArrayNotHasKey('config', $snapshot['switches'][0]);
         $this->assertArrayNotHasKey('storage_diagnostics', $snapshot['modules'][0]);
@@ -75,6 +80,25 @@ class WallboardTest extends TestCase
         $switches = array_column($reader->current()['switches'], null, 'name');
         $this->assertFalse($switches['sw02']['answering']);
         $this->assertSame('SW02-9876', $switches['sw02']['serial']);
+    }
+
+    public function test_card_uses_the_project_and_image_of_this_specific_run()
+    {
+        $cm = $this->stand();
+        $image = new \App\Models\Image;
+        $image->forceFill(['filename' => 'stock.img.gz', 'filename_extension' => 'gz', 'filename_on_server' => 'file.gz',
+            'sha256' => str_repeat('a', 64), 'uncompressed_size' => 1024])->save();
+        $attrs = ['device' => 'cm4', 'storage' => '/dev/mmcblk0', 'image_id' => $image->id, 'label_moment' => 'never', 'verify' => false];
+        $original = \App\Models\Project::create(['name' => 'Friday batch'] + $attrs);
+        $active = \App\Models\Project::create(['name' => 'Monday batch'] + $attrs);
+        \App\Models\Setting::updateOrCreate(['key' => 'active_project'], ['value' => $active->id]);
+        $cm->forceFill(['project_id' => $original->id, 'image_filename' => 'friday.img.gz'])->save();
+        $data = app(WallboardSnapshot::class)->current();
+        $this->assertSame('Monday batch', $data['project']);
+        $this->assertSame('Friday batch', $data['modules'][0]['project']);
+        $this->assertSame('friday.img.gz', $data['modules'][0]['image']);
+        $this->assertSame($cm->provisioning_started_at->timestamp, $data['modules'][0]['started_at']);
+        $this->assertSame($cm->phase_started_at->local()->format('Y-m-d H:i T'), $data['modules'][0]['finished']);
     }
 
     public function test_multiple_modules_share_the_endpoint_label_in_severity_order()
@@ -108,6 +132,8 @@ class WallboardTest extends TestCase
         $ports = array_column(array_merge(...array_column($switch['blocks'], 'ports')), null, 'name');
         $this->assertSame('boot', $ports['GE0/0/2']['state']);
         $this->assertSame('10:e9:92:12:34:56', $ports['GE0/0/1']['endpoint'] ?? null);
+        $this->assertEmpty($ports['GE0/0/1']['info']['neighbors'] ?? []);
+        $this->assertStringNotContainsString('previous-device', json_encode(app(WallboardSnapshot::class)->current()));
         $this->assertSame('e4:5f:01:01:02:03', $ports['GE0/0/2']['endpoint'] ?? null);
     }
 
@@ -127,6 +153,21 @@ class WallboardTest extends TestCase
         $ports = array_merge(...array_column($switch['blocks'], 'ports'));
         $this->assertSame(['GE0/0/1' => 'sw02', 'GE0/0/2' => null, 'GE0/0/3' => 'e4:5f:01:62:9f:d3', 'XGE0/0/1' => gethostname()],
             array_column($ports, 'endpoint', 'name'));
+    }
+
+    public function test_neighbor_without_an_advertised_mac_does_not_inherit_the_learned_endpoint_mac()
+    {
+        $this->stand();
+        $table =& $this->fake->tables[''];
+        $table[MacTable::OID_HUAWEI_FDB_PORT.'.16.233.146.18.52.86.10.0'] = 6;
+        foreach ([4 => 7, 5 => 'desk-phone', 9 => 'phone'] as $column => $value)
+            $table[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+        $snapshot = app(WallboardSnapshot::class)->current();
+        $device = collect($snapshot['unknown'])->firstWhere('name', 'phone');
+        $this->assertNotNull($device);
+        $this->assertNull($device['mac']);
+        $port = collect($snapshot['switches'][0]['blocks'])->pluck('ports')->flatten(1)->firstWhere('port_id', $device['port_id']);
+        $this->assertContains('10:e9:92:12:34:56', $port['info']['macs']);
     }
 
     public function test_the_port_with_the_provisioner_is_marked_for_the_display()
@@ -184,6 +225,12 @@ class WallboardTest extends TestCase
         $this->assertSame(['unrecognized', 'unrecognized'], array_column($unknown, 'state'));
         $this->assertSame('Cisco AP firmware / 192.168.1.5 / wlan-ap', $unknown[0]['detail']);
         $this->assertTrue($unknown[0]['says']);
+        $this->assertSame($ports[0]['port_id'], $unknown[0]['port_id']);
+        $neighbor = $ports[0]['info']['neighbors'][0];
+        $this->assertSame('eth0', $neighbor['port']);
+        $this->assertSame('192.168.1.5', $neighbor['address']);
+        $this->assertSame('Cisco AP firmware', $neighbor['description']);
+        $this->assertSame('LLDP', strtoupper($neighbor['protocol']));
         $this->assertSame('10:e9:92:12:34:56', $unknown[1]['detail'], 'no neighbour: the MAC beside the maker');
         $this->assertFalse($unknown[1]['says']);
         $this->assertStringNotContainsString('sw01 GE0/0/3', json_encode($unknown), 'the module on its port is not in the list');
@@ -236,6 +283,7 @@ class WallboardTest extends TestCase
         \Illuminate\Support\Facades\Cache::flush();
         $untrusted = app(WallboardSnapshot::class)->current();
         $this->assertSame([], $untrusted['recognized']);
+        $this->assertStringNotContainsString($code, json_encode($untrusted));
         $this->assertContains('wlanpi-fd3', array_column($untrusted['unknown'], 'name'));
         $ports = array_column(array_merge(...array_column($untrusted['switches'][0]['blocks'], 'ports')), null, 'name');
         $this->assertSame('unrecognized', $ports['GE0/0/1']['state']);

@@ -49,6 +49,14 @@ HyperPixel uses a dedicated DPI overlay. If HDMI mirrors the same display pipeli
 
 On `wlanpi-d62` the matched controller provided three physical calibration points. After a normal reboot on 19 November 2026, FPMS identified the GT911, opened the landscape menu and resumed receiving live station and switch data.
 
+### Inspect a port or device
+
+Tap a port on the map or the connected list. **Port info** opens the Ethernet and PoE readings, chassis serial, connector and learned MACs. LLDP/CDP neighbors can provide a platform, remote interface and management address. If several modules share a port, **Choose device** lists them individually.
+
+**Device details** opens **Overview** with MAC, serial and reported hardware. **Run** shows the project and image associated with that run, progress, transfer rate and OS check. **Diagnostics** identifies the saved report by source and age and shows findings and next steps. For a sensor verified by another station, the card shows who flashed it and the signed boot count. **Back** returns to your selection.
+
+![HyperPixel port card for Gi0/3 showing the sensor, Ethernet speed, PoE draw and the button for device details.](assets/guides/hyperpixel-port-device.png)
+
 ## Waveshare controls
 
 The Station page in Classic and New also shows [rescue Wi-Fi](rescue-wifi.md): its search countdown or active SSID, gateway and associated-client count. In Lite, press **OK** while the AP is active to open its Wi-Fi QR code. Press **OK** again to see the SSID and password; up/down scrolls long credentials. **KEY2** closes the card. The same QR and connection details appear temporarily on HDMI. Both screens return to their normal view after **60 seconds**, or when the card is closed. A normal status page never shows the password.

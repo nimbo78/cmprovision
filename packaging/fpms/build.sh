@@ -24,4 +24,4 @@ else
     cp "$WORK"/wlanpi-fpms_*.deb "$OUT/"
 fi
 cp "$WORK/source/.cmprovision-upstream" "$OUT/fpms-upstream.txt"
-(cd "$HERE/../.." && sha256sum packaging/fpms/portable-cmprovision.patch tools/display_marquee.py) > "$OUT/fpms-patch.sha256"
+(cd "$HERE/../.." && sha256sum packaging/fpms/portable-cmprovision.patch tools/display_marquee.py tools/display_details.py packaging/fpms/cmprovision_touch_details.py) > "$OUT/fpms-patch.sha256"

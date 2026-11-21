@@ -1,9 +1,9 @@
 name: FPMS and HDMI displays
 on:
   pull_request:
-    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tools/hdmi*.py', 'tools/display_marquee.py', 'tools/rescue_wifi*.py', 'public/apple-touch-icon.png', 'public/fonts/*.woff*', 'tests/tools/*fpms*', 'tests/tools/test_hdmi*.py', 'tests/network/test_rescue_wifi*.py', 'tests/tools/check_display_systemd.py', 'debian/control', 'debian/rules', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
+    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tools/hdmi*.py', 'tools/display_*.py', 'tools/rescue_wifi*.py', 'public/apple-touch-icon.png', 'public/fonts/*.woff*', 'tests/tools/*fpms*', 'tests/tools/test_hdmi*.py', 'tests/network/test_rescue_wifi*.py', 'tests/tools/check_display_systemd.py', 'debian/control', 'debian/rules', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
   push:
-    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tools/hdmi*.py', 'tools/display_marquee.py', 'tools/rescue_wifi*.py', 'public/apple-touch-icon.png', 'public/fonts/*.woff*', 'tests/tools/*fpms*', 'tests/tools/test_hdmi*.py', 'tests/network/test_rescue_wifi*.py', 'tests/tools/check_display_systemd.py', 'debian/control', 'debian/rules', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
+    paths: ['packaging/fpms/**', 'tools/fpms-*', 'tools/hdmi*.py', 'tools/display_*.py', 'tools/rescue_wifi*.py', 'public/apple-touch-icon.png', 'public/fonts/*.woff*', 'tests/tools/*fpms*', 'tests/tools/test_hdmi*.py', 'tests/network/test_rescue_wifi*.py', 'tests/tools/check_display_systemd.py', 'debian/control', 'debian/rules', 'debian/*wallboard*', 'debian/*fpms*', '.github/workflows/fpms.yml']
   workflow_dispatch:
 permissions:
   contents: read

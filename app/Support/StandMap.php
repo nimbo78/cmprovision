@@ -307,6 +307,7 @@ class StandMap
             $tile['aside'] = $withPoe ? $port['poe'] === null : ($this->cage($port) || in_array($media, ['sfp', 'combo'], true));
             // the connector as the switch tells it (SwitchSnapshot::media()), otherwise a cage beside and copper in the main blocks
             $tile['media'] = $media ?? ($tile['aside'] ? 'sfp' : 'copper');
+            $tile['reported_media'] = $media;
             $tile['sfp'] = $tile['media'] === 'sfp';
             $tile['combo'] = $tile['media'] === 'combo';
             $tile['transceiver'] = $port['transceiver'] ?? null;
