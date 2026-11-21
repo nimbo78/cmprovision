@@ -69,16 +69,20 @@ For the Waveshare use `waveshare-144` as the last argument. Unmount the boot par
 
 ## Screens and navigation
 
+On the graphical port map, names that fit are stationary. A longer device name scrolls horizontally inside its port, pausing for 1.5 seconds at the beginning and end. If automatic rotation shows another switch, scrolling resumes when the port returns. The port number, Ethernet link, PoE reading and any `+N` device count stay visible throughout.
+
 Choose the view in Settings or press **V** on the station keyboard.
 
 - **Stand console** shows a switch front panel, a selected device and the stand's module list. Each port tile shows the connected device, Ethernet link and PoE readings.
 - **Full switch map** shows all 24 or 48 copper ports and four uplinks of a supported Catalyst 9200L in one frame. Use `[` and `]` to move between switches.
 - **All device cards** shows several modules together. Read host names, physical ports, phases and progress across the batch. Larger batches use additional pages.
-- **Large device card and diagnostics** shows the selected module, provisioning steps, saved diagnostic evidence and advice. Use the web UI to request a fresh snapshot or start recovery.
-- **Automatic** opens diagnostics for a selected module that failed or stopped reporting. Otherwise it opens the full map for a supported 24- or 48-port switch and the stand console for other layouts.
+- **Large device card and diagnostics** shows the hardware, project and image used for this run, saved diagnostic source and age, evidence and next step. The arrow keys also select verified sensors, discovered neighbors and ports delivering PoE without carrier. The port card beside the smaller maps includes link speed and PoE.
+- **Automatic** tours the stand, including each switch map, then shows one device in detail for one rotation interval. The next tour shows a different device. A newly failed run opens its diagnostics immediately during automatic playback. Simultaneous failures are shown in turn. **Space** holds the current screen.
 
 Cards advance every 12 seconds by default, adjustable from 5 to 60 seconds. **←** and **→** select a device.
 **Space** pauses or resumes rotation. A local view choice lasts until the renderer stops. Settings defines the next start.
+
+![HDMI device diagnostics after a verification failure, with the CM4 specifications, project, image and recommended check.](assets/guides/hdmi-device-diagnostics.png)
 
 ### Full switch map
 

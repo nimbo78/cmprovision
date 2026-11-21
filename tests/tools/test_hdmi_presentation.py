@@ -88,6 +88,26 @@ class PresentationTest(unittest.TestCase):
         self.assertTrue(self.present(at=111.3))
         self.assertEqual(self.draw.call_count, 2)
 
+    def test_visible_hostnames_animate_between_full_frames_and_reset_after_leaving_tty8(self):
+        from test_hdmi_graphics import bank, port, switch
+        from hdmi_graphics import render_frame
+        self.draw.side_effect = render_frame
+        name = "wlanpi-warehouse-east-floor03-rack12-radio-sensor-a17"
+        self.data["switches"] = [switch("assembly", bank("Copper", 2, [port(1, endpoint=name)]))]
+        self.assertTrue(self.present(at=10, wall=1001))
+        first = self.output.show.call_args.args[0].copy()
+        self.assertTrue(self.present(at=11, wall=1001))
+        self.assertEqual(self.output.show.call_count, 1)
+        self.assertTrue(self.present(at=12, wall=1001))
+        self.assertEqual(self.draw.call_count, 1)
+        self.assertEqual(self.output.show.call_count, 2)
+        self.assertTrue(self.output.show.call_args.args[0].tobytes() != first.tobytes())
+        self.console.ready.return_value = False
+        self.assertFalse(self.present(at=12.1, wall=1001))
+        self.console.ready.return_value = True
+        self.assertTrue(self.present(at=13, wall=1001))
+        self.assertTrue(self.output.show.call_args.args[0].tobytes() == first.tobytes())
+
     def test_revoked_output_falls_back_and_retries_without_spinning(self):
         self.output.show.side_effect = OSError('display unavailable')
         self.assertFalse(self.present())
@@ -121,6 +141,8 @@ class RendererLoopTest(unittest.TestCase):
         screen.getmaxyx.return_value = (38, 137)
         unit = Mock()
         unit.present.return_value = True
+        unit.output.size = (1600, 900)
+        unit.motion.delay.return_value = 0.25
         reader = Mock()
         data = {'version': 1, 'generated_at': 1000, 'counts': {}, 'switches': [],
                 'modules': [{'serial': 'a', 'port': 'One 1'}, {'serial': 'b', 'port': 'Two 1'}]}
@@ -149,6 +171,37 @@ class RendererLoopTest(unittest.TestCase):
         self.assertEqual(inputs[-1]['view'], 'desk')
         unit.close.assert_called_once()
         reader.close.assert_called_once()
+
+    def test_auto_interrupts_a_passport_for_a_new_failure_then_resumes_the_map(self):
+        screen, unit, reader = Mock(), Mock(), Mock()
+        unit.present.return_value = True
+        unit.output.size, unit.motion.delay.return_value = (1600, 900), 0.25
+        now = [0]
+        def snapshot():
+            return dict(version=1, generated_at=now[0], counts={}, switches=[], modules=[
+                dict(serial='A', state='ok', port='rack 1'),
+                dict(serial='B', state='fail' if now[0] >= 16 else 'run', port='rack 2')])
+        reader.poll.side_effect = snapshot
+        moments = iter([5, 10, 15, 16, 17, 20, 21, 26])
+        def getch():
+            following = next(moments, None)
+            if following is None:
+                wallboard.STOP = True
+            else:
+                now[0] = following
+            return -1
+        screen.getch.side_effect = getch
+        with patch.object(wallboard, 'STOP', False), patch.dict(sys.modules, {wallboard.__name__: wallboard}), \
+             patch.object(wallboard.time, 'monotonic', side_effect=lambda: now[0]), \
+             patch.object(wallboard.curses, 'curs_set'), patch.object(wallboard, 'Reader', return_value=reader), \
+             patch.object(wallboard, 'read_config', return_value=dict(wallboard.DEFAULTS, view='auto', rotation=5)), \
+             patch.object(wallboard, 'display_cards', return_value=(None,None)), \
+             patch.object(presentation.Presentation, 'for_console', return_value=unit):
+            wallboard.display(screen)
+        slide = [(c.kwargs['view'], c.kwargs['selected']) for c in unit.present.call_args_list]
+        self.assertEqual(slide[:3], [('tour', 0), ('tour', 1), ('tour', 2)])
+        self.assertEqual(slide[3:7], [('engineer', 0), ('engineer', 1), ('engineer', 1), ('engineer', 1)])
+        self.assertEqual(slide[7][0], 'tour')
 class TerminalOwnershipTest(unittest.TestCase):
     def test_display_user_has_drm_access_only_in_the_sandboxed_service(self):
         unit = (TOOLS.parent / 'debian/cmprovision-wallboard-display.service').read_text()

@@ -1,3 +1,12 @@
+cmprovision4 (2.30.10) trixie; urgency=medium
+
+  * Scroll long port hostnames on graphical HDMI and HyperPixel displays.
+  * Show Ethernet, PoE, learned MACs and discovery details for the selected
+    physical port. Link each device to its hardware, run and diagnostics.
+  * Rotate through device details on HDMI and show newly failed runs promptly.
+
+ -- cmprovision contributors <cmprovision@localhost>  Sat, 21 Nov 2026 16:55:00 +0300
+
 cmprovision4 (2.30.9) trixie; urgency=medium
 
   * Render the HDMI wallboard with the station palette, with a text console

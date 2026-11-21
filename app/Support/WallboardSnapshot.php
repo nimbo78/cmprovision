@@ -33,6 +33,13 @@ class WallboardSnapshot
                 $ports = [];
                 foreach ($block['tiles'] as $tile)
                 {
+                    if ($tile['state'] === 'free' || $tile['link_up'] === false)
+                    {
+                        // A cached station advertisement can outlive its cable.
+                        $tile['server'] = false;
+                        $tile['station'] = null;
+                    }
+                    $tile['neighbors'] = $this->currentNeighbors($tile);
                     $serials = [];
                     if ($tile['filter'] === 'recognized')
                         $recognized[] = $this->recognized($tile);
@@ -42,6 +49,7 @@ class WallboardSnapshot
                     {
                         $serials[] = $cm->serial;
                         $modules[$cm->serial] = $this->module($cm, $tile['label'], $batch?->slow[$cm->id] ?? null);
+                        $modules[$cm->serial]['port_id'] = $tile['key'];
                     }
                     $ports[] = ['name' => $tile['name'], 'number' => $tile['panel_number'] ?? $tile['number'],
                         'state' => $tile['filter'] === 'recognized' ? 'recognized' : ($tile['state'] === 'foreign' ? 'unrecognized' : $tile['state']),
@@ -49,6 +57,7 @@ class WallboardSnapshot
                         // another cmprovision station on the port: its name, address, whether it is the stand's provisioner
                         'station' => $tile['station'] ?? null, 'endpoint' => $this->endpoint($tile, $host),
                         'link_up' => $tile['link_up'], 'speed' => $tile['speed'],
+                        'port_id' => $tile['key'], 'info' => $this->portInfo($tile),
                         'poe_state' => $tile['poe']['state'] ?? null, 'watts' => $tile['poe']['watts'] ?? null];
                 }
                 $blocks[] = ['rows' => $block['rows'], 'label' => $block['label'] ?? ($block['uplinks'] ? 'UPLINK' : 'PORTS'),
@@ -85,6 +94,15 @@ class WallboardSnapshot
                     'os_state' => null, 'registered' => false, 'hardware' => ModuleHardware::fromFacts($row->report['facts'] ?? [])];
 
         $modules = array_values($modules);
+        $ids = array_unique(array_filter(array_column($modules, 'project_id')));
+        $projects = $ids ? Project::whereKey(array_values($ids))->pluck('name', 'id') : collect();
+        foreach ($modules as &$module)
+        {
+            if (isset($module['project_id']))
+                $module['project'] = $projects->get($module['project_id']);
+            unset($module['project_id']);
+        }
+        unset($module);
         $counts = ['done' => 0, 'running' => 0, 'failed' => 0, 'stale' => 0, 'unknown' => 0];
         foreach ($modules as $module)
             $counts[['ok' => 'done', 'run' => 'running', 'fail' => 'failed', 'stale' => 'stale'][$module['state']] ?? 'unknown']++;
@@ -105,9 +123,46 @@ class WallboardSnapshot
             'station' => DisplayStation::current()];
     }
 
+    private function currentNeighbors(array $tile): array
+    {
+        if ($tile['state'] === 'free' || $tile['link_up'] === false)
+            return [];
+        $matched = array_values(array_filter($tile['neighbors'], static function ($neighbor) use ($tile) {
+            $advertised = array_filter([$neighbor['mac'] ?? null, $neighbor['port_mac'] ?? null]);
+            return !$tile['mac_count'] || ($tile['macs'] && (!$advertised || array_intersect($tile['macs'], $advertised)));
+        }));
+        // LLDP may carry the signed boot mark in its port description. The switch map has
+        // already verified it. Both the legacy summary and structured fields use public text.
+        foreach ($matched as &$neighbor)
+            foreach (['name', 'description', 'platform', 'port', 'chassis'] as $key)
+                if (stripos($neighbor[$key] ?? '', 'cmprovision mark ') !== false)
+                    $neighbor[$key] = '';
+        unset($neighbor);
+        return $matched;
+    }
+
+    private function portInfo(array $tile): array
+    {
+        $neighbors = [];
+        foreach (array_slice($tile['neighbors'], 0, 4) as $neighbor)
+        {
+            $fields = array_intersect_key($neighbor, array_flip(['protocol', 'name', 'platform', 'port', 'address', 'chassis', 'mac', 'port_mac']));
+            if (empty($fields['platform']) && !empty($neighbor['description']))
+                $fields['description'] = $neighbor['description'];
+            $public = array_filter($fields, static fn ($value) => is_string($value) && $value !== '');
+            $neighbors[] = array_map(static fn ($value) => mb_substr($value, 0, 128), $public);
+        }
+        return array_filter(['alias' => mb_substr((string) $tile['alias'], 0, 128), 'changed' => $tile['changed'],
+            'media' => $tile['reported_media'] ?? null, 'transceiver' => $tile['transceiver'] ?? null,
+            'poe_class' => $tile['poe']['class'] ?? null, 'mac_count' => $tile['mac_count'],
+            'macs' => array_slice($tile['macs'], 0, 8), 'neighbors' => $neighbors,
+            'neighbor_count' => count($tile['neighbors'])],
+            static fn ($value) => $value !== null && $value !== '' && $value !== []);
+    }
+
     protected function endpoint(array $tile, string $host): ?string
     {
-        if ($tile['state'] === 'free')
+        if ($tile['state'] === 'free' || $tile['link_up'] === false)
             return null; // A lost link can leave the former device in the forwarding table.
         if ($tile['state'] === 'uplink')
             return $tile['server'] ? ($host ?: null) : (($tile['station']['name'] ?? '') ?: $tile['link']);
@@ -120,9 +175,6 @@ class WallboardSnapshot
         $macs = $tile['macs']; // StandMap removed module MACs assigned to another port.
         foreach ($tile['neighbors'] as $neighbor)
         {
-            $advertised = array_filter([$neighbor['mac'] ?? null, $neighbor['port_mac'] ?? null]);
-            if ($tile['mac_count'] && (!$macs || ($advertised && !array_intersect($macs, $advertised))))
-                continue; // An old LLDP neighbor can outlive a cable swap.
             if ($neighbor['name'] !== '')
                 return $neighbor['name'];
             if (!$tile['mac_count'] && isset($neighbor['mac']))
@@ -136,7 +188,8 @@ class WallboardSnapshot
     protected function unknown(array $tile): array
     {
         $says = $tile['neighbors'][0] ?? null;
-        $mac = $tile['macs'][0] ?? null;
+        $matches = $says ? array_intersect(array_filter([$says['mac'] ?? null, $says['port_mac'] ?? null]), $tile['macs']) : [];
+        $mac = $matches ? reset($matches) : (!$says && count($tile['macs']) === 1 ? $tile['macs'][0] : null);
         $maker = $mac ? OuiVendors::name($mac) : null;
         if ($says)
         {
@@ -149,7 +202,7 @@ class WallboardSnapshot
             $name = $maker ?: ($mac ?: 'unknown device');
             $detail = $tile['state'] === 'quiet' ? 'link is up, nothing sent from it' : implode(' / ', array_filter([$maker ? $mac : null]));
         }
-        return ['port' => $tile['label'], 'state' => $tile['state'] === 'quiet' ? 'quiet' : 'unrecognized', 'name' => $name !== '' ? $name : 'unknown device',
+        return ['port' => $tile['label'], 'port_id' => $tile['key'], 'state' => $tile['state'] === 'quiet' ? 'quiet' : 'unrecognized', 'name' => $name !== '' ? $name : 'unknown device',
             'mac' => $mac, 'detail' => $detail, 'says' => (bool) $says];
     }
 
@@ -167,7 +220,8 @@ class WallboardSnapshot
     /* $slow: the seconds the run is past what the finished modules of its batch took (SlowRuns), null when it is not slow */
     protected function module(Cm $cm, string $port, ?int $slow = null): array
     {
-        $end = $cm->provisioning_complete_at ?? ($cm->phase === 'failed' ? $cm->phase_started_at : null) ?? now();
+        $finished = $cm->finishedAt();
+        $end = $finished ?? now();
         $advice = FailureAdvice::for($cm);
         $short = ShortCause::for($cm);
         // A module is named by its host name or its MAC; the serial only identifies the row (it matches the ports)
@@ -176,6 +230,9 @@ class WallboardSnapshot
             'step' => ShortCause::step($cm), 'cause' => $short['cause'] ?? null, 'reason' => $short['reason'] ?? null,
             'code' => $short['code'] ?? null,
             'name' => $cm->displayName(), 'port' => $port, 'hardware' => ModuleHardware::forModule($cm),
+            'project_id' => $cm->project_id, 'image' => $cm->image_filename, 'started_at' => $cm->provisioning_started_at?->getTimestamp(),
+            'started' => $cm->provisioning_started_at?->local()->format('Y-m-d H:i T'),
+            'finished' => $finished?->local()->format('Y-m-d H:i T'),
             'phase' => $cm->usb_prep_at !== null && $cm->phase === 'done' ? 'ready' : $cm->phase, 'state' => StandMap::moduleState($cm), 'detail' => $cm->phase_detail,
             'percent' => $cm->progressPercent(), 'speed' => $cm->bytesPerSecond(), 'eta' => $cm->secondsLeft(),
             'bytes' => $cm->progress_bytes, 'total' => $cm->progress_total,

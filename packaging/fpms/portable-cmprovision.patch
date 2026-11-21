@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..5d8b817
+index 0000000..e3d0bdc
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,572 @@
+@@ -0,0 +1,576 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10257,6 +10257,9 @@ index 0000000..5d8b817
 +    """What pins an open device card to one device: its serial, else its MAC, else its port and name (a silent device
 +    on a port has neither a serial nor a MAC, and its name is the same "unknown device" as the next one's)"""
 +    port = text(row.get("port"))
++    state = row.get("kind") or row.get("state")
++    if row.get("port_id") and not row.get("serial") and state in ("quiet", "recognized", "unrecognized"):
++        return "observed:" + text(row["port_id"]) + ":" + text(row.get("mac") or row.get("name"))
 +    return text(row.get("serial") or row.get("mac") or ((port + " " if port else "") + text(row.get("name"))))
 +
 +
@@ -10533,7 +10536,8 @@ index 0000000..5d8b817
 +                None,
 +            )
 +        rows = objects(self.data.get("modules")) + objects(self.data.get("recognized")) + objects(self.data.get("unknown"))
-+        return next((m for m in rows if identity(m) == pinned), None)
++        matches = [m for m in rows if identity(m) == pinned]
++        return matches[0] if len(matches) == 1 else None
 +
 +    def map_view(self):
 +        """The ports of every switch as the columns of its front panel, in the order of rows(): [{name, answering, first,
@@ -12835,10 +12839,10 @@ index 0000000..b348bf3
 +    return result
 diff --git a/fpms/lite.py b/fpms/lite.py
 new file mode 100644
-index 0000000..ab1b6e1
+index 0000000..143ebc8
 --- /dev/null
 +++ b/fpms/lite.py
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,266 @@
 +"""Compact station menu. No imports from the WLAN Pi application/provider."""
 +
 +import argparse
@@ -12909,19 +12913,22 @@ index 0000000..ab1b6e1
 +            touch = hyperpixel.TouchInput(event, args.rotate)
 +            screen = hyperpixel.DpiScreen.open()
 +            last_key = time.monotonic()
-+            next_frame = next_heartbeat = 0
++            next_frame = next_heartbeat = next_poll = 0
 +            sleeping = False
 +            ready = False
 +            while running():
 +                now = time.monotonic()
-+                panel.refresh()
-+                panel.expire_access()
-+                if FIRST_ADMIN.is_file():
-+                    last_key = now
++                if now >= next_poll:
++                    panel.refresh()
++                    panel.expire_access()
++                    if FIRST_ADMIN.is_file():
++                        last_key = now
++                    next_poll = now + 0.2
 +                idle = panel.should_sleep(now - last_key, args.sleep)
 +                if idle != sleeping:
 +                    sleeping, next_frame = idle, 0
 +                    if sleeping:
++                        menu.motion.begin(None, now, None)
 +                        screen.show(Image.new('RGB', (hyperpixel.SCAN_WIDTH, hyperpixel.SCAN_HEIGHT)))
 +                if not sleeping and now >= next_frame:
 +                    frame = menu.frame()
@@ -12931,12 +12938,14 @@ index 0000000..ab1b6e1
 +                        print("FPMS_DISPLAY_DETECTED HyperPixel 4.0 Touch GT911", flush=True)
 +                        print("FPMS_LITE_READY", flush=True)
 +                        ready, last_error = True, None
++                elif not sleeping and menu.motion.advance(now):
++                    screen.show(hyperpixel.to_scanout(menu.image, args.rotate))
 +                if sleeping and now >= next_heartbeat and not screen.dedicated(screen.card, screen.connector, screen.crtc):
 +                    raise OSError("DPI output changed")
 +                if ready and now >= next_heartbeat:
 +                    heartbeat(True, display=hyperpixel.DISPLAY)
 +                    next_heartbeat = now+3
-+                taps = touch.read(0.2)
++                taps = touch.read(0.2 if sleeping else menu.motion.delay(time.monotonic(), 0.2))
 +                if taps:
 +                    last_key, next_frame = time.monotonic(), 0
 +                    if sleeping:
@@ -16617,7 +16626,7 @@ index 0000000..c62edce
 +of Raspberry Pi OS Lite. Those require booting a clean target image later.
 diff --git a/tools/build-lite-deb.sh b/tools/build-lite-deb.sh
 new file mode 100644
-index 0000000..4b8a382
+index 0000000..2e48c50
 --- /dev/null
 +++ b/tools/build-lite-deb.sh
 @@ -0,0 +1,66 @@
@@ -16635,7 +16644,7 @@ index 0000000..4b8a382
 +for f in __init__.py lite.py modules/__init__.py modules/platform.py modules/gpiochip.py modules/screen/__init__.py modules/screen/screen.py modules/screen/st7735.py modules/screen/st7735_probe.py integrations/__init__.py integrations/cmprovision.py integrations/cmprovision_fonts.py integrations/cmprovision_new.py integrations/cmprovision_classic.py integrations/cmprovision_power.py integrations/cmprovision_rescue.py; do
 +    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
 +done
-+for f in modules/screen/hyperpixel.py integrations/cmprovision_touch.py integrations/cmprovision_touch_style.py integrations/cmprovision_touch_station.py; do
++for f in modules/screen/hyperpixel.py integrations/cmprovision_touch.py integrations/cmprovision_touch_style.py integrations/cmprovision_touch_station.py integrations/display_marquee.py integrations/display_details.py integrations/cmprovision_touch_details.py; do
 +    install -m 644 "$ROOT/fpms/$f" "$DEST/usr/lib/fpms-lite/fpms/$f"
 +done
 +install -m 644 "$ROOT/LICENSE" "$DEST/usr/share/doc/fpms-lite/copyright"
@@ -17085,23 +17094,26 @@ index 0000000..922834a
 +    /bin/sh "$0" --inside "$mode" "$root" "$source"
 diff --git a/fpms/integrations/cmprovision_touch.py b/fpms/integrations/cmprovision_touch.py
 new file mode 100644
-index 0000000..fe6007d
+index 0000000..83bdc08
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_touch.py
-@@ -0,0 +1,880 @@
+@@ -0,0 +1,836 @@
 +"""Native landscape station menu for the rectangular HyperPixel 4.0 Touch."""
 +
 +import ipaddress
 +import re
++import time
 +
 +from PIL import Image, ImageDraw
 +
 +from . import cmprovision_classic as classic
 +from . import cmprovision_new as compact
 +from . import cmprovision_touch_station as station_view
++from . import cmprovision_touch_details as cards
 +from .cmprovision import PAGES, first_admin_projection, hardware_lines, identity, number, objects, text
 +from .cmprovision_power import COLOR_MODES, SCREEN_TIMEOUTS, timeout_label
 +from .cmprovision_touch_style import DARK, LIGHT, brand, centered, fit, font, icon, icon_caption, wrap
++from .display_marquee import Marquee
 +
 +
 +COUNTERS = (
@@ -17151,8 +17163,12 @@ index 0000000..fe6007d
 +        self.filter_state = None
 +        self.port_mode = "map"
 +        self.history = []
++        self.section = None
++        self.bound_port = None
++        self.rendered_ports = {}
 +        self.targets = []
 +        self.presented = None
++        self.motion = Marquee()
 +
 +    def state(self):
 +        p = self.panel
@@ -17171,8 +17187,10 @@ index 0000000..fe6007d
 +            rescue.stage if rescue and rescue.open else None,
 +        )
 +
-+    def label(self, x, y, value, size=20, color="fg", width=730, weight="regular"):
++    def label(self, x, y, value, size=20, color="fg", width=730, weight="regular", *, hostname=False):
 +        face = font(size, weight)
++        if hostname and self.motion.label((x, y), text(value), face, self.c[color], width):
++            return
 +        self.draw.text((x, y), fit(value, face, width), font=face, fill=self.c[color], anchor="lt")
 +
 +    def mark(self, x, y, name, size, color="muted"):
@@ -17236,8 +17254,8 @@ index 0000000..fe6007d
 +        self.draw.rounded_rectangle(box, radius=7, fill=self.c[fill])
 +        centered(self.draw, box, caption, face, self.c[color])
 +
-+    def title(self, value, aside=""):
-+        self.label(24, 77, value, 32, width=465, weight="bold")
++    def title(self, value, aside="", *, hostname=False):
++        self.label(24, 77, value, 32, width=465, weight="bold", hostname=hostname)
 +        if aside:
 +            self.label(495, 88, aside, 16, "muted", 278)
 +
@@ -17258,6 +17276,15 @@ index 0000000..fe6007d
 +        if self.offset < last:
 +            self.button((left + 180, 355, left + 265, 401), "Next", ("offset", self.offset + step))
 +
++    def position(self):
++        p = self.panel
++        return (p.page, p.detail, self.offset, self.filter_state, self.section, self.bound_port)
++
++    def port_row(self):
++        if self.bound_port:
++            return next((r for r in self.panel.rows() if r.get("port_id") == self.bound_port), None)
++        return self.panel.detail_row()
++
 +    def tap(self, x, y):
 +        if self.state() != self.presented:
 +            return
@@ -17271,16 +17298,17 @@ index 0000000..fe6007d
 +                p.page, p.index, p.detail, p.scroll, self.offset = value, 0, None, 0, 0
 +                self.filter_state, self.port_mode = None, "map"
 +                self.history.clear()
++                self.section = self.bound_port = None
 +            elif kind == "offset":
 +                self.offset = value
 +            elif kind == "key":
 +                modal = any(self.presented[i] for i in (3, 6, 7))
 +                p.key(value)
 +                if value == "KEY2" and not modal and self.history:
-+                    p.page, p.detail, self.offset, self.filter_state = self.history.pop()
++                    p.page, p.detail, self.offset, self.filter_state, self.section, self.bound_port = self.history.pop()
 +                    p.scroll = 0
 +            elif kind in ("filter", "health"):
-+                self.history.append((p.page, p.detail, self.offset, self.filter_state))
++                self.history.append(self.position())
 +                if kind == "filter":
 +                    p.page, p.detail, self.filter_state = 2, None, value
 +                else:
@@ -17290,28 +17318,34 @@ index 0000000..fe6007d
 +                self.port_mode, self.offset = value, 0
 +            elif kind == "rescue" and p.rescue_available():
 +                p.rescue_menu.show()
++            elif kind == "section" and p.detail and p.detail[0] == "port" and self.port_row():
++                self.history.append(self.position())
++                self.section, self.offset = value, 0
++            elif kind == "tab":
++                self.section, self.offset = value, 0
 +            elif kind == "port_device":
-+                row = p.detail_row()
-+                device = self.port_device(row) if row else None
-+                if device and identity(device) == value:
-+                    self.history.append((p.page, p.detail, self.offset, self.filter_state))
-+                    p.detail, p.scroll, self.offset = ("module", value), 0, 0
++                row = self.port_row()
++                if row and any(identity(d) == value for d in self.port_devices(row)):
++                    self.history.append(self.position())
++                    p.detail, p.scroll, self.offset, self.section = ("module", value), 0, 0, None
 +            elif kind in ("row", "device"):
-+                previous = (p.page, p.detail, self.offset, self.filter_state)
++                previous = self.position()
 +                if kind == "device":
 +                    p.page = 2
 +                for index, row in enumerate(p.rows()):
 +                    key = (row.get("pin") or row.get("name")) if p.page == 1 else identity(row)
-+                    if key == value:
++                    expected = self.rendered_ports.get(value) if p.page == 1 else None
++                    if (row.get("port_id") == expected if expected else key == value):
 +                        if self.filter_state and row.get("state") != self.filter_state:
 +                            break
 +                        p.index = index
 +                        if p.page == 1:
-+                            p.detail, p.scroll = ("port", value), 0
++                            p.detail, p.scroll = ("port", key), 0
++                            self.bound_port = row.get("port_id")
 +                        else:
 +                            p.key("CENTER")
 +                        self.history.append(previous)
-+                        self.offset = 0
++                        self.offset, self.section = 0, None
 +                        break
 +                else:
 +                    p.page = previous[0]
@@ -17326,7 +17360,7 @@ index 0000000..fe6007d
 +                p.key("CENTER")
 +            return
 +
-+    def frame(self):
++    def frame(self, now=None):
 +        p = self.panel
 +        self.presented = self.state()
 +        _, detail, theme, setup, _, _, power, rescue = self.presented
@@ -17345,13 +17379,15 @@ index 0000000..fe6007d
 +                line=palette["line"],
 +            )
 +        self.image = Image.new("RGB", (800, 480), self.c["bg"])
++        self.motion.begin(self.image, time.monotonic() if now is None else now,
++                          (p.page, detail, self.section, self.port_mode, self.offset, self.filter_state, setup, power, rescue))
 +        self.draw = ImageDraw.Draw(self.image)
 +        self.draw.rectangle((0, 0, 799, 55), fill=self.c["surface"])
 +        self.draw.line((0, 55, 799, 55), fill=self.c["line"])
 +        self.logo(16, 7, 42)
 +        self.label(69, 19, "cmprovision", 20, width=132, weight="bold")
 +        self.draw.line((200, 17, 200, 38), fill=self.c["line"])
-+        self.label(215, 19, p.data.get("host") or "Station", 16, "muted", 274, "mono")
++        self.label(215, 19, p.data.get("host") or "Station", 16, "muted", 274, "mono", hostname=True)
 +        modal = setup or power or rescue
 +        if modal or detail or self.history:
 +            if not setup or rescue:
@@ -17414,6 +17450,7 @@ index 0000000..fe6007d
 +            20,
 +            width=right - x - 145,
 +            weight="bold",
++            hostname=True,
 +        )
 +        self.label(x + 16, y + 34, compact.short_port(row) or row.get("mac"), 15, "muted", right - x - 156)
 +        self.badge(right - 24, y + 13, word, key)
@@ -17477,6 +17514,7 @@ index 0000000..fe6007d
 +                16,
 +                width=badge_x - 452,
 +                weight="mono",
++                hostname=True,
 +            )
 +            self.pill(badge_x, y + 11, caption, "muted" if color == "dim" else color)
 +            self.mark(761, y + 16, "next", 14)
@@ -17523,6 +17561,8 @@ index 0000000..fe6007d
 +        return result
 +
 +    def port_identity(self, row):
++        if row.get("state") == "free" or (row.get("link_up") is False and not row.get("serials")):
++            return "No device identified", "", "muted", None
 +        station = row.get("station") if isinstance(row.get("station"), dict) else {}
 +        if row.get("server"):
 +            return text(self.panel.data.get("host")) or "This station", "This station", "accent", None
@@ -17542,11 +17582,12 @@ index 0000000..fe6007d
 +                ("muted" if ink == "dim" else ink),
 +                device,
 +            )
-+        return "No device identified", "", "muted", None
++        return text(row.get("endpoint")) or "No device identified", "", "muted", None
 +
 +    def ports(self):
 +        p = self.panel
 +        rows = p.rows()
++        self.rendered_ports = {row.get("pin"): row["port_id"] for row in rows if row.get("port_id")}
 +        connected = self.connected_ports(rows)
 +        switches = objects(p.data.get("switches"), 64)
 +        self.label(19, 76, "Ports", 30, width=330, weight="bold")
@@ -17625,10 +17666,10 @@ index 0000000..fe6007d
 +        self.draw.rounded_rectangle(box, 8, fill=self.c[bg], outline=self.c[edge])
 +        name = text(row.get("number")) or text(row.get("portname")).rsplit("/", 1)[-1]
 +        self.label(x + 5, y + 6, name, 17, "accent" if local else "fg", width - 9, "mono")
++        device_name, _, ink, device = self.port_identity(row)
 +        if local or peer:
 +            self.logo(right - 23, y + 2, 22, peer)
 +        elif width >= 72:
-+            _, _, ink, device = self.port_identity(row)
 +            if device:
 +                tail = text(device.get("mac")).replace(":", "")[-4:].upper()
 +                if tail:
@@ -17642,9 +17683,20 @@ index 0000000..fe6007d
 +                        )
 +                    self.label(right - 36, y + 9, tail, 12, ink, 35, "mono")
 +        link, _, link_ink = port_link(row)
++        endpoint = text(row.get("endpoint")) or (device_name if device or local or peer else "")
++        if endpoint:
++            label_width = width - 10
++            first, separator, count = endpoint.rpartition(" +")
++            if separator and count.isdecimal():
++                tail = "+" + count
++                tail_width = min(label_width // 2, round(font(12, "bold").getlength(tail)) + 1)
++                self.label(right - 4 - tail_width, y + 22, tail, 12, "muted", tail_width, "bold")
++                label_width -= tail_width + 3
++                endpoint = first
++            self.label(x + 5, y + 22, endpoint, 14, width=label_width, weight="mono", hostname=True)
 +        for dy, label, ink, symbol in (
-+            (31, link, link_ink, "Ports" if row.get("link_up") is True else "down"),
-+            (54, power, "warn" if power_ink == "good" else power_ink, "bolt"),
++            (39, link, link_ink, "Ports" if row.get("link_up") is True else "down"),
++            (58, power, "warn" if power_ink == "good" else power_ink, "bolt"),
 +        ):
 +            if width >= 62:
 +                caption = fit(label, font(15, "bold"), width - 25)
@@ -17674,7 +17726,7 @@ index 0000000..fe6007d
 +            self.label(31, y + 10, row["portname"], 16, width=96, weight="mono")
 +            if multiple:
 +                self.label(31, y + 34, row["name"].rsplit(" ", 1)[0], 13, "muted", 96)
-+            self.label(132, y + 9, name, 18, width=368, weight="mono")
++            self.label(132, y + 9, name, 18, width=368, weight="mono", hostname=True)
 +            if role:
 +                self.label(133, y + 33, role, 14, ink, 360, "bold")
 +            link, _, lk = port_link(row)
@@ -17689,131 +17741,44 @@ index 0000000..fe6007d
 +    def station(self):
 +        station_view.show(self)
 +
-+    def port_device(self, port):
-+        serials = port.get("serials")
-+        if isinstance(serials, list) and serials:
-+            return next((d for d in self.modules() if d.get("serial") in serials), None)
++    def port_devices(self, port):
++        serials = port.get("serials") or []
++        if serials:
++            assigned = {d.get("serial"): d for d in self.modules() if d.get("serial") in serials}
++            return [assigned[s] for s in serials if s in assigned]
 +        others = objects(self.panel.data.get("recognized")) + objects(self.panel.data.get("unknown"))
-+        return next((d for d in others if port.get("name") == d.get("port")), None)
++        return [d for d in others if (port.get("port_id") == d["port_id"] if d.get("port_id")
++                else port.get("name") == d.get("port") and self.observed_port(d))]
 +
-+    def port_detail(self, row):
-+        p = self.panel
-+        switch_index = int(row["pin"].partition(":")[0])
-+        switch = p.map_view()[switch_index]
-+        self.label(20, 76, row.get("portname") or row.get("name"), 30, width=400, weight="bold")
-+        self.label(21, 111, switch["name"], 15, "muted", 740)
-+        if not switch["answering"]:
-+            self.label(34, 165, "Switch not responding", 22, "warn")
-+            return
-+        link, link_detail, link_ink = port_link(row)
-+        power, power_detail, power_ink = port_power(row)
-+        for left, right, title, symbol, value, detail, ink in (
-+            (18, 392, "Ethernet link", "Ports", link, link_detail, link_ink),
-+            (
-+                402,
-+                781,
-+                "PoE power",
-+                "bolt",
-+                power,
-+                power_detail,
-+                "warn" if power_ink == "good" else power_ink,
-+            ),
-+        ):
-+            self.card((left, 139, right, 263))
-+            self.mark(left + 16, 155, symbol, 20, ink)
-+            self.label(left + 44, 158, title, 17, "muted", right - left - 58, "bold")
-+            self.label(left + 16, 186, value, 27, ink, right - left - 28, "bold")
-+            self.label(left + 16, 234, detail, 16, "muted", right - left - 28)
-+        self.card((18, 276, 781, 392))
-+        name, role, ink, device = self.port_identity(row)
-+        is_station = row.get("server") or isinstance(row.get("station"), dict)
-+        if is_station:
-+            self.logo(33, 306, 40, not row.get("server"))
-+        else:
-+            self.mark(40, 312, "Devices", 27)
-+        self.label(87, 289, "Connected device", 15, "muted", 365, "bold")
-+        self.label(87, 315, name, 22, width=505, weight="mono" if device or is_station else "bold")
-+        info = row.get("station") if isinstance(row.get("station"), dict) else {}
-+        description = (
-+            text(device.get("mac"))
-+            if device
-+            else " · ".join(text(info.get(k)) for k in ("address", "version") if text(info.get(k)))
-+        )
-+        if description:
-+            self.label(87, 354, description, 16, "muted", 581)
-+        if role:
-+            self.pill(749 - self.pill_width(role), 300, role, ink)
-+        if device:
-+            self.mark(755, 326, "next", 16)
-+            self.targets.append(((18, 276, 781, 392), ("port_device", identity(device))))
++    def port_device(self, port):
++        return next(iter(self.port_devices(port)), None)
++
++    def observed_port(self, device):
++        matches = []
++        for switch in objects(self.panel.data.get("switches")):
++            for block in objects(switch.get("blocks")):
++                for port in objects(block.get("ports")):
++                    if device.get("port_id"):
++                        if port.get("port_id") == device["port_id"]:
++                            return port
++                    elif device.get("port") == text(switch.get("name"))+" "+text(port.get("name")):
++                        matches.append(port)
++        return matches[0] if len(matches) == 1 else {}
 +
 +    def details(self):
 +        p = self.panel
-+        row = p.detail_row()
 +        is_port = p.detail[0] == "port"
++        row = self.port_row() if is_port else p.detail_row()
 +        if row is None:
 +            kind = "Port" if is_port else "Device"
 +            self.title(kind + " details")
 +            self.label(25, 167, kind + " is no longer present", 23, "muted")
-+            return
-+        if is_port:
-+            self.port_detail(row)
-+            return
-+        self.title(row.get("hostname") or row.get("name") or identity(row))
-+        self.card((20, 128, 370, 344))
-+        self.card((383, 128, 779, 344))
-+        key, word = compact.STATE.get(text(row.get("state")), ("muted", "UNKNOWN"))
-+        self.label(40, 150, "Provisioning", 17, "muted")
-+        self.badge(349, 145, word, "muted" if key == "dim" else key)
-+        facts = [
-+            ("Port", compact.short_port(row)),
-+            ("MAC", text(row.get("mac"))),
-+            ("Serial", text(row.get("serial"))),
-+        ]
-+        cycle = number(row.get("cycle"), None)
-+        if cycle is not None and cycle >= 0:
-+            mins, secs = divmod(int(cycle), 60)
-+            facts.append(("Cycle", f"{mins}:{secs:02d}"))
-+        elif row.get("cycle"):
-+            facts.append(("Cycle", text(row["cycle"])))
-+        right_title = "Hardware & diagnostics"
-+        lines = hardware_lines(row)
-+        diag = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
-+        issues = objects(diag.get("issues"), 8)
-+        extra = [row.get("reason"), row.get("cause"), row.get("detail"), row.get("advice")]
-+        if row.get("code"):
-+            extra.append("Code " + text(row["code"]))
-+        for issue in issues:
-+            extra.extend((issue.get("title"), issue.get("advice")))
-+        if row.get("flashed_by"):
-+            extra.append("Flashed by " + text(row["flashed_by"]))
-+        details = list(dict.fromkeys(text(v) for v in extra if text(v)))
-+        lines = (details + lines if word in ("FAILED", "SILENT") else lines + details) or [
-+            "No hardware report yet"
-+        ]
-+        if row.get("state") == "run" and number(row.get("percent"), None) is not None:
-+            frac = max(0, min(100, number(row["percent"])))
-+            self.label(40, 314, f"{int(frac)}%", 15, "run")
-+            self.draw.rounded_rectangle((96, 320, 347, 325), 3, fill=self.c["line"])
-+            if frac:
-+                self.draw.rounded_rectangle(
-+                    (96, 320, 96 + round(frac * 2.51), 325), 3, fill=self.c["run"]
-+                )
-+        for i, (label, value) in enumerate((v for v in facts if v[1])):
-+            y = 194 + i * 30
-+            self.label(40, y, label, 16, "muted", 76)
-+            self.label(
-+                117, y, value, 16, width=232, weight="mono" if label in ("Serial", "MAC") else "bold"
-+            )
-+        self.label(403, 147, right_title, 19, width=352, weight="bold")
-+        wrapped = [line for value in lines for line in wrap(value, font(18), 348)]
-+        self.pager(len(wrapped), 5)
-+        for i, line in enumerate(wrapped[self.offset : self.offset + 5]):
-+            self.label(403, 190 + i * 28, line, 18, width=351)
-+        if self.history:
-+            page, detail, _, _ = self.history[-1]
-+            self.label(24, 372, "Back to " + ("port" if detail else PAGES[page]), 16, "muted", 308)
-+            self.targets.append(((20, 352, 326, 402), ("key", "KEY2")))
++        elif is_port:
++            index = int(row["pin"].partition(":")[0])
++            switch = objects(p.data.get("switches"))[index]
++            cards.port(self, row, switch, port_link(row), port_power(row))
++        else:
++            cards.device(self, row)
 +
 +    def system(self, stage):
 +        menu = self.panel.power_menu
@@ -18250,10 +18215,10 @@ index 0000000..a29b239
 +            self.buffers.clear()
 diff --git a/tests/test_hyperpixel.py b/tests/test_hyperpixel.py
 new file mode 100755
-index 0000000..e9e8ce7
+index 0000000..86e04f3
 --- /dev/null
 +++ b/tests/test_hyperpixel.py
-@@ -0,0 +1,613 @@
+@@ -0,0 +1,712 @@
 +from types import SimpleNamespace
 +import pytest
 +from PIL import Image, ImageDraw
@@ -18360,6 +18325,41 @@ index 0000000..e9e8ce7
 +    panel.data["modules"] = []
 +    select(("row", "bbb"))
 +    assert panel.detail is None
++
++
++@pytest.mark.parametrize("view", ["map", "list", "card"])
++def test_long_hostname_moves_but_port_power_and_link_stay_fixed(tmp_path, monkeypatch, view):
++    import time
++    now = [0.0]
++    monkeypatch.setattr(time, "monotonic", lambda: now[0])
++    p = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    p.enabled, p.age, p.page = True, 1, 1
++    name = "wlanpi-warehouse-east-floor03-rack12-radio-sensor-a17"
++    port = dict(name="Gi0/1", number=1, state="module", serials=["aaa"], endpoint=name,
++                link_up=True, speed=1000, poe_state="delivering", watts=6.5)
++    p.data = dict(modules=[dict(serial="aaa", name=name, mac="02:00:00:00:00:01", state="ok")],
++                  switches=[dict(name="switch", answering=True, blocks=[dict(rows=1, ports=[port])])])
++    menu = TouchMenu(p)
++    if view == "card":
++        p.detail = ("port", "0:Gi0/1")
++    elif view == "list":
++        menu.port_mode = "list"
++    menu.frame()
++    now[0] = 3.0
++    a = menu.frame().copy()
++    now[0] += 0.08
++    assert menu.motion.advance(now[0])
++    b = menu.image
++    from PIL import ImageChops
++    changed = ImageChops.difference(a, b).getbbox()
++    assert changed, "Overflowing device names must advance between ordinary data refreshes"
++    if view == "map":
++        x, y, right, _ = next(box for box, action in menu.targets if action == ("row", "0:Gi0/1"))
++        lane = (x+4, y+20, right-3, y+40)
++    else:
++        lane = {"list": (132,176,501,201), "card": (36,263,607,294)}[view]
++    assert lane[0] <= changed[0] < changed[2] <= lane[2]
++    assert lane[1] <= changed[1] < changed[3] <= lane[3]
 +
 +
 +def test_heartbeat_never_exports_input_or_graphics_paths(tmp_path):
@@ -18535,6 +18535,70 @@ index 0000000..e9e8ce7
 +        (None, 1.8, "1.8 W"),
 +    ]:
 +        assert port_power({"poe_state": state, "watts": watts})[0] == short
++
++
++def test_quiet_neighbors_on_identically_named_switches_keep_their_physical_identity(tmp_path):
++    from fpms.integrations.cmprovision import identity
++    p = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    p.enabled, p.age, p.page = True, 1, 1
++    def switch(key):
++        return dict(name="duplicate", blocks=[dict(rows=1, ports=[
++            dict(name="Gi0/1", port_id=key, state="quiet", link_up=True)])])
++    neighbors = [dict(port_id=k, port="duplicate Gi0/1", name="unknown device", state="quiet") for k in ("a","b")]
++    p.data = dict(switches=[switch("a"),switch("b")], unknown=neighbors)
++    menu = TouchMenu(p)
++    def tap(action):
++        box = next(box for box, a in menu.targets if a == action)
++        menu.tap((box[0]+box[2])//2, (box[1]+box[3])//2)
++        menu.frame()
++    p.detail = ("port","1:Gi0/1")
++    menu.frame()
++    tap(("port_device",identity(neighbors[1])))
++    assert p.detail_row()["port_id"] == "b"
++    tap(("page", 3))
++    tap(("row", identity(neighbors[1])))
++    assert p.detail_row()["port_id"] == "b"
++    p.data["unknown"].pop()
++    assert p.detail_row() is None
++
++
++def test_legacy_duplicate_switch_and_port_names_do_not_offer_either_neighbor(tmp_path):
++    p = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    switch = dict(name="rack", blocks=[dict(rows=1, ports=[dict(name="Gi0/1", state="unrecognized", link_up=True)])])
++    p.data = dict(switches=[switch,switch], unknown=[
++        dict(port="rack Gi0/1", name="ap", state="unrecognized", mac=mac) for mac in ("aa","bb")])
++    p.page = 1
++    menu = TouchMenu(p)
++    assert all(menu.port_devices(port) == [] for port in p.rows())
++
++
++def test_choose_each_module_review_its_run_and_return_to_same_port(tmp_path, monkeypatch):
++    p = Panel(tmp_path / "config", tmp_path / "snapshot", can_leave=False)
++    p.enabled, p.age, p.page = True, 1, 1
++    port = dict(name="Gi0/1", port_id="9:3", serials=["a", "b"], link_up=True, speed=1000)
++    p.data = dict(switches=[dict(name="sw", serial="CAT-42", blocks=[dict(rows=1, ports=[port])])],
++                  modules=[dict(serial=s, name=s, state="ok", phase="done", image=s+".img") for s in ("a", "b")])
++    menu, shown = TouchMenu(p), []
++    monkeypatch.setattr(menu, "label", lambda x, y, value, *a, **kw: shown.append(value))
++    def tap(action):
++        (l, t, r, b) = next(box for box, item in menu.targets if item == action)
++        menu.tap((l+r)//2, (t+b)//2)
++        shown.clear()
++        menu.frame()
++    menu.frame()
++    tap(("row", "0:Gi0/1"))
++    tap(("section", "physical"))
++    assert "CAT-42" in shown
++    tap(("key", "KEY2"))
++    tap(("section", "members"))
++    tap(("port_device", "b"))
++    tap(("tab", "Run"))
++    assert "b.img" in shown and "a.img" not in shown
++    tap(("tab", "Diagnostics"))
++    assert "No diagnostic report yet" in shown
++    tap(("key", "KEY2"))
++    assert p.detail == ("port", "0:Gi0/1")
++    assert ("port_device", "a") in [v for _, v in menu.targets]
 +
 +
 +@pytest.mark.parametrize("theme", ["classic", "new"])

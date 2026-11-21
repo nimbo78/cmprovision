@@ -40,6 +40,7 @@ For a new station image with the panel enabled on its first boot, select the
 
 - **Overview** shows four batch counters and six devices at a time. Tap a counter to filter by status or a row to open a device. The arrows page through the stand. **Back** returns to the same list and page.
 - **Ports** opens on the physical map. **Connected** lists names, Ethernet link and PoE separately, including a powered port with no carrier. Watts or `On` indicate delivered power, `Idle` means waiting for a device, `Off` means disabled and `?` means no reading. Tap a port and then its device name for diagnostics.
+  An overflowing hostname scrolls within its row on the map, in the list and in port details. It pauses at both ends so you can read the prefix and suffix. A short name stays still.
 - Open **Devices** and tap a name for diagnostics. **Errors** brings failed, silent and unrecognized devices into one list.
 - **Station** shows the management network, address, Wi-Fi RSSI and transmit link rate, or Ethernet speed. In **Station health**, each stopped service has a red badge with its name. Services disabled by configuration have neutral badges. Tap the strip for details, or tap the active rescue AP badge for its Wi-Fi QR.
 - **System** groups appearance and screen timeout under **Display** and separates the station power controls.
@@ -47,6 +48,14 @@ For a new station image with the panel enabled on its first boot, select the
 HyperPixel uses a dedicated DPI overlay. If HDMI mirrors the same display pipeline or no overlay plane is free, FPMS waits. The station and device data come from the same snapshot as the HDMI wallboard. [Pimoroni display setup](https://github.com/pimoroni/hyperpixel4)
 
 On `wlanpi-d62` the matched controller provided three physical calibration points. After a normal reboot on 19 November 2026, FPMS identified the GT911, opened the landscape menu and resumed receiving live station and switch data.
+
+### Inspect a port or device
+
+Tap a port on the map or the connected list. **Port info** opens the Ethernet and PoE readings, chassis serial, connector and learned MACs. LLDP/CDP neighbors can provide a platform, remote interface and management address. If several modules share a port, **Choose device** lists them individually.
+
+**Device details** opens **Overview** with MAC, serial and reported hardware. **Run** shows the project and image associated with that run, progress, transfer rate and OS check. **Diagnostics** identifies the saved report by source and age and shows findings and next steps. For a sensor verified by another station, the card shows who flashed it and the signed boot count. **Back** returns to your selection.
+
+![HyperPixel port card for Gi0/3 showing the sensor, Ethernet speed, PoE draw and the button for device details.](assets/guides/hyperpixel-port-device.png)
 
 ## Waveshare controls
 

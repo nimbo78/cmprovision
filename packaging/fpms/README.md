@@ -1,7 +1,7 @@
 # FPMS builds for cmprovision
 
 The supported `fpms-lite` profile uses WLAN-Pi/wlanpi-fpms at
-`8beeba40a0f9d4f8045ac556a5b0780a1ce9028e` plus `portable-cmprovision.patch`.
+`8beeba40a0f9d4f8045ac556a5b0780a1ce9028e` plus `portable-cmprovision.patch`, the shared hostname and card helpers in `tools/display_*.py`, and the HyperPixel card layout. The build records their SHA256 digests in `fpms-patch.sha256` for verification from the cmprovision repository root.
 The patch contains the portable GPIO discovery, unchanged ST7735 driving logic,
 shared cmprovision panel, full-menu adapter, Lite entry point, tests and packaging.
 Upstream's BSD-3-Clause license and authorship are retained, including in the Lite package.

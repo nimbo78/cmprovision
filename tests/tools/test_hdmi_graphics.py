@@ -68,7 +68,7 @@ class GraphicsTest(unittest.TestCase):
         import hdmi_graphics
         self.graphics = hdmi_graphics
 
-    def draw(self, data=None, size=(1600, 900), **options):
+    def draw(self, data=None, size=(1600, 900), now=102, **options):
         # Record the final text and coordinates after clipping. Both cached masks
         # and native text still paint the actual image checked by the pixel tests.
         items = []
@@ -77,7 +77,7 @@ class GraphicsTest(unittest.TestCase):
             items.append((value, xy))
             return original(painter, xy, value, *args, **kwargs)
         with patch.object(self.graphics.Painter, "paint_label", record):
-            frame = self.graphics.render_frame(board, example() if data is None else data, size, now=102, **options)
+            frame = self.graphics.render_frame(board, example() if data is None else data, size, now=now, **options)
         self.assertIsInstance(frame, Image.Image)
         self.assertEqual((frame.mode, frame.size), ("RGB", size))
         return frame, items
@@ -138,6 +138,33 @@ class GraphicsTest(unittest.TestCase):
                 else:
                     self.assertTrue(any("Full switch map" in word for word in labels))
                     self.assertEqual("Devices on the stand" in labels, offset == 1)
+
+    def test_short_automatic_slides_reveal_the_end_of_a_64_character_port_name(self):
+        east, west = catalyst(48, name="east"), catalyst(48, name="west")
+        name = "cm-" + "a" * 57 + "-b29"
+        east["blocks"][0]["ports"][0]["endpoint"] = name
+        data = example()
+        data.update(switches=[east, west], modules=[], recognized=[], unknown=[])
+        motion = self.graphics.Marquee()
+
+        def draw(tick, at, offset=0):
+            self.graphics.render_frame(board, data, (1600, 900), view="map", tick=tick, switch_offset=offset,
+                                       now=100, motion=motion, monotonic=at)
+            return next((lane for key, lane in motion.lanes.items() if name in key), None)
+
+        lane = draw(0, 0)
+        distance = lane.mask.width - lane.background.width
+        end = 1.5 + distance / lane.speed + .25
+        self.assertGreater(end, 10)
+        visit = 0
+        while (visit + 1) * 5 < end:
+            self.assertIsNone(draw(2 * visit + 1, 10 * visit + 5))
+            visit += 1
+            lane = draw(2 * visit, 10 * visit)
+            self.assertGreater(lane.offset, 0, "Repeated slides must continue past the prefix")
+        motion.advance(10 * visit + end - 5 * visit)
+        self.assertEqual(lane.offset, distance)
+        self.assertEqual(draw(2 * visit, 10 * visit + 5, offset=2).offset, 0)
 
     def test_auto_uses_current_switch_and_keeps_failure_diagnostics_and_saved_data(self):
         data = example()
@@ -277,27 +304,45 @@ class GraphicsTest(unittest.TestCase):
         data = example()
         ports = [port(i, endpoint=("west-assembly-cell-" * 5 + " +12") if i == 41 else None) for i in range(41, 57)]
         data["switches"] = [switch("assembly", bank("Copper", 2, ports))]
-        _, items = self.draw(data, view="desk")
+        first, items = self.draw(data, now=0, view="desk")
+        moving, _ = self.draw(data, now=4, view="desk")
         positions = dict(items)
         x, y = positions["41"]
         other_x = positions["43"][0]
         other_y = positions["42"][1]
         tail = [(word, xy) for word, xy in items if x <= xy[0] < other_x and y < xy[1] < other_y]
         self.assertTrue(any(word == "+12" for word, _ in tail))
-        self.assertTrue(any("…" in word for word, _ in tail))
+        count_x, count_y = positions["+12"]
+        badge = (count_x-20, count_y-7, count_x+1, count_y+7)
+        name = (x, count_y-7, count_x-24, count_y+7)
+        self.assertTrue(first.crop(name).tobytes() != moving.crop(name).tobytes())
+        self.assertEqual(first.crop(badge).tobytes(), moving.crop(badge).tobytes())
+
+    def test_overflowing_hostname_moves_by_pixels_and_keeps_the_other_device_badge_fixed(self):
+        def tile(at):
+            p = self.graphics.Painter((1600, 900), "warm", at)
+            self.graphics.endpoint_label(p, 20, 30, "wlanpi-warehouse-rack12-sensor-a17 +3", 106, "fg")
+            return p.image.crop((20, 16, 126, 44))
+
+        a, b = tile(3.00), tile(3.08)
+        self.assertTrue(a.tobytes() != b.tobytes())
+        self.assertEqual(a.crop((88,0,106,28)).tobytes(), b.crop((88,0,106,28)).tobytes())
+        self.assertTrue(any(a.crop((8+dx,0,75+dx,28)).tobytes() == b.crop((8,0,75,28)).tobytes()
+                            for dx in (1,2,3)), "The same glyphs should advance by pixels within their lane")
 
     def test_dense_bank_keeps_measured_watts_and_unknown_identity_readable(self):
         ports = [port(i, link_up=True, speed=1000, poe_state="delivering", watts=23.7) for i in range(21, 41)]
         ports[0]["endpoint"] = "west-repair-station"
         data = {"switches": [switch("assembly", bank("Copper", 2, ports))]}
-        _, items = self.draw(data, view="desk")
+        first, items = self.draw(data, now=0, view="desk")
+        moving, _ = self.draw(data, now=3, view="desk")
         labels = [word for word, _ in items]
         self.assertEqual(labels.count("23.7 W"), 20)
         self.assertEqual(labels.count("No ID"), 19)
         x, y = dict(items)["21"]
         lower = dict(items)["22"][1]
-        endpoint = next(word for word, (px, py) in items if px == x and y < py < lower)
-        self.assertIn("…", endpoint, "A clipped hostname should stay visibly incomplete at either end of its scroll.")
+        name_row = (x, y+9, dict(items)["23"][0]-12, lower-10)
+        self.assertTrue(first.crop(name_row).tobytes() != moving.crop(name_row).tobytes())
 
     def test_station_hostnames_fit_an_eight_column_faceplate_without_scrolling(self):
         ports = [port(i) for i in range(21, 37)]

@@ -9,6 +9,9 @@ from pathlib import Path
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from hdmi_port_info import link_reading, port_endpoint, power_reading
+from display_marquee import Marquee
+import display_details as details
+from hdmi_rotation import passports
 
 
 PUBLIC = Path(__file__).resolve().parent.parent / "public"
@@ -156,7 +159,7 @@ def icon(name, px):
 
 class Painter:
     """A 900-unit-high workspace; ultrawide displays gain columns at the same reading distance."""
-    def __init__(self, size, palette, now, cache_text=True):
+    def __init__(self, size, palette, now, cache_text=True, *, motion=None, monotonic=None, scene=None, slide=0):
         self.scale = min(size[0]/1536, size[1]/900)
         self.w, self.h = (value/self.scale for value in size)
         self.light = palette.endswith("-light")
@@ -168,6 +171,9 @@ class Painter:
         self.draw = ImageDraw.Draw(self.image)
         self.now = now
         self.cache_text = cache_text
+        self.motion = motion if motion is not None else Marquee()
+        self.motion.begin(self.image, now if monotonic is None else monotonic, scene,
+                          start=0 if motion is None else None, slide=slide)
 
     def px(self, value):
         return round(self.scale*value)
@@ -190,11 +196,15 @@ class Painter:
         self.draw.text(xy,text,font=face(px,weight),fill=self.c[ink],anchor=anchor)
 
     def label(self, x, y, value, size=18, ink="fg", weight="regular", width=None, align="left",
-              scroll=False, indicate_start=False):
+              scroll=False, indicate_start=False, hostname=False):
         text = clean(value)
         if not text:
             return
         px = max(1, self.px(size))
+        anchor = {"left":"lm","right":"rm","center":"mm"}[align]
+        if hostname and width is not None and self.motion.label(
+                (self.px(x), self.px(y)), text, face(px, weight), self.c[ink], self.px(width), anchor):
+            return
         if width is not None and self.text_width(text,px,weight) > self.px(width):
             # Clip at a character boundary. Long operational values move within
             # their own column; compact overview chips retain their numeric IDs.
@@ -225,7 +235,7 @@ class Painter:
                     hi = mid-1
             tail = "…" if lo < len(text) else ""
             text = prefix + text[start:lo] + tail if lo > start else "…"
-        self.paint_label((self.px(x),self.px(y)),text,px,weight,ink,{"left":"lm","right":"rm","center":"mm"}[align])
+        self.paint_label((self.px(x),self.px(y)),text,px,weight,ink,anchor)
 
     def rect(self, x, y, w, h, fill="surface", line=None, radius=0, stroke=1):
         if w <= 0 or h <= 0:
@@ -290,6 +300,8 @@ class PortMap:
         self.pages = []
         self.by_serial = {}
         self.by_label = {}
+        self.by_id = {}
+        self.port_rows = {}
         self.modules = {m["serial"]:m for m in cards if m.get("serial")}
         columns = max(1, columns)
         for index, switch in enumerate(self.switches):
@@ -308,6 +320,9 @@ class PortMap:
                     for port in chunk:
                         name = port.get("name") or ""
                         location = (index, name, len(self.pages))
+                        self.port_rows[index, name] = port
+                        if port.get("port_id"):
+                            self.by_id[port["port_id"]] = location
                         label = (clean(switch.get("name"))+" "+name).strip()
                         # When two switches report the same name, only the serial
                         # can disambiguate identical interface names.
@@ -317,7 +332,7 @@ class PortMap:
             self.pages.append((index, groups))   # even when the switch has never answered
         self.observed = {}
         for item in observed:
-            location = self.by_label.get(item.get("port"))
+            location = self.location(item)
             if location:
                 socket = location[:2]
                 self.observed[socket] = None if socket in self.observed else item
@@ -325,6 +340,8 @@ class PortMap:
     def location(self, card):
         if not card:
             return None
+        if card.get("port_id"):
+            return self.by_id.get(card["port_id"])
         return self.by_serial.get(card.get("serial")) or self.by_label.get(card.get("port"))
 
     def owner(self, card):
@@ -350,7 +367,7 @@ class PortMap:
         anchor = "#%d · %s" % (index+1,port)
         pinned = min(width,p.measure(anchor,size,"mono")+2)
         p.label(x,y,anchor,size,ink,"mono",pinned)
-        p.label(x+pinned+9,y,self.switches[index].get("name"),size,ink,"mono",width-pinned-9,scroll=True)
+        p.label(x+pinned+9,y,self.switches[index].get("name"),size,ink,"mono",width-pinned-9,hostname=True)
 
     def page(self, card, card_count, tick, offset, whole=()):
         if not self.pages:
@@ -405,6 +422,14 @@ def supports_full_map(switch):
     return True
 
 
+def tour_stops(switches, size):
+    scale = min(size[0]/1536, size[1]/900)
+    left = (size[0]/scale-100)*.616
+    stand = PortMap(switches, [], max(1, int((left-30)/86)))
+    whole = {i for i, sw in enumerate(stand.switches) if supports_full_map(sw)}
+    return sum(i not in whole or j == 0 or stand.pages[j-1][0] != i for j, (i, _) in enumerate(stand.pages))
+
+
 def tone(m):
     return "warn" if m.get("slow") and m.get("state") == "run" else STATE.get(m.get("state"), "muted")
 
@@ -447,7 +472,7 @@ def header(p, board, data):
     p.mark(margin, 13, 39)
     p.label(97, 33, "cmprovision", 26, weight="bold")
     p.line(247, 21, 247, 45)
-    p.label(266, 33, data.get("host"), 18, "muted", "mono", width=p.w*.36, scroll=True)
+    p.label(266, 33, data.get("host"), 18, "muted", "mono", width=p.w*.36, hostname=True)
     clock = clean(data.get("clock"))
     if len(clock) >= 11 and clock[4:5] == "-":
         clock = clock[11:]
@@ -586,7 +611,7 @@ def roster(p, switches, active, y):
         p.label(x+13, y+14, number, 16, ink, "mono")
         nx = x+23+p.measure(number,16,"mono")
         p.label(nx, y+14, switch.get("name") or "Unnamed switch", 16, weight="mono",
-                width=x+width-92-nx, scroll=i == active)
+                width=x+width-92-nx, hostname=True)
         p.rect(x+width-78, y+11, 6, 6, tone, radius=3)
         p.label(x+width-65, y+14, state, 15, tone, "bold")
         switch_serial(p, switch, x+13, y+35, width-26)
@@ -622,7 +647,7 @@ def switch_panel(p, board, stand, page_idx, card, x, y, w, h, map_fallback=False
         page_name = "Full map unavailable · "+page_name
     chip_x = x+w-38-p.measure(page_name,14,"bold")
     p.chip(chip_x, y+27, page_name, size=14, outlined=True)
-    p.label(x+71, y+27, switch.get("name") or "Switch %d" % (index+1), 21, weight="mono", width=chip_x-x-84, scroll=True)
+    p.label(x+71, y+27, switch.get("name") or "Switch %d" % (index+1), 21, weight="mono", width=chip_x-x-84, hostname=True)
     switch_details(p, switch, x+71, y+51, w-91, bool(groups))
     legend_y = y+h-40
     if groups:
@@ -675,7 +700,7 @@ def endpoint_label(p, x, y, endpoint, width, ink):
         p.label(x+width, y, tail, size, ink, "bold", tail_w, align="right")
         width -= tail_w+4
         endpoint = name
-    p.label(x, y, endpoint, size, ink, "bold", width, scroll=True, indicate_start=True)
+    p.label(x, y, endpoint, size, ink, "bold", width, hostname=True)
 
 
 def port_tile(p, board, stand, index, port, group, x, y, w, h, selected, *, compact=False):
@@ -735,7 +760,7 @@ def card_title(p, board, m, x, y, w, size=24):
     chip_w = p.measure(status,15,"bold")+18+(21 if symbol else 0)
     p.chip(x+w-chip_w, y, status, tone(m), 15, symbol)
     p.label(x, y, m.get("name") or m.get("mac") or m.get("serial") or "Unknown device", size, "fg", "mono",
-            width=w-chip_w-14, scroll=True)
+            width=w-chip_w-14, hostname=True)
 
 
 def metric(board, m):
@@ -765,7 +790,9 @@ def device_card(p, board, m, stand, index, total, x, y, w, h):
     ix, inner = x+20, w-40
     card_title(p,board,m,ix,y+91,inner)
     stand.draw_location(p,m,ix,y+118,inner,ink="fg")
-    p.label(ix,y+140,identity(board,m),14,"muted","mono",inner,scroll=True)
+    port = stand.port_rows.get(stand.owner(m), {})
+    readings = "Link "+link_reading(port)[0]+"   ·   PoE "+power_reading(port)[0] if port else ""
+    p.label(ix,y+141,readings or identity(board,m),15,"muted","mono",inner,scroll=True)
     big,secondary = metric(board,m)
     by = y+171
     big_width = min(inner*.57,p.measure(big,30,"bold"))
@@ -774,13 +801,16 @@ def device_card(p, board, m, stand, index, total, x, y, w, h):
     if m.get("percent") is not None and m.get("state") == "run":
         p.bar(ix,by+22,inner,m["percent"],tone(m))
     fy = y+h-59
-    p.label(ix,(by+28+fy)/2+1,m.get("detail") or result(board,m),17,width=inner,scroll=True)
+    detail = m.get("detail") or result(board,m)
+    if detail == secondary:
+        detail = m.get("reason") or m.get("advice") or m.get("project") or ""
+    p.label(ix,(by+28+fy)/2+1,detail,17,width=inner,scroll=True)
     p.line(ix,fy,ix+inner,fy)
     hardware = board.hardware_lines(m)
     if hardware:
         p.symbol("chip",ix,fy+9,17)
         p.label(ix+24,fy+18," · ".join(hardware[:3]).replace(" / "," · "),14,"muted",width=inner-24,scroll=True)
-        note = hardware[-1]+" · "+snapshot_note(board,m,p.now)
+        note = hardware[-1]+" · "+identity(board,m)
     elif m.get("state") == "recognized":
         p.label(ix,fy+18,"Verified sensor",15,"accent","bold")
         note = m.get("detail")
@@ -831,7 +861,7 @@ def device_table(p, board, stand, cards, unknown, selected, tick, x, y, w, h):
             symbol, percent = None, None
         location_w = min(p.measure(location,14,"mono")+12,(b-a)*.56)
         stand.draw_location(p,cards[idx] if idx<len(cards) else unknown[idx-len(cards)],a,cy,location_w-6,14)
-        p.label(a+location_w,cy,name,17,"fg","mono",b-a-location_w-15,scroll=True)
+        p.label(a+location_w,cy,name,17,"fg","mono",b-a-location_w-15,hostname=True)
         p.chip(b,cy,status,color,14,symbol)
         value_x = c
         if percent is not None:
@@ -875,7 +905,7 @@ def full_switch_map(p, board, data, stand, index, cards, selected, tick):
     bottom = fiber_y+70
     p.rect(x,y,width,bottom-y,"surface","line",14)
     p.icon_box("switch",x+17,y+12)
-    p.label(x+71,y+22,switch.get("name") or f"Switch {index+1}",22,"fg","mono", width-530,scroll=True)
+    p.label(x+71,y+22,switch.get("name") or f"Switch {index+1}",22,"fg","mono", width-530,hostname=True)
     switch_details(p,switch,x+71,y+46,width-421,True)
     count = 12*len(copper)
     order = "1–24 above 25–48" if count == 48 else "Odd ports above even ports"
@@ -907,7 +937,7 @@ def full_switch_map(p, board, data, stand, index, cards, selected, tick):
     if owner and owner[0] == index:
         name = card.get("name") or card.get("mac") or card.get("serial") or "Unknown device"
         p.label(right-18,fiber_y+25,owner[1]+"  ·  "+clean(name),17,"fg","mono",right-sx-28,
-                align="right",scroll=True,indicate_start=True)
+                align="right",hostname=True)
         p.label(right-18,fiber_y+49,phase(board,card),15,tone(card),"bold",right-sx-28,align="right")
     else:
         p.label(right-18,fiber_y+35,"No selected card on this switch",15,"muted",width=right-sx-28,align="right")
@@ -969,17 +999,31 @@ def engineer(p, board, stand, m):
         return
     name = clean(m.get("name") or m.get("mac") or "Unknown device")
     title_width = min(p.measure(name,27,"mono"), w*.40)
-    p.label(x,y+20,name,27,"fg","mono",title_width+1,scroll=True)
+    p.label(x,y+20,name,27,"fg","mono",title_width+1,hostname=True)
     stand.draw_location(p,m,x+title_width+14,y+21,w-title_width-215,17)
     p.chip(x+w-18-p.measure("Device diagnostics",15,"bold"),y+18,"Device diagnostics",size=15,outlined=True)
     cy = y+53
-    if m.get("state") == "recognized":
+    port = stand.port_rows.get(stand.owner(m), {})
+    if m.get("state") in ("recognized", "unrecognized", "quiet", "port"):
         p.rect(x,cy,w,bottom-cy,"surface","line",14)
-        mid = (cy+bottom)/2
-        p.symbol("shield",x+29,mid-86,51,"accent")
-        p.label(x+29,mid-8,"Our sensor",39,"accent","bold")
-        p.label(x+29,mid+43,m.get("detail") or "Verified sensor",23,width=w-58,scroll=True)
-        p.label(x+29,mid+87,board.identity(m),18,"muted","mono",w-58)
+        ours = m.get("state") == "recognized"
+        title = "Our sensor" if ours else (m.get("phase") or "Network observation")
+        p.icon_box("shield" if ours else "port", x+25,cy+18)
+        p.label(x+78,cy+40,title,28,"accent" if ours or port.get("server") else "fg","bold")
+        p.label(x+26,cy+86,m.get("detail") or "No device identified",21,width=w-52,scroll=True)
+        split = w*.48
+        fields = details.observed_rows(m,port)
+        station = details.record(port.get("station")) if port.get("state") != "free" and port.get("link_up") is not False else {}
+        fields += details.rows(("Address", station.get("address")), ("Version", station.get("version")))
+        owner = stand.owner(m)
+        switch = stand.switches[owner[0]] if owner else {}
+        physical = [("Link", link_reading(port)[0]), ("PoE", power_reading(port)[0])] + details.physical_rows(port,switch)
+        for left, heading, values in ((x+26,"Device",fields),(x+split+26,"Port info",physical)):
+            p.label(left,cy+142,heading,21,"muted","bold")
+            for i,(label,value) in enumerate(values[:7]):
+                yy = cy+187+i*37
+                p.label(left,yy,label,16,"muted",width=142)
+                p.label(left+155,yy,value,18,width=split-193,scroll=True)
         return
     split = (w-16)*.363
     step_y = bottom-162
@@ -998,19 +1042,29 @@ def engineer(p, board, stand, m):
     else:
         p.symbol("chip",x+split/2-41,cy+panel_h/2-38,82)
         p.label(x+split/2,cy+panel_h/2+73,"Hardware not reported",18,"muted",align="center")
+    if port:
+        owner = stand.owner(m)
+        chassis = clean(stand.switches[owner[0]].get("serial"))
+        p.line(x+25,cy+panel_h-63,x+split-24,cy+panel_h-63)
+        p.label(x+25,cy+panel_h-43,"Link "+link_reading(port)[0]+"   ·   PoE "+power_reading(port)[0],
+                16,"fg",width=split-50)
+        if chassis:
+            p.label(x+25,cy+panel_h-19,"Switch S/N "+chassis,15,"muted","mono",split-50,scroll=True)
     dx, dw = x+split+16, w-split-16
     p.rect(dx,cy,dw,panel_h,"surface","line",14)
     dx += 24
     inner = dw-48
-    p.label(dx,cy+30,"Provisioning phase",17,"muted","bold")
+    local_run = details.has_run(m)
+    p.label(dx,cy+30,"Provisioning phase" if local_run else "Diagnostic observation",17,"muted","bold")
     status = phase(board,m)
     p.label(dx,cy+79,status,48,tone(m),"bold",inner)
     if phase_icon(m):
         p.symbol(phase_icon(m),dx+inner-24,cy+18,23,tone(m))
     p.label(dx,cy+129,identity(board,m),16,"muted","mono",inner,scroll=True)
     diag = m.get("diagnostics") or {}
-    p.paragraph(dx,cy+170,diag.get("title") or m.get("detail") or "No diagnostic snapshot yet.",inner,2,21)
-    status_y = cy+min(222,panel_h*.64)
+    p.label(dx,cy+161,m.get("cause") or diag.get("title") or m.get("detail") or "No diagnostic snapshot yet.",
+            19,width=inner,scroll=True)
+    status_y = cy+179
     p.line(dx,status_y,dx+inner,status_y)
     facts = diag.get("facts") or {}
     facts_text = []
@@ -1022,15 +1076,22 @@ def engineer(p, board, stand, m):
     if facts.get("throttled") is not None:
         facts_text.append("Power "+clean(facts["throttled"]))
     p.label(dx,status_y+21,"   ·   ".join([snapshot_note(board,m,p.now)]+facts_text),16,"muted",width=inner,scroll=True)
-    if board.progress_text(m):
-        p.label(dx,status_y+60,board.progress_text(m).replace(" / "," · "),20,tone(m),"bold",inner,scroll=True)
+    run_info = details.rows(("Project",m.get("project")),("Image",m.get("image")),("OS check",m.get("os_state")))
+    for i,(label,value) in enumerate(run_info):
+        p.label(dx,status_y+52+i*26,label,15,"muted",width=86)
+        p.label(dx+90,status_y+52+i*26,value,17,width=inner-93,scroll=True)
+    progress = board.progress_text(m) if m.get("state") == "run" else None
+    if progress:
+        p.label(dx,cy+104,progress.replace(" / "," · "),17,tone(m),"bold",inner,scroll=True)
     p.rect(x,step_y,w,bottom-step_y,"surface","line",14)
-    p.label(x+23,step_y+24,"Reported steps",21,weight="bold")
+    p.label(x+23,step_y+24,"Reported steps" if local_run else "Diagnostic report",21,weight="bold")
     phases = (("preinstall","Preinstall"),("write","Write"),("verify","Verify"),
               ("postinstall","Postinstall"),("firstboot","First boot"))
     reported = [step for step in m.get("steps") or [] if step in dict(phases)]
     sx = x+24
-    for key,label in phases:
+    if not local_run:
+        p.label(x+23,step_y+62,diag.get("title") or "No provisioning run",20,width=w-46,scroll=True)
+    for key,label in phases if local_run else ():
         last = reported and key == reported[-1]
         color = tone(m) if last and m.get("state") in ("fail","stale","run") else ("good" if key in reported else "muted")
         p.rect(sx,step_y+51,21,21,None,color,11)
@@ -1045,7 +1106,7 @@ def engineer(p, board, stand, m):
     p.line(x+23,step_y+88,x+w-23,step_y+88)
     issues = diag.get("issues") or []
     issue = issues[0] if issues else {}
-    evidence = issue.get("evidence") or m.get("detail") or "No recognized warning in the saved snapshot."
+    evidence = issue.get("evidence") or m.get("reason") or m.get("detail") or "No recognized warning in the saved snapshot."
     advice = issue.get("advice") or m.get("advice") or "Wait for the configured checks. Details are in the web device card."
     for i,(label,value,color) in enumerate((("EVIDENCE",evidence,"muted"),("NEXT",advice,"warn"))):
         gx = x+23+i*(w-34)/2
@@ -1154,19 +1215,22 @@ def private_frame(p, access, setup, remaining):
 
 
 def render_frame(board, data, size, *, selected=0, tick=0, view="auto", paused=False, palette="warm",
-                 now=None, switch_offset=0, access=None, setup=None, remaining=None):
+                 now=None, switch_offset=0, access=None, setup=None, remaining=None, motion=None, monotonic=None):
     """Render one RGB frame at the output backend's bounded working resolution."""
     data = data or {}
     now = time.time() if now is None else now
     private = access is not None or setup is not None
-    p = Painter(size,board.resolved_palette(palette,data),now,cache_text=not private)
+    p = Painter(size,board.resolved_palette(palette,data),now,cache_text=not private,
+                motion=None if private else motion, monotonic=monotonic, scene=(view, switch_offset), slide=tick)
     if private:
         return private_frame(p,access,setup,remaining)
-    cards = list(data.get("modules") or [])+list(data.get("recognized") or [])
+    cards = passports(data) if view == "engineer" else list(data.get("modules") or [])+list(data.get("recognized") or [])
     selected = selected%len(cards) if cards else 0
     m = cards[selected] if cards else None
     if view == "auto" and m and m.get("state") in ("fail","stale"):
         view = "engineer"
+    if view == "tour":
+        view = "auto"
     if view != "auto" and view not in VIEWS:
         view = "desk"
     left = (p.w-100)*.616

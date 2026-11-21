@@ -766,6 +766,21 @@ def engineer(c, data, module, now, tick):
     if module.get('state') == 'recognized':
         detail(c, 0, y, c.cols, module, now)
         return
+    if module.get('state') in ('unrecognized', 'quiet', 'port'):
+        from display_details import observed_rows, physical_rows
+        from hdmi_port_info import link_reading, power_reading
+        c.marquee(0, y, module.get('port', '')+' / '+module.get('name', ''), c.cols, 'accent')
+        fields = []
+        for switch in data.get('switches', []):
+            for block in switch.get('blocks', []):
+                for port in block.get('ports', []):
+                    if module.get('port_id') and port.get('port_id') == module['port_id']:
+                        fields = [('Link', link_reading(port)[0]), ('PoE', power_reading(port)[0])]
+                        fields += observed_rows(module, port) + physical_rows(port, switch)
+        c.marquee(0, y+2, module.get('detail') or 'Network observation', c.cols, 'board')
+        for i, (label, value) in enumerate(fields[:max(0, c.rows-y-10)]):
+            c.marquee(0, y+4+i, label+'  '+value, c.cols, 'fg')
+        return
     hardware = hardware_lines(module)
     if hardware and c.cols < 80:
         detail(c, 0, y, c.cols, module, now, height=min(14, c.rows - y - 5))
@@ -792,6 +807,9 @@ def engineer(c, data, module, now, tick):
     c.text(x, dy + 4, identity(module), 'dim')
     if progress_text(module):
         c.text(x, dy + 5, progress_text(module), ink, c.cols - x)
+    run = ' / '.join(safe(v) for v in (module.get('project'), module.get('image'), module.get('os_state')) if v)
+    if run:
+        c.marquee(x, dy+8, run, c.cols-x, 'fg')
     diag = module.get('diagnostics')
     c.wrap(x, dy + 6, (diag['title'] if diag else module.get('detail')) or 'No diagnostic snapshot yet.', c.cols - x, 2, ink)
     if diag:
@@ -832,17 +850,18 @@ def next_view(view, graphical):
 
 
 def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=False, step=0, switch_offset=0):
+    from hdmi_rotation import passports
     now = now or time.time()
     c = Canvas(max(1, cols), max(1, rows), step)
     if cols < 60 or rows < 24:
         c.wrap(0, 0, 'cmprovision HDMI: terminal too small. Need at least 60 columns and 24 rows. Use Settings > HDMI display or a smaller console font.', cols, rows, 'warn')
         return c
     modules = data.get('modules', [])
-    cards = modules + data.get('recognized', [])
+    cards = passports(data) if view == 'engineer' else modules + data.get('recognized', [])
     module = cards[selected % len(cards)] if cards else None
     if view == 'auto':
         view = 'engineer' if module and module['state'] in ('fail', 'stale') else 'desk'
-    elif view == 'map':
+    elif view in ('map', 'tour'):
         view = 'desk'  # The text console paginates the physical panel.
     if view in ('flow', 'engineer'):
         (flow if view == 'flow' else engineer)(c, data, module, now, tick)
@@ -1185,6 +1204,7 @@ def paint_console(screen, canvas, ox, oy, inks):
 
 def display(screen):
     from hdmi_presentation import Presentation
+    from hdmi_rotation import PassportRotation, identity as card_key, passports
 
     curses.curs_set(0)
     screen.timeout(1000)
@@ -1197,35 +1217,76 @@ def display(screen):
     switch_offset = 0
     graphical = False
     palette_name, inks = None, None
+    next_poll = 0
+    rotation = PassportRotation()
+    cards, profiles = [], []
+    profile = last_geometry = None
+    urgent_profile = False
+    stops = 0
     try:
         while not STOP:
-            config = read_config()
-            update = reader.poll()
+            monotonic, now = time.monotonic(), time.time()
+            update = None
+            poll = monotonic >= next_poll
+            if poll:
+                config = read_config()
+                update = reader.poll()
+                next_poll = monotonic + 0.25
             if update is not None:
-                cards = data['modules'] + data.get('recognized', [])
-                previous = cards[selected % len(cards)] if cards else None
-                identity_key = (previous.get('serial'), previous.get('mac'), previous.get('port')) if previous else None
+                manual_passports = (view_override or config['view']) == 'engineer'
+                pool = profiles if manual_passports else cards
+                previous = pool[selected % len(pool)] if pool else None
+                identity_key = card_key(previous) if previous else None
                 data = update
                 cards = data['modules'] + data.get('recognized', [])
-                selected = next((i for i, m in enumerate(cards) if (m.get('serial'), m.get('mac'), m.get('port')) == identity_key), 0)
-            if not paused and time.monotonic() - last_rotation >= config['rotation']:
-                selected += 1
-                tick += 1
-                switch_offset = 0
-                last_rotation = time.monotonic()
-            now = time.time()
-            access, setup = display_cards(data, now)
+                profiles = passports(data)
+                rotation.observe(profiles)
+                pool = profiles if manual_passports else cards
+                selected = next((i for i, m in enumerate(pool) if card_key(m) == identity_key), 0)
+            if poll:
+                access, setup = display_cards(data, now)
             view = view_override or config['view']
+            geometry = graphics.output.size if graphics.output else None
+            if update is not None or geometry != last_geometry:
+                switches = data.get('switches') or []
+                stops = len(switches)
+                if geometry:
+                    from hdmi_graphics import tour_stops
+                    stops = tour_stops(switches, geometry)
+                last_geometry = geometry
+            if view != 'auto':
+                profile = None
+            if access or setup:
+                last_rotation = monotonic
+            elif not paused:
+                if monotonic-last_rotation >= config['rotation']:
+                    if profile is None:
+                        selected += 1
+                        tick += 1
+                        switch_offset = 0
+                    profile = None
+                    last_rotation = monotonic
+                if view == 'auto' and (profile is None or (rotation.pending and not urgent_profile)):
+                    urgent_profile = bool(rotation.pending)
+                    index = rotation.take(profiles, tick, len(cards)+max(1, stops), periodic=profile is None)
+                    if index is not None:
+                        profile = card_key(profiles[index])
+                        last_rotation = monotonic
+            profile_index = next((i for i, m in enumerate(profiles) if card_key(m) == profile), None) if profile is not None else None
+            if profile_index is None:
+                profile = None
+            shown_index = profile_index if profile is not None else selected
+            shown_view = 'engineer' if profile is not None else ('tour' if view == 'auto' else view)
             palette = resolved_palette(config['palette'], data)
-            showing = graphics.present(board, data, time.monotonic(), now, selected=selected, tick=tick,
-                                       paused=paused, view=view, palette=palette, switch_offset=switch_offset,
+            showing = graphics.present(board, data, time.monotonic(), now, selected=shown_index, tick=tick,
+                                       paused=paused, view=shown_view, palette=palette, switch_offset=switch_offset,
                                        access=access, setup=setup)
             if showing:
                 if not graphical:
                     # A previous text-only access card must not reappear underneath the overlay.
                     screen.erase()
                     screen.refresh()
-                screen.timeout(250)
+                screen.timeout(max(1, round(1000 * graphics.motion.delay(time.monotonic(), 0.25))))
             else:
                 rows, cols = screen.getmaxyx()
                 width, height, ox, oy = viewport(cols, rows)
@@ -1234,7 +1295,7 @@ def display(screen):
                 elif setup:
                     canvas = setup_canvas(setup, width, height)
                 else:
-                    canvas = frame(data, width, height, selected, view, now=now, tick=tick, paused=paused,
+                    canvas = frame(data, width, height, shown_index, shown_view, now=now, tick=tick, paused=paused,
                                    step=int(time.monotonic() / SCROLL_SECONDS), switch_offset=switch_offset)
                 screen.timeout(int(SCROLL_SECONDS * 1000) if canvas.scrolls else 1000)
                 if graphical or (palette, bool(access)) != palette_name:
@@ -1247,10 +1308,14 @@ def display(screen):
             key = screen.getch()
             if key in (curses.KEY_RIGHT, ord('n'), curses.KEY_LEFT, ord('b')):
                 delta = 1 if key in (curses.KEY_RIGHT, ord('n')) else -1
-                selected = (selected + delta) % max(1, len(data['modules']) + len(data.get('recognized', [])))
+                pool = profiles if view == 'engineer' else cards
+                selected = (selected + delta) % max(1, len(pool))
+                profile = None
+                rotation.last_tour = 0
                 tick, switch_offset = 0, 0
                 last_rotation = time.monotonic()
             elif key in (ord('['), ord(']')):
+                profile = None
                 switch_offset += 1 if key == ord(']') else -1
                 last_rotation = time.monotonic()
             elif key == ord(' '):
