@@ -50,16 +50,15 @@ class LinuxRestoreSystem(LinuxBackupSystem):
                     'architecture': self.command(['/usr/bin/dpkg', '--print-architecture'])}}
         value['accounts'] = []
         value['recovering'] = recovery
-        value['verified_packages'] = {}
-        for package in ('cmprovision4', 'fpms-lite'):
-            result = self.command(['/usr/bin/dpkg', '--verify', package], check=False)
-            value['verified_packages'][package] = result.returncode == 0 and not result.stdout.strip()
+        value['verified_packages'] = {package: self.package_files_verified(package) for package in ('cmprovision4', 'fpms-lite')}
         for line in read(self.root, 'etc/passwd').decode().splitlines():
             fields = line.split(':')
             if len(fields) == 7: value['accounts'].append({'name': fields[0], 'uid': int(fields[2]), 'gid': int(fields[3])})
         value['groups'] = {parts[0]: int(parts[2]) for parts in (line.split(':') for line in read(self.root, 'etc/group').decode().splitlines()) if len(parts) == 4}
         interfaces = json.loads(self.command(['/usr/sbin/ip', '-j', 'link', 'show']))
         value['interfaces'] = {item['ifname']: item.get('permaddr') or item['address'] for item in interfaces if item.get('address') and re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', item.get('ifname', ''))}
+        value['vlan_parents'] = {item['ifname']: value['interfaces'][item['ifname']] for item in interfaces
+                                if item.get('link_type') == 'ether' and item.get('ifname') in value['interfaces']}
         return value
 
     def freeze_restore(self, job):
@@ -155,6 +154,8 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             with safe_open(source, name) as stream:
                 write_file(self.root, APP+'/'+target, lambda output: shutil.copyfileobj(stream, output, 1024**2), 0o600, 33, 33)
         tree = source/'storage/app'; tree.mkdir(mode=0o755, parents=True, exist_ok=True)
+        # Full backups contain files. The package also ships this normally empty directory.
+        (tree/'public').mkdir(mode=0o755, exist_ok=True)
         # Move the complete data tree; stale keys/scripts/runtime files must not survive restoration.
         for current, directories, files in os.walk(tree, followlinks=False):
             os.chown(current, 33, 33); os.chmod(current, 0o755)

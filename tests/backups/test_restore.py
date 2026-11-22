@@ -34,7 +34,7 @@ class RestoreTest(unittest.TestCase):
             'aging': ['20000', '0', '99999', '7', '', '', ''], 'authorized_keys': ''}
         self.time_settings = {'timezone': 'UTC', 'enabled': 'enabled', 'active': 'active'}
 
-    def archive(self):
+    def archive(self, extra_entries=()):
         entries = [Entry('application/.env', data=b'APP_KEY=fixture'), Entry('application/database.sqlite', data=b'database fixture'),
             Entry('application/etc/dnsmasq.conf', data=b'fixture'), Entry('software/cmprovision4_2.28.0_all.deb', data=b'package fixture'),
             Entry('system/accounts.json', data=canonical_bytes([self.account])),
@@ -52,7 +52,7 @@ class RestoreTest(unittest.TestCase):
             Entry('system/etc/NetworkManager/system-connections/stand.nmconnection',
                 data=b'[connection]\ninterface-name=eth0\n[ethernet]\nmac-address=AA:BB:CC:DD:EE:FF\n')]
         path = self.root/'copy.cmpbackup'
-        create(entries, path, 'a sufficiently long password', self.metadata)
+        create([*entries, *extra_entries], path, 'a sufficiently long password', self.metadata)
         return path
 
     def test_migration_preserves_destination_network_ssh_accounts_host_and_role_by_default(self):
@@ -89,6 +89,40 @@ class RestoreTest(unittest.TestCase):
             plan = self.module.plan_restore(archive, self.context, groups=['network'], interfaces=self.mapping)
             profile = plan['rewritten']['etc/NetworkManager/system-connections/stand.nmconnection']
             self.assertIn(b'mac-address=00:11:22:33:44:55', profile)
+
+    def test_clean_station_restores_a_saved_vlan_before_its_interface_exists(self):
+        name = 'etc/NetworkManager/system-connections/management.nmconnection'
+        keyfile = (b'[connection]\nid=management\ntype=vlan\ninterface-name=cv9c32a815\n'
+                   b'[vlan]\nid=15\nparent=eth0\n[ipv4]\nmethod=manual\naddress1=198.18.15.2/24\n')
+        source = self.archive([Entry('system/'+name, data=keyfile)])
+        self.context['interfaces'] = {'eth0':'aa:bb:cc:dd:ee:ff', 'wlan0':'12:00:00:00:00:01', 'wlan1':'12:00:00:00:00:02'}
+        self.context['vlan_parents'] = {'eth0': self.context['interfaces']['eth0']}
+        with inspect_archive(source, 'a sufficiently long password', self.root) as archive:
+            for preview in (True, False):
+                plan = self.module.plan_restore(archive, self.context, mode='same-station', groups=['network'], preview=preview)
+                self.assertEqual(keyfile, plan['rewritten'][name])
+            self.assertNotIn('cv9c32a815', self.context['interfaces'])
+            self.assertNotIn(name, self.module.plan_restore(archive, self.context)['system'])
+            with self.assertRaises(UpdateError):
+                self.module.plan_restore(archive, self.context, mode='migrate', groups=['network'])
+
+    def test_missing_hardware_or_invalid_vlan_is_rejected_before_restore(self):
+        name = 'system/etc/NetworkManager/system-connections/management.nmconnection'
+        self.context['interfaces'] = {'eth0':'aa:bb:cc:dd:ee:ff', 'wlan0':'12:00:00:00:00:01', 'wlan1':'12:00:00:00:00:02'}
+        self.context['interfaces']['lo'] = '00:00:00:00:00:00'
+        self.context['vlan_parents'] = {'eth0': self.context['interfaces']['eth0']}
+        for kind, vlan in [('ethernet', 'parent=eth0\nid=15'), ('vlan', 'parent=absent0\nid=15'),
+                           ('vlan', 'parent=lo\nid=15'),
+                           ('vlan', 'parent=eth0\nid=4095'), ('vlan', 'parent=eth0\nid=bad'),
+                           ('vlan', 'parent=eth0\nid=15\n[ethernet]\nmac-address=12:00:00:00:00:02')]:
+            with self.subTest(kind=kind, vlan=vlan):
+                profile = ('[connection]\ntype='+kind+'\ninterface-name=cv9c32a815\n[vlan]\n'+vlan+'\n').encode()
+                path = self.archive([Entry(name, data=profile)])
+                try:
+                    with inspect_archive(path, 'a sufficiently long password', self.root) as archive, self.assertRaises(UpdateError):
+                        self.module.plan_restore(archive, self.context, mode='same-station', groups=['network'])
+                finally:
+                    path.unlink()
 
     def test_account_selection_rejects_emergency_or_service_uid_collision(self):
         with inspect_archive(self.archive(), 'a sufficiently long password', self.root) as archive:
@@ -166,6 +200,9 @@ class RestoreTest(unittest.TestCase):
         system._application(stage, None)
         self.assertFalse((old/'old-secret').exists())
         self.assertEqual(b'new', (old/'restored').read_bytes())
+        public = old/'public'
+        self.assertTrue(public.is_dir(), 'The package-owned runtime directory must survive empty archives')
+        self.assertEqual((33, 33, 0o755), (public.stat().st_uid, public.stat().st_gid, public.stat().st_mode & 0o777))
         self.assertTrue(any(argv[:4] == ['/usr/sbin/runuser', '-u', 'www-data', '--'] and '/usr/bin/sqlite3' in argv for argv in calls))
 
     def test_recovery_can_inspect_without_bootstrapping_a_broken_application(self):

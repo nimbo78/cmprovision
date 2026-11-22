@@ -100,6 +100,8 @@ The preview lists changed groups, preserved groups, selected accounts, software 
 
 ## Apply a migration
 
+When restoring the same station after reimaging, select `--mode same-station --groups network` to restore its NetworkManager profiles. For a managed VLAN such as VLAN 15 on `eth0`, the named parent must exist. Preview accepts the saved VLAN profile before its virtual interface exists. On apply, NetworkManager loads the profile and can bring up the VLAN according to its autoconnect setting.
+
 The default **migrate** mode preserves destination networking, SSH host keys/configuration, host identity, emergency administrator and stand role. It restores application data and the selected supported groups.
 
 ```sh
@@ -128,7 +130,9 @@ Restored schedules are disabled and the master password must be set again. Migra
 
 Matching already-installed station packages and a valid installed Utility OS can be reused. Installing archived software verifies its signed publisher manifest and hashes against the **destination's existing trusted publisher key**.
 
-Package reuse also requires a clean installed-file verification. Emergency recovery reinstalls archived packages even when their versions match. Captured bundled Utility OS trees replace their slot exactly; obsolete files are removed by an atomic tree exchange. Explicitly trusted unsigned managed trees use the same exact replacement in bundled-modern.
+Package reuse also requires a successful `dpkg` check. The installer customizes two configuration files, `/etc/nginx/sites-available/cmprovision` and `/var/lib/cmprovision/etc/dnsmasq.conf`. Their contents can differ from the package defaults if both files remain regular, readable files. A missing file or any other reported change prevents reuse. At backup time, only a verified original release package can be recorded as signed.
+
+Emergency recovery reinstalls archived packages even when their versions match. Captured bundled Utility OS trees replace their slot exactly. Explicitly trusted unsigned managed trees use the same exact replacement in bundled-modern.
 
 Repacked packages and unsigned Utility OS trees are marked **local-snapshot**. To execute them, the administrator must review the preview/archive fingerprint and explicitly add `--allow-snapshot-software`. An encrypted archive password alone does not establish publisher provenance. An explicitly trusted unsigned managed Utility OS tree is restored into the editable bundled-modern slot; it is never given a forged signed managed-release identity.
 

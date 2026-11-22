@@ -4,10 +4,12 @@ import hashlib
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 sys.path.insert(0, '/usr/lib/cmprovision')
@@ -19,6 +21,37 @@ from backup_worker import Worker
 
 
 def command(*args, **options): return subprocess.check_output(args, text=True, **options).strip()
+
+
+def check_clean_station_restore(store, system, archive, password, vlan_uuid):
+    command('nmcli', 'connection', 'delete', 'uuid', vlan_uuid)
+    def link_present():
+        return subprocess.run(['ip', 'link', 'show', 'dev', 'cv9c32a815'], capture_output=True).returncode == 0
+
+    for _ in range(20):
+        if not link_present(): break
+        time.sleep(.25)
+    else:
+        raise AssertionError('The clean destination still has the virtual device')
+    restorer = Restorer(store, system)
+    options = dict(mode='same-station', groups=['network'])
+    preview = restorer.run(archive, password, **options)
+    assert preview['install'] == [] and not preview['requires_snapshot_software_opt_in']
+    assert not link_present(), 'Preview changed the network'
+    restored = restorer.run(archive, password, apply=True, **options)
+    assert restored['install'] == []
+    for _ in range(40):
+        records = json.loads(command('ip', '-j', '-4', 'address', 'show'))
+        if any(r['ifname'] == 'cv9c32a815' and any(a['local'] == '198.18.15.2' for a in r['addr_info']) for r in records):
+            break
+        time.sleep(.5)
+    else:
+        raise AssertionError('NetworkManager did not automatically activate the restored VLAN')
+    link, = json.loads(command('ip', '-d', '-j', 'link', 'show', 'dev', 'cv9c32a815'))
+    assert link['link'] == 'restore-trunk' and link['linkinfo']['info_data']['id'] == 15
+    assert command('nmcli', '-g', 'connection.uuid', 'connection', 'show', 'backup-vlan15') == vlan_uuid
+    assert system.package_files_verified('cmprovision4')
+    print('PASS: clean same-station preview and apply reused installed packages; NetworkManager recreated VLAN 15 with its address.')
 
 
 def run():
@@ -44,6 +77,16 @@ def run():
     profile = Path('/etc/NetworkManager/system-connections/backup-fixture.nmconnection')
     profile.write_text('[connection]\nid=backup-fixture\nuuid=7162dccc-d186-486c-a354-9b96768e3a30\ntype=ethernet\ninterface-name=bench0\nautoconnect=false\n[ethernet]\nmac-address=02:00:00:00:01:01\n[ipv4]\nmethod=disabled\n[ipv6]\nmethod=disabled\n'); profile.chmod(0o600)
     command('nmcli', 'connection', 'reload')
+    command('nmcli', 'connection', 'add', 'type', 'dummy', 'ifname', 'restore-trunk', 'con-name', 'restore-trunk',
+            'ipv4.method', 'manual', 'ipv4.addresses', '198.18.90.1/30', 'ipv4.never-default', 'yes', 'ipv6.method', 'disabled')
+    command('nmcli', '--wait', '15', 'connection', 'up', 'restore-trunk')
+    command('nmcli', 'connection', 'add', 'type', 'vlan', 'con-name', 'backup-vlan15', 'ifname', 'cv9c32a815',
+            'dev', 'restore-trunk', 'id', '15', 'ipv4.method', 'manual', 'ipv4.addresses', '198.18.15.2/24',
+            'ipv4.never-default', 'yes', 'ipv6.method', 'disabled')
+    command('nmcli', '--wait', '15', 'connection', 'up', 'backup-vlan15')
+    vlan_uuid = command('nmcli', '-g', 'connection.uuid', 'connection', 'show', 'backup-vlan15')
+    for conffile in ('/etc/nginx/sites-available/cmprovision', '/var/lib/cmprovision/etc/dnsmasq.conf'):
+        with Path(conffile).open('a') as config: config.write('\n# disposable station settings\n')
     root_hash = hashlib.sha256(next(line for line in Path('/etc/shadow').read_text().splitlines() if line.startswith('root:')).encode()).hexdigest()
     broker = subprocess.run(['runuser', '-u', 'www-data', '--', 'sudo', '-n', '/usr/lib/cmprovision/station-backups'], input='{"action":"status"}', text=True, capture_output=True, check=True)
     assert json.loads(broker.stdout)['result']['schema'] == 1
@@ -57,7 +100,9 @@ def run():
     Worker(store, system).run(job['id'])
     result = store.operation(job['id'])
     assert result['state'] == 'ready', result['message']
-    archive = store.download_file(job['id'])
+    # Another successful restore may retire the broker's temporary download.
+    archive = fixture/'source.cmpbackup'
+    shutil.copy(store.download_file(job['id']), archive)
     with inspect_archive(archive, 'disposable full archive master password', store.private) as verified:
         assert 'system/accounts.json' in {item['name'] for item in verified.manifest['members']}
         assert all(item['provenance'] in ('local-snapshot', 'signed-release') for item in verified.manifest['software'])
@@ -67,6 +112,7 @@ def run():
             path = fixture/('captured-'+item['package']+'.deb')
             with path.open('xb') as output: verified.copy(item['archive'], output)
             captured[item['package']] = path
+    check_clean_station_restore(store, system, archive, 'disposable full archive master password', vlan_uuid)
     # Keep the two station packages aligned, including in the mandatory pre-restore copy.
     candidate_version = system.platform.package('cmprovision4')+'+backupacceptance1'
     candidates = []
@@ -84,7 +130,8 @@ def run():
     command('ip', 'link', 'set', 'bench0', 'address', '02:00:00:00:01:02')
     command('usermod', '--lock', 'backupoperator'); authorized.write_text('')
     plan = Restorer(store, system).run(archive, 'disposable full archive master password', apply=True,
-        groups=['network', 'display', 'web'], selected_accounts=['backupoperator'], interfaces={'bench0': 'bench0'}, allow_snapshot=True)
+        groups=['network', 'display', 'web'], selected_accounts=['backupoperator'],
+        interfaces={name: name for name in ('bench0', 'restore-trunk', 'cv9c32a815')}, allow_snapshot=True)
     assert plan['preserved'] == ['ssh', 'host', 'role']
     assert not stale.exists()
     assert authorized.read_bytes() == key.with_suffix('.pub').read_bytes()
