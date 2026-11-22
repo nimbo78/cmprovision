@@ -22,6 +22,7 @@ from update_utility import REQUIRED, verify_tree
 
 RUNTIME_TABLES = ('jobs', 'failed_jobs', 'job_batches', 'sessions', 'cache', 'cache_locks',
                   'password_resets', 'password_reset_tokens', 'configuration_transfer_operations')
+MANAGED_CONFFILES = frozenset(('/etc/nginx/sites-available/cmprovision', '/'+APP+'/etc/dnsmasq.conf'))
 
 
 class LinuxBackupSystem:
@@ -271,11 +272,26 @@ class LinuxBackupSystem:
             if total > 2**40: raise UpdateError('The installed station package exceeds the backup size limit.')
         return total
 
+    def package_files_verified(self, name):
+        result = self.command(['/usr/bin/dpkg', '--verify-format=rpm', '--verify', name], check=False)
+        if result.returncode or result.stderr:
+            return False
+        for line in result.stdout.splitlines():
+            flags, separator, path = line.partition(' c ')
+            # The installer edits these two conffiles. The backup carries their contents separately.
+            if name != 'cmprovision4' or flags != '??5??????' or not separator or path not in MANAGED_CONFFILES:
+                return False
+            try:
+                with safe_open(self.root, path[1:]):
+                    pass
+            except UpdateError:
+                return False
+        return True
+
     def _package(self, name, version, directory, catalogues):
         if not re.fullmatch(DEB_VERSION_RE, version): raise UpdateError('Installed package version is invalid.')
         original, envelope = self._original(name, version, catalogues)
-        verified = self.command(['/usr/bin/dpkg', '--verify', name], check=False)
-        if original and verified.returncode == 0 and not verified.stdout.strip():
+        if original and self.package_files_verified(name):
             member = 'software/'+Path(original).name
             return Entry(member, root=self.root, source=original, group='software'), {
                 'package': name, 'version': version, 'archive': member, 'provenance': 'signed-release', 'envelope': envelope}

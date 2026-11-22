@@ -1,5 +1,6 @@
 """Authenticated fixed-policy station restore. Preview never runs archived software."""
 import base64
+import configparser
 from contextlib import contextmanager
 import hashlib
 import io
@@ -92,6 +93,25 @@ def _accounts(archive, context, names, emergency):
             raise UpdateError('Administrator groups differ from the destination OS. Resolve the GID/missing group over SSH first.')
         result.append(row)
     return result
+
+
+def _can_recreate_vlan(text, device, parents, macs):
+    """NetworkManager creates a named VLAN from its keyfile on a present parent."""
+    profile = configparser.ConfigParser(interpolation=None, delimiters=('=',))
+    profile.optionxform = str
+    try:
+        profile.read_string(text)
+        connection, vlan = profile['connection'], profile['vlan']
+    except (configparser.Error, KeyError):
+        return False
+    if (profile.defaults() or connection.get('type') != 'vlan' or connection.get('interface-name') != device
+            or not re.fullmatch(r'[A-Za-z0-9_.-]{1,15}', device) or device in ('.', '..')):
+        return False
+    tag = vlan.get('id', '0')
+    parent = vlan.get('parent')
+    if not re.fullmatch(r'[0-9]{1,4}', tag) or int(tag) > 4094 or parent not in parents or parent == device:
+        return False
+    return all(mac.lower() == parents[parent].lower() for mac in macs)
 
 
 def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, selected_accounts=(), interfaces=None,
@@ -192,6 +212,8 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
             rewritten[rescue_config] = canonical_bytes(validate_config(config))
         except ValueError as error:
             raise UpdateError('Invalid saved rescue Wi-Fi configuration.') from error
+    available = context['interfaces']
+    available_macs = {mac.lower() for mac in available.values()}
     for name in selected:
         if not name.startswith('etc/NetworkManager/system-connections/'): continue
         text = archive.read('system/'+name).decode('utf-8')
@@ -203,9 +225,13 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
             text = re.sub(r'^mac-address=.+$', 'mac-address='+context['interfaces'][target], text, flags=re.M)
         elif not source and macs and all(mac.lower() in mac_mappings for mac in macs):
             text = re.sub(r'^mac-address=(.+)$', lambda match: 'mac-address='+mac_mappings[match[1].lower()], text, flags=re.M)
-        elif (mode == 'migrate' and (source or macs) or source and source[1] not in context['interfaces']
-                or any(mac.lower() not in [value.lower() for value in context['interfaces'].values()] for mac in macs)):
-            raise UpdateError('A saved network profile is bound to source hardware. Supply --map-interface source=destination (source name or MAC).')
+        else:
+            missing_device = source and source[1] not in available
+            if mode == 'same-station' and missing_device and _can_recreate_vlan(text, source[1], context['vlan_parents'], macs):
+                missing_device = False
+            if (mode == 'migrate' and (source or macs) or missing_device
+                    or any(mac.lower() not in available_macs for mac in macs)):
+                raise UpdateError('A saved network profile is bound to source hardware. Supply --map-interface source=destination (source name or MAC).')
         rewritten[name] = text.encode()
     preview = {'mode': mode, 'source_station': value['station_id'], 'source_version': value['version'],
         'source_commit': value.get('source_commit', 'unknown'), 'groups': list(groups), 'accounts': list(selected_accounts),

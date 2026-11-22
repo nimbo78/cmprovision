@@ -23,9 +23,59 @@ class SystemTest(unittest.TestCase):
         etc = self.root/'etc'; etc.mkdir()
         (etc/'passwd').write_text('root:x:0:0:root:/root:/bin/bash\n')
         (etc/'group').write_text('root:x:0:\n')
-        rows = [dict(ifname='wlan0', address='ee:00:00:00:00:01', permaddr='02:00:00:00:00:01')]
-        system.command = lambda argv, **kw: json.dumps(rows) if 'link' in argv else SimpleNamespace(returncode=0, stdout='')
-        self.assertEqual('02:00:00:00:00:01', system.restore_context()['interfaces']['wlan0'])
+        rows = [dict(ifname='wlan0', address='ee:00:00:00:00:01', permaddr='02:00:00:00:00:01', link_type='ether'),
+                dict(ifname='lo', address='00:00:00:00:00:00', link_type='loopback')]
+        system.command = lambda argv, **kw: json.dumps(rows) if 'link' in argv else SimpleNamespace(returncode=0, stdout='', stderr='')
+        context = system.restore_context()
+        self.assertEqual('02:00:00:00:00:01', context['interfaces']['wlan0'])
+        self.assertNotIn('lo', context['vlan_parents'])
+
+    def test_managed_conffiles_allow_reuse_of_installed_package_and_cached_signed_original(self):
+        from backup_restore_system import LinuxRestoreSystem
+        confs = ('/etc/nginx/sites-available/cmprovision', '/var/lib/cmprovision/etc/dnsmasq.conf')
+        for filename in confs:
+            f = self.root/filename[1:]; f.parent.mkdir(parents=True, exist_ok=True); f.write_text('# local settings\n')
+        (self.root/'etc/passwd').write_text(''); (self.root/'etc/group').write_text('')
+        deviations = ''.join('??5?????? c '+path+'\n' for path in confs)
+        def run(argv, **options):
+            if '--verify' in argv:
+                return subprocess.CompletedProcess(argv, 0, deviations, '')
+            if 'link' in argv:
+                return subprocess.CompletedProcess(argv, 0, '[]', '')
+            self.fail(f'Unexpected package operation: {argv[0]}')
+        system = LinuxRestoreSystem(self.store, root=self.root, runner=run)
+        system.context = lambda: {'os': {'id':'debian'}}; system.platform.context = lambda: {}
+        verified = system.restore_context()['verified_packages']
+        self.assertTrue(verified['cmprovision4'])
+        self.assertFalse(verified['fpms-lite'])
+        system._original = lambda *args: ('private/cmprovision4_2.30.10_all.deb', {'id':'signed-catalogue'})
+        entry, evidence = system._package('cmprovision4', '2.30.10', self.root, [])
+        self.assertEqual('software/cmprovision4_2.30.10_all.deb', entry.name)
+        self.assertEqual('signed-release', evidence['provenance'])
+
+    def test_package_reuse_rejects_other_changes_or_incomplete_checks(self):
+        from backup_restore_system import LinuxRestoreSystem
+        path = '/etc/nginx/sites-available/cmprovision'
+        config = self.root/path[1:]
+        config.parent.mkdir(parents=True)
+        config.write_text('# local settings\n')
+        for output, code, err in [('??5??????   /usr/lib/cmprovision/backup_restore.py\n', 0, ''),
+                ('??5?????? c /etc/sudoers.d/other\n', 0, ''), ('missing   c '+path+'\n', 0, ''),
+                ('??5?????? c '+path+'\nmissing     /var/lib/cmprovision/storage/app/public\n', 0, ''),
+                ('??5?????? c '+path+'\n??5??????   /usr/lib/cmprovision/station-backups\n', 0, ''),
+                ('', 1, ''), ('', 0, 'incomplete verification')]:
+            with self.subTest(output=output, code=code, err=err):
+                result = subprocess.CompletedProcess([], code, output, err)
+                system = LinuxRestoreSystem(self.store, root=self.root, runner=lambda *a, **kw: result)
+                self.assertFalse(system.package_files_verified('cmprovision4'))
+        result = subprocess.CompletedProcess([], 0, '??5?????? c '+path+'\n', '')
+        system = LinuxRestoreSystem(self.store, root=self.root, runner=lambda *a, **kw: result)
+        config.unlink()
+        self.assertFalse(system.package_files_verified('cmprovision4'))
+        target = self.root/'other.conf'
+        target.write_text('# another configuration\n')
+        config.symlink_to(target)
+        self.assertFalse(system.package_files_verified('cmprovision4'))
 
     def setUp(self):
         self.module = importlib.import_module('backup_system')
