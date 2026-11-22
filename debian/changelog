@@ -1,3 +1,13 @@
+cmprovision4 (2.30.11) trixie; urgency=medium
+
+  * Restore saved VLANs on a reimaged station when their parent interface
+    exists. NetworkManager creates the VLAN when the profile is applied.
+  * Reuse matching station packages when dpkg reports only installer-managed
+    nginx and dnsmasq configuration changes. Recreate the package-owned
+    storage/app/public directory when restoring a file-only archive.
+
+ -- cmprovision contributors <cmprovision@localhost>  Sun, 22 Nov 2026 05:24:00 +0300
+
 cmprovision4 (2.30.10) trixie; urgency=medium
 
   * Scroll long port hostnames on graphical HDMI and HyperPixel displays.
