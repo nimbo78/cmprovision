@@ -12,6 +12,17 @@ class StationUpdatesControl
     const PENDING = '/run/cmprovision-updates/pending.json';
 
     public function available(): bool { return is_file(self::HELPER); }
+
+    public function fpmsMissing(): bool
+    {
+        // A manual package install can be newer than the updater's cached projection.
+        $query = new Process(['/usr/bin/dpkg-query', '-W', '-f=${db:Status-Status}', 'fpms-lite'], null, ['LC_ALL' => 'C']);
+        $query->setTimeout(3);
+        try { $query->run(); }
+        catch (\Throwable) { return false; }
+        if ($query->isSuccessful()) return in_array(trim($query->getOutput()), ['not-installed', 'config-files', 'unpacked', 'half-configured'], true);
+        return $query->getExitCode() === 1 && str_contains($query->getErrorOutput(), 'no packages found matching fpms-lite');
+    }
     public function status(): array
     {
         $info = @lstat(self::STATUS);

@@ -24,6 +24,8 @@ class StationUpdatesTest extends TestCase
             ]];
             public ?string $spaceError = null;
             public function __construct(public array $state) {}
+            public bool $missingFpms = true;
+            public function fpmsMissing(): bool { return $this->missingFpms; }
             public function available(): bool { return true; }
             public function status(): array { $this->statusCalls++; return $this->state; }
             public function request(array $request): array
@@ -39,6 +41,33 @@ class StationUpdatesTest extends TestCase
         };
         $this->app->instance(StationUpdatesControl::class, $fake);
         return $fake;
+    }
+
+    public function test_optional_panel_install_is_available_only_for_missing_packages_and_requires_a_confirmed_password(): void
+    {
+        $control = $this->control(['installed' => ['application' => '2.30.11', 'fpms' => null]]);
+        \Livewire\Livewire::test(\App\Http\Livewire\FpmsSettings::class)->call('installFpms')->assertForbidden();
+        $this->actingAs(User::factory()->create());
+        $panel = \Livewire\Livewire::test(\App\Http\Livewire\FpmsSettings::class)
+            ->assertSee('Install fpms-lite');
+        $panel->call('installFpms')->assertForbidden();
+        $this->assertSame([], $control->calls);
+        $this->withSession(['auth.password_confirmed_at' => time()]);
+        \Livewire\Livewire::test(\App\Http\Livewire\FpmsSettings::class)->call('installFpms')->assertHasNoErrors();
+        $this->assertSame('install-fpms', $control->calls[0]['action']);
+        $this->assertMatchesRegularExpression('/\A[a-f0-9]{64}\z/', $control->calls[0]['nonce']);
+        $control->missingFpms = false;
+        \Livewire\Livewire::test(\App\Http\Livewire\FpmsSettings::class)
+            ->assertDontSee('Install fpms-lite')->call('installFpms');
+        $this->assertCount(1, $control->calls);
+    }
+
+    public function test_display_card_shows_the_install_error_after_a_reload(): void
+    {
+        $this->control(['operation' => ['action' => 'install-fpms', 'state' => 'failed',
+            'message' => 'The station has active provisioning work.']]);
+        $this->actingAs(User::factory()->create())->get('/settings?tab=system')
+            ->assertOk()->assertSee('The station has active provisioning work.')->assertSee('Install fpms-lite');
     }
 
     public function test_checks_default_off_manual_checks_both_and_render_does_not_contact_publisher(): void
