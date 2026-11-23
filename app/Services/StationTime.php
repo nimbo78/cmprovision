@@ -48,6 +48,15 @@ class StationTime
             return $state;
         });
     }
+    public function standServer($enabled): array
+    {
+        return $this->change(function () use ($enabled) {
+            Validator::make(['standServer' => $enabled], ['standServer' => ['required', 'boolean']])->validate();
+            $state = $this->control->standServer((bool) $enabled);
+            Log::notice('Provisioning NTP service changed', ['enabled' => (bool) $enabled, 'user' => auth()->id()]);
+            return $state;
+        });
+    }
     private function change(callable $apply): array
     {
         $result = $this->gate->start(function () use ($apply) {

@@ -50,6 +50,23 @@
         <details class="text-sm"><summary class="cursor-pointer text-fg-muted">Effective server lists</summary>
             <dl class="mt-2 space-y-2 break-all"><div><dt class="text-fg-muted">System</dt><dd class="mono">{{ implode(', ', $status['system_servers']) ?: 'None reported' }}</dd></div><div><dt class="text-fg-muted">From interfaces</dt><dd class="mono">{{ implode(', ', $status['link_servers']) ?: 'None reported' }}</dd></div><div><dt class="text-fg-muted">Fallback</dt><dd class="mono">{{ implode(', ', $status['fallback_servers']) ?: 'None reported' }}</dd></div></dl>
         </details>
+        @isset($status['stand_server'])
+            @php($stand = $status['stand_server'])
+            <form x-data x-on:submit.prevent="$el.querySelector('[data-time-submit]').click()" class="space-y-3 border-t border-line pt-4">
+                <label class="flex items-center gap-2 text-sm" for="stand-ntp">
+                    <x-checkbox id="stand-ntp" wire:model="standServer" :disabled="!$stand['available'] && !$stand['requested']" />
+                    Serve time on the provisioning network
+                </label>
+                <p class="text-sm" role="status">
+                    <span class="cmp-chip {{ $stand['listening'] ? 'cmp-chip-ok' : 'cmp-chip-idle' }}">{{ $stand['listening'] ? 'Listening' : ($stand['requested'] ? 'Waiting' : 'Off') }}</span>
+                    @if ($stand['address']) <span class="mono">{{ $stand['address'] }} · {{ $stand['interface'] }}</span> @endif
+                    · DHCP option 42 {{ $stand['advertising'] ? 'advertised' : 'off' }}
+                </p>
+                @if ($stand['reason'])<p class="text-sm text-fg-muted">{{ $stand['reason'] }}</p>@endif
+                @if (isset($status['last_sample_age']))<p class="text-sm text-fg-muted">Last clock sample {{ $status['last_sample_age'] }} s ago</p>@endif
+                <x-confirms-password wire:then="saveStandServer"><button type="button" data-time-submit class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled" @disabled(!$stand['available'] && !$stand['requested'])>Save provisioning NTP</button></x-confirms-password>
+            </form>
+        @endisset
         <p class="text-sm text-fg-muted">Time settings can be changed when no modules are provisioning. Saving servers does not mean the clock is synchronized yet; refresh status to check.</p>
     </div>
 </x-settings-card>

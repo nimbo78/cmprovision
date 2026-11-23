@@ -22,6 +22,10 @@ class StationTimeControl
         }
     }
     public function timezone(string $zone): array { return $this->request(['action' => 'set-timezone', 'timezone' => $zone]); }
+    public function standServer(bool $enabled): array
+    {
+        return $this->request(['action' => 'set-stand-server', 'enabled' => $enabled]);
+    }
     public function ntp(bool $enabled, array $servers): array
     {
         return $this->request(['action' => 'set-ntp', 'enabled' => $enabled, 'servers' => $servers]);

@@ -33,6 +33,7 @@ class StationTimeSettingsTest extends TestCase
         $this->login(false);
         Livewire::test(StationTimeSettings::class)->set('timezone', 'Asia/Jerusalem')->call('saveTimezone')->assertForbidden();
         Livewire::test(StationTimeSettings::class)->call('saveNtp')->assertForbidden();
+        Livewire::test(StationTimeSettings::class)->call('saveStandServer')->assertForbidden();
         $this->assertSame([], $this->control->calls);
     }
     public function test_status_is_read_only_and_refresh_preserves_unsaved_fields(): void
@@ -79,7 +80,18 @@ class StationTimeSettingsTest extends TestCase
         Cm::create(['serial' => '1000000000000001', 'mac' => 'e4:5f:01:00:00:01', 'phase' => 'write']);
         Livewire::test(StationTimeSettings::class)->set('timezone', 'Asia/Jerusalem')->call('saveTimezone')->assertSee('Wait until provisioning');
         Livewire::test(StationTimeSettings::class)->call('saveNtp')->assertSee('Wait until provisioning');
+        Livewire::test(StationTimeSettings::class)->call('saveStandServer')->assertSee('Wait until provisioning');
         $this->assertSame([], $this->control->calls);
+    }
+
+    public function test_operator_can_enable_the_provisioning_server_independently(): void
+    {
+        $this->login();
+        $this->control->state['stand_server'] = ['available' => true, 'requested' => false, 'listening' => false,
+            'advertising' => false, 'address' => '172.20.0.2', 'interface' => 'eth0', 'reason' => null];
+        Livewire::test(StationTimeSettings::class)->assertSee('Serve time on the provisioning network')
+            ->set('standServer', true)->call('saveStandServer')->assertHasNoErrors()->assertSee('172.20.0.2');
+        $this->assertSame([['stand-server', true]], $this->control->calls);
     }
     public function test_missing_or_unsupported_provider_does_not_pretend_a_save_succeeded(): void
     {
