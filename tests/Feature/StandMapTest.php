@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Cm;
+use App\Services\Sensor\ModuleMark;
 use App\Services\Switch\Stand;
 use App\Support\StandMap;
 use Illuminate\Support\Carbon;
@@ -711,6 +712,51 @@ class StandMapTest extends TestCase
         $tile = $map['tiles']['s1p18'];
         $tile['poe'] = ['state' => 'delivering'];
         $this->assertSame('other devices on sw01 Gi0/18', StandMap::restartBlocker($tile), 'a recognised sensor cannot be power-cycled as a local module');
+    }
+
+    private function portWithSignedSensor(string $mac, string $station): array
+    {
+        $marks = new ModuleMark(str_repeat('5a', 32));
+        $this->app->instance(ModuleMark::class, $marks);
+        $code = ModuleMark::code($marks->moduleKey($mac), $station, 1, 50);
+        $neighbor = ['port' => "cmprovision mark $station 1/50 $code"] + $this->neighbour('sensor', $mac);
+        return $this->port(3, 'Gi0/3', true, [$mac]) + ['neighbors' => [$neighbor]];
+    }
+
+    public function test_a_verified_peer_reflash_supersedes_a_historical_local_run_on_the_port()
+    {
+        $mac = '2c:cf:67:00:00:37';
+        $history = $this->module('case37', $mac, ['provisioning_complete_at' => now()->subDay()]);
+        $map = $this->build([$this->portWithSignedSensor($mac, 'peer-stand')], [$history]);
+        $tile = $map['tiles']['s1p3'];
+
+        $this->assertSame('recognized', $tile['filter']);
+        $this->assertSame('OURS', $tile['short']);
+        $this->assertSame('peer-stand', $tile['flashed_by']['station']);
+        $this->assertSame([], $tile['modules']);
+        $this->assertNull(Stand::tileOf($map, $history));
+        $this->assertSame(1, $map['summary']['counts']['recognized']);
+        $this->assertSame(0, $map['summary']['modules']);
+    }
+
+    public function test_local_activity_and_a_locally_issued_mark_keep_the_local_card()
+    {
+        $mac = '2c:cf:67:00:00:37';
+        $peer = $this->portWithSignedSensor($mac, 'peer-stand');
+        $own = $this->portWithSignedSensor($mac, ModuleMark::station());
+        $old = ['provisioning_complete_at' => now()->subDay()];
+        foreach ([
+            'writing' => [$peer, ['phase' => 'write', 'progress_updated_at' => now()]],
+            'still polling here' => [$peer, ['polled_at' => now()] + $old],
+            'just completed' => [$peer, ['provisioning_complete_at' => now()]],
+            'our own mark' => [$own, $old],
+        ] as $reason => [$port, $attributes])
+        {
+            $local = $this->module('case37', $mac, $attributes);
+            $map = $this->build([$port], [$local]);
+            $this->assertSame([$local], $map['tiles']['s1p3']['modules'], $reason);
+            $this->assertSame(0, $map['summary']['counts']['recognized'], $reason);
+        }
     }
 
     public function test_a_mark_without_a_station_key_does_not_identify_a_sensor()
