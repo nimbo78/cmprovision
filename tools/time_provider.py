@@ -162,11 +162,14 @@ def change(c, action, prepare):
             state = c.status()
             if state['provider'] != 'chrony':
                 raise TimeError('No provider change with a saved client state was found.')
+            if c.unit(c.UNIT).get('LoadState') == 'masked':
+                raise TimeError('Review the existing timesyncd mask before changing providers.')
             saved = state_record(c, state)
         # A cached timesyncd may no longer match libsystemd-shared following a later OS upgrade.
         # The local .deb supplies the exact version even if package indexes have since expired.
         old_deb = str(directory/records[OLD][0])
         check_plan(run('apt-get', '-s', '--no-install-recommends', 'install', old_deb), 'chrony', OLD)
+        c.command('systemctl', 'mask', c.UNIT)
         c.stand.close()
         c.files.write(INTENT, None)
         # Restore Debian's canonical profile before removing the package (dpkg retains conffiles).
@@ -181,5 +184,6 @@ def change(c, action, prepare):
         run('dpkg', '--install', old_deb)
         c.command('systemctl', 'unmask', CHRONY)
         c.write_config(timesync_config(valid_servers(saved['servers'])))
+        c.command('systemctl', 'unmask', c.UNIT)
         service(c, c.UNIT, saved)
         c.files.write(STATE, None)
