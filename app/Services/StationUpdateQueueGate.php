@@ -12,6 +12,8 @@ class StationUpdateQueueGate
     {
         $this->release();
         $backups = app(StationBackupsControl::class);
+        $power = app(StationPowerControl::class);
+        if ($power->pending()) return false;
         if (!$this->control->available() && !$backups->available()) return true;
         if ($this->control->pending() || $backups->pending() || is_link($this->path)) return false;
         $handle = @fopen($this->path, 'r');
@@ -23,7 +25,7 @@ class StationUpdateQueueGate
             return false;
         }
         $this->handle = $handle;
-        if ($this->control->pending() || $backups->pending()) { $this->release(); return false; }
+        if ($this->control->pending() || $backups->pending() || $power->pending()) { $this->release(); return false; }
         // The caller releases only after DatabaseQueue::pop has committed its reservation.
         return true;
     }

@@ -75,8 +75,9 @@ class Controller:
         finally:
             if os.path.exists(name): os.unlink(name)
 
-    def schedule(self, action):
+    def schedule(self, action, *, tryboot=False):
         if not isinstance(action, str) or action not in ACTIONS: raise PowerError('Unknown power action.')
+        if tryboot and action != 'reboot': raise PowerError('A display profile requires a reboot.')
         self.initialize()
         fd = self.open('control.lock', os.O_RDWR | os.O_CREAT)
         try:
@@ -90,7 +91,10 @@ class Controller:
             state = dict(action=action, boot_id=self.boot(), scheduled_at=int(self.clock()), delay=5, confirmed=False)
             self.write(state)  # Publish before scheduling; an uncertain result must never allow another write to start.
             command = ['/usr/bin/systemd-run', '--quiet', '--collect', '--unit=cmprovision-station-power',
-                       '--on-active=5s', '--timer-property=AccuracySec=1s', '--', '/usr/bin/systemctl', action]
+                       '--on-active=5s', '--timer-property=AccuracySec=1s', '--', '/usr/bin/systemctl']
+            if tryboot:
+                command.append('--reboot-argument=0 tryboot')
+            command.append(action)
             try: result = self.run(command, timeout=5, capture_output=True, text=True, check=False)
             except (OSError, subprocess.TimeoutExpired) as error:
                 raise PowerError('Scheduling was not confirmed. Check station status before retrying.') from error

@@ -19,9 +19,17 @@ reported `running` after SPI restoration. Raspberry Pi Imager customization rema
 
 FPMS shows provisioning and station data on the Waveshare 1.44-inch 128×128 panel or the rectangular HyperPixel 4.0 Touch. The controls below refer to the Waveshare.
 
+## Automatic panel setup
+
+Power the station off, fit the Waveshare 1.44″ or rectangular HyperPixel 4.0 Touch on its dedicated 40-pin header, then power on. The generic station image starts with neutral GPIO on every ordinary boot. Waveshare starts in the same boot. HyperPixel uses one additional automatic restart once the station is idle. Disconnect **both PoE and USB power** before swapping panels.
+
+Both panels use `fpms-lite`. Auto starts an installed package offline. If it is missing, an identified panel on a stable release triggers the signed installer for the matching release. The station retries a deferred download after 15 minutes. With an empty header it skips installation. Choosing Off in **Settings → System → FPMS display** disables automatic setup.
+
+For boot diagnostics, run `journalctl -b -u cmprovision-display-auto`. On HyperPixel use `-b -1` to see the decision before the restart. Auto leaves existing fixed boot profiles and third-party tryboot or A/B layouts under their owner's control. To convert an image built with a fixed profile, remove its complete `# BEGIN cmprovision display profile` through `# END cmprovision display profile` block from `/boot/firmware/config.txt` before swapping panels.
+
 ## HyperPixel 4.0 Touch
 
-For a new station image with the panel enabled on its first boot, select the
+For an image dedicated to this panel that should start directly, select the
 `hyperpixel-4-touch` boot display profile when building the image.
 [Station image build options](../image/README.md#build-on-a-disposable-debian-host)
 
@@ -112,7 +120,7 @@ again. `apt remove` keeps `/etc/default/cmprovision-fpms.json`; `apt purge` remo
 
 Waveshare and HyperPixel share the same package. Enable SPI for Waveshare as described below, or apply the HyperPixel boot profile described above. Once `fpms-lite` is installed, manual application rollback requires a recovery snapshot that also includes it.
 
-## Enable SPI for the Waveshare panel
+## Fixed SPI profile for the Waveshare panel
 
 Raspberry Pi OS ships with SPI off. Add `dtparam=spi=on` to `/boot/firmware/config.txt` and reboot, or the
 service stays idle and the status says `no hardware`. While `/dev/spidev0.0` does not exist the service

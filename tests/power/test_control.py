@@ -43,6 +43,14 @@ class PowerControlTest(unittest.TestCase):
                 self.assertEqual(result, json.loads((self.root / 'pending.json').read_text()))
                 self.assertEqual(0o644, (self.root / 'pending.json').stat().st_mode & 0o777)
 
+    def test_only_private_panel_boot_can_request_the_fixed_firmware_argument(self):
+        with self.assertRaises(power.PowerError):
+            self.controller.schedule('poweroff', tryboot=True)
+        self.controller.schedule('reboot', tryboot=True)
+        self.assertEqual(self.run.call_args.args[0][-3:],
+                         ['/usr/bin/systemctl', '--reboot-argument=0 tryboot', 'reboot'])
+        self.assertTrue(self.controller.pending()['confirmed'])
+
     def test_bad_actions_never_spawn_a_process(self):
         for action in ('halt', 'reboot; id', '--force', None, True, ['reboot']):
             with self.subTest(action=action), self.assertRaises(power.PowerError):

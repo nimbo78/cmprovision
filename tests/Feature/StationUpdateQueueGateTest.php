@@ -9,6 +9,17 @@ use Tests\TestCase;
 class StationUpdateQueueGateTest extends TestCase
 {
     use \Illuminate\Foundation\Testing\RefreshDatabase;
+
+    public function test_a_scheduled_panel_reboot_prevents_reserving_another_job(): void
+    {
+        $power = new class extends \App\Services\StationPowerControl {
+            public function pending(): ?array { return ['action' => 'reboot']; }
+        };
+        $this->app->instance(\App\Services\StationPowerControl::class, $power);
+        $gate = new StationUpdateQueueGate(new StationUpdatesControl());
+        $this->assertFalse($gate->reserve());
+    }
+
     public function test_reservation_holds_admission_until_its_guard_is_released(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'queue-update-lock-');
