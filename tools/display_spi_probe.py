@@ -116,6 +116,7 @@ def probe_st7735():
             chip_path = header_chip(gpiod)
             if chip_path is None:
                 return None
+            chip_path = str(chip_path)
         with gpiod.Chip(chip_path) as chip:
             before = {pin: chip.get_line_info(pin) for pin in (25, 27)}
         if any(info.used or info.direction not in (Direction.INPUT, Direction.OUTPUT)

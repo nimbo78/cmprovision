@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 try:
@@ -111,6 +111,16 @@ class AutoDisplayTest(unittest.TestCase):
         self.io.reboot.assert_not_called()
         self.assertTrue(json.loads(self.config.read_text())['enabled'])
 
+    def test_swap_to_waveshare_after_losing_power_during_the_handoff(self):
+        self.assertEqual(self.session.step(), 'restarting')
+        self.io.boot = 'cold-with-waveshare'
+        self.io.profile.return_value = 'waveshare-144'
+        self.io.enable_spi.return_value = True
+        self.assertEqual(self.session.step(), 'active')
+        self.io.start.assert_called_once()
+        self.io.reboot.assert_called_once()
+        self.assertFalse((self.boot / 'tryboot.txt').exists())
+
     def test_unverified_second_boot_eventually_releases_the_trial_and_stays_available(self):
         self.assertEqual(self.session.step(), 'restarting')
         self.io.boot, self.io.tryboot = 'boot-2', True
@@ -127,6 +137,16 @@ class AutoDisplayTest(unittest.TestCase):
         self.assertFalse((self.boot / 'tryboot.txt').exists())
         self.io.reboot.assert_called_once()
 
+    def test_a_definite_dpkg_deferral_retries_without_a_manual_restart(self):
+        self.assertEqual(self.session.step(), 'restarting')
+        display_auto.defer_handoff(self.session.record, self.io.boot)
+        self.io.idle.return_value = False
+        self.assertEqual(self.session.step(), 'busy')
+        self.assertFalse((self.boot / 'tryboot.txt').exists())
+        self.io.idle.return_value = True
+        self.assertEqual(self.session.step(), 'restarting')
+        self.assertEqual(self.io.reboot.call_count, 2)
+
     def test_existing_fixed_profile_can_install_but_keeps_its_configuration(self):
         p = self.boot / 'config.txt'
         original = p.read_text() + 'dtoverlay=vc4-kms-dpi-hyperpixel4\n'
@@ -138,3 +158,46 @@ class AutoDisplayTest(unittest.TestCase):
         self.io.profile.assert_not_called()
         self.assertEqual(p.read_text(), original)
         self.io.reboot.assert_not_called()
+
+    def test_failed_flush_never_publishes_a_partial_firmware_or_settings_file(self):
+        for path in (self.config, self.boot / 'tryboot.txt'):
+            with self.subTest(path=path), patch.object(display_auto.os, 'fsync', side_effect=OSError('power')):
+                with self.assertRaises(OSError):
+                    display_auto.exclusive_file(path, display_auto.TRIAL)
+                self.assertFalse(path.exists())
+
+    def test_atomic_publish_never_replaces_an_existing_configuration(self):
+        self.config.write_text('operator configuration')
+        with self.assertRaises(FileExistsError):
+            display_auto.exclusive_file(self.config, 'new')
+        self.assertEqual(self.config.read_text(), 'operator configuration')
+
+    def test_a_gpio_fan_or_serial_overlay_is_preserved(self):
+        for line in ('dtoverlay=gpio-fan,gpiopin=18,temp=55000', 'enable_uart=1', 'gpio=18=op,dh'):
+            (self.boot / 'config.txt').write_text('dtoverlay=vc4-kms-v3d\n'+line+'\n')
+            self.assertEqual(self.session.step(), 'manual')
+        self.io.reboot.assert_not_called()
+
+    def test_waveshare_retries_menu_start_after_spi_has_claimed_the_header(self):
+        self.io.profile.return_value = 'waveshare-144'
+        self.io.enable_spi.return_value = True
+        self.io.start.side_effect = [OSError('service is starting'), None]
+        with self.assertRaises(OSError):
+            self.session.step()
+        self.io.profile.return_value = None
+        self.assertEqual(self.session.step(), 'active')
+        self.io.profile.assert_called_once()
+
+    def test_explicit_incompatible_panel_package_explains_missing_menu_before_reboot(self):
+        self.io.supports.return_value = False
+        self.assertEqual(self.session.step(), 'update-fpms-lite')
+        self.io.reboot.assert_not_called()
+
+    def test_the_hyperpixel_driver_alone_cannot_confirm_a_running_menu(self):
+        self.assertEqual(self.session.step(), 'restarting')
+        self.io.boot, self.io.tryboot = 'boot-2', True
+        self.io.active_panel.return_value = 'hyperpixel-4-touch'
+        self.io.menu_ready.return_value = False
+        self.assertEqual(self.session.step(), 'waiting-for-panel')
+        self.io.menu_ready.return_value = True
+        self.assertEqual(self.session.step(), 'active')

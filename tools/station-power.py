@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Fixed delayed power executor and local FPMS menu bridge. Never opens application DB files."""
 import fcntl
+from contextlib import contextmanager, ExitStack
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,16 @@ BOOT = Path('/proc/sys/kernel/random/boot_id')
 
 
 class PowerError(RuntimeError): pass
+
+
+@contextmanager
+def package_locks(paths=('/var/lib/dpkg/lock-frontend', '/var/lib/dpkg/lock')):
+    with ExitStack() as stack:
+        for path in paths:
+            fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
+            stack.callback(os.close, fd)
+            fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
 
 
 def boot_id():
@@ -91,10 +102,11 @@ class Controller:
             state = dict(action=action, boot_id=self.boot(), scheduled_at=int(self.clock()), delay=5, confirmed=False)
             self.write(state)  # Publish before scheduling; an uncertain result must never allow another write to start.
             command = ['/usr/bin/systemd-run', '--quiet', '--collect', '--unit=cmprovision-station-power',
-                       '--on-active=5s', '--timer-property=AccuracySec=1s', '--', '/usr/bin/systemctl']
+                       '--on-active=5s', '--timer-property=AccuracySec=1s', '--']
             if tryboot:
-                command.append('--reboot-argument=0 tryboot')
-            command.append(action)
+                command.extend(['/usr/bin/python3', '-I', str(Path(__file__).resolve()), '--panel-tryboot'])
+            else:
+                command.extend(['/usr/bin/systemctl', action])
             try: result = self.run(command, timeout=5, capture_output=True, text=True, check=False)
             except (OSError, subprocess.TimeoutExpired) as error:
                 raise PowerError('Scheduling was not confirmed. Check station status before retrying.') from error
@@ -142,6 +154,22 @@ def panel(request, run=subprocess.run):
 def main():
     try:
         if os.geteuid() != 0: raise PowerError('This fixed controller must run as root.')
+        if sys.argv[1:] == ['--panel-tryboot']:
+            pending = Controller().pending()
+            if not pending or not pending['confirmed'] or pending['action'] != 'reboot':
+                raise PowerError('The display reboot request expired.')
+            with ExitStack() as locks:
+                try:
+                    locks.enter_context(package_locks())
+                except BlockingIOError:
+                    sys.path.insert(0, str(Path(__file__).resolve().parent))
+                    from display_auto import defer_handoff
+                    defer_handoff(Path('/var/lib/cmprovision-display-auto/boot.json'), pending['boot_id'])
+                    print('Display reboot deferred until the package manager is available.')
+                    return 0
+                subprocess.run(['/usr/bin/systemctl', '--no-block', '--reboot-argument=0 tryboot', 'reboot'],
+                               check=True, timeout=8)
+            return 0
         if sys.argv[1:] not in ([], ['panel']): raise PowerError('Unexpected arguments.')
         raw = sys.stdin.buffer.read(4097)
         if len(raw) > 4096: raise PowerError('Request is too large.')

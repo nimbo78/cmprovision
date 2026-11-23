@@ -14,6 +14,16 @@ if os.name == 'posix':
 
 @unittest.skipUnless(os.name == 'posix', 'Linux device and updater interfaces')
 class StationDisplayTest(unittest.TestCase):
+    def test_no_repeated_timer_wakeups_on_a_headless_station(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker, run = Path(tmp) / 'done', Mock()
+            panel.finish_boot('busy', marker, run)
+            self.assertFalse(marker.exists())
+            run.assert_not_called()
+            panel.finish_boot('no-panel', marker, run)
+            self.assertTrue(marker.is_file())
+            self.assertEqual(run.call_args.args[0][-2:], ['stop', 'cmprovision-display-auto.timer'])
+
     def test_requires_bound_goodix_product_and_hyperpixel_overlay(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -50,6 +60,9 @@ class StationDisplayTest(unittest.TestCase):
     def test_maintenance_or_incomplete_admission_never_allows_a_reboot(self):
         io = object.__new__(panel.StationIO)
         io.system = Mock()
+        from contextlib import nullcontext
+        io.power_helper = Mock()
+        io.power_helper.package_locks.return_value = nullcontext()
         with patch.object(panel, 'UpdateStore') as store:
             store.return_value.snapshot.return_value = {'pending': None, 'operation': None}
             for report in ({}, {'active': [], 'reserved_jobs': False},

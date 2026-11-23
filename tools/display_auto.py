@@ -1,4 +1,5 @@
 """Select a station panel at boot and coordinate its signed package and one-shot profile."""
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -39,11 +40,25 @@ def sync_dir(path):
 
 
 def exclusive_file(path, content):
-    with path.open('x', encoding='utf-8', newline='\n') as output:
-        output.write(content)
-        output.flush()
-        os.fsync(output.fileno())
-    sync_dir(path.parent)
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix='.cmprovision-display-')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as output:
+            output.write(content)
+            output.flush()
+            if os.name == 'posix' and os.fstat(fd).st_mode & 0o444 != 0o444:
+                os.fchmod(fd, 0o644)
+            os.fsync(fd)
+        if os.name == 'nt':
+            os.rename(name, path)  # Windows rename refuses an existing destination.
+        else:
+            # Linux RENAME_NOREPLACE works across both supported filesystems, ext4 and FAT.
+            rename = ctypes.CDLL(None, use_errno=True).renameat2
+            if rename(-100, os.fsencode(name), -100, os.fsencode(path), 1) != 0:
+                code = ctypes.get_errno()
+                raise OSError(code, os.strerror(code), path)
+        sync_dir(path.parent)
+    finally:
+        Path(name).unlink(missing_ok=True)
 
 
 def save_state(path, data):
@@ -72,6 +87,13 @@ def integration_off(path):
                 value['enabled'] is True and type(value['open_on_start']) is bool)
 
 
+def defer_handoff(path, boot):
+    """Record that the delayed executor did not ask firmware to reboot."""
+    record = json.loads(read_text(path, 4096) or '{}')
+    if record.get('handoff') == boot:
+        save_state(path, {'deferred': boot})
+
+
 def boot_mode(config):
     if config is None:
         return 'manual'
@@ -82,6 +104,15 @@ def boot_mode(config):
     if any(re.match(r'dtoverlay\s*=\s*(?:vc4-kms-dpi-|hyperpixel)', line) or
            re.match(r'dtparam\s*=\s*spi\s*=\s*(?:on|true|1)(?:\s|,|$)', line) for line in lines):
         return 'fixed'
+    # The DPI profile uses the whole header, including pins outside the ID probe.
+    for line in lines:
+        key, _, value = (part.strip() for part in line.partition('='))
+        if key == 'dtoverlay' and value not in ('vc4-kms-v3d', 'dwc2,dr_mode=host', 'nospi10'):
+            return 'manual'
+        if key in ('gpio', 'enable_dpi_lcd') or (key == 'enable_uart' and value != '0'):
+            return 'manual'
+        if key == 'dtparam' and value not in ('audio=on', 'audio=off', 'spi=off', 'i2c_arm=off'):
+            return 'manual'
     return 'neutral'
 
 
@@ -107,6 +138,12 @@ class AutoDisplay:
 
     def step(self):
         record = json.loads(read_text(self.record, 4096) or '{}')
+        if record.get('deferred'):
+            if read_text(self.trial) not in (None, TRIAL):
+                return 'manual'
+            self.clear_trial()
+            record = {}
+            save_state(self.record, record)
         handoff = record.get('handoff')
         if handoff:
             if read_text(self.trial) not in (None, TRIAL):
@@ -116,9 +153,10 @@ class AutoDisplay:
                 if self.io.tryboot and handoff != self.io.boot:
                     if self.io.active_panel() == HYPERPIXEL:
                         self.io.start()
-                        self.clear_trial()
-                        save_state(self.record, {'boot': self.io.boot, 'result': 'active'})
-                        return 'active'
+                        if self.io.menu_ready(HYPERPIXEL):
+                            self.clear_trial()
+                            save_state(self.record, {'boot': self.io.boot, 'result': 'active'})
+                            return 'active'
                     if record.get('checking') != self.io.boot:
                         record.update(checking=self.io.boot, deadline=now + 120)
                         save_state(self.record, record)
@@ -129,7 +167,7 @@ class AutoDisplay:
             self.clear_trial()
             record = {'failed': HYPERPIXEL, 'failed_boot': self.io.boot}
             save_state(self.record, record)
-            if not integration_off(self.config):
+            if not integration_off(self.config) and (self.io.tryboot or handoff == self.io.boot):
                 return 'trial-failed'
         if integration_off(self.config):
             return 'off'
@@ -140,9 +178,12 @@ class AutoDisplay:
         mode = boot_mode(read_text(self.boot/'config.txt'))
         if mode == 'manual':
             return 'manual'
-        profile = self.io.active_panel() if mode == 'fixed' else self.io.profile()
+        if record.get('spi_boot') == self.io.boot:
+            profile = WAVESHARE  # The preceding confirmed probe enabled SPI on this boot.
+        else:
+            profile = self.io.active_panel() if mode == 'fixed' else self.io.profile()
         if profile not in (HYPERPIXEL, WAVESHARE):
-            value = 'manual' if mode == 'fixed' else 'no-panel'
+            value = 'waiting-for-fixed-panel' if mode == 'fixed' else 'no-panel'
             if mode == 'neutral':
                 save_state(self.record, {'boot': self.io.boot, 'result': value})
             return value
@@ -159,14 +200,20 @@ class AutoDisplay:
                     save_state(self.record, {'install_boot': self.io.boot, 'retry_after': now + 900})
                     self.io.install()
                 return 'install-pending'
+            if not self.io.supports(profile):
+                return 'update-fpms-lite'
             if not self.enable():
                 return 'off'
-            if mode == 'fixed' or (profile == WAVESHARE and self.io.enable_spi()):
+            if mode == 'neutral' and profile == WAVESHARE:
+                save_state(self.record, {'spi_boot': self.io.boot})
+                if not self.io.enable_spi():
+                    return 'spi-unavailable'
+            if mode == 'fixed' or profile == WAVESHARE:
                 self.io.start()
+                if not self.io.menu_ready(profile):
+                    return 'waiting-for-panel'
                 save_state(self.record, {'boot': self.io.boot, 'result': 'active'})
                 return 'active'
-            if profile == WAVESHARE:
-                return 'spi-unavailable'
             if not self.io.can_tryboot:
                 return 'unsupported-firmware'
             if not (self.boot/'overlays/vc4-kms-dpi-hyperpixel4.dtbo').is_file():

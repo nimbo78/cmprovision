@@ -66,6 +66,11 @@ class DisplayBootProbeTest(unittest.TestCase):
         self.assertIsNone(probe.identify(both, self.spi))
         self.spi.assert_not_called()
 
+    def test_busy_header_output_outside_the_probe_blocks_its_target_profile(self):
+        self.assertFalse(probe.target_available('hyperpixel-4-touch', lambda pin: pin == 18))
+        self.assertFalse(probe.target_available('waveshare-144', lambda pin: pin == 19))
+        self.assertTrue(probe.target_available('hyperpixel-4-touch', lambda pin: pin in probe.PINS))
+
     def test_gpiochip_uses_character_device_and_real_controller_label(self):
         self.assertTrue(hasattr(probe, 'select_chip'), 'CM4 sysfs base 512 is not a character-device number')
         candidates = {Path('/dev/gpiochip0'): 'ftdi-cbus', Path('/dev/gpiochip4'): 'pinctrl-bcm2711'}

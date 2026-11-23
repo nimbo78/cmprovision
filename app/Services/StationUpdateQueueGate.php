@@ -14,7 +14,7 @@ class StationUpdateQueueGate
         $backups = app(StationBackupsControl::class);
         $power = app(StationPowerControl::class);
         if ($power->pending()) return false;
-        if (!$this->control->available() && !$backups->available()) return true;
+        if (!$this->control->available() && !$backups->available() && !$power->available()) return true;
         if ($this->control->pending() || $backups->pending() || is_link($this->path)) return false;
         $handle = @fopen($this->path, 'r');
         if (!$handle) return false;

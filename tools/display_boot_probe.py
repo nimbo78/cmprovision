@@ -11,6 +11,12 @@ from display_st7735_id import identify as st7735_id
 PINS = (8, 10, 11, 25, 27)  # CE0, SDA/MOSI, SCL/SCLK, LCD D/C, LCD reset / Goodix IRQ
 
 
+def target_available(profile, used):
+    # DPI takes the full header. Waveshare additionally claims SPI, backlight and keys.
+    pins = range(28) if profile == 'hyperpixel-4-touch' else (5, 6, 8, 9, 10, 11, 13, 16, 19, 20, 21, 24, 25, 26, 27)
+    return all(not used(pin) for pin in pins if pin not in PINS)
+
+
 def identify(read_i2c, read_spi):
     touch = False
     for address in (0x14, 0x5D):
@@ -194,6 +200,9 @@ def neutral_probe():
                 bus = Header(request, gpiod)
                 if not all(bus.high(pin) for pin in (8, 10, 11)):
                     return None
-                return identify(bus.read_i2c, bus.read_spi)
+                profile = identify(bus.read_i2c, bus.read_spi)
+                if profile and target_available(profile, lambda pin: chip.get_line_info(pin).used):
+                    return profile
+                return None
             finally:
                 request.reconfigure_lines(restore)
