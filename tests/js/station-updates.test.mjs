@@ -63,6 +63,13 @@ test('download percentage uses actual received bytes; verification is indetermin
     assert.equal(state.busy(), true);
 });
 
+test('the journal identifies an optional display install and shows its own stages', () => {
+    const operation = { action: 'install-fpms', state: 'applying', version: '2.30.11' };
+    const state = api.create('/status', { operation });
+    assert.match(state.operationLabel(operation), /FPMS.*2\.30\.11/);
+    assert.deepEqual(state.stages().map(step => step.label), ['Download', 'Verify', 'Install']);
+});
+
 test('lost connection never resubmits an installation', async () => {
     const state = api.create('/status', { operation: { state: 'applying' } });
     state.destroyed = true;

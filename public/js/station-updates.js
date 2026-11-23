@@ -74,6 +74,7 @@
             },
             operationLabel: function (operation) {
                 if (!operation) return 'Station update';
+                if (operation.action === 'install-fpms') return 'Install · FPMS display' + (operation.version ? ' ' + operation.version : '');
                 var action = { check: 'Check', download: 'Download', apply: 'Install', activate: 'Switch', rollback: 'Restore' }[operation.action] || 'Update';
                 var components = operation.component ? [operation.component] : (operation.components || []);
                 var names = components.map(part => ({ application: 'Application', 'utility-os': 'Utility OS' }[part])).filter(Boolean);
@@ -98,6 +99,7 @@
                 var labels, phases;
                 var recovering = !!op.diagnostic && ['applying', 'rolled-back', 'recovery-required'].includes(op.state);
                 if (op.action === 'check') { labels = ['Check']; phases = [['queued', 'checking']]; }
+                else if (op.action === 'install-fpms') { labels = ['Download', 'Verify', 'Install']; phases = [['queued', 'checking', 'downloading'], ['verifying'], ['applying']]; }
                 else if (op.action === 'download') { labels = ['Download', 'Verify']; phases = [['queued', 'downloading'], ['verifying']]; }
                 else if (op.action === 'rollback' || recovering) { labels = ['Restore and check']; phases = [['queued', 'preparing', 'applying', 'reconnecting']]; }
                 else if (op.component === 'application') { labels = ['Snapshot', 'Install', 'Health check']; phases = [['queued', 'preparing'], ['applying'], ['reconnecting']]; }

@@ -3,6 +3,23 @@
     <x-slot name="help">
         Requires fpms-lite with cmprovision support on Raspberry Pi OS Lite. The front panel can work alongside HDMI.
     </x-slot>
+    @if($missingPackage)
+        <div class="space-y-2 mb-4">
+            <p class="text-sm text-fg-muted">Install display support for Waveshare or HyperPixel from the signed release matching this station.</p>
+            <x-confirms-password wire:then="installFpms">
+                <button type="button" class="cmp-btn cmp-btn-secondary" @disabled($packageBusy) wire:loading.attr="disabled">Install fpms-lite</button>
+            </x-confirms-password>
+            @if($packageBusy && !$installation)
+                <p class="text-sm text-fg-muted" role="status">Waiting for the current station update to finish.</p>
+            @endif
+        </div>
+    @endif
+    @if($installation && !($missingPackage && $installation['state'] === 'succeeded'))
+        <p @class(['text-sm mb-4', 'text-neg' => $installation['state'] === 'failed', 'text-fg-muted' => $installation['state'] !== 'failed']) role="status">
+            {{ $installation['message'] ?? 'Display package installation queued.' }}
+        </p>
+    @endif
+    @error('install') <p class="text-sm text-neg" role="alert">{{ $message }}</p> @enderror
     <form wire:submit="save" class="space-y-4">
         <p class="text-sm text-fg-muted" role="status">FPMS: {{ $status['state'] }}</p>
         @if(isset($status['display']))

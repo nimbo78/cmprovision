@@ -175,6 +175,39 @@ class RecoverySnapshotTest(unittest.TestCase):
 
 
 class SystemTest(unittest.TestCase):
+    def test_optional_panel_rejects_upgrading_an_existing_package_or_using_an_application_deb(self):
+        system = LinuxSystem(None)
+        path = Path('/root/fpms-lite_2.28.0_all.deb')
+        version = {'version': '2.28.0'}
+        def plan(name, apt):
+            def command(argv, **kwargs):
+                if argv[0] == '/usr/bin/dpkg-deb':
+                    return 'Package: '+name+'\nVersion: 2.28.0\nArchitecture: all'
+                if argv[0] == '/usr/bin/apt-get': return apt
+                return ''
+            with patch.object(system, 'command', side_effect=command):
+                return system.plan_install([path], version, fpms_only=True)
+        target = 'Inst fpms-lite (2.28.0 local-deb [all])'
+        self.assertEqual([{'package': 'fpms-lite', 'version': '2.28.0'}], plan('fpms-lite', target))
+        for name, apt in [('cmprovision4', target), ('fpms-lite', 'Inst nginx [1.0] (1.1 Debian [arm64])\n'+target),
+                          ('fpms-lite', 'Remv wlanpi-fpms [1.0]\n'+target)]:
+            with self.subTest(name=name, apt=apt), self.assertRaises(UpdateError):
+                plan(name, apt)
+
+    def test_optional_panel_configures_dependencies_before_installing_the_verified_file(self):
+        system = LinuxSystem(None)
+        path = Path('/private/fpms-lite_2.28.0_all.deb')
+        plan = [{'package': 'fpms-lite', 'version': '2.28.0'}, {'package': 'python3-spidev', 'version': '3.6'}]
+        with patch.object(system, 'plan_install', return_value=plan), patch.object(system, 'command',
+                side_effect=['Inst python3-spidev (3.6 Debian [arm64])', '', '']) as run:
+            system.install_fpms(path, '2.28.0', plan)
+        commands = [call.args[0] for call in run.call_args_list if '--simulate' not in call.args[0]]
+        self.assertIn('python3-spidev=3.6', commands[0])
+        self.assertIn('--no-download', commands[0])
+        self.assertIn('--no-remove', commands[0])
+        self.assertNotIn('fpms-lite=2.28.0', commands[0])
+        self.assertEqual(['/usr/bin/dpkg', '--force-confold', '--install', path], commands[1])
+
     def test_capture_returns_a_verified_reinstallable_snapshot_after_admission(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
