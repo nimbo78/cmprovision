@@ -71,16 +71,22 @@ def sntp(address):
 
 
 def lab(root):
-    if os.stat('/proc/self/ns/net').st_ino == os.stat('/proc/1/ns/net').st_ino:
+    if any(os.path.samefile('/proc/self/ns/'+ns, '/proc/1/ns/'+ns) for ns in ('net', 'mnt')):
         raise RuntimeError('Use unshare --net --mount --propagation private before starting the test.')
     os.chmod(root, 0o755)
     # Both ip-netns and chronyc need writable runtime paths. Never use the host's sockets.
     run('mount', '-t', 'tmpfs', 'tmpfs', '/run')
     netns = Path('/run/netns')
     netns.mkdir()
-    Path('/run/chrony').mkdir(mode=0o750)
+    runtime = Path('/run/chrony')
+    runtime.mkdir(mode=0o750)
     files = Files(root)
     files.write(LISTENER, b'')
+    # The packaged chronyd profile reads its generated include here. Bind the
+    # directory so subsequent atomic replacements by StandTime remain visible.
+    listener = Path('/') / LISTENER
+    listener.parent.mkdir()
+    run('mount', '--bind', str((root/LISTENER).parent), str(listener.parent))
     files.write(OPTIONS, b'')
     files.write('etc/default/cmprovision-stand-interface', b'pv15\n')
     files.write('etc/machine-id', b'a'*32)
@@ -102,11 +108,11 @@ def lab(root):
         return peer(ns, sys.executable, str(SELF), op, *args)
     def restart():
         stop('server')
-        config = root/'server.conf'
+        config = runtime/'server.conf'
         # In a private namespace clocks still share the host kernel. -x prevents any host clock step.
         config.write_text('server 192.0.2.2 iburst minpoll 0 maxpoll 0\n'
-                          'pidfile '+str(root/'server.pid')+'\ncmdport 0\nbindcmdaddress /run/chrony/server.sock'+
-                          '\ninclude '+str(root/LISTENER)+'\n')
+                          'pidfile /run/chrony/server.pid\ncmdport 0\nbindcmdaddress /run/chrony/server.sock\n'
+                          'include '+str(listener)+'\n')
         start('server', [NTPD, '-n', '-x', '-u', 'root', '-f', str(config)])
     def command(program, *args, **kwargs):
         if program == 'nmcli':
@@ -122,7 +128,7 @@ def lab(root):
         if program == 'runuser':
             return 'port=0'
         if program == 'chronyd':
-            return run(NTPD, '-p', 'include '+str(root/LISTENER))
+            return run(NTPD, '-p', 'include '+str(listener))
         return run(program, *args)
     service = StandTime(files, command)
     argv = ['--dhcp-optsfile=/' + OPTIONS, '--interface=pv15']
@@ -170,9 +176,9 @@ def lab(root):
         assert probe('device', 'dhcp', 'v15', 'no') == 'none'
         cold = probe('device', 'sntp', '172.20.0.1')
         assert cold in ('silent', 'unsynchronized'), cold
-        source = root/'source.conf'
+        source = runtime/'source.conf'
         source.write_text('local stratum 3\nallow 192.0.2.0/24\nbindaddress 192.0.2.2\ncmdport 0\n'
-                          'bindcmdaddress /run/chrony/source.sock\npidfile '+str(root/'source.pid')+'\n')
+                          'bindcmdaddress /run/chrony/source.sock\npidfile /run/chrony/source.pid\n')
         start('source', ['ip', 'netns', 'exec', 'management', NTPD, '-n', '-x', '-u', 'root', '-f', str(source)])
         for attempt in range(35):
             if probe('device', 'sntp', '172.20.0.1') == 'synchronized':
