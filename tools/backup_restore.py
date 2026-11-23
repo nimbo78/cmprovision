@@ -308,7 +308,7 @@ class Restorer:
         self.system.recovering = recover
         with inspect_archive(source, password, self.store.private) as archive:
             plan = plan_restore(archive, self.system.restore_context(recovery=recover), preview=not apply, **options)
-            self.system.validate_restore_payloads(archive)
+            self.system.validate_restore_payloads(archive, plan)
             if not apply: return plan['preview']
             job = None
             if not recover:

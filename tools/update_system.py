@@ -49,7 +49,17 @@ def parse_plan(text):
     return sorted(result, key=lambda item: item['package'])
 
 
-from stand_time import managed_chrony
+def managed_chrony():
+    # This module must also run from a protocol-1 recovery bundle with the 2.30.11 file list.
+    path = Path('/etc/chrony/chrony.conf')
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return False
+    with os.fdopen(fd, 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise UpdateError('Inspect the station chrony profile before continuing.')
+        return stream.readline(128) == b'# Managed by cmprovision: station time v1.\n'
 
 
 class LinuxSystem:

@@ -11,10 +11,9 @@ import tempfile
 
 NAMES = ('station-updates.py', 'update_manifest.py', 'update_store.py', 'update_transport.py',
          'update_worker.py', 'update_system.py', 'update_utility.py', 'update_broker.py',
-         'update_recovery.py', 'update_retention.py', 'update_diagnostics.py', 'stand_time.py', 'publisher.json', 'publisher.pub')
+         'update_recovery.py', 'update_retention.py', 'update_diagnostics.py', 'publisher.json', 'publisher.pub')
 TRUST = ('publisher.json', 'publisher.pub')
-PRE_CHRONY_NAMES = tuple(name for name in NAMES if name != 'stand_time.py')
-LEGACY_NAMES = tuple(name for name in PRE_CHRONY_NAMES if name != 'update_diagnostics.py')
+LEGACY_NAMES = tuple(name for name in NAMES if name != 'update_diagnostics.py')
 BOOT_SERVICES = frozenset(('cmprovision-dnsmasq.service', 'cmprovision-rpiboot.service'))
 
 
@@ -174,7 +173,7 @@ def dispatch(root=Path('/var/lib/cmprovision-updates'), runtime=Path('/run/cmpro
     if runner.get('directory') != str(directory): raise RuntimeError('The retained recovery path does not match.')
     for path in (directory.parent, directory): protected(path, owner, directory=True)
     hashes = runner.get('hashes')
-    if not isinstance(hashes, dict) or set(hashes) not in (set(NAMES), set(PRE_CHRONY_NAMES), set(LEGACY_NAMES)):
+    if not isinstance(hashes, dict) or set(hashes) not in (set(NAMES), set(LEGACY_NAMES)):
         raise RuntimeError('The retained recovery inventory is invalid.')
     for name, digest in hashes.items():
         path = directory/name

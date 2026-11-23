@@ -121,6 +121,25 @@ def managed_chrony(root=Path('/')):
     return chrony_servers(Files(root)) is not None
 
 
+def stock_chrony_options(files, unit=None):
+    defaults = files.read('etc/default/chrony') or b''
+    options = [line.strip() for line in defaults.splitlines() if line.strip() and not line.lstrip().startswith(b'#')]
+    if options not in ([], [b'DAEMON_OPTS="-F 1"']):
+        return False
+    if unit:
+        fragment = unit.get('FragmentPath', '')
+        if fragment and fragment not in ('/lib/systemd/system/chrony.service', '/usr/lib/systemd/system/chrony.service'):
+            return False
+        if any(path.startswith(('/run/', '/etc/')) for path in unit.get('DropInPaths', '').split()):
+            return False
+    for name in ('etc/chrony/conf.d', 'etc/chrony/sources.d', 'etc/systemd/system/chrony.service.d',
+                 'etc/systemd/system/chronyd.service.d', 'run/systemd/system/chrony.service.d'):
+        path = files.root / name
+        if path.is_dir() and any(p.suffix in ('.conf', '.sources') for p in path.iterdir()):
+            return False
+    return True
+
+
 def timesync_sources(config):
     servers = []
     for line in (config or b'').decode('utf-8').splitlines():
@@ -162,11 +181,13 @@ def option_conflict(content):
         key = key.strip().lower()
         if key in ('dhcp-optsfile', 'dhcp-optsdir', 'conf-dir', 'conf-file', 'conf-script'):
             return True
-        if key in ('dhcp-option', 'dhcp-option-force'):
+        if key in ('dhcp-option', 'dhcp-option-force', 'dhcp-option-pxe'):
             fields = [part.strip().lower() for part in value.split(',')]
-            option = next((x for x in fields if not x.startswith(('tag:', 'net:', 'vendor:', 'encap:', 'vi-encap:'))), '')
-            if option in ('42', 'option:ntp-server'):
-                return True
+            for field in fields:
+                if field == 'option:ntp-server' or re.fullmatch(r'0*42', field):
+                    return True
+                if re.fullmatch(r'\d+', field) or field.startswith(('option:', 'option6:')):
+                    break
     return False
 
 
@@ -294,19 +315,25 @@ class StandTime:
                 self.close()
             return
         try:
-            if self.transitioning() or not enabled or provider != 'chrony':
+            if self.transitioning() or provider != 'chrony':
                 self.close()
                 if request:
                     raise TimeError('Enable managed chrony on a confirmed, idle station first.')
                 return
             name, address, role = self.role()
             local = dict(version=1, station=self.station(), role=role)
-            if request:
-                self.files.write(INTENT, (json.dumps(local) + '\n').encode())
-            elif intent != local:
+            if intent and intent != local:
                 self.close()
                 self.files.write(INTENT, None)
+                if request is None:
+                    return
+            if not enabled:
+                self.close()
+                if request:
+                    raise TimeError('Enable station time synchronization first.')
                 return
+            if request:
+                self.files.write(INTENT, (json.dumps(local) + '\n').encode())
             rows = self.sockets()
             desired = f'binddevice {name}\nbindaddress {address}\nallow {NETWORK}\n'.encode()
             if role == 'primary':

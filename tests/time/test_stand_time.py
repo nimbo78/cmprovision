@@ -53,7 +53,7 @@ class ListenerTest(unittest.TestCase):
         previous = json.loads(self.files.read(INTENT))
         for field, other in [('role','primary'), ('station', 'b' * 32)]:
             self.files.write(INTENT, json.dumps(dict(previous, **{field: other})).encode())
-            self.service.reconcile('chrony', True)
+            self.service.reconcile('chrony', False)
             self.assertIsNone(self.files.read(INTENT))
             self.assertFalse(self.listener)
 
@@ -70,6 +70,7 @@ class ListenerTest(unittest.TestCase):
 
     def test_external_and_tagged_dhcp_options_are_reserved(self):
         for value in ('dhcp-option=42,172.20.0.1', 'dhcp-option-force=tag:device,option:ntp-server,10.0.0.1',
+                      'dhcp-option=lab,42,172.20.0.1', 'dhcp-option=042,172.20.0.1', 'dhcp-option-pxe=42,172.20.0.1',
                       'conf-dir=/opt/site', 'dhcp-optsfile=/etc/site.opts'):
             self.assertTrue(option_conflict(value))
         self.assertFalse(option_conflict('# dhcp-option=42,10.0.0.1\ndhcp-option=option:router,172.20.0.1'))

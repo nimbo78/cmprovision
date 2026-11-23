@@ -14,7 +14,7 @@ import time
 from zoneinfo import available_timezones
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from stand_time import CHRONY, CONF, Files, StandTime, TimeError, chrony_config, chrony_servers, sample, timesync_config, timesync_sources, valid_servers
+from stand_time import CHRONY, CONF, Files, StandTime, TimeError, chrony_config, chrony_servers, sample, stock_chrony_options, timesync_config, timesync_sources, valid_servers
 
 ROOT_UID = 0
 
@@ -128,7 +128,8 @@ class Controller:
 
     def unit(self, name):
         return self.properties(self.command('systemctl', 'show', name, '--no-pager',
-            '--property=LoadState', '--property=ActiveState', '--property=UnitFileState', '--property=Id', required=False))
+            '--property=LoadState', '--property=ActiveState', '--property=UnitFileState', '--property=Id',
+            '--property=FragmentPath', '--property=DropInPaths', required=False))
 
     def status(self):
         clock = self.properties(self.command('timedatectl', 'show', '--all', '--no-pager'))
@@ -137,7 +138,7 @@ class Controller:
         chrony = peers[CHRONY]
         managed_chrony = None
         if (chrony.get('LoadState') == 'loaded' and unit.get('LoadState') != 'loaded'
-                and chrony.get('UnitFileState') in ('enabled', 'disabled')
+                and chrony.get('UnitFileState') in ('enabled', 'disabled') and stock_chrony_options(self.files, chrony)
                 and not any(v.get('LoadState') == 'loaded' and v.get('Id', k) != CHRONY
                             for k, v in peers.items() if k != CHRONY)):
             managed_chrony = chrony_servers(self.files, valid_servers)
@@ -251,15 +252,20 @@ class Controller:
                 self.command('chronyd', '-p', '-f', '/' + CONF)
                 self.command('systemctl', 'enable' if enabled else 'disable', CHRONY)
                 self.command('systemctl', 'restart' if enabled else 'stop', CHRONY)
-                if enabled:
-                    self.stand.reconcile('chrony', True)
-                return self.status()
             except (TimeError, OSError, ValueError):
                 self.files.write(CONF, old)
                 self.command('systemctl', 'enable' if previous['ntp_enabled'] else 'disable', CHRONY)
                 self.command('systemctl', 'restart' if previous['ntp_active'] else 'stop', CHRONY)
                 self.stand.reconcile('chrony', previous['ntp_active'] and previous['ntp_enabled'])
                 raise
+            if enabled:
+                try:
+                    self.stand.reconcile('chrony', True)
+                except (TimeError, OSError, ValueError) as error:
+                    current = self.status()
+                    current['stand_server']['reason'] = str(error)
+                    return current
+            return self.status()
         old = self.read_config()
         data = timesync_config(servers)
         try:

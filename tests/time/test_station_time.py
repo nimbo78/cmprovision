@@ -61,14 +61,14 @@ class FakeSystem:
 
     def __call__(self, command, **kwargs):
         self.calls.append(command)
-        self_test = command[0] in ('/usr/bin/systemctl', '/usr/bin/timedatectl', '/usr/sbin/chronyd')
+        self_test = command[0] in ('/usr/bin/systemctl', '/usr/bin/timedatectl', '/usr/sbin/chronyd', '/usr/bin/chronyc')
         if not self_test or kwargs.get('shell'):
             raise AssertionError('Unsafe command: ' + repr(command))
         if self.fail and self.fail in command:
             if not self.fail_forever:
                 self.fail = None
             return subprocess.CompletedProcess(command, 1, '', 'private system output')
-        if command[0].endswith('chronyd'):
+        if command[0].endswith(('chronyd', 'chronyc')):
             text = ''
         elif command[0].endswith('timedatectl'):
             if 'show-timesync' in command:
@@ -173,6 +173,28 @@ class ControllerTest(unittest.TestCase):
         self.system.missing = True
         self.assertEqual('Asia/Jerusalem', self.request(action='set-timezone', timezone='Asia/Jerusalem')['timezone'])
         self.assertFalse(self.config.exists())
+
+    def test_local_chronyd_override_is_read_only(self):
+        from stand_time import CONF, chrony_config
+        self.system.other = self.system.missing = True
+        self.controller.files.write(CONF, chrony_config([]))
+        self.controller.files.write('etc/default/chrony', b'DAEMON_OPTS="-f /etc/site.conf"\n')
+        state = self.request(action='status')
+        self.assertFalse(state['ntp_available'])
+        with self.assertRaises(time_control.TimeError):
+            self.request(action='set-ntp', enabled=False, servers=[])
+        self.assertFalse(any('stop' in args for args in self.system.calls))
+
+    def test_an_unavailable_serving_link_does_not_disable_the_stations_own_client(self):
+        from stand_time import CONF, chrony_config
+        self.system.other = self.system.missing = True
+        self.system.active = self.system.enabled = False
+        self.controller.files.write(CONF, chrony_config([]))
+        with mock.patch.object(self.controller.stand, 'reconcile', side_effect=time_control.TimeError('Stand DHCP is down.')):
+            result = self.request(action='set-ntp', enabled=True, servers=['clock.test'])
+        self.assertTrue(result['ntp_active'])
+        self.assertEqual(['clock.test'], result['managed_servers'])
+        self.assertIn('DHCP', result['stand_server']['reason'])
 
     def test_custom_list_is_atomic_and_reset_preserves_admin_defaults(self):
         admin = self.etc/'systemd/timesyncd.conf'

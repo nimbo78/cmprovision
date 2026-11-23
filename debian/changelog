@@ -1,3 +1,12 @@
+cmprovision4 (2.30.12~dev1) trixie; urgency=medium
+
+  * Offer NTP on the confirmed provisioning link and advertise DHCP option
+    42 from the primary station when explicitly enabled in Settings.
+  * Prepare new station images with managed chrony. Existing stations keep
+    their time provider until an administrator switches it during maintenance.
+
+ -- cmprovision contributors <cmprovision@localhost>  Mon, 23 Nov 2026 18:22:00 +0300
+
 cmprovision4 (2.30.11) trixie; urgency=medium
 
   * Restore saved VLANs on a reimaged station when their parent interface

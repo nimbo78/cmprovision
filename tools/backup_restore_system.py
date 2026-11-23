@@ -21,7 +21,18 @@ from update_system import BOOT_SERVICES, parse_plan
 
 
 class LinuxRestoreSystem(LinuxBackupSystem):
-    def validate_restore_payloads(self, archive):
+    def validate_restore_payloads(self, archive, plan=None):
+        from stand_time import managed_chrony
+        if plan and managed_chrony(self.root):
+            for member in plan['install']:
+                if member.startswith('software/cmprovision4_') and member.endswith('.deb'):
+                    size = next(row['size'] for row in archive.manifest['members'] if row['name'] == member)
+                    if shutil.disk_usage(self.store.private).free < size + RESERVE:
+                        raise UpdateError('Not enough space to check the recovery package before restoring.')
+                    with tempfile.TemporaryDirectory(dir=self.store.private) as directory:
+                        path = Path(directory)/'cmprovision4.deb'
+                        with path.open('xb') as output: archive.copy(member, output)
+                        self.platform.check_time_support(path, time_v2=True)
         size = next(row['size'] for row in archive.manifest['members'] if row['name'] == 'application/database.sqlite')
         if size > 512*1024**2 or shutil.disk_usage(self.store.private).free < size*2+RESERVE:
             raise UpdateError('Not enough space to inspect snapshot database references with the free-space reserve.')
@@ -250,11 +261,14 @@ class LinuxRestoreSystem(LinuxBackupSystem):
                 unit = 'systemd-timesyncd.service'
                 if managed_chrony(self.root):
                     unit = CHRONY
-                    servers = settings['servers'] if 'servers' in settings else timesync_sources(files.read(legacy))
+                    servers = settings['servers'] if 'servers' in settings else timesync_sources(
+                        files.read(legacy) if legacy in plan['system'] else None)
                     files.write(CONF, chrony_config(servers))
                 elif 'servers' in settings:
                     files.write(legacy, timesync_config(settings['servers']))
                 self.platform.resume({unit: {'enabled': settings['enabled'], 'active': settings['active'] == 'active'}})
+                if unit == CHRONY and settings['active'] == 'active':
+                    self.command(['/usr/bin/systemctl', 'restart', unit])
         self.command(['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/php', self.app/'artisan', 'migrate', '--force'], timeout=180)
         args = ['backups:restore-finalize']
         if not all(archive.manifest['options'].values()): args.append('--deactivate-project')
