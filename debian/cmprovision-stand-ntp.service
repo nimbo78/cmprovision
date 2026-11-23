@@ -8,4 +8,3 @@ ConditionPathExists=|/run/cmprovision-time/dhcp-options.reload
 [Service]
 Type=oneshot
 ExecStart=/usr/sbin/cmprovision-stand-ntp reconcile
-

@@ -1,9 +1,10 @@
-cmprovision4 (2.30.12~dev1) trixie; urgency=medium
+cmprovision4 (2.30.12~dev2) trixie; urgency=medium
 
   * Offer NTP on the confirmed provisioning link and advertise DHCP option
     42 from the primary station when explicitly enabled in Settings.
   * Prepare new station images with managed chrony. Existing stations keep
     their time provider until an administrator switches it during maintenance.
+  * Verify the bound socket directly on Pi kernels with compact UDP diagnostics.
 
  -- cmprovision contributors <cmprovision@localhost>  Mon, 23 Nov 2026 18:22:00 +0300
 

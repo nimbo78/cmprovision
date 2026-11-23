@@ -1,10 +1,12 @@
 """Managed chrony configuration and DHCP option 42 for the local provisioning link."""
+import ctypes
 import ipaddress
 import json
 import math
 import os
 from pathlib import Path
 import re
+import socket
 import stat
 import tempfile
 import time
@@ -191,6 +193,34 @@ def option_conflict(content):
     return False
 
 
+def process_bound_socket(pid, interface, address, executable='/usr/sbin/chronyd'):
+    """Some Pi kernels omit the device in ss. Inspect only the actual NTP socket of the service."""
+    proc = Path('/proc') / str(pid)
+    handle = os.pidfd_open(pid)
+    try:
+        if not (proc/'exe').samefile(executable):
+            return False
+        with (proc/'net/udp').open() as table:
+            inodes = {fields[9] for line in table if len(fields := line.split()) >= 10 and fields[1].endswith(':007B')}
+        if len(inodes) != 1:
+            return False
+        link = 'socket:[' + inodes.pop() + ']'
+        for fd in (proc/'fd').iterdir():
+            try:
+                if os.readlink(fd) != link: continue
+            except FileNotFoundError:
+                continue
+            duplicate = ctypes.CDLL(None).pidfd_getfd(handle, int(fd.name), 0)
+            if duplicate < 0: return False
+            with socket.socket(fileno=duplicate) as sock:
+                return (sock.family == socket.AF_INET and sock.type == socket.SOCK_DGRAM
+                        and sock.getsockname() == (address, 123)
+                        and sock.getsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, 16).rstrip(b'\0') == interface.encode('ascii'))
+        return False
+    finally:
+        os.close(handle)
+
+
 class StandTime:
     def __init__(self, files, command):
         self.files, self.command = files, command
@@ -235,10 +265,20 @@ class StandTime:
     def sockets(self):
         return self.command('ss', '-H', '-lunp', 'sport = :123').splitlines()
 
-    @staticmethod
-    def listening(rows, interface, address):
+    def verify_device(self, interface, address):
+        try:
+            pid = int(self.command('systemctl', 'show', CHRONY, '-p', 'MainPID', '--value').strip())
+            return pid > 0 and process_bound_socket(pid, interface, address)
+        except (AttributeError, OSError, ValueError, TimeError):
+            return False
+
+    def listening(self, rows, interface, address):
         endpoint = address + '%' + interface + ':123'
-        return bool(rows) and all(len(row.split()) >= 5 and row.split()[3] == endpoint and '"chronyd"' in row for row in rows)
+        if len(rows) != 1 or len(cols := rows[0].split()) < 5:
+            return False
+        if cols[3] == endpoint and '"chronyd"' in rows[0]:
+            return True
+        return cols[3] in (endpoint, address + ':123') and self.verify_device(interface, address)
 
     def dhcp_process(self):
         pid = self.command('systemctl', 'show', DHCP, '-p', 'MainPID', '--value').strip()
@@ -272,7 +312,7 @@ class StandTime:
                 self.files.write(CLOSING, b'pending\n')
                 self.files.write(LISTENER, b'')
                 self.command('systemctl', 'try-restart', CHRONY)
-                if any('"chronyd"' in row for row in self.sockets()):
+                if self.sockets():
                     raise TimeError('The previous provisioning NTP listener did not close.')
                 self.files.write(CLOSING, None)
 
@@ -359,4 +399,3 @@ class StandTime:
         except (TimeError, ValueError, OSError):
             self.close()
             raise
-

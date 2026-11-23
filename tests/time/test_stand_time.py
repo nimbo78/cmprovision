@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 from stand_time import Files, INTENT, LISTENER, OPTIONS, StandTime, TimeError, option_conflict, saved_intent
@@ -63,6 +64,15 @@ class ListenerTest(unittest.TestCase):
             self.service.reconcile('chrony', True, True)
         self.assertIn('ntpd', self.listener)
         self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
+
+    def test_compact_kernel_socket_table_requires_independent_device_verification(self):
+        row = 'UNCONN 0 0 172.20.0.2:123 0.0.0.0:*'
+        self.service.verify_device = Mock(return_value=False)
+        self.assertFalse(self.service.listening([row], 'eth0', '172.20.0.2'))
+        self.service.verify_device.return_value = True
+        self.assertTrue(self.service.listening([row], 'eth0', '172.20.0.2'))
+        self.assertFalse(self.service.listening([row, row], 'eth0', '172.20.0.2'))
+        self.assertFalse(self.service.listening([row.replace('172.20.0.2', '0.0.0.0', 1)], 'eth0', '172.20.0.2'))
 
     def test_only_string_machine_ids_can_authorize_a_role(self):
         with self.assertRaises(TimeError):

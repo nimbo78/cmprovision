@@ -11,7 +11,7 @@ import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
-from stand_time import CONF, LISTENER, OPTIONS, Files, StandTime, chrony_config, sample
+from stand_time import CONF, LISTENER, OPTIONS, Files, StandTime, chrony_config, process_bound_socket, sample
 
 SELF = Path(__file__).resolve()
 UUID = '7e73aa77-ab0a-4d88-a458-8b7c03047ea1'
@@ -164,6 +164,8 @@ def lab(root):
         assert probe('device', 'dhcp', 'v15', 'yes') == 'none'
         assert probe('device', 'sntp', '172.20.0.1') == 'silent'
         service.reconcile('chrony', True, True)
+        assert process_bound_socket(processes['server'].pid, 'pv15', '172.20.0.1', NTPD)
+        assert not process_bound_socket(processes['server'].pid, 'mgmt', '172.20.0.1', NTPD)
         assert probe('device', 'dhcp', 'v15', 'yes') == socket.inet_aton('172.20.0.1').hex()
         assert probe('device', 'dhcp', 'v15', 'no') == 'none'
         cold = probe('device', 'sntp', '172.20.0.1')
@@ -210,4 +212,3 @@ if __name__ == '__main__':
     else:
         with tempfile.TemporaryDirectory(prefix='stand-ntp-') as directory:
             lab(Path(directory))
-
