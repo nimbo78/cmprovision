@@ -143,6 +143,12 @@ class RecoverySnapshotTest(unittest.TestCase):
             self.system.recover(self.backup())
         self.assertEqual(['/usr/bin/dpkg'], self.installers)
 
+    def test_managed_chrony_refuses_legacy_application_before_any_installer(self):
+        with patch('update_system.managed_chrony', create=True, return_value=True):
+            with self.assertRaisesRegex(UpdateError, 'timesyncd'):
+                self.system.recover(self.backup())
+        self.assertEqual([], self.installers)
+
     def test_manual_rollback_uses_current_strict_helper_with_legacy_data(self):
         self.restore.write_text('#!/bin/sh\nexit 0\n')  # Old helpers ignored system-config extraction failures.
         for name in ('time-settings.saved', 'boot-services.saved'):

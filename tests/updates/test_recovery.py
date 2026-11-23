@@ -15,6 +15,8 @@ from update_recovery import retain_runner, dispatch, install_dispatcher, NAMES
 
 
 class RecoveryTest(unittest.TestCase):
+    def test_retained_runner_contains_the_time_provider_preflight(self):
+        self.assertIn('stand_time.py', NAMES)
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -62,7 +64,8 @@ class RecoveryTest(unittest.TestCase):
         # Preflight is only used before an update. Retaining the original inventory
         # also lets older dispatchers recognize a pending runner during downgrade.
         self.assertNotIn('update_space.py', NAMES)
-        for number, names in enumerate((tuple(name for name in NAMES if name != 'update_diagnostics.py'), NAMES)):
+        old = tuple(name for name in NAMES if name != 'stand_time.py')
+        for number, names in enumerate((tuple(name for name in old if name != 'update_diagnostics.py'), old, NAMES)):
             operation, _ = self.store.begin({'action': 'check', 'nonce': f'{number:064x}', 'components': ['application']})
             runner = retain_runner(self.store, operation['id'], installed, names=names, trust=installed)
             self.store.update(operation['id'], runner=runner, state='applying')

@@ -15,6 +15,17 @@ class RestoreTest(unittest.TestCase):
         from backup_restore import file_group
         self.assertEqual('network', file_group('etc/default/cmprovision-rescue-wifi.json'))
 
+    def test_restore_requires_local_consent_for_serving_time(self):
+        from backup_restore import file_group
+        name = 'etc/cmprovision/stand-ntp.json'
+        self.assertEqual('role', file_group(name))
+        value = {'version': 1, 'station': 'c'*32, 'role': 'secondary'}
+        with inspect_archive(self.archive([Entry('system/'+name, data=canonical_bytes(value))]),
+                             'a sufficiently long password', self.root) as archive:
+            for mode, groups in [('migrate', ['role']), ('same-station', ['time'])]:
+                self.assertNotIn(name, self.module.plan_restore(archive, self.context, mode=mode, groups=groups)['system'])
+            self.assertIn(name, self.module.plan_restore(archive, self.context, mode='same-station', groups=['role'])['system'])
+
     def setUp(self):
         self.module = importlib.import_module('backup_restore')
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)

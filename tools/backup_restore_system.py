@@ -186,6 +186,8 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             fields = dict(line.split(': ', 1) for line in info.splitlines() if ': ' in line)
             if fields.get('Package') not in ('cmprovision4', 'fpms-lite') or fields.get('Version') != archive.manifest['version'] or fields.get('Architecture') != 'all':
                 raise UpdateError('A captured package has inconsistent identity or architecture.')
+            if fields['Package'] == 'cmprovision4':
+                self.platform.check_time_support(path)
             expected[fields['Package']] = fields['Version']
         if self.command(['/usr/bin/dpkg', '--audit']):
             if not getattr(self, 'recovering', False): raise UpdateError('Resolve the existing interrupted package operation first.')
@@ -207,6 +209,8 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             installation = self.package_plan(paths, archive)
             self.command(['/usr/bin/apt-get', '-y', '--download-only', '--reinstall', '--no-remove', '--allow-downgrades', 'install', *paths], timeout=1800)
         pending = self.store.configuration()['pending']
+        if (self.root/'usr/sbin/cmprovision-stand-ntp').is_file():
+            self.command(['/usr/sbin/cmprovision-stand-ntp', 'suspend-locked'])
         self.quiesce_restore(pending['services'])
         self.command(['/usr/sbin/cmprovision-first-admin', 'close'])
         if paths:
@@ -240,7 +244,17 @@ class LinuxRestoreSystem(LinuxBackupSystem):
             settings = plan['time']
             self.command(['/usr/bin/timedatectl', 'set-timezone', settings['timezone']])
             if settings['restore_ntp']:
-                self.platform.resume({'systemd-timesyncd.service': {'enabled': settings['enabled'], 'active': settings['active'] == 'active'}})
+                from stand_time import CHRONY, CONF, Files, chrony_config, managed_chrony, timesync_config, timesync_sources
+                files = Files(self.root)
+                legacy = 'etc/systemd/timesyncd.conf.d/90-cmprovision.conf'
+                unit = 'systemd-timesyncd.service'
+                if managed_chrony(self.root):
+                    unit = CHRONY
+                    servers = settings['servers'] if 'servers' in settings else timesync_sources(files.read(legacy))
+                    files.write(CONF, chrony_config(servers))
+                elif 'servers' in settings:
+                    files.write(legacy, timesync_config(settings['servers']))
+                self.platform.resume({unit: {'enabled': settings['enabled'], 'active': settings['active'] == 'active'}})
         self.command(['/usr/sbin/runuser', '-u', 'www-data', '--', '/usr/bin/php', self.app/'artisan', 'migrate', '--force'], timeout=180)
         args = ['backups:restore-finalize']
         if not all(archive.manifest['options'].values()): args.append('--deactivate-project')

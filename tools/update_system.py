@@ -49,8 +49,17 @@ def parse_plan(text):
     return sorted(result, key=lambda item: item['package'])
 
 
+from stand_time import managed_chrony
+
+
 class LinuxSystem:
     def __init__(self, store): self.store = store
+
+    def check_time_support(self, package, *, time_v2=False):
+        if time_v2 or managed_chrony():
+            provides = self.command(['/usr/bin/dpkg-deb', '-f', package, 'Provides'])
+            if 'cmprovision-managed-chrony' not in [item.strip() for item in provides.split(',')]:
+                raise UpdateError('Restore systemd-timesyncd before installing this application version on a managed chrony station.')
 
     def command(self, argv, timeout=60, check=True, *, stdout=subprocess.PIPE, strict_snapshot=False, **options):
         env = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
@@ -195,6 +204,8 @@ class LinuxSystem:
         for path in paths:
             info = self.command(['/usr/bin/dpkg-deb', '-f', path, 'Package', 'Version', 'Architecture'])
             fields = dict(line.split(': ', 1) for line in info.splitlines() if ': ' in line)
+            if fields.get('Package') == 'cmprovision4':
+                self.check_time_support(path)
             if fields.get('Package') not in expected or fields.get('Version') != expected[fields['Package']] or fields.get('Architecture') != 'all':
                 raise UpdateError('Signed package contents do not match their release metadata.')
         result = self.command(['/usr/bin/apt-get', '--simulate', '--no-remove', 'install', *paths], timeout=120)
@@ -303,6 +314,12 @@ class LinuxSystem:
             package = name.partition('_')[0]
             version = expected.pop(package, None)
             if not version: raise UpdateError('The recovery snapshot contains an unexpected package.')
+            if package == 'cmprovision4':
+                time_v2 = False
+                if 'time-settings.saved' in names:
+                    with (snapshot/'time-settings.saved').open('rb') as stream:
+                        time_v2 = stream.read(2) == b'2\n'
+                self.check_time_support(snapshot/name, time_v2=time_v2)
             info = self.command(['/usr/bin/dpkg-deb', '-f', snapshot/name, 'Package', 'Version', 'Architecture'], check=False)
             fields = dict(line.split(': ', 1) for line in info.stdout.splitlines() if ': ' in line)
             if info.returncode: raise UpdateError('The recovery package '+name+' is unreadable.')
