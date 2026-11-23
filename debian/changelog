@@ -1,3 +1,17 @@
+cmprovision4 (2.30.12) trixie; urgency=medium
+
+  * Offer NTP on the confirmed provisioning link and advertise DHCP option
+    42 from the primary station when explicitly enabled in Settings.
+  * Prepare new station images with managed chrony. Existing stations keep
+    their time provider until an administrator switches it during maintenance.
+  * Verify the bound socket directly on Pi kernels with compact UDP diagnostics.
+  * Show a verified peer-flashed sensor as OURS even when the local station
+    has an older run for its MAC. Preserve the history and active local runs.
+  * Install the optional fpms-lite display package from System settings
+    using the signed release matching the installed application.
+
+ -- cmprovision contributors <cmprovision@localhost>  Tue, 24 Nov 2026 00:08:00 +0300
+
 cmprovision4 (2.30.11) trixie; urgency=medium
 
   * Restore saved VLANs on a reimaged station when their parent interface

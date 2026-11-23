@@ -16,6 +16,12 @@ fi
 # postinst can only warn about initialization while dpkg is still configuring dependencies.
 # Retry after apt completes, and refuse to export an image with a missing boot recovery program.
 python3 -B -I /usr/lib/cmprovision/station-updates.py --initialize >/dev/null
+# Source packages from earlier stable tags can be used in custom image builds.
+if [ -x /usr/sbin/cmprovision-stand-ntp ]; then
+    apt-get -o Acquire::Retries=3 install --no-install-recommends -y chrony
+    /usr/sbin/cmprovision-stand-ntp prepare-image
+    systemctl enable chrony.service
+fi
 systemctl enable lldpd.service
 rm -f /opt/cmprovision-image.deb
 rm -f /opt/cmprovision-image-fpms.deb

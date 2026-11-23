@@ -38,7 +38,15 @@ class DnsmasqTest(unittest.TestCase):
         with patch.object(module.subprocess, 'run', return_value=result) as call:
             args = module.command('eth0.42')
             self.assertEqual(['--interface=eth0.42', '--bind-dynamic'], args[-2:])
+            self.assertIn('--dhcp-optsfile=/run/cmprovision-time/dhcp-options', args)
             self.assertEqual(['runuser', '-u', 'www-data', '--', 'head', '-c', '1048577', module.CONFIG], call.call_args.args[0])
+
+    def test_existing_tagged_ntp_configuration_retains_authority(self):
+        for entry in ('dhcp-option=42,192.0.2.8', 'dhcp-option-force=tag:pi,option:ntp-server,192.0.2.8',
+                      'dhcp-optsdir=/somewhere'):
+            result = type('Result', (), {'returncode': 0, 'stdout': entry.encode()})()
+            with self.subTest(entry=entry), patch.object(module.subprocess, 'run', return_value=result):
+                self.assertNotIn('--dhcp-optsfile=/run/cmprovision-time/dhcp-options', module.command('eth0'))
 
 
 unittest.main()

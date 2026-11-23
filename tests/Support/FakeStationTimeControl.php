@@ -13,6 +13,12 @@ class FakeStationTimeControl extends StationTimeControl
         'system_servers' => ['time.example.test'], 'link_servers' => [], 'fallback_servers' => ['0.debian.pool.ntp.org'],
         'managed_servers' => [], 'provider' => 'systemd-timesyncd'];
     public function status(): array { return $this->state; }
+    public function standServer(bool $enabled): array
+    {
+        $this->calls[] = ['stand-server', $enabled];
+        $this->state['stand_server']['requested'] = $enabled;
+        return $this->state;
+    }
     public function timezone(string $zone): array
     {
         $this->calls[] = ['timezone', $zone];

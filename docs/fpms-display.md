@@ -96,8 +96,8 @@ Both menus use the same station setting. The default is **1 minute**. Choose **1
 
 ## Enable the panel
 
-1. Install the matching FPMS package and cmprovision package on the station.
-2. Open **Settings → System → FPMS display**.
+1. On a station running a stable cmprovision release, open **Settings → System → FPMS display**.
+2. If the panel package is missing, select **Install fpms-lite** and confirm your web password. The card shows progress and any error. The installer runs on an idle station and uses the signed release matching the installed application.
 3. Check **Enable cmprovision in FPMS**, then **Save FPMS settings**.
 4. Check the displayed status. With the current Lite package, `running` means the controller answered
    identification requests, FPMS is alive and the shared snapshot is fresh. Settings also shows the
@@ -109,6 +109,8 @@ The default is off. On Lite the panel says the integration is off until enabled.
 The integration settings are included in normal cmprovision backups (a `--data-only` restore does not bring them back:
 enable the panel again). A restore stops both display consumers before replacing the database, then starts their watchers
 again. `apt remove` keeps `/etc/default/cmprovision-fpms.json`; `apt purge` removes the file.
+
+Waveshare and HyperPixel share the same package. Enable SPI for Waveshare as described below, or apply the HyperPixel boot profile described above. Once `fpms-lite` is installed, manual application rollback requires a recovery snapshot that also includes it.
 
 ## Enable SPI for the Waveshare panel
 

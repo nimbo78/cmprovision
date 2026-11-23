@@ -14,6 +14,7 @@ class StationTimeSettings extends Component
     #[Locked] public array $status = [];
     public $timezone = 'UTC', $ntpEnabled = true, $ntpServers = '';
     public ?string $error = null, $notice = null;
+    public $standServer = false;
 
     public function mount(): void
     {
@@ -21,6 +22,7 @@ class StationTimeSettings extends Component
         $this->timezone = $this->status['timezone'];
         $this->ntpEnabled = $this->status['ntp_enabled'];
         $this->ntpServers = implode("\n", $this->status['managed_servers']);
+        $this->standServer = $this->status['stand_server']['requested'] ?? false;
     }
     public function refreshStatus(): void
     {
@@ -46,6 +48,19 @@ class StationTimeSettings extends Component
             $this->status = app(StationTime::class)->ntp($this->ntpEnabled, $this->ntpServers);
             $this->notice = 'NTP settings saved. Synchronization status updates after the time service contacts a server.';
         } catch (\RuntimeException $error) { $this->error = $error->getMessage(); }
+    }
+    public function saveStandServer(): void
+    {
+        abort_unless(auth()->check(), 403);
+        $this->ensurePasswordIsConfirmed();
+        $this->error = $this->notice = null;
+        try {
+            $this->status = app(StationTime::class)->standServer($this->standServer);
+            $this->notice = 'Provisioning time settings saved.';
+        } catch (\RuntimeException $error) {
+            $this->refreshStatus();
+            $this->error = $error->getMessage();
+        }
     }
     public function render()
     {

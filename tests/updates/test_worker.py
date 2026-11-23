@@ -77,8 +77,10 @@ class System:
     def pause(self, services): self.calls.append(('pause', copy.deepcopy(services)))
     def resume(self, services, boot=True):
         self.calls.append(('resume', copy.deepcopy(services), boot))
-    def plan_install(self, paths, value):
+    def plan_install(self, paths, value, *, fpms_only=False):
         self.calls.append(('plan', len(paths)))
+        if fpms_only:
+            return [{'package': 'fpms-lite', 'version': value['version']}]
         result = [{'package': 'cmprovision4', 'version': value['version']}]
         if self.current['fpms_installed']: result.append({'package': 'fpms-lite', 'version': value['version']})
         if self.extra_dependency: result.append({'package': 'unexpected', 'version': '1.0'})
@@ -143,6 +145,65 @@ class WorkerTest(unittest.TestCase):
         operation = self.run_operation('download', component='application', tag='v2.28.0')
         self.assertEqual('ready', operation['state'], operation.get('message'))
         return self.store.snapshot()['ready'][0]
+
+    def test_optional_fpms_installs_only_the_panel_from_the_current_signed_release(self):
+        self.system.current.update(cmprovision='2.28.0', fpms_installed=False, fpms_version=None)
+        def install(path, version, plan):
+            self.assertEqual(b'contents of fpms-lite_2.28.0_all.deb', path.read_bytes())
+            self.assertEqual([{'package': 'fpms-lite', 'version': '2.28.0'}], plan)
+            self.system.current.update(fpms_installed=True, fpms_version=version)
+        self.system.install_fpms = install
+        result = self.run_operation('install-fpms')
+        self.assertEqual('succeeded', result['state'], result.get('message'))
+        self.assertEqual([('release', 'v2.28.0'), ('fetch', 'fpms-lite_2.28.0_all.deb')], self.source.calls)
+        self.assertEqual('2.28.0', self.store.snapshot()['installed']['fpms'])
+        self.assertFalse(any(call[0] in ('backup', 'pause', 'install') for call in self.system.calls))
+        again = self.run_operation('install-fpms')
+        self.assertEqual('succeeded', again['state'])
+        self.assertEqual(2, len(self.source.calls))
+
+    def test_optional_fpms_rejects_an_unpublished_version_busy_stand_and_corrupt_asset(self):
+        self.system.current.update(fpms_installed=False, fpms_version=None)
+        result = self.run_operation('install-fpms')
+        self.assertEqual('failed', result['state'])
+        self.assertIn('stable', result['message'])
+        self.system.current['cmprovision'] = '2.28.0'
+        self.system.active = ['busy']
+        self.assertEqual('failed', self.run_operation('install-fpms')['state'])
+        self.assertEqual([], self.source.calls)
+        self.system.active = []
+        self.source.payloads['fpms-lite_2.28.0_all.deb'] = b'bad'
+        self.system.install_fpms = lambda *_: self.fail('Attempted to install damaged package')
+        result = self.run_operation('install-fpms')
+        self.assertEqual('failed', result['state'])
+        self.assertIn('size', result['message'])
+
+    def test_optional_fpms_rejects_version_or_path_arguments(self):
+        for extra in ({'tag': 'v2.28.0'}, {'path': '/tmp/display.deb'}):
+            with self.assertRaises(UpdateError):
+                self.run_operation('install-fpms', **extra)
+
+    def test_accepted_cancel_at_display_install_boundary_prevents_package_changes(self):
+        self.system.current.update(cmprovision='2.28.0', fpms_installed=False, fpms_version=None)
+        installers = []
+        self.system.install_fpms = lambda *args: installers.append(args)
+        update = self.store.update
+        def cancel_before_transition(identity, **fields):
+            if fields.get('state') == 'applying':
+                self.store.cancel(identity)
+            return update(identity, **fields)
+        with patch.object(self.store, 'update', side_effect=cancel_before_transition):
+            result = self.run_operation('install-fpms')
+        self.assertEqual([], installers)
+        self.assertEqual('canceled', result['state'])
+
+    def test_a_board_arriving_during_display_download_keeps_the_package_uninstalled(self):
+        self.system.current.update(cmprovision='2.28.0', fpms_installed=False, fpms_version=None)
+        self.system.install_fpms = lambda *_: self.fail('Installed during active provisioning')
+        self.system.prefetch = lambda *_: self.system.active.append('new-board')
+        result = self.run_operation('install-fpms')
+        self.assertEqual('failed', result['state'])
+        self.assertIn('provisioning', result['message'])
 
     def test_backup_gate_defers_check_without_pruning_its_source_assets(self):
         marker = self.store.runtime.with_name('cmprovision-backups')/'pending.json'

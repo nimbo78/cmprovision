@@ -49,6 +49,7 @@ def restore_backup_configuration(value, now):
 
 
 def file_group(name):
+    if name == 'etc/cmprovision/stand-ntp.json': return 'role'
     if name == 'etc/default/cmprovision-rescue-wifi.json': return 'network'
     if name.startswith(('etc/NetworkManager/', 'var/lib/cmprovision-network/')) or name == 'etc/dhcpcd.conf': return 'network'
     if name.startswith('etc/ssh/'): return 'ssh'
@@ -186,6 +187,13 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
     absent = value.get('absent', [])
     if type(absent) is not list or any(type(path) is not str or path not in FIXED for path in absent): raise UpdateError('Invalid absent-settings inventory.')
     remove = [path for path in absent if file_group(path) in groups]
+    from stand_time import INTENT, TimeError, saved_intent, valid_servers
+    if mode != 'same-station':
+        selected = [name for name in selected if name != INTENT]
+        remove = [name for name in remove if name != INTENT]
+    if INTENT in selected:
+        try: saved_intent(json_member(archive, 'system/' + INTENT))
+        except (ValueError, TimeError) as error: raise UpdateError('Invalid provisioning NTP consent in the backup.') from error
     clock = json_member(archive, 'system/time.json')
     from zoneinfo import ZoneInfo
     try: ZoneInfo(clock['timezone'])
@@ -193,6 +201,13 @@ def plan_restore(archive, context, mode='migrate', groups=DEFAULT_GROUPS, select
     if (clock.get('enabled') not in ('enabled', 'enabled-runtime', 'disabled', 'masked', 'masked-runtime', 'static', 'not-found')
             or clock.get('active') not in ('active', 'inactive', 'failed')): raise UpdateError('Invalid saved synchronization service state.')
     clock = dict(clock, restore_ntp=clock['enabled'] != 'not-found')
+    if clock.get('version', 1) == 2:
+        if clock.get('provider') != 'chrony':
+            raise UpdateError('Unknown time provider in the backup.')
+        try: clock['servers'] = valid_servers(clock.get('servers'))
+        except TimeError as error: raise UpdateError('Invalid NTP sources in the backup.') from error
+    elif clock.get('version', 1) != 1 or 'provider' in clock or 'servers' in clock:
+        raise UpdateError('Unknown time settings format in the backup.')
     if not clock['restore_ntp']:
         selected = [path for path in selected if not path.startswith('etc/systemd/timesyncd')]
         remove = [path for path in remove if not path.startswith('etc/systemd/timesyncd')]
@@ -293,7 +308,7 @@ class Restorer:
         self.system.recovering = recover
         with inspect_archive(source, password, self.store.private) as archive:
             plan = plan_restore(archive, self.system.restore_context(recovery=recover), preview=not apply, **options)
-            self.system.validate_restore_payloads(archive)
+            self.system.validate_restore_payloads(archive, plan)
             if not apply: return plan['preview']
             job = None
             if not recover:

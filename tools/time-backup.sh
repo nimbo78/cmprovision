@@ -4,6 +4,10 @@
 
 cmprovision_time_snapshot()
 {
+    if [ -f /etc/chrony/chrony.conf ] && [ ! -L /etc/chrony/chrony.conf ] && grep -Fxq '# Managed by cmprovision: station time v1.' /etc/chrony/chrony.conf; then
+        /usr/sbin/cmprovision-stand-ntp snapshot > "$1/time-settings.saved"
+        return
+    fi
     cmp_time_presence=absent
     if [ -e /etc/systemd/timesyncd.conf.d/90-cmprovision.conf ] || [ -L /etc/systemd/timesyncd.conf.d/90-cmprovision.conf ]; then cmp_time_presence=present; fi
     cmp_time_enabled=$(/usr/bin/systemctl is-enabled systemd-timesyncd.service 2>/dev/null || true)
@@ -19,6 +23,14 @@ cmprovision_time_restore()
 {
     [ "${2:-0}" = 0 ] || return 0
     [ -f "$1/time-settings.saved" ] && [ ! -L "$1/time-settings.saved" ] || return 0
+    if [ "$(head -c 2 "$1/time-settings.saved")" = 2 ]; then
+        tail -n +2 "$1/time-settings.saved" | /usr/sbin/cmprovision-stand-ntp restore-snapshot
+        return
+    fi
+    if [ -f /etc/chrony/chrony.conf ] && grep -Fxq '# Managed by cmprovision: station time v1.' /etc/chrony/chrony.conf; then
+        /usr/sbin/cmprovision-stand-ntp restore-legacy < "$1/time-settings.saved"
+        return
+    fi
     cmp_time_record=$(head -c 129 "$1/time-settings.saved")
     cmp_time_version=$(printf '%s\n' "$cmp_time_record" | sed -n '1p')
     cmp_time_presence=$(printf '%s\n' "$cmp_time_record" | sed -n '2p')

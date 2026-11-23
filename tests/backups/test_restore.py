@@ -15,6 +15,17 @@ class RestoreTest(unittest.TestCase):
         from backup_restore import file_group
         self.assertEqual('network', file_group('etc/default/cmprovision-rescue-wifi.json'))
 
+    def test_restore_requires_local_consent_for_serving_time(self):
+        from backup_restore import file_group
+        name = 'etc/cmprovision/stand-ntp.json'
+        self.assertEqual('role', file_group(name))
+        value = {'version': 1, 'station': 'c'*32, 'role': 'secondary'}
+        with inspect_archive(self.archive([Entry('system/'+name, data=canonical_bytes(value))]),
+                             'a sufficiently long password', self.root) as archive:
+            for mode, groups in [('migrate', ['role']), ('same-station', ['time'])]:
+                self.assertNotIn(name, self.module.plan_restore(archive, self.context, mode=mode, groups=groups)['system'])
+            self.assertIn(name, self.module.plan_restore(archive, self.context, mode='same-station', groups=['role'])['system'])
+
     def setUp(self):
         self.module = importlib.import_module('backup_restore')
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
@@ -149,13 +160,33 @@ class RestoreTest(unittest.TestCase):
         with self.assertRaises(UpdateError): self.module.write_file(destination, 'etc/value', b'new', 0o600)
         self.assertEqual(b'unchanged', (outside/'value').read_bytes())
 
+    def test_unsupported_time_provider_fails_before_preview_or_freezing_the_station(self):
+        from unittest.mock import Mock, patch
+        from backup_restore_system import LinuxRestoreSystem
+        from backup_store import BackupStore
+        store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid())
+        system = LinuxRestoreSystem.__new__(LinuxRestoreSystem)
+        system.root, system.store = self.root, store
+        self.context['verified_packages']['cmprovision4'] = False
+        system.restore_context = Mock(return_value=self.context)
+        system.freeze_restore = Mock()
+        system.platform = Mock()
+        system.platform.check_time_support.side_effect = UpdateError('Incompatible time provider')
+        source = self.archive()
+        with patch('stand_time.managed_chrony', return_value=True):
+            for apply in (False, True):
+                with self.assertRaisesRegex(UpdateError, 'Incompatible time provider'):
+                    self.module.Restorer(store, system).run(source, 'a sufficiently long password', apply=apply, allow_snapshot=True)
+        system.freeze_restore.assert_not_called()
+        self.assertIsNone(store.status()['pending'])
+
     def test_corrupt_archive_or_failed_recovery_snapshot_never_changes_destination(self):
         from backup_store import BackupStore
         store = BackupStore(self.root/'state', self.root/'run', owner=os.getuid())
         calls = []
         class Effects:
             def restore_context(inner, recovery=False): return self.context
-            def validate_restore_payloads(inner, archive): pass
+            def validate_restore_payloads(inner, archive, plan): pass
             def freeze_restore(inner, job): calls.append('freeze'); store.mark_pending(job['id'], {})
             def recovery_snapshot(inner, archive, job, password): calls.append('recovery'); raise UpdateError('No recovery space.')
             def release_restore(inner, job): calls.append('release'); store.clear_pending(job['id'])
@@ -332,7 +363,7 @@ class RestoreTest(unittest.TestCase):
         self.context.update(recovering=True, verified_packages={})
         class Effects:
             def restore_context(inner, recovery=False): return self.context
-            def validate_restore_payloads(inner, archive): pass
+            def validate_restore_payloads(inner, archive, plan): pass
         preview = self.module.Restorer(store, Effects()).run(self.archive(), 'a sufficiently long password')
         self.assertEqual(['software/cmprovision4_2.28.0_all.deb'], preview['install'])
         self.assertFalse(preview['snapshot_software_opt_in'])

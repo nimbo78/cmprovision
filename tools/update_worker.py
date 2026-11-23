@@ -6,9 +6,9 @@ import stat
 
 from update_diagnostics import record
 
-from update_manifest import UpdateError, canonical_bytes, compatibility_error, newer, verify_manifest
+from update_manifest import APP_VERSION_RE, UpdateError, canonical_bytes, compatibility_error, newer, verify_manifest
 from update_recovery import BOOT_SERVICES
-from update_store import TERMINAL
+from update_store import TERMINAL, matches
 
 
 class Worker:
@@ -82,6 +82,7 @@ class Worker:
             try:
                 action = operation['action']
                 if action == 'check': self._check(identity, operation['request'])
+                elif action == 'install-fpms': self._install_fpms(identity)
                 elif action == 'download': self._download(identity, operation['request'])
                 elif action == 'apply': self._apply(identity, operation['request'])
                 elif action == 'activate': self._activate(identity, operation['request'])
@@ -122,6 +123,55 @@ class Worker:
                 except Exception: pass # Optional diagnostics cannot interrupt checking the other component.
         self._phase(identity, 'failed' if errors else 'succeeded',
                     errors[0] if errors else 'Update check completed.')
+
+    def _install_fpms(self, identity):
+        self._phase(identity, 'checking', 'Looking up display support for the installed application.')
+        context = self.system.context()
+        publisher = {'repository': self.source.repository, 'configured': True}
+        if context['fpms_installed']:
+            self.store.metadata(context, publisher)
+            self._phase(identity, 'succeeded', 'The display package is already installed.')
+            return
+        version = context['cmprovision']
+        if not matches(APP_VERSION_RE, version):
+            raise UpdateError('Install a signed stable cmprovision release before adding display support.')
+        self.system.conflicts()
+        self._idle()
+        tag = 'v' + version
+        envelope = self.source.release(tag, 'application', context)
+        release = self._verified(envelope, tag)
+        error = compatibility_error(release, context)
+        if error: raise UpdateError(error)
+        asset = next(item for item in release['assets'] if item['name'] == f'fpms-lite_{version}_all.deb')
+        directory = self.store.payload_dir(envelope['id'])
+        path = directory / asset['name']
+        self.system.download_space(0 if path.exists() else asset['size'])
+        self._phase(identity, 'downloading', 'Downloading the signed display package.', version=version, total=asset['size'])
+        if not path.exists():
+            def progress(done, total):
+                self.store.update(identity, downloaded=done, total=total)
+                return not self.store.operation(identity)['cancel_requested']
+            self.source.fetch(tag, asset, path, progress)
+        path = self._file(envelope['id'], asset)
+        self._phase(identity, 'verifying', 'Checking display package dependencies.', downloaded=asset['size'])
+        plan = self.system.plan_install([path], release, fpms_only=True)
+        self.system.prefetch([path], plan)
+        with self.system.admission_lock():
+            self.system.conflicts()
+            self._idle()
+            current = self.system.context()
+            if current['cmprovision'] != version or current['fpms_installed']:
+                raise UpdateError('Installed packages changed. Refresh the display settings.')
+            if self.store.operation(identity)['cancel_requested']:
+                self._phase(identity, 'canceled', 'Display package installation canceled.')
+                return
+            self._phase(identity, 'applying', 'Installing the display package and its dependencies.')
+            self.system.install_fpms(path, version, plan)
+        current = self.system.context()
+        if current['fpms_version'] != version:
+            raise UpdateError('The display package did not finish configuring. Check the package manager and retry.')
+        self.store.metadata(current, publisher)
+        self._phase(identity, 'succeeded', 'Display package installed. Configure the panel in FPMS display.')
 
     def _download(self, identity, request):
         self._phase(identity, 'checking', 'Resolving the selected signed release.')

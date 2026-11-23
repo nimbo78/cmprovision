@@ -3,14 +3,18 @@
 namespace App\Http\Livewire;
 
 use App\Services\Fpms;
+use App\Services\StationUpdatesControl;
 use App\Support\FpmsPanelSettings;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
+use Laravel\Jetstream\ConfirmsPasswords;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 class FpmsSettings extends Component
 {
+    use ConfirmsPasswords;
+
     public $enabled = false, $open_on_start = false, $notice = null;
     /* how the panel looks: the server's own setting, sent in the snapshot (FpmsPanelSettings) */
     public $theme = 'new', $ports_map = 'pages', $color_mode = 'dark', $screen_timeout = FpmsPanelSettings::DEFAULT_SCREEN_TIMEOUT;
@@ -57,8 +61,30 @@ class FpmsSettings extends Component
         }
     }
 
-    public function render(Fpms $fpms)
+    public function installFpms(StationUpdatesControl $updates): void
     {
-        return view('livewire.fpms-settings', ['status' => $fpms->status()]);
+        abort_unless(Auth::check(), 403);
+        $this->ensurePasswordIsConfirmed();
+        $this->resetErrorBag('install');
+        if (!$updates->available() || !$updates->fpmsMissing()) return;
+        try {
+            $result = $updates->request(['action' => 'install-fpms', 'nonce' => bin2hex(random_bytes(32))]);
+            if (!empty($result['launch_uncertain'])) $this->addError('install', 'The installer has not confirmed startup. Check the update journal.');
+        } catch (\RuntimeException $error) {
+            $this->addError('install', $error->getMessage());
+        }
+    }
+
+    public function render(Fpms $fpms, StationUpdatesControl $updates)
+    {
+        $updater = $updates->available() ? $updates->status() : [];
+        $operation = $updater['operation'] ?? [];
+        return view('livewire.fpms-settings', [
+            'status' => $fpms->status(),
+            'missingPackage' => $updates->available() && $updates->fpmsMissing(),
+            'packageBusy' => !empty($updater['pending']) || ($operation && !in_array($operation['state'] ?? null,
+                ['ready', 'succeeded', 'rolled-back', 'failed', 'canceled'], true)),
+            'installation' => ($operation['action'] ?? '') === 'install-fpms' ? $operation : null,
+        ]);
     }
 }

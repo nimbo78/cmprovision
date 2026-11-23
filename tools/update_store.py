@@ -56,6 +56,7 @@ def validate_request(request):
     action = request.get('action')
     fields = {
         'check': {'action', 'nonce', 'components'},
+        'install-fpms': {'action', 'nonce'},
         'download': {'action', 'nonce', 'component', 'tag'},
         'apply': {'action', 'nonce', 'candidate', 'receipt'},
         'activate': {'action', 'nonce', 'selector'},
@@ -331,6 +332,8 @@ class UpdateStore:
         def action(state):
             operation = state['operations'].get(identity)
             if operation is None: raise UpdateError('Update operation was not found.')
+            if changes.get('state') == 'applying' and operation['action'] == 'install-fpms' and operation['cancel_requested']:
+                raise UpdateError('Display package installation canceled.')
             completed = operation.get('updated_at') if operation['state'] == 'succeeded' else int(self.clock())
             operation.update(changes, updated_at=int(self.clock()))
             if operation['downloaded'] > operation['total']: raise UpdateError('Update progress exceeds its total.')

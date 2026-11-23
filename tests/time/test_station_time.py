@@ -14,6 +14,14 @@ spec.loader.exec_module(time_control)
 
 
 class RequestTest(unittest.TestCase):
+    def test_stand_server_action_accepts_only_an_explicit_boolean(self):
+        for enabled in (True, False):
+            request = {'action': 'set-stand-server', 'enabled': enabled}
+            self.assertEqual(request, time_control.parse_request(json.dumps(request).encode()))
+        for fields in ({'enabled': 1}, {'enabled': 'yes'}, {'enabled': True, 'interface': 'wlan0'}):
+            with self.assertRaises(time_control.TimeError):
+                time_control.parse_request(json.dumps({'action': 'set-stand-server', **fields}).encode())
+
     def test_only_exact_bounded_requests_are_accepted(self):
         for request in (None, [], {}, {'action': 'status', 'path': '/tmp/x'}, {'action': 'set-time'},
                         {'action': ['status']}, {'action': 'set-timezone', 'timezone': '../UTC'},
@@ -53,14 +61,16 @@ class FakeSystem:
 
     def __call__(self, command, **kwargs):
         self.calls.append(command)
-        self_test = command[0] in ('/usr/bin/systemctl', '/usr/bin/timedatectl')
+        self_test = command[0] in ('/usr/bin/systemctl', '/usr/bin/timedatectl', '/usr/sbin/chronyd', '/usr/bin/chronyc')
         if not self_test or kwargs.get('shell'):
             raise AssertionError('Unsafe command: ' + repr(command))
         if self.fail and self.fail in command:
             if not self.fail_forever:
                 self.fail = None
             return subprocess.CompletedProcess(command, 1, '', 'private system output')
-        if command[0].endswith('timedatectl'):
+        if command[0].endswith(('chronyd', 'chronyc')):
+            text = ''
+        elif command[0].endswith('timedatectl'):
             if 'show-timesync' in command:
                 if not self.active:
                     return subprocess.CompletedProcess(command, 1, '', 'not running')
@@ -76,6 +86,8 @@ class FakeSystem:
                 text = ''
             else:
                 raise AssertionError(command)
+        elif 'show' in command and 'MainPID' in command:
+            text = '0'
         elif 'show' in command:
             is_timesyncd = 'systemd-timesyncd.service' in command
             found = not self.missing if is_timesyncd else self.other and 'chrony.service' in command
@@ -131,10 +143,58 @@ class ControllerTest(unittest.TestCase):
                 self.assertFalse(self.config.exists())
                 setattr(self.system, attr, False)
 
+    def test_client_only_station_explains_why_it_cannot_serve_the_stand(self):
+        state = self.request(action='status')
+        self.assertEqual('systemd-timesyncd', state['provider'])
+        self.assertFalse(state.get('stand_server', {}).get('requested', True))
+        self.assertFalse(state['stand_server']['listening'])
+        self.assertIn('chrony', state['stand_server']['reason'])
+
+    def test_managed_chrony_with_custom_sources_does_not_add_default_pool(self):
+        self.system.other, self.system.missing = True, True
+        self.system.active = False
+        self.etc.joinpath('chrony').mkdir()
+        profile = self.etc/'chrony/chrony.conf'
+        from stand_time import chrony_config
+        profile.write_bytes(chrony_config([]))
+        state = self.request(action='status')
+        self.assertEqual('chrony', state['provider'])
+        self.assertTrue(state['ntp_available'])
+        self.request(action='set-ntp', enabled=False, servers=['clock.lan', '2001:db8::1'])
+        self.assertIn('server clock.lan iburst', profile.read_text())
+        self.assertNotIn('pool ', profile.read_text())
+        self.assertNotIn('sourcedir ', profile.read_text())
+        self.assertEqual(['clock.lan', '2001:db8::1'], self.request(action='status')['managed_servers'])
+        self.request(action='set-ntp', enabled=False, servers=[])
+        self.assertIn('pool 2.debian.pool.ntp.org', profile.read_text())
+        self.assertNotIn('allow ', profile.read_text())
+
     def test_timezone_is_independent_of_missing_ntp_provider(self):
         self.system.missing = True
         self.assertEqual('Asia/Jerusalem', self.request(action='set-timezone', timezone='Asia/Jerusalem')['timezone'])
         self.assertFalse(self.config.exists())
+
+    def test_local_chronyd_override_is_read_only(self):
+        from stand_time import CONF, chrony_config
+        self.system.other = self.system.missing = True
+        self.controller.files.write(CONF, chrony_config([]))
+        self.controller.files.write('etc/default/chrony', b'DAEMON_OPTS="-f /etc/site.conf"\n')
+        state = self.request(action='status')
+        self.assertFalse(state['ntp_available'])
+        with self.assertRaises(time_control.TimeError):
+            self.request(action='set-ntp', enabled=False, servers=[])
+        self.assertFalse(any('stop' in args for args in self.system.calls))
+
+    def test_an_unavailable_serving_link_does_not_disable_the_stations_own_client(self):
+        from stand_time import CONF, chrony_config
+        self.system.other = self.system.missing = True
+        self.system.active = self.system.enabled = False
+        self.controller.files.write(CONF, chrony_config([]))
+        with mock.patch.object(self.controller.stand, 'reconcile', side_effect=time_control.TimeError('Stand DHCP is down.')):
+            result = self.request(action='set-ntp', enabled=True, servers=['clock.test'])
+        self.assertTrue(result['ntp_active'])
+        self.assertEqual(['clock.test'], result['managed_servers'])
+        self.assertIn('DHCP', result['stand_server']['reason'])
 
     def test_custom_list_is_atomic_and_reset_preserves_admin_defaults(self):
         admin = self.etc/'systemd/timesyncd.conf'

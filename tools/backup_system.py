@@ -379,10 +379,16 @@ class LinuxBackupSystem:
             evidence.update(provenance=software[0]['provenance'], covered_by='cmprovision4')
         entries.extend(utility); software.append(evidence)
         pending = self.store.configuration()['pending']
+        from stand_time import CHRONY, Files, chrony_servers
+        sources = chrony_servers(Files(self.root))
+        unit = CHRONY if sources is not None else 'systemd-timesyncd.service'
+        clock = {'timezone': self.timezone(), 'enabled': self.command(['/usr/bin/systemctl', 'is-enabled', unit], check=False).stdout.strip(),
+                 'active': self.command(['/usr/bin/systemctl', 'is-active', unit], check=False).stdout.strip()}
+        if sources is not None:
+            clock.update(version=2, provider='chrony', servers=sources)
         system = {'system/payloads.json': payloads, 'system/service-state.json': pending['services'], 'system/backup-config.json': job['snapshot']['config'],
             'system/software.json': software, 'system/os.json': context['os'],
-            'system/time.json': {'timezone': self.timezone(), 'enabled': self.command(['/usr/bin/systemctl', 'is-enabled', 'systemd-timesyncd.service'], check=False).stdout.strip(),
-                'active': self.command(['/usr/bin/systemctl', 'is-active', 'systemd-timesyncd.service'], check=False).stdout.strip()}}
+            'system/time.json': clock}
         entries.extend(Entry(name, data=canonical_bytes(value), group='system') for name, value in system.items())
         metadata = {'station_id': job['snapshot']['station_id'], 'version': context['cmprovision'],
             'source_commit': context.get('source_commit', 'unknown'), 'os': context['os'], 'options': job['options'],

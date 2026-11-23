@@ -240,6 +240,14 @@ boots which provisioner flashed it, and any provisioner with the same mark key c
    counted as a completed local run. An unchecked or mismatched mark stays unrecognized; a shared port is not labelled
    as one sensor, even if one of its neighbours carries a verified mark.
 
+If another station reflashes a sensor that this station provisioned earlier, **Ports** shows **OURS** and
+names the station in the verified mark. The earlier run stays in **CMs**. A running local job, a sensor
+still polling this station, or a just-finished local job keeps its local card while LLDP refreshes.
+
+On a Cisco IOS switch serving several provisioning VLANs, LLDP may show the sensor while its port's
+MAC list is empty. In **Settings → Network → Ethernet switches**, choose **Cisco IOS: BRIDGE-MIB per VLAN**
+for the MAC table and ensure the SNMP account can read the sensor's VLAN.
+
 The device's key is an HMAC of its MAC with the mark key: the device holds only its own key, never the mark key, and a
 mark copied to another device does not match. The device asks the server for its key while the agent is installed (the
 post-install scripts run under `sh -v`, which copies their lines into the log), so the key appears in no log. A mark is

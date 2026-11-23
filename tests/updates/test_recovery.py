@@ -15,6 +15,17 @@ from update_recovery import retain_runner, dispatch, install_dispatcher, NAMES
 
 
 class RecoveryTest(unittest.TestCase):
+    def test_retained_time_preflight_works_with_the_previous_release_inventory(self):
+        import shutil
+        import sys
+        self.assertNotIn('stand_time.py', NAMES)
+        for name in NAMES:
+            if name.endswith('.py'):
+                shutil.copyfile(TOOLS/name, self.root/name)
+        subprocess.run([sys.executable, '-I', '-c',
+                        'import sys; sys.path.insert(0, sys.argv[1]); from update_system import managed_chrony; managed_chrony()',
+                        str(self.root)], check=True)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

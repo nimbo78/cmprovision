@@ -20,6 +20,15 @@ if [ "$1" = "upgrade" ] || [ "$1" = "remove" ]; then
     fi
 fi
 
+if [ "$1" = remove ] && [ -x /usr/sbin/cmprovision-stand-ntp ]; then
+    /usr/sbin/cmprovision-stand-ntp retire
+fi
+if [ "$1" = upgrade ] && [ -n "${2:-}" ] && dpkg --compare-versions "$2" lt '2.30.12~dev1' &&
+   [ -f /etc/chrony/chrony.conf ] && grep -Fxq '# Managed by cmprovision: station time v1.' /etc/chrony/chrony.conf; then
+    echo 'Return to systemd-timesyncd before downgrading cmprovision: cmprovision-stand-ntp return-timesyncd' >&2
+    exit 1
+fi
+
 # NM keeps an AP independently of our oneshot service. Removal/downgrade releases only our sharing profile;
 # ordinary upgrades retain it so an engineer's session survives package replacement.
 if [ -x /usr/lib/cmprovision/rescue-wifi ] && { [ "$1" = "remove" ] || { [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "2.30.0~dev2"; }; }; then

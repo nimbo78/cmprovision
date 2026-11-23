@@ -76,6 +76,16 @@ fi
 
 # The web server too: in WAL every connection opens -wal and -shm by name, and one left open across the swap would mix
 # the old files into the restored database. Everything is started again at the end.
+if [ -x /usr/sbin/cmprovision-stand-ntp ]; then
+    if [ "$DATA_ONLY" = 0 ] && [ -f /etc/chrony/chrony.conf ] && grep -Fxq '# Managed by cmprovision: station time v1.' /etc/chrony/chrony.conf; then
+        for time_deb in "$SRC"/cmprovision4_*.deb; do
+            [ -f "$time_deb" ] || continue
+            dpkg-deb -f "$time_deb" Provides | tr ', ' '\n' | grep -Fxq cmprovision-managed-chrony || {
+                echo 'Restore systemd-timesyncd before installing this legacy application.' >&2; exit 1; }
+        done
+    fi
+    /usr/sbin/cmprovision-stand-ntp suspend-locked
+fi
 stop_readers
 
 # A restored empty database must never reopen first registration.

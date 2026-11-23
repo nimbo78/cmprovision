@@ -4,7 +4,7 @@
 
 [Operations](operations.md#the-settings-page) · [Backup and restore](upgrading.md)
 
-Open **Settings → System → Time and synchronization**. These controls belong to the provisioner; they do not configure clocks on the sensors it flashes.
+Open **Settings → System → Time and synchronization**. Set the station clock here and optionally offer its time to devices on the provisioning link.
 
 ![Time and synchronization with a searchable time zone, NTP servers and live status](../assets/readme/screenshots/system-time.png)
 
@@ -39,17 +39,40 @@ flowchart LR
 | **Use system servers** | Clear the editable list; **Save NTP settings** applies the change. Administrator/vendor defaults remain intact. |
 | **Refresh status** | Read current synchronization state and server without discarding unsaved fields. |
 
-For a private time service, enter its address, keep NTP enabled, save, then refresh status after it has had time to answer. The managed system list replaces other system NTP entries and clears fallback entries while custom servers are selected. **Interface-provided servers may still participate**; expand **Effective server lists** to inspect them.
+For a private source, enter its address, save, and refresh after it has answered. With managed chrony an explicit list replaces the default pool and DHCP-provided sources. With timesyncd, link-provided sources can still participate. Expand **Effective server lists** to see what the station is using.
 
-> [!IMPORTANT]
-> **Settings saved** means the configuration was applied, not that the server has answered. Check **Synchronized**, **NTP active** and **Current server** together. A wrong hostname or unreachable server can leave a correctly saved configuration unsynchronized.
+> [!NOTE]
+> **Settings saved** confirms the configuration. **Synchronized**, the current source and the age of its last sample show whether the station has usable time.
 
-Changes require an idle station and are blocked during pending network, power or application-update operations. Reading status does not change the clock. cmprovision never manually sets the date or makes the provisioner an NTP server.
+## Serve devices on the provisioning network
 
-## Supported service and recovery
+1. On an idle station with managed chrony, confirm the provisioning interface or VLAN under **Settings → Network** and enable the station's own NTP synchronization.
+2. In **Settings → System → Time and synchronization**, enable **Serve time on the provisioning network** and save. Serving is initially off.
+3. Check the displayed interface, IPv4 address, listener and DHCP status. On the primary station, clients requesting option 42 receive its address in their next DHCP lease. A secondary can serve on its own address when explicitly enabled. Its DHCP service stays off.
+4. From a stand device, query the displayed address. For example, on Cisco IOS configure `ntp server 172.20.0.1` and inspect `show ntp associations` and `show ntp status`. A sensor OS must support DHCP option 42 or use an explicitly configured server.
 
-The NTP editor supports **systemd-timesyncd**, the client used by the station image and the tested Raspberry Pi OS Trixie provisioners. A missing, masked or alternative service is reported explicitly; it is not replaced automatically. Time zone controls remain independent. Failed application restores the previous configuration/service state when possible; an incomplete recovery is reported.
+The server listens on UDP 123 on the confirmed provisioning IPv4 and interface. A new station needs a valid upstream sample before clients can synchronize. After an upstream outage, chrony's clock estimate and the age of the last sample show the difference between holdover and a fresh sample. Switching serving off closes the listener and removes option 42 from future DHCP replies. Existing leases refresh according to their own schedule. Early boot in the flashing Utility OS has its own time policy. [DHCP option 42](https://www.rfc-editor.org/rfc/rfc2132#section-8.3) · [chrony configuration](https://chrony-project.org/doc/4.6/chrony.conf.html)
 
-The managed file is `/etc/systemd/timesyncd.conf.d/90-cmprovision.conf`. Clearing the list removes only that file. New full system snapshots record the time-zone files, managed file presence/absence and supported NTP service enablement/running state. Full restore applies that record and refreshes the time services; older snapshots without the record leave unrecorded service choices alone. **Download backup**, data-only restore and selective import/export do not carry these system files to another station.
+## Prepare an existing station
 
-Implementation follows the systemd documentation for [time controls](https://manpages.debian.org/trixie/systemd/timedatectl.1.en.html) and [NTP server configuration](https://manpages.debian.org/trixie/systemd-timesyncd/timesyncd.conf.5.en.html).
+New images built with this feature include managed chrony. A package upgrade preserves the existing provider. On a station using systemd-timesyncd, perform the following over SSH during an idle maintenance window. The first command needs working signed Debian package repositories and the exact installed timesyncd version. It downloads the old provider, chrony and dependencies and verifies the cache before making changes.
+
+```sh
+sudo cmprovision-stand-ntp cache-provider
+sudo cmprovision-stand-ntp use-chrony
+chronyc tracking
+chronyc sources -n
+```
+
+The switch applies the existing source list and client enablement. Review custom systemd or chrony configuration with the site administrator first. If a switch is interrupted or an application rollback requires the former provider, use the retained packages and saved time settings, including after a reboot with the uplink down.
+
+```sh
+sudo cmprovision-stand-ntp return-timesyncd
+systemctl status systemd-timesyncd
+```
+
+The cache is local to this station at `/var/lib/cmprovision-time-provider`. Its files are also needed for offline recovery. Keep the cache until the transition is accepted. The web interface asks for a confirmed password when saving time settings and blocks changes during provisioning or other station maintenance.
+
+## Backup and restore
+
+Full backups record the time zone, managed upstreams and client state. Consent to serve time belongs to the **role** restore group and is tied to the station identity. A time-only restore cannot enable serving. After migrating to another station, enable serving locally for its confirmed link. Legacy timesyncd snapshots remain readable. Returning to an older application that cannot manage chrony also requires a compatible recovery snapshot.

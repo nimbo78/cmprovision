@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Cm;
 use App\Services\NetworkStatus;
 use App\Services\Sensor\ModuleMark;
+use App\Services\Switch\Neighbors;
 
 /**
  * The stand as the Ports page draws it: the snapshots of its switches and the modules behind their MAC addresses as
@@ -161,6 +162,14 @@ class StandMap
                 return $mark;
         }
         return null;
+    }
+
+    protected function peerMarkSupersedes(Cm $local, string $issuer): bool
+    {
+        // The switch can still advertise the previous system just after a local run finishes.
+        return strcasecmp($issuer, ModuleMark::station()) !== 0
+            && !$local->isActive() && !$local->canIdentify()
+            && !$local->finishedAt()?->gte(now()->subSeconds(Neighbors::KEEP));
     }
 
     /* The port's neighbour (LLDP, CDP) is that switch: it says a MAC the switch answers from, or, when it says no MAC
@@ -456,13 +465,15 @@ class StandMap
         else
             $state = 'boot';
 
-        // Keep this out of the local modules and the batch: a verified mark identifies the other station's sensor,
-        // not a run on this server. It also beats the initial 'booting' guess for a known marked device.
-        $recognized = in_array($state, ['foreign', 'boot'], true) && $count === 1 && count($macs) === 1
+        $verifiedMark = $port['up'] && !$uplinks[$key] && $count === 1 && count($macs) === 1
             ? $this->markedSensorOnPort($p, $macs[0]) : null;
-        if ($recognized !== null)
+        $recognized = $verifiedMark !== null && (!$modules || $this->peerMarkSupersedes($modules[0], $verifiedMark['station']));
+        if ($recognized)
+        {
             $state = 'foreign';
-        $filter = $recognized !== null ? 'recognized' : ($state === 'module' ? self::moduleState($modules[0]) : ($state === 'quiet' ? 'foreign' : $state));
+            $others = 1;
+        }
+        $filter = $recognized ? 'recognized' : ($state === 'module' ? self::moduleState($modules[0]) : ($state === 'quiet' ? 'foreign' : $state));
         $part = $this->parts[$p['switch']];
         $boardPort = ($port['alias'] ?? '') !== '' ? $port['alias'] : $port['name'];
         return [
@@ -481,7 +492,7 @@ class StandMap
             // another cmprovision station is on this port (the stand's provisioner, a second station): who it says it is
             'station' => isset($links[$key]) ? null : $this->station($p),
             // a device flashed with the provisioner's mark says so for its first boots (ModuleMark): what it says, checked
-            'flashed_by' => $recognized ?? (isset($links[$key]) ? null : $this->moduleMark($p)),
+            'flashed_by' => $verifiedMark ?? (isset($links[$key]) ? null : $this->moduleMark($p)),
             'ifIndex' => $port['ifIndex'],
             'name' => $port['name'],
             'alias' => $port['alias'],
@@ -500,7 +511,7 @@ class StandMap
             'filters' => $state === 'module' ? array_values(array_unique(array_map([self::class, 'moduleState'], $modules))) : [$filter],
             'modules' => $state === 'module' ? $modules : [],
             // the last four hex digits of the MAC: what a person reads off a switch or a label
-            'short' => $recognized !== null ? 'OURS' : ($state === 'module' ? strtoupper(substr(str_replace(':', '', $modules[0]->mac ?: $modules[0]->serial), -4))
+            'short' => $recognized ? 'OURS' : ($state === 'module' ? strtoupper(substr(str_replace(':', '', $modules[0]->mac ?: $modules[0]->serial), -4))
                 : (isset($links[$key]) ? '→' : (['uplink' => 'UP', 'foreign' => 'UNR', 'boot' => '···', 'quiet' => 'LNK'][$state] ?? ''))),
         ];
     }

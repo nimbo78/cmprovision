@@ -35,22 +35,43 @@ def file_sha256(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def parse_plan(text):
+def parse_plan(text, *, additions_only=False):
     result = []
     for line in text.splitlines():
         if line.startswith(('Remv ', 'Purg ')): raise UpdateError('The update would remove packages; resolve dependencies over SSH.')
         if not line.startswith('Inst '): continue
-        match = re.fullmatch(r'Inst ('+PACKAGE+r')(?: \[[^\]\r\n]+\])? \((\S+) [^\r\n]+\)', line)
-        if not match or not re.fullmatch(DEB_VERSION_RE, match[2]):
+        match = re.fullmatch(r'Inst ('+PACKAGE+r')(?: \[([^\]\r\n]+)\])? \((\S+) [^\r\n]+\)', line)
+        if not match or not re.fullmatch(DEB_VERSION_RE, match[3]):
             raise UpdateError('The package manager returned an unsupported installation plan.')
-        result.append({'package': match[1], 'version': match[2]})
+        if additions_only and match[2] is not None:
+            raise UpdateError('Display support would change an installed package. Update its dependencies first.')
+        result.append({'package': match[1], 'version': match[3]})
     if len(result) > 128 or len({x['package'] for x in result}) != len(result):
         raise UpdateError('The dependency plan is too large or ambiguous.')
     return sorted(result, key=lambda item: item['package'])
 
 
+def managed_chrony():
+    # This module must also run from a protocol-1 recovery bundle with the 2.30.11 file list.
+    path = Path('/etc/chrony/chrony.conf')
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return False
+    with os.fdopen(fd, 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise UpdateError('Inspect the station chrony profile before continuing.')
+        return stream.readline(128) == b'# Managed by cmprovision: station time v1.\n'
+
+
 class LinuxSystem:
     def __init__(self, store): self.store = store
+
+    def check_time_support(self, package, *, time_v2=False):
+        if time_v2 or managed_chrony():
+            provides = self.command(['/usr/bin/dpkg-deb', '-f', package, 'Provides'])
+            if 'cmprovision-managed-chrony' not in [item.strip() for item in provides.split(',')]:
+                raise UpdateError('Restore systemd-timesyncd before installing this application version on a managed chrony station.')
 
     def command(self, argv, timeout=60, check=True, *, stdout=subprocess.PIPE, strict_snapshot=False, **options):
         env = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
@@ -188,23 +209,49 @@ class LinuxSystem:
                 self.command([*argv, name])
             self.command(['/usr/bin/systemctl', 'start' if state['active'] and not enabled.startswith('masked') else 'stop', name])
 
-    def plan_install(self, paths, value):
-        if self.command(['/usr/bin/dpkg', '--audit']): raise UpdateError('Finish the existing interrupted package operation over SSH first.')
-        expected = {'cmprovision4': value['version']}
-        if len(paths) == 2: expected['fpms-lite'] = value['version']
+    def plan_install(self, paths, value, *, fpms_only=False):
+        version = value['version']
+        audit = self.command(['/usr/bin/dpkg', '--audit'])
+        retry_panel = False
+        if audit and fpms_only and audit == self.command(['/usr/bin/dpkg', '--audit', 'fpms-lite']):
+            state = self.command(['/usr/bin/dpkg-query', '-W', '-f=${db:Status-Status}\t${Version}', 'fpms-lite'])
+            retry_panel = state in ('unpacked\t'+version, 'half-configured\t'+version)
+        if audit and not retry_panel: raise UpdateError('Finish the existing interrupted package operation over SSH first.')
+        expected = {'fpms-lite' if fpms_only else 'cmprovision4': version}
+        if not fpms_only and len(paths) == 2: expected['fpms-lite'] = version
         for path in paths:
             info = self.command(['/usr/bin/dpkg-deb', '-f', path, 'Package', 'Version', 'Architecture'])
             fields = dict(line.split(': ', 1) for line in info.splitlines() if ': ' in line)
+            if fields.get('Package') == 'cmprovision4':
+                self.check_time_support(path)
             if fields.get('Package') not in expected or fields.get('Version') != expected[fields['Package']] or fields.get('Architecture') != 'all':
                 raise UpdateError('Signed package contents do not match their release metadata.')
         result = self.command(['/usr/bin/apt-get', '--simulate', '--no-remove', 'install', *paths], timeout=120)
-        plan = parse_plan(result)
+        plan = parse_plan(result, additions_only=fpms_only)
+        # After power loss APT may only propose configuring the unpacked panel.
+        # The retry still installs the exact file verified against the signed release.
+        if retry_panel and not any(item['package'] == 'fpms-lite' for item in plan):
+            plan.append({'package': 'fpms-lite', 'version': version})
+            plan.sort(key=lambda item: item['package'])
         if not all(any(item == {'package': name, 'version': version} for item in plan) for name, version in expected.items()):
             raise UpdateError('The package plan does not install the selected component versions.')
         return plan
 
     def prefetch(self, paths, plan):
         self.command(['/usr/bin/apt-get', '-y', '--download-only', '--no-remove', 'install', *paths], timeout=1800)
+
+    def install_fpms(self, path, version, plan):
+        if self.plan_install([path], {'version': version}, fpms_only=True) != plan:
+            raise UpdateError('Display dependencies changed. Retry installation.')
+        dependencies = [item for item in plan if item['package'] != 'fpms-lite']
+        if dependencies:
+            pins = [item['package']+'='+item['version'] for item in dependencies]
+            args = ['--no-remove', '--no-install-recommends', '--mark-auto', 'install', *pins]
+            simulated = self.command(['/usr/bin/apt-get', '--simulate', *args], timeout=120)
+            if parse_plan(simulated, additions_only=True) != dependencies:
+                raise UpdateError('The cached display dependencies no longer match the installation plan.')
+            self.command(['/usr/bin/apt-get', '-y', '--no-download', *args], timeout=1800)
+        self.command(['/usr/bin/dpkg', '--force-confold', '--install', path], timeout=600)
 
     def install(self, paths, plan, value, *, before_mutation=None):
         if self.plan_install(paths, value) != plan: raise UpdateError('The approved dependency plan changed.')
@@ -303,6 +350,12 @@ class LinuxSystem:
             package = name.partition('_')[0]
             version = expected.pop(package, None)
             if not version: raise UpdateError('The recovery snapshot contains an unexpected package.')
+            if package == 'cmprovision4':
+                time_v2 = False
+                if 'time-settings.saved' in names:
+                    with (snapshot/'time-settings.saved').open('rb') as stream:
+                        time_v2 = stream.read(2) == b'2\n'
+                self.check_time_support(snapshot/name, time_v2=time_v2)
             info = self.command(['/usr/bin/dpkg-deb', '-f', snapshot/name, 'Package', 'Version', 'Architecture'], check=False)
             fields = dict(line.split(': ', 1) for line in info.stdout.splitlines() if ': ' in line)
             if info.returncode: raise UpdateError('The recovery package '+name+' is unreadable.')
