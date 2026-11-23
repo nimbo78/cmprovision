@@ -77,6 +77,30 @@ class TransactionTest(unittest.TestCase):
         self.assertEqual(('new', 'new', False, False, None),
                          (self.backend.live, self.backend.saved, self.backend.marker, self.backend.timer, self.backend.state))
 
+    def test_ntp_is_closed_before_network_changes_and_reopened_only_after_commit_or_rollback(self):
+        for commit in (True, False):
+            with self.subTest(commit=commit):
+                self.setUp()
+                events = []
+                def observe(action):
+                    events.append((action, self.backend.live, self.backend.marker, self.backend.state is None))
+                tx = module.NetworkTransaction(self.backend, time_service=observe)
+                token = tx.begin('new')
+                self.assertEqual('suspend-locked', events[0][0])
+                self.assertEqual('original', events[0][1])
+                self.assertNotIn('reconcile-locked', [row[0] for row in events])
+                tx.confirm(token) if commit else tx.recover()
+                self.assertEqual(('reconcile-locked', 'new' if commit else 'original', False, True), events[-1])
+
+    def test_failed_time_withdrawal_preserves_original_link(self):
+        def refused(action):
+            raise RuntimeError('cannot withdraw listener')
+        tx = module.NetworkTransaction(self.backend, time_service=refused)
+        with self.assertRaisesRegex(RuntimeError, 'withdraw'):
+            tx.begin('new')
+        self.assertEqual('original', self.backend.live)
+        self.assertIsNone(self.backend.state)
+
     def test_timeout_or_interrupted_commit_restores_persistent_and_live_settings(self):
         self.tx.begin('new')
         self.backend.saved = 'new'  # process stopped after writing the profile and before completing confirmation

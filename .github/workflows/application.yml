@@ -155,7 +155,7 @@ jobs:
           '
 
   rescue-wifi:
-    name: Rescue Wi-Fi and real DHCP/NAT
+    name: Rescue Wi-Fi, provisioning NTP and real DHCP/NAT
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -163,6 +163,8 @@ jobs:
       - run: docker build -f docker/rescue-network.Dockerfile -t cmprovision-rescue-tests .
       # No host mounts: all privileged networking runs in disposable namespaces inside this test container.
       - run: docker run --rm --privileged cmprovision-rescue-tests
+        - name: Check NTP and DHCP option 42 on a tagged provisioning link
+          run: docker run --rm --privileged cmprovision-rescue-tests unshare --net --mount --propagation private python3 tests/integration/stand-ntp.py
 
   station-updates-integration:
     name: Debian update and rollback acceptance

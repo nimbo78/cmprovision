@@ -1,10 +1,11 @@
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 network-manager wpasupplicant dnsmasq-base nftables iproute2 iputils-ping \
+    python3 network-manager wpasupplicant chrony dnsmasq-base nftables iproute2 iputils-ping \
     busybox dbus udev util-linux procps && rm -rf /var/lib/apt/lists/*
 WORKDIR /work
 COPY tools/ /work/tools/
 COPY tests/network/ /work/tests/network/
+COPY tests/integration/stand-ntp.py tests/integration/tftp-probe.py /work/tests/integration/
 COPY debian/ /work/debian/
 ENV CMP_RESCUE_NETWORK_TEST=1
 CMD ["python3", "-B", "-m", "unittest", "discover", "-s", "tests/network", "-v"]

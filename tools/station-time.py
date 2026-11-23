@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """Fixed station time controller. No application database or caller-selected commands."""
 import fcntl
-import ipaddress
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -13,31 +13,10 @@ import tempfile
 import time
 from zoneinfo import available_timezones
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from stand_time import CHRONY, CONF, Files, StandTime, TimeError, chrony_config, chrony_servers, sample, timesync_config, timesync_sources, valid_servers
+
 ROOT_UID = 0
-
-
-class TimeError(RuntimeError):
-    pass
-
-
-def valid_servers(values):
-    if not isinstance(values, list) or len(values) > 8:
-        raise TimeError('Use at most eight NTP servers.')
-    servers = []
-    for value in values:
-        if not isinstance(value, str) or not 1 <= len(value) <= 253:
-            raise TimeError('Each NTP server must be a hostname or an IP address.')
-        try:
-            ipaddress.ip_address(value)
-        except ValueError:
-            if re.fullmatch(r'[0-9.]+', value) or not re.fullmatch(
-                    r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?', value):
-                raise TimeError('Each NTP server must be a hostname or an IP address.')
-        if '%' in value:
-            raise TimeError('Scoped IPv6 addresses are not supported.')
-        if value.lower() not in servers:
-            servers.append(value.lower())
-    return servers
 
 
 def parse_request(raw):
@@ -55,7 +34,7 @@ def parse_request(raw):
     except (ValueError, TypeError, RecursionError) as error:
         raise TimeError('Invalid time settings request.') from error
     allowed = {'status': {'action'}, 'set-timezone': {'action', 'timezone'},
-               'set-ntp': {'action', 'enabled', 'servers'}}
+               'set-ntp': {'action', 'enabled', 'servers'}, 'set-stand-server': {'action', 'enabled'}}
     if not isinstance(request, dict) or not isinstance(request.get('action'), str) \
             or request['action'] not in allowed or set(request) != allowed[request['action']]:
         raise TimeError('Unknown time settings action or fields.')
@@ -63,9 +42,10 @@ def parse_request(raw):
         if not isinstance(request['timezone'], str) or request['timezone'] not in available_timezones() \
                 or request['timezone'] in ('localtime', 'posixrules'):
             raise TimeError('Choose an installed IANA time zone.')
-    if request['action'] == 'set-ntp':
+    if request['action'] in ('set-ntp', 'set-stand-server'):
         if type(request['enabled']) is not bool:
             raise TimeError('NTP enabled must be a boolean.')
+    if request['action'] == 'set-ntp':
         request['servers'] = valid_servers(request['servers'])
     return request
 
@@ -77,12 +57,16 @@ class Controller:
     def __init__(self, etc=Path('/etc'), runtime=Path('/run/cmprovision-time'), run=subprocess.run):
         self.etc, self.runtime, self.run = Path(etc), Path(runtime), run
         self.config = self.etc/'systemd/timesyncd.conf.d/90-cmprovision.conf'
+        self.files = Files(self.etc.parent, ROOT_UID)
+        self.stand = StandTime(self.files, self.command)
         self.update_pending = Path('/run/cmprovision-updates/pending.json')
         self.backup_pending = Path('/run/cmprovision-backups/pending.json')
 
     def command(self, program, *arguments, required=True):
         try:
-            result = self.run(['/usr/bin/'+program, *arguments], timeout=5, capture_output=True,
+            directory = '/usr/sbin/' if program in ('chronyd', 'runuser', 'ip') else '/usr/bin/'
+            # Both Debian iproute2 paths refer to the same ip binary.
+            result = self.run([directory+program, *arguments], timeout=12, capture_output=True,
                               text=True, check=False, env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin',
                               'LANG': 'C.UTF-8', 'SYSTEMD_PAGER': '', 'SYSTEMD_COLORS': '0'})
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -144,27 +128,35 @@ class Controller:
 
     def unit(self, name):
         return self.properties(self.command('systemctl', 'show', name, '--no-pager',
-            '--property=LoadState', '--property=ActiveState', '--property=UnitFileState', required=False))
+            '--property=LoadState', '--property=ActiveState', '--property=UnitFileState', '--property=Id', required=False))
 
     def status(self):
         clock = self.properties(self.command('timedatectl', 'show', '--all', '--no-pager'))
         unit = self.unit(self.UNIT)
+        peers = {name: self.unit(name) for name in self.OTHER_UNITS}
+        chrony = peers[CHRONY]
+        managed_chrony = None
+        if (chrony.get('LoadState') == 'loaded' and unit.get('LoadState') != 'loaded'
+                and chrony.get('UnitFileState') in ('enabled', 'disabled')
+                and not any(v.get('LoadState') == 'loaded' and v.get('Id', k) != CHRONY
+                            for k, v in peers.items() if k != CHRONY)):
+            managed_chrony = chrony_servers(self.files, valid_servers)
         reason = None
-        if unit.get('LoadState') != 'loaded' or unit.get('UnitFileState') not in ('enabled', 'disabled'):
+        if managed_chrony is not None:
+            unit = chrony
+        elif unit.get('LoadState') != 'loaded' or unit.get('UnitFileState') not in ('enabled', 'disabled'):
             reason = 'NTP editing requires an installed, unmasked systemd-timesyncd service.'
-        elif any(self.unit(name).get('LoadState') == 'loaded' for name in self.OTHER_UNITS):
+        elif any(v.get('LoadState') == 'loaded' for v in peers.values()):
             reason = 'Another time synchronization service is installed. Its settings are managed outside cmprovision.'
-        sync = self.properties(self.command('timedatectl', 'show-timesync', '--all', '--no-pager', required=False)) if reason is None else {}
+        sync = self.properties(self.command('timedatectl', 'show-timesync', '--all', '--no-pager', required=False)) if reason is None and managed_chrony is None else {}
         managed = self.read_config()
         servers = []
         if managed:
             try:
-                for line in managed.decode('utf-8').splitlines():
-                    if line.startswith('NTP='):
-                        servers = valid_servers(line[4:].split())
+                servers = timesync_sources(managed)
             except (UnicodeError, TimeError) as error:
                 raise TimeError('The managed NTP configuration is invalid.') from error
-        return dict(available=True, timezone=clock.get('Timezone', 'UTC'),
+        result = dict(available=True, timezone=clock.get('Timezone', 'UTC'),
             timezones=sorted(available_timezones() - {'localtime', 'posixrules'}),
             timestamp=int(time.time()), ntp_available=reason is None, ntp_reason=reason,
             ntp_enabled=unit.get('UnitFileState') == 'enabled' if reason is None else clock.get('NTP') == 'yes',
@@ -174,6 +166,28 @@ class Controller:
             system_servers=sync.get('SystemNTPServers', '').split(), link_servers=sync.get('LinkNTPServers', '').split(),
             fallback_servers=sync.get('FallbackNTPServers', '').split(), managed_servers=servers,
             provider='systemd-timesyncd' if reason is None else None)
+        if managed_chrony is not None:
+            active = unit.get('ActiveState') == 'active'
+            def query(what):
+                return self.command('chronyc', '-n', '-c', '-h', '/run/chrony/chronyd.sock', what, required=False) if active else ''
+            selected, synchronized, age = sample(query('tracking'), query('sources'))
+            result.update(provider='chrony', ntp_active=active, synchronized=synchronized, server_address=selected,
+                          last_sample_age=age, managed_servers=managed_chrony,
+                          system_servers=managed_chrony or ['2.debian.pool.ntp.org'],
+                          link_servers=[] if managed_chrony else self.link_sources())
+        result['stand_server'] = self.stand.status(result['provider'], result['ntp_enabled'])
+        return result
+
+    def link_sources(self):
+        sources = []
+        folder = self.etc.parent/'run/chrony-dhcp'
+        for path in sorted(folder.glob('*.sources'))[:32]:
+            data = self.files.read('run/chrony-dhcp/' + path.name)
+            for line in (data or b'').decode('ascii', errors='replace').splitlines():
+                fields = line.split()
+                if len(fields) >= 2 and fields[0] in ('server', 'pool'):
+                    sources.append(fields[1])
+        return sources
 
     def handle(self, request):
         request = parse_request(json.dumps(request).encode())  # Also enforce schema for non-CLI callers.
@@ -183,6 +197,21 @@ class Controller:
             raise TimeError('A station backup is being created; wait for it to finish.')
         if self.update_pending.exists():
             raise TimeError('Wait for the station update to finish before changing time settings.')
+        with self.lock():
+            if self.backup_pending.exists() or self.update_pending.exists():
+                raise TimeError('Another station operation is pending.')
+            previous = self.status()
+            if request['action'] == 'set-timezone':
+                return self.timezone(request['timezone'], previous)
+            if request['action'] == 'set-stand-server':
+                self.stand.reconcile(previous['provider'], previous['ntp_active'] and previous['ntp_enabled'], request['enabled'])
+                return self.status()
+            if not previous['ntp_available']:
+                raise TimeError(previous['ntp_reason'])
+            return self.ntp(request['enabled'], request['servers'], previous)
+
+    @contextmanager
+    def lock(self):
         if not os.path.lexists(self.runtime):
             self.runtime.mkdir(mode=0o755)
         self.secure_directory(self.runtime)
@@ -195,16 +224,7 @@ class Controller:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
                 raise TimeError('Another time settings change is running.') from error
-            if self.backup_pending.exists() or self.backup_pending.is_symlink():
-                raise TimeError('A station backup is being created; wait for it to finish.')
-            if self.update_pending.exists():
-                raise TimeError('Wait for the station update to finish before changing time settings.')
-            previous = self.status()
-            if request['action'] == 'set-timezone':
-                return self.timezone(request['timezone'], previous)
-            if not previous['ntp_available']:
-                raise TimeError(previous['ntp_reason'])
-            return self.ntp(request['enabled'], request['servers'], previous)
+            yield
         finally:
             os.close(fd)
 
@@ -223,9 +243,25 @@ class Controller:
             raise TimeError('The time zone change failed; the previous time zone was restored.') from error
 
     def ntp(self, enabled, servers, previous):
+        if previous['provider'] == 'chrony':
+            old = self.files.read(CONF)
+            try:
+                self.stand.close()
+                self.files.write(CONF, chrony_config(servers))
+                self.command('chronyd', '-p', '-f', '/' + CONF)
+                self.command('systemctl', 'enable' if enabled else 'disable', CHRONY)
+                self.command('systemctl', 'restart' if enabled else 'stop', CHRONY)
+                if enabled:
+                    self.stand.reconcile('chrony', True)
+                return self.status()
+            except (TimeError, OSError, ValueError):
+                self.files.write(CONF, old)
+                self.command('systemctl', 'enable' if previous['ntp_enabled'] else 'disable', CHRONY)
+                self.command('systemctl', 'restart' if previous['ntp_active'] else 'stop', CHRONY)
+                self.stand.reconcile('chrony', previous['ntp_active'] and previous['ntp_enabled'])
+                raise
         old = self.read_config()
-        data = ('# Managed by cmprovision. Empty server list restores system defaults.\n[Time]\nNTP=\nNTP='
-                + ' '.join(servers) + '\nFallbackNTP=\n').encode() if servers else None
+        data = timesync_config(servers)
         try:
             self.write_config(data)
             self.command('timedatectl', 'set-ntp', 'true' if enabled else 'false')

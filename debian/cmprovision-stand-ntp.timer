@@ -1,0 +1,11 @@
+[Unit]
+Description=Check provisioning time service after startup and network changes
+
+[Timer]
+OnBootSec=15s
+OnCalendar=minutely
+AccuracySec=3s
+
+[Install]
+WantedBy=timers.target
+

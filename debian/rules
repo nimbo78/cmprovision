@@ -48,6 +48,9 @@ override_dh_install:
 	for f in station_access.py station_access_linux.py; do install -D -m 644 tools/$$f debian/cmprovision4/usr/lib/cmprovision/$$f; done
 	install -D -m 644 tools/station-storage.py debian/cmprovision4/usr/lib/cmprovision/station-storage.py
 	install -D -m 644 tools/station-time.py debian/cmprovision4/usr/lib/cmprovision/station-time.py
+	install -D -m 644 tools/stand_time.py debian/cmprovision4/usr/lib/cmprovision/stand_time.py
+	install -D -m 644 tools/time_provider.py debian/cmprovision4/usr/lib/cmprovision/time_provider.py
+	install -D -m 755 tools/stand-ntp-admin debian/cmprovision4/usr/sbin/cmprovision-stand-ntp
 	install -D -m 644 tools/time-backup.sh debian/cmprovision4/usr/lib/cmprovision/time-backup.sh
 	install -D -m 755 tools/station-updates debian/cmprovision4/usr/lib/cmprovision/station-updates
 	install -D -m 644 tools/station-updates.py debian/cmprovision4/usr/lib/cmprovision/station-updates.py

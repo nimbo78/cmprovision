@@ -14,8 +14,9 @@ class TransactionError(RuntimeError):
 
 
 class NetworkTransaction:
-    def __init__(self, backend):
+    def __init__(self, backend, time_service=None):
         self.backend = backend
+        self.time_service = time_service or (lambda action: None)
 
     def begin(self, request):
         b = self.backend
@@ -31,6 +32,7 @@ class NetworkTransaction:
             # Validate and capture before changing anything, including the actual active profile.
             change = b.validate(request)
             original = b.snapshot(change)
+            self.time_service('suspend-locked')
             checkpoint = b.checkpoint(change)
             state = {'version': 1, 'id': secrets.token_hex(16), 'token': secrets.token_urlsafe(32), 'change': change,
                      'original': original, 'applied': None, 'persisted': None, 'checkpoint': checkpoint,
@@ -77,6 +79,10 @@ class NetworkTransaction:
             b.clear_state()
             b.clear_pending()
             b.cancel_recovery(state['id'])
+            change = state['change']
+            if isinstance(change, dict) and change.get('kind') == 'stand-role' and change['role'] == 'disabled':
+                self.time_service('withdraw-locked')
+            self.time_service('reconcile-locked')
 
     def recover(self, expected_id=None):
         b = self.backend
@@ -104,6 +110,7 @@ class NetworkTransaction:
         latest = b.load()
         if latest is not None and latest.get('id') == state.get('id'):
             state = latest
+        self.time_service('suspend-locked')
         # restore_original must tolerate a missing NM checkpoint after a daemon restart and must
         # not overwrite unrelated external changes. It also reconciles the provisioning services.
         b.restore_original(state['original'], state['change'], state['applied'], state['persisted'],
@@ -111,3 +118,4 @@ class NetworkTransaction:
         b.clear_state()
         b.clear_pending()
         b.cancel_recovery(state['id'])
+        self.time_service('reconcile-locked')

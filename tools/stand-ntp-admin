@@ -1,0 +1,141 @@
+#!/usr/bin/python3 -I
+"""Root console maintenance; no web sudo entry. Network hooks already own the outer lock."""
+from contextlib import nullcontext
+import fcntl
+import importlib.util
+import json
+import os
+from pathlib import Path
+import sys
+
+lib = Path('/usr/lib/cmprovision')
+if not (lib / 'station-time.py').is_file():
+    lib = Path(__file__).resolve().parent
+spec = importlib.util.spec_from_file_location('station_time', lib / 'station-time.py')
+time_control = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(time_control)
+from stand_time import CHRONY, CLOSING, CONF, INTENT, LISTENER, OPTIONS, TimeError, chrony_config, chrony_servers, saved_intent, timesync_config, timesync_sources, valid_servers
+
+
+def prepare(c, image):
+    files = c.files
+    previous = files.read(CONF)
+    if chrony_servers(files, time_control.valid_servers) is not None:
+        return
+    stock = files.read('usr/share/chrony/chrony.conf')
+    if not stock or previous != stock:
+        raise TimeError('Only the stock Debian chrony profile can be adopted. Review custom settings first.')
+    for name in ('etc/chrony/conf.d', 'etc/chrony/sources.d', 'etc/systemd/system/chrony.service.d'):
+        directory = files.root / name
+        if directory.exists() and any(p.suffix in ('.conf', '.sources') for p in directory.iterdir()):
+            raise TimeError('Review existing chrony source or service overrides before preparing this station.')
+    defaults = files.read('etc/default/chrony') or b''
+    if [s.strip() for s in defaults.splitlines() if s.strip() and not s.lstrip().startswith(b'#')] not in (
+            [], [b'DAEMON_OPTS="-F 1"']):
+        raise TimeError('Review local chronyd command-line options before preparing this station.')
+    values = timesync_sources(c.read_config())
+    files.write(LISTENER, b'')
+    files.write(CONF, chrony_config(values))
+    try:
+        c.command('chronyd', '-p', '-f', '/' + CONF)
+        if not image:
+            c.command('systemctl', 'try-restart', CHRONY)
+    except Exception:
+        files.write(CONF, previous)
+        if not image:
+            c.command('systemctl', 'try-restart', CHRONY)
+        raise
+
+
+def dispatch(action):
+    if os.geteuid() != 0:
+        raise TimeError('Root is required.')
+    c = time_control.Controller()
+    if action in ('cache-provider', 'use-chrony', 'return-timesyncd'):
+        from time_provider import change
+        with open('/run/cmprovision-network/provisioning.lock', 'rb') as gate:
+            fcntl.flock(gate, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with c.lock():
+                change(c, action, prepare)
+        return
+    if action in ('snapshot', 'restore-snapshot', 'restore-legacy'):
+        with c.lock():
+            snapshot(c, action)
+        return
+    if action in ('prepare', 'prepare-image'):
+        with c.lock():
+            prepare(c, action == 'prepare-image')
+        return
+    # Do not make network changes, backups or boot depend on an unused time service.
+    if action not in ('reconcile', 'reconcile-locked', 'suspend-locked', 'withdraw', 'withdraw-locked'):
+        raise TimeError('Choose prepare, withdraw or reconcile.')
+    if not any(c.files.read(path) for path in (INTENT, LISTENER, OPTIONS, CLOSING, OPTIONS + '.reload')):
+        return
+    outer = nullcontext() if action.endswith('-locked') else open('/run/cmprovision-network/provisioning.lock', 'rb')
+    with outer as gate:
+        if gate:
+            fcntl.flock(gate, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with c.lock():
+            if action in ('suspend-locked', 'withdraw', 'withdraw-locked'):
+                if action.startswith('withdraw'):
+                    c.files.write(INTENT, None)
+                c.stand.close()
+            else:
+                state = c.status()
+                c.stand.reconcile(state['provider'], state['ntp_active'] and state['ntp_enabled'])
+
+
+def snapshot(c, action):
+    state = c.status()
+    if action == 'snapshot':
+        if state['provider'] != 'chrony':
+            raise TimeError('A managed chrony station is required for a version-two time snapshot.')
+        print('2')
+        print(json.dumps(dict(version=2, servers=state['managed_servers'], enabled=state['ntp_enabled'],
+                              active=state['ntp_active'], intent=c.stand.intent())))
+        return
+    raw = sys.stdin.buffer.read(8193)
+    if len(raw) > 8192:
+        raise TimeError('Time snapshot exceeds its size limit.')
+    if action == 'restore-legacy':
+        lines = raw.decode('ascii').splitlines()
+        if len(lines) != 3 or lines[0] != '1' or lines[1] not in ('absent', 'present'):
+            raise TimeError('Invalid legacy time record.')
+        if lines[2] == 'unmanaged':
+            return
+        if lines[2] not in ('enabled:active', 'disabled:active', 'enabled:inactive', 'disabled:inactive'):
+            raise TimeError('Invalid legacy time service state.')
+        enabled, active = lines[2].split(':')
+        servers = timesync_sources(c.read_config()) if lines[1] == 'present' else []
+        value = dict(version=2, enabled=enabled == 'enabled', active=active == 'active', servers=servers, intent=None)
+    else:
+        value = json.loads(raw)
+    if (type(value) is not dict or set(value) != {'version', 'servers', 'enabled', 'active', 'intent'}
+            or value['version'] != 2 or type(value['enabled']) is not bool or type(value['active']) is not bool):
+        raise TimeError('Invalid provisioning time snapshot.')
+    servers = valid_servers(value['servers'])
+    intent = saved_intent(value['intent']) if value['intent'] is not None else None
+    if state['provider'] not in ('chrony', 'systemd-timesyncd'):
+        raise TimeError('The local time provider is not managed by cmprovision.')
+    c.stand.close()
+    unit = c.UNIT
+    if state['provider'] == 'chrony':
+        c.files.write(CONF, chrony_config(servers))
+        unit = CHRONY
+    else:
+        c.write_config(timesync_config(servers))
+    c.command('systemctl', 'enable' if value['enabled'] else 'disable', unit)
+    c.command('systemctl', 'restart' if value['active'] else 'stop', unit)
+    # Reconciliation verifies the restored interface and role after the restore releases its lock.
+    c.files.write(INTENT, json.dumps(intent).encode() if intent and intent['station'] == c.stand.station() and unit == CHRONY else None)
+
+
+if __name__ == '__main__':
+    try:
+        if len(sys.argv) != 2:
+            raise TimeError('Supply one maintenance operation.')
+        dispatch(sys.argv[1])
+    except (TimeError, OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)
+
