@@ -393,17 +393,22 @@ def last_known(line, profile, target, folder=CACHE):
     return None
 
 
+def write_cache_entry(folder, key, entry):
+    private_directory(folder)
+    with tempfile.NamedTemporaryFile("w", dir=folder, delete=False) as output:
+        path = Path(output.name)
+        try:
+            json.dump(entry, output)
+            output.flush()
+            path.replace(folder / key)
+        finally:
+            path.unlink(missing_ok=True)
+
+
 def remember(line, profile, target, baud, folder=CACHE):
     if target:
-        private_directory(folder)
-        with tempfile.NamedTemporaryFile("w", dir=folder, delete=False) as output:
-            path = Path(output.name)
-            try:
-                json.dump({"baud": baud, "at": datetime.now(timezone.utc).isoformat()}, output)
-                output.flush()
-                path.replace(folder / cache_key(line, profile, target))
-            finally:
-                path.unlink(missing_ok=True)
+        write_cache_entry(folder, cache_key(line, profile, target),
+                          {"baud": baud, "at": datetime.now(timezone.utc).isoformat()})
 
 
 def picocom_arguments(path, baud, frame):

@@ -1,7 +1,9 @@
 #!/usr/bin/python3 -I
 """Socket-activated local UART broker for authenticated cmprovision requests."""
 import base64
+from collections import Counter
 from contextlib import contextmanager, suppress
+from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -33,6 +35,11 @@ cli = sibling("cmprovision_serial_console", "serial-console.py")
 protocol = sibling("cmprovision_serial_transfer", "serial_transfer.py")
 IDLE_SECONDS = 12
 HEARTBEAT_SECONDS = 2
+CONNECT_LISTEN_SECONDS = 1
+LOGIN_INVITATION = re.compile(
+    rb"[ \t\r\n]*(?:User interface con\d+ is available[ \t]*[\r\n]+[ \t\r\n]*Please press ENTER\."
+    rb"|(?:[\w.-]+ con\d+ is now available[ \t]*[\r\n]+[ \t\r\n]*)?Press (?:ENTER|RETURN) to get started[.!]?)"
+    rb"[ \t\r\n]*", re.I | re.ASCII)
 RETAIN_SECONDS = 30
 RX_LIMIT = 128 * 1024
 TX_LIMIT = 8192
@@ -68,6 +75,13 @@ def token(value):
     return isinstance(value, str) and re.fullmatch("[a-f0-9]{64}", value) is not None
 
 
+def garbled(data):
+    # Ignore terminal controls and split UTF-8 tails. Re-scan only for substantial noise.
+    text = data.decode("utf-8", errors="replace")
+    noise = sum(c == "\ufffd" or (ord(c) < 32 and c not in "\t\r\n\b\a\x1b") for c in text)
+    return noise >= 3 and noise * 5 > len(text)
+
+
 def generation(line):
     identity = (line.usb_path, line.interface, line.rdev, line.driver,
                 line.generation, line.serial, line.usb_instance)
@@ -98,10 +112,13 @@ def port_busy(line):
 
 
 class Lease:
-    def __init__(self, broker, line, port, mode, baud, frame, key):
+    def __init__(self, broker, line, port, mode, baud, frame, key, wake):
         self.broker = broker
         self.line, self.port = line, port
         self.identify = mode == "identify"
+        self.wake = wake
+        self.last_poll = None
+        self.wake_until = None
         self.baud, self.frame = baud, frame
         self.lock = threading.RLock()
         self.state = "detecting"
@@ -178,7 +195,7 @@ class Lease:
             self.observations = self.engine.prompt_observations
             self.hostname = self.engine.hostname
             self.seen_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-            self.broker.observe(self.line, self.hostname, self.seen_at)
+            self.broker.observe(self.line, self.hostname, self.seen_at, self.baud, self.frame)
         self.platform = self.engine.platform
 
     def settings(self, fd):
@@ -205,6 +222,7 @@ class Lease:
         return None
 
     def record(self, data, now):
+        self.wake_until = None
         if self.file_tx and self.pending:
             # Never credit the peer with echoing bytes we have yet to write.
             if len(data) > self.sent_for_echo:
@@ -244,8 +262,54 @@ class Lease:
             self.finish("closed", "Console session ended.")
             self.released.set()
 
+    def listen_on_connect(self, fd):
+        hint_baud, hint_frame = self.broker.line_hint(self.line)
+        baud = hint_baud if self.baud == "auto" else self.baud
+        frame = hint_frame if self.frame == "auto" else self.frame
+        cli.set_frame(fd, baud, frame, mark_errors=False)
+        poller = select.poll()
+        poller.register(fd, select.POLLIN)
+        sample = bytearray()
+        with self.lock:
+            self.verify()
+            self.state = "listening"
+        deadline = time.monotonic() + CONNECT_LISTEN_SECONDS
+        while len(sample) < 8192:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            self.verify()
+            events = poller.poll(max(1, min(150, int(remaining * 1000))))
+            if not events:
+                continue
+            if events[0][1] & (select.POLLERR | select.POLLHUP | select.POLLNVAL):
+                raise Disconnected("disconnected")
+            try:
+                data = os.read(fd, 8192 - len(sample))
+            except BlockingIOError:
+                continue
+            if not data:
+                raise Disconnected("end of stream")
+            sample.extend(data)
+
+        return baud, frame, bytes(sample)
+
     def run_fd(self, fd):
-        choice = self.settings(fd)
+        direct = not self.identify and self.wake is not None
+        if direct:
+            choice = self.listen_on_connect(fd)
+            sample = choice[2]
+            if (self.baud == "auto" or self.frame == "auto") and sample and garbled(sample):
+                # Preserve what the operator received. A different peer may use a different frame.
+                with self.lock:
+                    self.verify()
+                    self.rx.extend(sample)
+                    self.state = "detecting"
+                detected = self.settings(fd)
+                choice = detected or (choice[0], choice[1], b"")
+                direct = False
+        else:
+            choice = self.settings(fd)
         while choice is None:
             if self.identify:
                 self.finish("closed", "No settings confirmed. Select a manual baud and frame.")
@@ -275,18 +339,29 @@ class Lease:
         with self.lock:
             if not self.live():
                 return
-            cli.set_frame(fd, baud, frame, mark_errors=False)
-            termios.tcflush(fd, termios.TCIFLUSH)
+            if not direct:
+                cli.set_frame(fd, baud, frame, mark_errors=False)
+                termios.tcflush(fd, termios.TCIFLUSH)
             self.baud, self.frame = baud, frame
             self.fd = fd
             self.state = "waiting" if self.identify else "connected"
             if not self.identify:
                 self.audit("connected")
+            if direct and sample:
+                self.record(sample, time.monotonic())
+            if (direct and self.wake and self.last_poll is not None and len(sample) < 8192
+                    and (not sample or LOGIN_INVITATION.fullmatch(sample))):
+                # Arm only. A live browser must poll again after the listening window.
+                self.wake_until = self.last_poll + HEARTBEAT_SECONDS
             if sample and self.identify:
                 # The winning RX window can end with a line terminator. Only
                 # passive identification may treat its final line as evidence.
                 # A writable session requires a fresh prompt at the final frame.
                 self.record(sample.rstrip(b"\r\n"), time.monotonic())
+            elif sample and not direct:
+                # Show the detected prompt, but require fresh input to unlock a transfer.
+                self.rx.extend(sample)
+                self.broker.observe(self.line, None, None, baud, frame)
         identify_end = time.monotonic() + 5
         verify_at = 0
         poller = select.poll()
@@ -359,6 +434,13 @@ class Lease:
         require(type(cursor) is int and cursor >= 0)
         if self.ended is None:
             require(self.cursor <= cursor <= self.cursor + len(self.rx), "conflict")
+            if self.wake_until is not None:
+                deadline, self.wake_until = self.wake_until, None
+                if time.monotonic() < deadline and not select.select([self.fd], [], [], 0)[0]:
+                    # Late input (even before the worker reads it) vetoes wake.
+                    # Never retry a full TX buffer or an ambiguous write.
+                    with suppress(BlockingIOError):
+                        os.write(self.fd, b"\r")
             del self.rx[:cursor - self.cursor]
             self.cursor = cursor
         data = self.rx[:32768]
@@ -389,7 +471,9 @@ class Lease:
                 else:
                     self.last_contact = time.monotonic()
             if op == "poll":
-                return self.poll(body.get("cursor"))
+                reply = self.poll(body.get("cursor"))
+                self.last_poll = time.monotonic()
+                return reply
             require(self.ended is None, "expired")
             require(self.state == "connected" and not self.identify, "conflict")
             if op == "file_page":
@@ -412,6 +496,7 @@ class Lease:
             return {}
 
     def mutate(self, op, body):
+        self.wake_until = None
         if op == "write":
             data = body.get("data")
             require(isinstance(data, str) and 0 < len(data) <= 5464)
@@ -450,7 +535,9 @@ class Lease:
 
 class Broker:
     def __init__(self, inventory=cli.inventory, claim=claim_port, busy=port_busy):
-        self.inventory, self.claim, self.busy = inventory, claim, busy
+        self.read_inventory, self.claim, self.busy = inventory, claim, busy
+        self.ambiguous = set()
+        self.identity_lock = threading.Lock()
         self.lock = threading.RLock()
         self.leases = {}
         self.revoked = {}
@@ -458,13 +545,58 @@ class Broker:
         self.observed = {}
         self.observed_lock = threading.Lock()
 
-    def observe(self, line, host, seen):
+    def inventory(self):
+        lines = self.read_inventory()
+        counts = Counter((line.serial, line.interface) for line in lines if line.serial)
+        result = []
+        with self.identity_lock:
+            for line in lines:
+                if line.serial:
+                    identity = (line.serial, line.interface)
+                    marker = "duplicate-" + hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+                    if counts[identity] > 1:
+                        self.ambiguous.add(identity)
+                        if not (cli.CACHE / marker).is_file():
+                            with suppress(OSError, cli.Unavailable):
+                                cli.write_cache_entry(cli.CACHE, marker, True)
+                    # Once two cables claimed this serial, neither may inherit its saved consent.
+                    if identity in self.ambiguous or (cli.CACHE / marker).is_file():
+                        line = replace(line, by_id=None)
+                result.append(line)
+        return result
+
+    @staticmethod
+    def hint_key(line):
+        return "web-" + hashlib.sha256(line.by_id.encode()).hexdigest()
+
+    def line_hint(self, line):
+        with self.observed_lock:
+            previous = self.observed.get(generation(line))
+            if previous:
+                return previous[2:]
+        if line.by_id:
+            with suppress(OSError, ValueError, cli.Unavailable):
+                cli.private_directory(cli.CACHE)
+                with (cli.CACHE / self.hint_key(line)).open() as source:
+                    entry = json.loads(source.read(128))
+                if isinstance(entry, dict):
+                    baud, frame = entry.get("baud"), entry.get("frame")
+                    if type(baud) is int and baud in cli.RATES and isinstance(frame, str) and re.fullmatch("[5-8][neo][12]", frame):
+                        return baud, frame
+        return 9600, "8n1"
+
+    def observe(self, line, host, seen, baud, frame):
         with self.observed_lock:
             gen = generation(line)
-            self.observed.pop(gen, None)
-            self.observed[gen] = host, seen
+            previous = self.observed.pop(gen, None)
+            if host is None and previous:
+                host, seen = previous[:2]
+            self.observed[gen] = host, seen, baud, frame
             if len(self.observed) > 128:
                 del self.observed[next(iter(self.observed))]
+            if line.by_id and (not previous or previous[2:] != (baud, frame)):
+                with suppress(OSError, cli.Unavailable):
+                    cli.write_cache_entry(cli.CACHE, self.hint_key(line), {"baud": baud, "frame": frame})
 
     def sweep(self, now):
         for key, (_, lease) in list(self.leases.items()):
@@ -489,7 +621,7 @@ class Broker:
                     with lease.lock:
                         occupied |= not lease.released.is_set()
             with self.observed_lock:
-                host, seen = self.observed.get(gen, (None, None))
+                host, seen = self.observed.get(gen, (None, None))[:2]
             ports.append(dict(id=port, generation=gen, usb=Path(line.usb_path).name,
                               driver=line.driver, busy=occupied or self.busy(line), hostname=host, seen_at=seen))
         return {"ports": ports}
@@ -499,6 +631,9 @@ class Broker:
         mode, baud, frame = body.get("mode"), body.get("baud"), body.get("frame")
         require(isinstance(port, str) and len(port) <= 263 and token(gen))
         require(mode in ("connect", "identify"))
+        wake = body.get("wake")
+        require("wake" not in body or type(wake) is bool)
+        require(mode == "connect" or not wake)
         require(baud == "auto" or type(baud) is int and baud in cli.RATES)
         require(frame == "auto" or isinstance(frame, str) and re.fullmatch("[5-8][neo][12]", frame))
         line = cli.select_line(self.inventory(), port)
@@ -514,7 +649,7 @@ class Broker:
                     del self.leases[dead[0]]
             require(sum(not l.released.is_set() for _, l in self.leases.values()) < MAX_LEASES, "busy")
             key = secrets.token_hex(32)
-            lease = Lease(self, line, port, mode, baud, frame, key)
+            lease = Lease(self, line, port, mode, baud, frame, key, wake)
             self.leases[key] = owner, lease
             lease.worker.start()
             return {"session": key}

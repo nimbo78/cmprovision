@@ -99,6 +99,10 @@
                                 <option value="{{ $frame }}">{{ strtoupper($frame) }}</option>
                             @endforeach
                         </select></label>
+                        <div class="sc-field">
+                            <label><input type="checkbox" id="sc-wake" aria-describedby="sc-wake-help"> Send Enter on connect</label>
+                            <span class="sc-help" id="sc-wake-help">After one quiet second or a login invitation. On a silent console, Enter can submit a pending command.</span>
+                        </div>
                         <button type="submit" id="sc-save" class="cmp-btn cmp-btn-secondary">Save</button>
                     </form>
                     <p class="sc-help">Line settings apply at the next connection.</p>

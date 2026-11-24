@@ -29,6 +29,7 @@ class BrokerTest(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
+        self.enterContext(patch.object(web.cli, "CACHE", self.root / "cache"))
         self.master, slave = os.openpty()
         self.addCleanup(self.close_master)
         self.line = web.cli.Line(Path(os.ttyname(slave)), os.fstat(slave).st_rdev, "pl2303",
@@ -116,6 +117,104 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(self.request("poll", session=lease, cursor=len(keys))["data"], "")
         self.assertTrue(self.request("close", session=lease)["ok"])
         self.assertTrue(self.request("close", session=lease)["ok"])
+
+    def test_wake_sends_one_cr_and_leaves_a_quiet_auto_console_interactive(self):
+        lease = self.open(baud="auto", frame="auto", wake=True)["session"]
+        self.until(lease, "listening")
+        self.assertFalse(select.select([self.master], [], [], .15)[0])
+        reply = self.until(lease, "connected")
+        self.assertEqual((reply["baud"], reply["frame"]), (9600, "8n1"))
+        self.assertEqual(self.read_peer(1), b"\r")
+        self.assertTrue(self.request("write", session=lease, seq=1, data="eA==")["ok"])
+        self.assertEqual(self.read_peer(1), b"x")
+        self.assertFalse(select.select([self.master], [], [], .15)[0])
+
+    def test_speaking_console_is_preserved_and_only_a_login_invitation_allows_enter(self):
+        for received, wake in (
+            (b"Erase settings? [confirm]", False), (b"Username:", False),
+            (b"Press Enter to confirm", False), (b"Boot menu\r\nPlease Press ENTER.", False),
+            (b"Please Press ENTER.", False),
+            (b"\r\nUser interface con0 is available\r\n\r\nPlease Press ENTER.", True),
+            (b"Press RETURN to get started!", True),
+        ):
+            with self.subTest(received=received):
+                lease = self.open(wake=True)["session"]
+                self.until(lease, "listening")
+                os.write(self.master, received[:5])
+                time.sleep(.03)
+                os.write(self.master, received[5:])
+                reply = self.until(lease, "connected")
+                self.assertEqual(base64.b64decode(reply["data"]), received)
+                if wake:
+                    self.assertEqual(self.read_peer(1), b"\r")
+                self.assertFalse(select.select([self.master], [], [], .08)[0])
+                self.assertTrue(self.request("close", session=lease)["ok"])
+
+    def test_normal_connect_without_wake_opens_quiet_auto_and_uses_confirmed_settings(self):
+        previous = self.open(baud=19200, frame="8n2")["session"]
+        self.until(previous, "connected")
+        os.write(self.master, b"\r\nswitch-test#")
+        until = time.monotonic() + 2
+        while self.request("poll", session=previous, cursor=0).get("hostname") != "switch-test":
+            self.assertLess(time.monotonic(), until)
+            time.sleep(.02)
+        self.assertTrue(self.request("close", session=previous)["ok"])
+        self.server = web.Broker(inventory=lambda: self.ports, claim=self.server.claim, busy=lambda _: False)
+        self.addCleanup(self.server.shutdown)
+        lease = self.open(baud="auto", frame="auto", wake=False)["session"]
+        reply = self.until(lease, "connected")
+        self.assertEqual((reply["baud"], reply["frame"]), (19200, "8n2"))
+        self.assertIsNone(reply["hostname"])
+        self.assertFalse(select.select([self.master], [], [], .1)[0])
+
+    def test_wake_requires_attached_browser_and_is_cancelled_on_close(self):
+        lease = self.open(wake=True)["session"]
+        self.until(lease, "listening")
+        self.assertTrue(self.request("close", session=lease)["ok"])
+        lease = self.open(wake=True)["session"]
+        time.sleep(1.4)
+        self.until(lease, "connected")
+        self.assertFalse(select.select([self.master], [], [], .15)[0])
+
+    def test_identify_rejects_an_active_wake_request(self):
+        self.assertEqual(self.open(mode="identify", wake=True).get("error"), "invalid")
+        self.assertEqual(self.claims, 0)
+
+    def test_browser_lost_after_first_poll_never_wakes_and_late_rx_cancels_wake(self):
+        for late in (b"", b"Delete file? [confirm]"):
+            with self.subTest(late=late):
+                lease = self.open(wake=True)["session"]
+                self.until(lease, "listening")
+                time.sleep(1.15)
+                self.assertFalse(select.select([self.master], [], [], .05)[0])
+                if late:
+                    os.write(self.master, late)
+                    self.until(lease, "connected")
+                    self.assertFalse(select.select([self.master], [], [], .1)[0])
+                self.assertTrue(self.request("close", session=lease)["ok"])
+
+    def test_a_known_duplicate_usb_serial_cannot_recover_the_other_cables_wake_identity(self):
+        other = replace(self.line, by_path="by-path/other", usb_path="/sys/devices/usb1/1-3", generation="5")
+        self.ports.append(other)
+        self.assertEqual([p["id"] for p in self.request("ports")["ports"]], [self.line.by_path, other.by_path])
+        self.ports[:] = [other]
+        self.server = web.Broker(inventory=lambda: self.ports, claim=self.server.claim, busy=lambda _: False)
+        self.addCleanup(self.server.shutdown)
+        self.assertEqual(self.request("ports")["ports"][0]["id"], other.by_path)
+        self.assertFalse(self.open(port=self.line.by_id, wake=True)["ok"])
+
+    def test_noise_rescan_displays_winning_sample_and_remembers_frame_without_arming_a_transfer(self):
+        sample = b"\r\nknown-switch#"
+        with patch.object(web.Lease, "settings", return_value=(19200, "8n2", sample)):
+            lease = self.open(baud="auto", frame="auto", wake=True)["session"]
+            self.until(lease, "listening")
+            os.write(self.master, b"\xff\x00\xaa\x9c")
+            reply = self.until(lease, "connected")
+        self.assertIn(sample, base64.b64decode(reply["data"]))
+        self.assertFalse(reply["ready"])
+        self.assertIsNone(reply["hostname"])
+        self.assertEqual(self.server.line_hint(self.line), (19200, "8n2"))
+        self.assertFalse(select.select([self.master], [], [], .1)[0])
 
     def test_identify_is_read_only_and_releases_after_matching_prompt(self):
         lease = self.open(mode="identify")["session"]

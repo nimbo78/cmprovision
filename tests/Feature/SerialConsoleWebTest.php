@@ -148,6 +148,46 @@ class SerialConsoleWebTest extends TestCase
         $this->getJson('/console/ports')->assertJsonPath('ports.0.label', '');
     }
 
+    public function test_wake_is_opt_in_per_cable_and_path_only_permission_expires_on_replug(): void
+    {
+        $this->actingAs($this->operator())->withSession(['auth.password_confirmed_at' => time()]);
+        $broker = Mockery::mock(SerialConsoleBroker::class)->makePartial();
+        $this->app->instance(SerialConsoleBroker::class, $broker);
+        $inventory = $this->inventory();
+        $inventory['ports'][] = ['id' => 'by-path/rack-usb', ...array_diff_key($inventory['ports'][0], ['id' => true])];
+        $broker->shouldReceive('request')->with(['op' => 'ports'])->andReturnUsing(function () use (&$inventory) {
+            return $inventory;
+        });
+        $write = '/console/ports/label';
+        $this->getJson('/console/ports')->assertJsonPath('ports.0.wake_on_connect', false);
+        foreach ($inventory['ports'] as $port) {
+            $this->postJson($write, ['port' => $port['id'], 'generation' => self::GENERATION, 'wake_on_connect' => true])
+                ->assertOk();
+        }
+        $this->getJson('/console/ports')->assertJsonPath('ports.0.wake_on_connect', true)->assertJsonPath('ports.1.wake_on_connect', true);
+        foreach ($inventory['ports'] as &$port) $port['generation'] = self::LEASE;
+        unset($port);
+        $this->getJson('/console/ports')->assertJsonPath('ports.0.wake_on_connect', true)->assertJsonPath('ports.1.wake_on_connect', false);
+        $this->postJson($write, ['port' => self::PORT, 'generation' => self::GENERATION, 'wake_on_connect' => false])->assertConflict();
+    }
+
+    public function test_open_checks_saved_wake_permission_and_identify_is_passive(): void
+    {
+        $this->actingAs($this->operator())->withSession(['auth.password_confirmed_at' => time()]);
+        $broker = Mockery::mock(SerialConsoleBroker::class)->makePartial();
+        $this->app->instance(SerialConsoleBroker::class, $broker);
+        $broker->shouldReceive('request')->with(['op' => 'ports'])->andReturn($this->inventory());
+        $open = ['port' => self::PORT, 'generation' => self::GENERATION, 'baud' => 'auto', 'frame' => 'auto', 'wake' => true];
+        $broker->shouldReceive('request')->once()->withArgs(fn ($r) => $r['op'] === 'open' && $r['wake'] === false)
+            ->andReturn(['ok' => true, 'session' => self::LEASE]);
+        $this->postJson('/console/session/open', $open + ['mode' => 'connect'])->assertOk();
+        $this->postJson('/console/ports/label', ['port' => self::PORT, 'generation' => self::GENERATION, 'wake_on_connect' => true])->assertOk();
+        $broker->shouldReceive('request')->once()->withArgs(fn ($r) => $r['op'] === 'open' && $r['wake'] === true)
+            ->andReturn(['ok' => true, 'session' => self::LEASE]);
+        $this->postJson('/console/session/open', $open + ['mode' => 'connect'])->assertOk();
+        $this->postJson('/console/session/open', $open + ['mode' => 'identify'])->assertUnprocessable();
+    }
+
     public function test_logout_releases_that_login_and_broker_failure_does_not_prevent_sign_out(): void
     {
         $this->actingAs($this->operator());

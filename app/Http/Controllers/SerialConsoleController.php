@@ -6,6 +6,7 @@ use App\Models\Setting;
 use App\Services\SerialConsoleBroker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -30,19 +31,25 @@ class SerialConsoleController extends Controller
     public function label(Request $request, SerialConsoleBroker $broker): JsonResponse
     {
         $body = $this->validated($request, ['port' => self::PORT, 'generation' => self::KEY,
-            'label' => ['present', 'string', 'max:64', 'not_regex:/[\p{C}]/u']]);
+            'label' => ['sometimes', 'string', 'max:64', 'not_regex:/[\p{C}]/u'], 'wake_on_connect' => 'sometimes|boolean:strict']);
         if ($body instanceof JsonResponse) return $body;
+        if (!isset($body['label']) && !isset($body['wake_on_connect'])) return $this->invalid();
         $inventory = $broker->request(['op' => 'ports']);
         if (!$inventory['ok']) return $this->reply($inventory);
         $current = collect($inventory['ports'])->contains(fn ($p) => $p['id'] === $body['port'] && $p['generation'] === $body['generation']);
         if (!$current) return $this->reply(['ok' => false, 'error' => 'conflict', 'message' => 'USB connection changed.']);
-        $key = SerialConsoleBroker::labelKey($body['port']);
-        $label = trim($body['label']);
-        if ($label === '') {
-            Setting::whereKey($key)->delete();
-        } else {
-            Setting::upsert([['key' => $key, 'value' => $label]], ['key'], ['value']);
-        }
+        DB::transaction(function () use ($body) {
+            $changes = [];
+            if (isset($body['label'])) $changes[SerialConsoleBroker::labelKey($body['port'])] = trim($body['label']);
+            if (isset($body['wake_on_connect'])) {
+                $changes[SerialConsoleBroker::wakeKey($body['port'])] = $body['wake_on_connect']
+                    ? SerialConsoleBroker::wakePermission($body['port'], $body['generation']) : '';
+            }
+            foreach ($changes as $key => $value) {
+                if ($value === '') Setting::whereKey($key)->delete();
+                else Setting::upsert([['key' => $key, 'value' => $value]], ['key'], ['value']);
+            }
+        });
         return $this->reply(['ok' => true]);
     }
 
@@ -51,7 +58,7 @@ class SerialConsoleController extends Controller
         $rules = match ($operation) {
             'open' => ['port' => self::PORT, 'generation' => self::KEY, 'mode' => 'required|in:connect,identify',
                 'baud' => ['required', Rule::in(['auto', 9600, 19200, 38400, 57600, 115200])],
-                'frame' => ['required', 'string', 'regex:/\A(?:auto|[5-8][neo][12])\z/']],
+                'frame' => ['required', 'string', 'regex:/\A(?:auto|[5-8][neo][12])\z/'], 'wake' => 'sometimes|boolean:strict'],
             'poll' => ['session' => self::KEY, 'cursor' => 'required|integer:strict|min:0'],
             'close' => ['session' => self::KEY],
             'write' => ['session' => self::KEY, 'seq' => self::SEQUENCE, 'data' => 'required|string|max:5464'],
@@ -65,6 +72,11 @@ class SerialConsoleController extends Controller
         $body = $this->validated($request, $rules);
         if ($body instanceof JsonResponse) return $body;
         if ($operation === 'open' && $body['baud'] !== 'auto' && !is_int($body['baud'])) return $this->invalid();
+        if ($operation === 'open' && ($body['wake'] ?? false)) {
+            if ($body['mode'] !== 'connect') return $this->invalid();
+            $body['wake'] = Setting::whereKey(SerialConsoleBroker::wakeKey($body['port']))->value('value')
+                === SerialConsoleBroker::wakePermission($body['port'], $body['generation']);
+        }
         if ($operation === 'file_preview' && strlen($body['text']) > 1048576) return $this->invalid();
         if ($operation === 'write') {
             $bytes = base64_decode($body['data'], true);

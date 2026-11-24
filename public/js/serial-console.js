@@ -178,7 +178,7 @@
     };
     const request = consoleRequest(root.dataset.base, document.querySelector('meta[name=csrf-token]').content);
     const session = new SerialSession(request, bytes => terminal().write(bytes));
-    const stateLabels = { connected: 'Connected', detecting: 'Detecting', waiting: 'Waiting for data', busy: 'In use', available: 'Available' };
+    const stateLabels = { connected: 'Connected', detecting: 'Detecting', listening: 'Listening', waiting: 'Waiting for data', busy: 'In use', available: 'Available' };
     const settings = new Map();
     let ports = [], selected = null, snapshot = null, pane = 'terminal', portListKey;
     let screen, pollTimer, inventoryTimer, inventoryRun = 0, revision = 0, suspended = false, authExpired = false;
@@ -352,6 +352,7 @@
         show('screen', connected()); show('placeholder', !connected());
         const placeholder = status === 'busy' ? ['Port in use', 'The adapter will be available when the other session closes.'] :
             waiting ? ['Waiting for serial data', 'For a silent device, choose its baud rate and format to open a manual terminal.'] :
+            status === 'listening' ? ['Listening to the console', 'The terminal will open in a moment.'] :
             status === 'detecting' ? [openedAs === 'identify' ? 'Listening for a hostname' : 'Detecting line settings', 'Listening for incoming serial data.'] :
             ['Open a serial session', 'Connect to open the terminal, or listen for a hostname first.'];
         put('placeholder-title', placeholder[0]); put('placeholder-help', placeholder[1]);
@@ -431,6 +432,7 @@
         selected = id;
         pane = 'terminal';
         el('label').value = port()?.label || '';
+        el('wake').checked = Boolean(port()?.wake_on_connect);
         const config = lineSettings();
         el('baud').value = String(config.baud); el('frame').value = config.frame;
         el('frame').disabled = config.baud === 'auto';
@@ -452,7 +454,11 @@
                 if (current && old?.generation !== current.generation) settings.delete(current.id);
                 select(current?.id || ports[0]?.id || null);
                 if (old) put('message', 'USB adapter changed. The previous session was released.');
-            } else render();
+            } else {
+                if (el('wake').checked === Boolean(old.wake_on_connect)) el('wake').checked = Boolean(current.wake_on_connect);
+                if (el('label').value === (old.label || '')) el('label').value = current.label || '';
+                render();
+            }
             put('empty-title', 'No USB serial adapters');
             put('empty-help', 'Connect an FTDI or PL2303 adapter to the station.');
             if (!window.Terminal) put('message', 'Terminal assets are unavailable. Reload the console after the station package is repaired.');
@@ -497,14 +503,16 @@
         if (view === revision && session.active && !suspended) pollTimer = setTimeout(() => tick(view), 350);
     }
 
-    async function open(mode, forceAuto = false) {
+    async function open(mode, forceAuto = false, explicitConnect = false) {
         const p = port(), view = revision;
         if (!p || p.busy || session.active || authExpired || suspended) return;
         const manual = !forceAuto && mode === 'connect' && lineSettings().baud !== 'auto';
         openedAs = mode;
         put('message', returnedFile ? 'Open an authenticated device prompt to review your selected file.' : '');
-        const opening = session.open({ port: p.id, generation: p.generation, mode,
-            baud: manual ? Number(lineSettings().baud) : 'auto', frame: manual ? lineSettings().frame : 'auto' });
+        const options = { port: p.id, generation: p.generation, mode,
+            baud: manual ? Number(lineSettings().baud) : 'auto', frame: manual ? lineSettings().frame : 'auto' };
+        if (explicitConnect) options.wake = Boolean(p.wake_on_connect);
+        const opening = session.open(options);
         render();
         await opening;
         if (view === revision && session.active) await tick(view);
@@ -596,7 +604,7 @@
     el('terminal-tab').onclick = () => changePane('terminal');
     el('details-tab').onclick = () => changePane('details');
     el('line-settings').onclick = el('manual').onclick = () => { changePane('details'); el('baud').focus(); };
-    el('connect').onclick = () => handle(() => open('connect'));
+    el('connect').onclick = () => handle(() => open('connect', false, true));
     el('identify').onclick = () => handle(() => open('identify'));
     el('disconnect').onclick = () => {
         returnedFile = nativePicker = null;
@@ -615,13 +623,16 @@
         const p = port(), view = revision;
         if (!p || el('save').disabled || authExpired) return;
         const label = el('label').value.trim(), config = { baud: el('baud').value, frame: el('frame').value };
+        const changes = {};
+        if (label !== (p.label || '')) changes.label = label;
+        if (el('wake').checked !== Boolean(p.wake_on_connect)) changes.wake_on_connect = el('wake').checked;
         const resumeManual = session.active && snapshot?.state === 'waiting' && config.baud !== 'auto';
         el('save').disabled = true;
         handle(async () => {
             try {
-                if (label !== (p.label || '')) await request('ports/label', { port: p.id, generation: p.generation, label });
+                if (Object.keys(changes).length) await request('ports/label', { port: p.id, generation: p.generation, ...changes });
                 if (view !== revision) return;
-                port().label = label;
+                Object.assign(port(), changes);
                 settings.set(p.id, config);
                 pane = 'terminal';
                 if (resumeManual) await reconnect(false);

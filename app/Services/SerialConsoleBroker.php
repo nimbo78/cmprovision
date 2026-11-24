@@ -58,16 +58,29 @@ class SerialConsoleBroker
         return 'serial_console_label_'.hash('sha256', $port);
     }
 
+    public static function wakeKey(string $port): string
+    {
+        return 'serial_console_wake_'.hash('sha256', $port);
+    }
+
+    public static function wakePermission(string $port, string $generation): string
+    {
+        // Without a unique USB serial, a replacement cable can inherit the physical port.
+        return str_starts_with($port, 'by-id/') ? '1' : $generation;
+    }
+
     public function ports(): array
     {
         $reply = $this->request(['op' => 'ports']);
         if (!$reply['ok'] || empty($reply['ports'])) {
             return $reply;
         }
-        $keys = array_map(self::labelKey(...), array_column($reply['ports'], 'id'));
-        $labels = Setting::whereIn('key', $keys)->pluck('value', 'key');
+        $ports = array_column($reply['ports'], 'id');
+        $keys = array_merge(array_map(self::labelKey(...), $ports), array_map(self::wakeKey(...), $ports));
+        $preferences = Setting::whereIn('key', $keys)->pluck('value', 'key');
         foreach ($reply['ports'] as &$port) {
-            $port['label'] = $labels->get(self::labelKey($port['id']), '');
+            $port['label'] = $preferences->get(self::labelKey($port['id']), '');
+            $port['wake_on_connect'] = $preferences->get(self::wakeKey($port['id'])) === self::wakePermission($port['id'], $port['generation']);
         }
         return $reply;
     }

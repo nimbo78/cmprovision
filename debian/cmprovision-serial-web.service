@@ -13,6 +13,8 @@ SupplementaryGroups=dialout
 CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
 RuntimeDirectory=cmprovision-console
 RuntimeDirectoryMode=0700
+CacheDirectory=cmprovision-console
+CacheDirectoryMode=0700
 # CLI and broker share guard files, including when this service restarts.
 RuntimeDirectoryPreserve=yes
 UMask=0077

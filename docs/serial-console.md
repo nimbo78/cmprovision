@@ -7,8 +7,14 @@ Use a local FTDI or PL2303 USB adapter to reach a switch or a board from the web
 ## Use the browser terminal
 
 1. Plug the USB adapter into the station. An operator with console access will see **Console** beside **Ports** on the next inventory refresh. A busy adapter stays visible. Open **Console** and confirm your web password.
-2. Choose a cable by USB port, label or last observed hostname. **Identify** listens for output. **Connect** opens an interactive terminal. Auto needs repeated output to determine the line settings. For a quiet device, choose the known baud and format under **Port details**, save, then connect. If you move the target end of a cable, select **Re-detect** and check the current prompt.
+2. Choose a cable by USB port, label or last observed hostname. **Connect** listens for one second and opens the keyboard even on a quiet line. Auto starts with the last settings that produced a device prompt for that cable, or 9600 8N1 on first use. If you move the cable to another device, **Re-detect** listens for repeated output. You can also choose a known baud rate and format in **Port details**.
 3. Type into the terminal. Only one session can own the port. Disconnect, leave the tab or sign out to release it. If the browser loses contact, automatic sending pauses after two seconds and the station releases the port after twelve. Use HTTPS on the management network when entering device credentials.
+
+### Wake a quiet device
+
+For a dedicated console cable, enable **Port details → Send Enter on connect**, save, then press **Connect**. The station sends one carriage return after a quiet second or a recognized Cisco or Huawei login invitation. Other input, including a visible question, is shown in the terminal. If the device stays silent, the keyboard is ready. A silent console may already contain an unfinished command that Enter would submit.
+
+The setting starts off. A cable with a unique USB serial number keeps its setting when reconnected. For cables without a serial number, or with a serial number the station has seen on two adapters at once, enable it again after reconnecting the adapter or restarting the console service. **Identify**, **Re-detect**, and inventory checks only listen.
 
 ### Send a configuration
 
