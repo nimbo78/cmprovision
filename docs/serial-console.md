@@ -8,7 +8,7 @@ Use a local FTDI or PL2303 USB adapter to reach a switch or a board from the web
 
 1. Plug the USB adapter into the station. An operator with console access will see **Console** beside **Ports** on the next inventory refresh. A busy adapter stays visible. Open **Console** and confirm your web password.
 2. Choose a cable by USB port, label or last observed hostname. **Identify** listens for output. **Connect** opens an interactive terminal. Auto needs repeated output to determine the line settings. For a quiet device, choose the known baud and format under **Port details**, save, then connect. If you move the target end of a cable, select **Re-detect** and check the current prompt.
-3. Type into the terminal. Only one session can own the port. Disconnect, leave the tab or sign out to release it. For a missing browser heartbeat, Smart pauses after two seconds and the station releases the port after twelve. Use HTTPS on the management network when entering device credentials.
+3. Type into the terminal. Only one session can own the port. Disconnect, leave the tab or sign out to release it. If the browser loses contact, automatic sending pauses after two seconds and the station releases the port after twelve. Use HTTPS on the management network when entering device credentials.
 
 ### Send a configuration
 
@@ -16,16 +16,17 @@ At a device prompt, choose **Paste config from file** or paste multiple lines in
 
 | Mode | During transfer |
 | --- | --- |
+| **Automatic** (default) | Press **Start sending** once for the whole file. The station answers Yes, accepts displayed filenames and Cisco `[confirm]`, and advances paged output. Progress shows the source line and how many replies it sent. |
 | **Step** | Send each subsequent command explicitly. Use this for an unfamiliar device transcript. |
 | **Smart** | Advance after an expected prompt. A CLI error stops on its source line for correction. At a confirmation or filename prompt, the operator chooses the response. |
 
-Cisco IOS, Huawei S5731 (VRP) and S5735-S-V2 (YunShan OS) have console profiles. On Huawei, run **Read version** (`display version`) at the authenticated prompt before using Smart. The common angle-bracket prompt provides the hostname. The version reply identifies the supported platform. After a disconnect, check the device and the last confirmed file line before resuming. Terminal output and uploaded configurations live only in the current session.
+Cisco IOS, Huawei S5731 (VRP) and S5735-S-V2 (YunShan OS) have console profiles. On Huawei, run **Read version** (`display version`) at the authenticated prompt before using Automatic or Smart. Supply CLI commands with explicit view changes. For example, a Huawei file can end with `return` and `save`; Automatic handles the save and overwrite questions. A repeated question, missing value, login prompt or rejected command pauses the transfer at that line. After a disconnect, check the last confirmed file line on the device before resuming. Terminal output and uploaded configurations live only in the current session.
 
 ### Long output on a serial line
 
 On a Catalyst 2960-CX running IOS 15.2(7)E14, `show terminal` reports the current screen length. From the same EXEC prompt, `terminal length 0` lets `show version` finish without a `--More--` pause. Restore the value you read before disconnecting. On the lab switch it was 24, so the restore command was `terminal length 24`. Closing a browser tab can leave the physical console logged in. [Cisco IOS terminal length](https://www.cisco.com/c/en/us/td/docs/ios/fundamentals/command/reference/cf_book/cf_s5.html)
 
-Huawei documents `screen-length 0 temporary` for continuous output in user view and `mmi-mode enable` for machine-to-machine operation. MMI also lets some commands run without asking for confirmation. For a file that an engineer is supervising, keep confirmations enabled. Check command availability on the model, software version and console in use. [Huawei S5700 Command Reference, sections 2.5.17 and 2.5.20](https://www.scribd.com/document/960183015/01-02-Basic-Configurations-Commands)
+Huawei documents `screen-length 0 temporary` for continuous output in user view and `mmi-mode enable` for machine-to-machine operation. Automatic answers prompts from the selected file transfer and works with the device's normal console settings. [Huawei S5700 Command Reference, sections 2.5.17 and 2.5.20](https://www.scribd.com/document/960183015/01-02-Basic-Configurations-Commands)
 
 ### Grant access
 

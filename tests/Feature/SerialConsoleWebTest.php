@@ -110,6 +110,11 @@ class SerialConsoleWebTest extends TestCase
             ->andReturn(['ok' => true]);
         $this->postJson('/console/session/file_preview', ['session' => self::LEASE, 'seq' => 1,
             'filename' => 'test.cfg', 'text' => $file])->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+        $broker->shouldReceive('request')->once()->withArgs(fn (array $r) => $r['owner'] === $owner
+            && $r['op'] === 'file_action' && $r['action'] === 'start' && $r['mode'] === 'bulk')
+            ->andReturn(['ok' => true]);
+        $this->postJson('/console/session/file_action', ['session' => self::LEASE, 'seq' => 2,
+            'action' => 'start', 'mode' => 'bulk'])->assertOk();
         $this->getJson('/console/session/write?session='.self::LEASE)->assertStatus(405);
     }
 

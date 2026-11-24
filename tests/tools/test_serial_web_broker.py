@@ -179,6 +179,33 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(reply["data"], "")
         self.assertIn("unread", reply["message"])
 
+    def test_bulk_copy_completes_over_a_tty_with_one_start_and_no_browser_answers(self):
+        lease = self.open()["session"]
+        self.until(lease, "connected")
+        os.write(self.master, b"\r\nrack#")
+        for _ in range(100):
+            if self.request("poll", session=lease, cursor=0)["ready"]:
+                break
+            time.sleep(.01)
+        cmd = b"copy running-config startup-config"
+        self.assertTrue(self.request("file_preview", session=lease, seq=1, filename="save.cfg", text=cmd.decode())["ok"])
+        self.assertTrue(self.request("file_action", session=lease, seq=2, action="start", mode="bulk")["ok"])
+        self.assertEqual(self.read_peer(len(cmd)), cmd)
+        os.write(self.master, cmd)
+        self.assertEqual(self.read_peer(1), b"\r")
+        for prompt, reply in ((b"Destination filename [startup-config]?", b"\r"),
+                              (b"Overwrite? [y/n]:", b"y")):
+            os.write(self.master, b"\r\n" + prompt)
+            self.assertEqual(self.read_peer(1), reply)
+        os.write(self.master, b"y\r\n[OK]\r\nrack#")
+        for _ in range(100):
+            job = self.request("poll", session=lease, cursor=0)["transfer"]
+            if job["stage"] == "done":
+                break
+            time.sleep(.01)
+        self.assertEqual((job["stage"], job["done"], job["auto_answers"]), ("done", 1, 2))
+        self.assertFalse(select.select([self.master], [], [], .1)[0], "extra Enter after a single-key answer")
+
     def test_real_file_exchange_heartbeats_pause_until_operator_resumes(self):
         lease = self.open()["session"]
         self.until(lease, "connected")
@@ -194,7 +221,7 @@ class BrokerTest(unittest.TestCase):
                                      text=(first + b"\n" + second).decode())["ok"])
         self.assertEqual(self.request("file_page", session=lease, page=0)["rows"][1]["num"], 2)
         with patch.object(web, "HEARTBEAT_SECONDS", .08):
-            self.assertTrue(self.request("file_action", session=lease, seq=2, action="start")["ok"])
+            self.assertTrue(self.request("file_action", session=lease, seq=2, action="start", mode="bulk")["ok"])
             self.assertEqual(self.read_peer(len(first)), first)
             os.write(self.master, first)
             self.assertEqual(self.read_peer(1), b"\r")

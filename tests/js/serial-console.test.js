@@ -118,6 +118,8 @@ test('operator sees only answers matching the device and can stop an uncertain t
     assert.deepEqual(transferControls({stage:'error'}), ['correct', 'stop']);
     assert.deepEqual(transferControls({stage:'uncertain'}), ['stop']);
     assert.deepEqual(transferControls({stage:'between', mode:'step'}), ['next', 'stop']);
+    assert.deepEqual(transferControls({stage:'awaiting', mode:'bulk', hold:false}), ['pause', 'stop']);
+    assert.deepEqual(transferControls({stage:'between', mode:'bulk', hold:true}), ['next', 'stop']);
 });
 
 test('file selection validates UTF-8 and the byte limit before preview', async () => {

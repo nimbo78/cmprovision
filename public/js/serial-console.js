@@ -28,7 +28,7 @@
             if (job.hold || job.mode === 'step') return ['next', 'stop'];
             return ['pause', 'stop'];
         case 'awaiting':
-            return job.mode === 'smart' && !job.hold ? ['pause', 'stop'] : ['stop'];
+            return job.mode !== 'step' && !job.hold ? ['pause', 'stop'] : ['stop'];
         default: return ['stop'];
         }
     }
@@ -260,7 +260,7 @@
         jobKey = controlsKey = undefined;
         page = pageCount = 0;
         el('file').value = el('response').value = '';
-        el('mode').value = 'smart';
+        el('mode').value = 'bulk';
         el('default').checked = false;
         put('filename', ''); put('notice', ''); put('progress-text', '');
         el('rows').replaceChildren();
@@ -388,10 +388,11 @@
             between: hold || mode === 'step' ? 'Paused before next line' : 'Sending' };
         put('filename', transfer.file);
         put('progress-text', [labels[stage], done + ' / ' + total + ' returned to prompt',
-            line ? 'File line ' + line : '', transfer.pages ? 'Pages advanced ' + transfer.pages : ''].filter(Boolean).join(' · '));
+            line ? 'File line ' + line : '', transfer.auto_answers ? 'Auto-answered ' + transfer.auto_answers : '',
+            transfer.pages ? 'Pages advanced ' + transfer.pages : ''].filter(Boolean).join(' · '));
         el('progress').max = total || 1; el('progress').value = done || 0;
-        const needsVersion = stage === 'review' && el('mode').value === 'smart' && snapshot.smart_ready === false && snapshot.ready;
-        put('notice', transfer.notice || (needsVersion ? 'Run display version on this device to use Smart, or select Step.' :
+        const needsVersion = stage === 'review' && el('mode').value !== 'step' && snapshot.smart_ready === false && snapshot.ready;
+        put('notice', transfer.notice || (needsVersion ? 'Run display version on this device to send automatically, or select Step.' :
             stage === 'review' && !snapshot.ready ? 'Open an authenticated Cisco IOS or Huawei command prompt before sending.' : ''));
         show('review', stage === 'review');
         const allowDefault = stage === 'review' && transfer.default_line && el('mode').value === 'smart';

@@ -13,9 +13,14 @@ PAGE_SIZE = 12
 SETTLE = .060
 IDLE = 8
 DEADLINE = 120
+MAX_CONFIRMATIONS = 8
 IOS_NAME = r"[A-Za-z0-9][A-Za-z0-9.-]{0,63}"
 HW_NAME = r"[A-Za-z0-9](?:[A-Za-z0-9_. -]{0,62}[A-Za-z0-9_.-])?"
 COPY = "copy running-config startup-config"
+SHORT_CHOICE = re.compile(r"(?:\[\s*y\s*/\s*n\s*\]|\(\s*y\s*/\s*n\s*\))(?:\s*\[\s*[yn]\s*\])?\s*[:?]?$", re.I)
+FULL_CHOICE = re.compile(r"(?:\[\s*yes\s*/\s*no\s*\]|\(\s*yes\s*/\s*no\s*\))(?:\s*\[\s*(?:yes|no)\s*\])?\s*[:?]?$", re.I)
+NEW_SESSION = re.compile(r"\binitial configuration dialog\b|(?:^|\s)login:\s*$|^\s*(?:username|password):\s*$", re.I)
+WARNING_LINE = re.compile(r"^(?:%\s*)?Warning:", re.I)
 BLOCK = re.compile(r"(?:banner\b|macro\s+name\b|crypto\s+pki\s+(?:certificate\s+chain|enroll|authenticate|import)\b|certificate\b|key-string\b|tclsh\b|menu\s+\S+\s+(?:prompt|title)\b)", re.I)
 HW_BLOCK = re.compile(r"(?:header\s+(?:login|shell)\s+information|(?:rsa|ecc|dsa)\s+peer-public-key|public-key-code\s+begin|pki\s+.*\bimport)\b", re.I)
 IOS_ERROR = re.compile(r"%\s*(?:Invalid input|Incomplete command|Ambiguous command|Unrecognized command|Error|Authorization failed|Access denied|Failed)\b", re.I)
@@ -208,15 +213,13 @@ def preflight(text, frame, family):
 
 
 def question(tail, family):
+    if SHORT_CHOICE.search(tail) or FULL_CHOICE.search(tail):
+        return "yesno"
     if family == "huawei":
-        if re.search(r"(?:\[\s*y\s*/\s*n\s*\]|\(\s*y\s*/\s*n\s*\))(?:\s*\[\s*[yn]\s*\])?\s*[:?]?$", tail, re.I):
-            return "yesno"
         if re.fullmatch(r"(?:Info:\s*)?(?:Please\s+(?:input|enter)|Enter|Input)\b[^?]*\bfile\s*name\b[^?]*\[[^\]]+\]\s*[:?]", tail, re.I):
             return "filename"
     else:
-        if re.search(r"(?:\[(?:yes/no|y/n)\]|\((?:yes/no|y/n)\))\s*[:?]?$", tail, re.I):
-            return "yesno"
-        if re.search(r"\[confirm\]\s*[:?]?$", tail, re.I) or re.fullmatch(r"Destination filename \[[^\]]+\]\?", tail, re.I):
+        if re.search(r"\[confirm\]\s*[:?]?$", tail, re.I) or re.fullmatch(r"(?:Destination|Source|Delete) filename \[[^\]]+\]\?", tail, re.I):
             return "enter"
     return "pager" if re.fullmatch(MORE[family], tail, re.I) else ""
 
@@ -273,7 +276,7 @@ class ConsoleProtocol:
             return None
         return dict(stage=self._stage, file=self._file, total=self._total, done=self._done, last_done_line=self._last_done_line,
                     line=self._line, text=self._text, notice=self._notice, answer_kind=self._kind,
-                    pages=self._pages, hold=self._hold, mode=self._mode, default_line=self._default)
+                    pages=self._pages, auto_answers=self._auto_answers, hold=self._hold, mode=self._mode, default_line=self._default)
 
     def preview(self, text, filename, frame):
         if self._lost or self._owns():
@@ -291,7 +294,7 @@ class ConsoleProtocol:
         self._rows = preflight(text, frame, self._context.family)
         self._file, self._total = filename, len(self._rows)
         self._default = self._rows.default_line
-        self._done = self._line = self._pages = 0
+        self._done = self._line = self._pages = self._auto_answers = 0
         self._last_done_line = None
         self._mode, self._hold = "smart", False
         self._stage, self._notice, self._kind = "review", "", ""
@@ -322,6 +325,7 @@ class ConsoleProtocol:
         if stage in ("stopped", "done"):
             self._rows = ()
             self._text = self._version = ""
+            self._answered = set()
 
     def transport_lost(self, reason):
         self._lost = True
@@ -445,6 +449,8 @@ class ConsoleProtocol:
         if len(self._rx) + len(data) > MAX_REPLY:
             self._halt("uncertain", "The device response exceeded the review buffer.")
             return
+        if self._slow_reply:
+            self._idle = self._deadline
         self._rx.extend(data)
         self._settle_at = now + SETTLE
 
@@ -459,18 +465,20 @@ class ConsoleProtocol:
                 self._review_rx(now)
             elif not self._owns():
                 self._observe_manual()
-        elif self._stage == "between" and self._mode == "smart" and not self._hold and now >= self._advance:
+        elif self._stage == "between" and self._mode != "step" and not self._hold and now >= self._advance:
             self._send_line(now)
 
     def _queue_chunk(self):
         if self._echo_pos == len(self._payload):
             self._payload = b""
             self._phase, self._tx = "reply", b"\r"
+            if self._slow_reply:
+                self._idle = self._deadline
         else:
             self._chunk_end = min(len(self._payload), self._echo_pos + CHUNK)
             self._tx = self._payload[self._echo_pos:self._chunk_end]
 
-    def _exchange(self, payload, now, pager=False):
+    def _exchange(self, payload, now, pager=False, single_key=False):
         self._prompt = None
         self._manual_rx.clear()
         self._rx.clear()
@@ -482,6 +490,9 @@ class ConsoleProtocol:
             self._tx = b" "
             self._pages += 1
             self._line_pages += 1
+        elif single_key:
+            self._phase = "answer-key"
+            self._payload = self._tx = payload.encode()
         else:
             self._payload, self._echo_pos = payload.encode(), 0
             self._queue_chunk()
@@ -497,11 +508,20 @@ class ConsoleProtocol:
             self._halt("uncertain", "An explicit quit or return is required at this section.")
             return
         self._line_pages, self._version = 0, ""
+        self._answered = set()
         self._deadline = now + DEADLINE
+        self._slow_reply = self._mode == "bulk" and bool(re.match(r"(?:save|copy|write|commit)\b", self._text.strip(), re.I))
         self._exchange(self._text, now)
 
     def _review_rx(self, now):
         data = self._rx
+        if self._phase == "answer-key":
+            # Some CLIs accept Y immediately; others echo it and wait for Return.
+            if data == self._payload:
+                self._exchange("", now)
+                return
+            if data.startswith(self._payload):
+                data = data[len(self._payload):]
         if self._phase == "pager":
             for erase in self._pager_erasures:
                 if data.startswith(erase):
@@ -524,9 +544,15 @@ class ConsoleProtocol:
         tail = lines[-1].rstrip(" ")
         cmd = self._text.strip()
         family = self._context.family
+        bulk = self._mode == "bulk"
         ios_version = family == "ios" and cmd.lower().split() == ["show", "version"]
+        if bulk and any(NEW_SESSION.search(s) for s in lines):
+            self._halt("uncertain", "The device requested login or initial setup. Inspect the terminal.")
+            return
         for index, earlier in enumerate(lines[:-1]):
             earlier = earlier.strip()
+            if bulk and WARNING_LINE.match(earlier) and not question(earlier, family):
+                continue  # The actual choice can be on the following line.
             if ios_version and earlier == IOS_VERSION_NOTICE:
                 link = lines[index + 1].strip()
                 if link in IOS_VERSION_URLS:
@@ -543,10 +569,10 @@ class ConsoleProtocol:
                 self._prompt = self._context
                 self._note_prompt(tail)
                 self._halt("error", diagnostic[:512] + "\n" + tail)
-            elif looks_interactive(tail) and not tail.startswith(("Error:", "%")):
+            elif (question(tail.strip(), family) or looks_interactive(tail)) and not tail.startswith(("Error:", "%")):
                 self._halt("uncertain", "The device reported an error outside the expected prompt.")
             return
-        if any(line.lstrip().startswith("%") for line in lines):
+        if any(line.lstrip().startswith("%") and not (bulk and WARNING_LINE.match(line.lstrip())) for line in lines):
             self._halt("uncertain", "Unexpected device diagnostic. Inspect the terminal.")
             return
         kind = question(tail.lstrip(" "), family)
@@ -562,6 +588,8 @@ class ConsoleProtocol:
                 self._version += "\n".join(lines[:-1]) + "\n"
                 if kind != "pager" or len(self._version) > MAX_REPLY:
                     self._version = None
+            if bulk and not self._hold and self._bulk_answer(kind, tail, lines, cmd, now):
+                return
             if kind == "pager" and not warning and self._mode == "smart" and not self._hold and self._line_pages < 20 and re.fullmatch(READ_ONLY[family], cmd, re.I):
                 self._exchange("", now, pager=True)
             elif (kind == "enter" and self._mode == "smart" and not self._hold and self._allow_default
@@ -572,7 +600,7 @@ class ConsoleProtocol:
                 self._stage, self._kind = "question", kind
                 self._notice = (warning[:512] + "\n" if warning and warning != tail else "") + tail[:512]
             return
-        if warning:
+        if warning and not bulk:
             self._halt("uncertain", warning[:512])
             return
         after = expected_prompt(self._context, cmd, tail)
@@ -592,12 +620,38 @@ class ConsoleProtocol:
             self._rx.clear()
             if self._done == self._total:
                 self._halt("done", "The device returned to its prompt after the final command.")
-            elif family == "huawei" and self._mode == "smart" and self.platform != old_platform:
-                self._halt("uncertain", "Huawei identification changed. Read display version before another Smart transfer.")
+            elif family == "huawei" and self._mode != "step" and self.platform != old_platform:
+                self._halt("uncertain", "Huawei identification changed. Read display version before continuing automatically.")
             else:
                 self._stage, self._advance = "between", now + .090
+        elif bulk and WARNING_LINE.match(tail.lstrip()):
+            return  # Wait for the rest of the warning or its question.
         elif looks_interactive(tail) and not (ios_version and tail == IOS_VERSION_NOTICE):
             self._halt("uncertain", "Unexpected prompt. Inspect the terminal before continuing.")
+
+    def _bulk_answer(self, kind, tail, lines, cmd, now):
+        if kind == "pager":
+            self._exchange("", now, pager=True)
+            return True
+        # Commands which print configuration or descriptions can print question-like text as data.
+        verb = cmd.lower().removeprefix("do ").lstrip().split()[0]
+        if "show".startswith(verb) or "display".startswith(verb) or verb in ("more", "dir"):
+            return False
+        previous = lines[-2].strip() if len(lines) > 1 else ""
+        key = (previous.casefold() if WARNING_LINE.match(previous) else "", tail.strip().casefold())
+        if key in self._answered or len(self._answered) >= MAX_CONFIRMATIONS:
+            return False
+        self._answered.add(key)
+        self._auto_answers += 1
+        if kind == "yesno":
+            self._answer_choice(tail, "yes", now)
+        else:
+            self._exchange("", now)  # Accept the displayed filename or [confirm].
+        return True
+
+    def _answer_choice(self, tail, answer, now):
+        short = bool(SHORT_CHOICE.search(tail))
+        self._exchange(answer[0] if short else answer, now, single_key=short)
 
     def action(self, action, now, *, value="", mode="smart", allow_default=False):
         if self._stage is None or self._lost:
@@ -608,13 +662,13 @@ class ConsoleProtocol:
             self._halt("stopped", "")
             self._stage = None
         elif action == "start" and self._stage == "review":
-            if not self.ready or self._prompt != self._context or mode not in ("smart", "step") or type(allow_default) is not bool:
+            if not self.ready or self._prompt != self._context or mode not in ("bulk", "smart", "step") or type(allow_default) is not bool:
                 raise ValueError("Review the file at an authenticated Cisco or Huawei prompt.")
-            if mode == "smart" and not self.smart_ready:
-                raise ValueError("Read display version at this Huawei prompt before starting Smart.")
+            if mode != "step" and not self.smart_ready:
+                raise ValueError("Read display version at this Huawei prompt before starting automatic transfer.")
             self._mode, self._allow_default = mode, allow_default
             self._send_line(now)
-        elif action == "pause" and self._stage in ("awaiting", "between") and self._mode == "smart":
+        elif action == "pause" and self._stage in ("awaiting", "between") and self._mode != "step":
             self._hold = True
         elif action == "next" and self._stage == "between":
             self._hold = False
@@ -628,9 +682,11 @@ class ConsoleProtocol:
             self._send_line(now, corrected=value)
         elif self._stage == "question":
             if self._kind == "yesno" and action in ("yes", "no"):
-                value = action[0] if self._context.family == "huawei" else action
                 if action == "no":
                     self._hold = True
+                self._deadline = now + DEADLINE
+                self._answer_choice(screen_lines(self._rx)[-1].rstrip(" "), action, now)
+                return
             elif self._kind == "enter" and action == "enter" or self._kind == "pager" and action == "space":
                 value = ""
             elif self._kind == "filename" and action == "filename":

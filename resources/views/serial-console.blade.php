@@ -54,7 +54,13 @@
                             <progress id="sc-progress" aria-label="Commands returned to prompt"></progress>
                             <p id="sc-notice" role="status"></p>
                             <div id="sc-review" hidden>
-                                <label class="sc-field">Sending mode <select class="cmp-field" id="sc-mode"><option value="smart">Smart · wait for prompt</option><option value="step">Step through</option></select></label>
+                                <label class="sc-field">Sending mode
+                                    <select class="cmp-field" id="sc-mode">
+                                        <option value="bulk">Automatic · answer Yes and accept defaults</option>
+                                        <option value="smart">Smart · ask before confirming</option>
+                                        <option value="step">Step through</option>
+                                    </select>
+                                </label>
                                 <label id="sc-default-choice" hidden><input type="checkbox" id="sc-default"> <span id="sc-default-label"></span></label>
                                 <ol id="sc-rows" aria-label="Original file lines"></ol>
                                 <div class="sc-actions" id="sc-pagination" hidden>

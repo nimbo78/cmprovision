@@ -154,7 +154,7 @@ class Lease:
             self.finish("closed", "Console session timed out.", "expired")
         elif self.ended is None and gap >= HEARTBEAT_SECONDS:
             transfer = self.engine.snapshot()
-            if (transfer and transfer["mode"] == "smart" and not transfer["hold"]
+            if (transfer and transfer["mode"] in ("bulk", "smart") and not transfer["hold"]
                     and transfer["stage"] in ("awaiting", "between")):
                 self.engine.action("pause", now)
         return self.ended is None
@@ -438,7 +438,7 @@ class Lease:
             action, mode = body.get("action"), body.get("mode", "smart")
             value, default = body.get("value", ""), body.get("allow_default", False)
             require(isinstance(action, str) and isinstance(value, str) and len(value) <= 16384)
-            require(mode in ("smart", "step") and type(default) is bool)
+            require(mode in ("bulk", "smart", "step") and type(default) is bool)
             require(not self.pending or action in ("stop", "clear", "pause"), "conflict")
             self.engine.action(action, time.monotonic(), value=value, mode=mode, allow_default=default)
             if action in ("stop", "clear") and self.file_tx:

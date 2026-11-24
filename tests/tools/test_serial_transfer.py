@@ -138,6 +138,109 @@ class SerialTransferTest(unittest.TestCase):
         self.rx(b"\r\nInfo: Saved.\r\n<sw>")
         self.assertEqual(self.p.snapshot()["stage"], "done")
 
+    def test_bulk_cisco_answers_distinct_copy_questions_and_advances(self):
+        self.start("copy running-config startup-config\nshow clock", mode="bulk")
+        self.submit(b"copy running-config startup-config")
+        for question in (b"Destination filename [startup-config]?", b"Overwrite startup-config? [confirm]"):
+            self.rx(b"\r\n" + question)
+            self.assertEqual(self.p.take_output(), b"\r")
+        self.rx(b"\r\nContinue? [yes/no]:")
+        self.submit(b"yes")
+        self.rx(b"\r\n[OK]\r\nswitch#")
+        self.now += .2
+        self.p.tick(self.now)
+        self.submit(b"show clock")
+        self.rx(b"\r\n12:25:10\r\nswitch#")
+        self.assertEqual(self.p.snapshot()["done"], 2)
+        self.assertEqual(self.p.snapshot()["auto_answers"], 3)
+
+    def test_bulk_cisco_single_key_question_does_not_submit_enter_at_a_new_prompt(self):
+        for echo in (b"", b"y"):
+            with self.subTest(echo=echo):
+                self.setUp()
+                self.start("test", mode="bulk")
+                self.submit(b"test")
+                self.rx(b"\r\nContinue? [y/n]:")
+                self.assertEqual(self.p.take_output(), b"y")
+                self.rx(echo + b"\r\nswitch#")
+                self.assertEqual(self.p.take_output(), b"")
+                self.assertEqual(self.p.snapshot()["stage"], "done")
+
+    def test_bulk_huawei_file_runs_through_save_dialogs_on_both_families(self):
+        for version in (VRP_VERSION, YUN_VERSION):
+            with self.subTest(version=version.splitlines()[0]):
+                self.setUp()
+                self.start("display clock\n" * 199 + "save", b"<rack>", mode="bulk", version=version)
+                for _ in range(199):
+                    self.submit(b"display clock")
+                    self.rx(b"\r\n12:03:00\r\n<rack>")
+                    self.now += .2
+                    self.p.tick(self.now)
+                self.submit(b"save")
+                self.rx(b"\r\nWarning: The current configuration will be written to the device.\r\nContinue? [Y/N][N]:")
+                self.submit(b"y")
+                self.rx(b"\r\nInfo: Please input the file name [vrpcfg.zip]:")
+                self.assertEqual(self.p.take_output(), b"\r")
+                self.rx(b"\r\nWarning: File exists. Overwrite? [Y/N]:")
+                self.submit(b"y")
+                self.rx(b"\r\nInfo: Saved.\r\n<rack>")
+                self.assertEqual(self.p.snapshot()["stage"], "done")
+                self.assertEqual(self.p.snapshot()["done"], 200)
+                self.assertEqual(self.p.snapshot()["auto_answers"], 3)
+
+    def test_bulk_distinguishes_two_huawei_warnings_with_the_same_short_question(self):
+        self.start("save", b"<rack>", mode="bulk", version=VRP_VERSION)
+        self.submit(b"save")
+        for message in (b"Warning: Save the current configuration?", b"Warning: Overwrite the existing file?"):
+            self.rx(b"\r\n" + message + b"\r\nContinue? [Y/N]:")
+            self.submit(b"y")
+        self.rx(b"\r\nWarning: Overwrite the existing file?\r\nContinue? [Y/N]:")
+        self.assertEqual(self.p.snapshot()["stage"], "question")
+        self.assertEqual(self.p.take_output(), b"")
+
+    def test_bulk_waits_for_a_slow_flash_write_and_continues_on_the_real_prompt(self):
+        self.start("save\n" + "display clock", b"<rack>", mode="bulk", version=YUN_VERSION)
+        self.submit(b"save")
+        self.rx(b"\r\nContinue? [Y/N]:")
+        self.submit(b"y")
+        self.now += 15
+        self.p.tick(self.now)
+        self.assertEqual(self.p.snapshot()["stage"], "awaiting")
+        self.assertEqual(self.p.take_output(), b"")
+        self.rx(b"\r\nInfo: Saved.\r\n<rack>")
+        self.assertEqual(self.p.snapshot()["last_done_line"], 1)
+
+    def test_bulk_repeated_question_pause_and_unexpected_input_do_not_send_an_answer(self):
+        for result in (b"Continue? [yes/no]:", b"other#\r\nProceed? [confirm]", b"Password:",
+                       b"Would you like to enter the initial configuration dialog? [yes/no]:",
+                       b"% Invalid input\r\nProceed? [confirm]"):
+            with self.subTest(result=result):
+                self.setUp()
+                self.start("test\nshow clock", mode="bulk")
+                self.submit(b"test")
+                self.rx(b"\r\nContinue? [yes/no]:")
+                self.submit(b"yes")
+                self.rx(b"\r\n" + result)
+                self.assertIn(self.p.snapshot()["stage"], ("question", "uncertain"))
+                self.assertEqual(self.p.snapshot()["done"], 0)
+                self.assertEqual(self.p.take_output(), b"")
+        self.setUp()
+        self.start("test", mode="bulk")
+        self.submit(b"test")
+        self.p.action("pause", self.now)
+        self.rx(b"\r\nProceed? [confirm]")
+        self.assertEqual(self.p.snapshot()["stage"], "question")
+        self.assertEqual(self.p.take_output(), b"")
+
+    def test_bulk_pages_long_output_but_does_not_answer_text_printed_by_show(self):
+        self.start("show inventory", mode="bulk")
+        self.submit(b"show inventory")
+        self.rx(b"\r\nInventory\r\n--More--")
+        self.assertEqual(self.p.take_output(), b" ")
+        self.rx(b"\r\nDescription: Proceed? [confirm]")
+        self.assertEqual(self.p.snapshot()["stage"], "question")
+        self.assertEqual(self.p.take_output(), b"")
+
     def test_default_destination_one_exact_line_once(self):
         self.start("!\ncopy running-config startup-config", mode="smart", allow=True)
         self.assertEqual(self.p.snapshot()["default_line"], 2)

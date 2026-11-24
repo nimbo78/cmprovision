@@ -60,7 +60,7 @@ class SerialConsoleController extends Controller
             'file_page' => ['session' => self::KEY, 'page' => 'required|integer:strict|min:0'],
             'file_action' => ['session' => self::KEY, 'seq' => self::SEQUENCE,
                 'action' => 'required|in:start,pause,next,stop,clear,yes,no,enter,space,correct,filename',
-                'value' => 'sometimes|string|max:8192', 'mode' => 'sometimes|in:smart,step', 'allow_default' => 'sometimes|boolean:strict'],
+                'value' => 'sometimes|string|max:8192', 'mode' => 'sometimes|in:bulk,smart,step', 'allow_default' => 'sometimes|boolean:strict'],
         };
         $body = $this->validated($request, $rules);
         if ($body instanceof JsonResponse) return $body;
