@@ -1,0 +1,35 @@
+[Unit]
+Description=cmprovision USB console broker
+Requires=cmprovision-serial-web.socket
+PartOf=cmprovision-serial-web.socket
+After=cmprovision-serial-web.socket modprobe@usbserial.service
+Wants=modprobe@usbserial.service
+
+[Service]
+ExecStart=/usr/bin/python3 -I -B /usr/lib/cmprovision/serial-web/serial_web_broker.py
+# The existing CLI claim enumerates other processes' descriptors before TIOCEXCL.
+User=root
+SupplementaryGroups=dialout
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+RuntimeDirectory=cmprovision-console
+RuntimeDirectoryMode=0700
+# CLI and broker share guard files, including when this service restarts.
+RuntimeDirectoryPreserve=yes
+UMask=0077
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+DevicePolicy=closed
+DeviceAllow=char-ttyUSB rw
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+TasksMax=64
+MemoryMax=192M

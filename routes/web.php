@@ -14,6 +14,7 @@ use App\Http\Controllers\AddImageController;
 use App\Http\Controllers\AddPackageController;
 use App\Http\Controllers\BackupDownloadController;
 use App\Http\Controllers\StationSetupCodeController;
+use App\Http\Controllers\SerialConsoleController;
 use App\Http\Middleware\RequireSetupCodePassword;
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
@@ -63,6 +64,19 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     ->get('/diagnostics/{id}/report/{format}', [\App\Http\Controllers\ModuleReportController::class, 'usb'])
     ->whereNumber('id')->whereIn('format', ['html', 'json'])->name('diagnostics.report');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/ports', Ports::class)->name('ports');
+Route::middleware(['auth:web', config('jetstream.auth_session'), 'verified', 'can:use-serial-console'])
+    ->prefix('console')->name('serial-console.')->controller(SerialConsoleController::class)->group(function () {
+        Route::get('ports', 'ports')->name('ports');
+        Route::post('session/close', 'operation')->defaults('operation', 'close');
+        Route::middleware('password.confirm')->group(function () {
+            Route::get('/', 'index')->name('index');
+            Route::post('ports/label', 'label');
+            Route::post('session/open', 'operation')->defaults('operation', 'open')->middleware('throttle:30,1');
+            Route::post('session/{operation}', 'operation')->whereIn('operation', [
+                'poll', 'write', 'file_preview', 'file_page', 'file_action',
+            ]);
+        });
+    });
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->get('/reprovision', \App\Http\Livewire\ReprovisionPage::class)->name('reprovision');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->any('/images', Images::class)->name('images');
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->post('/addImage', [AddImageController::class, 'store']);

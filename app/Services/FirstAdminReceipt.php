@@ -34,6 +34,7 @@ class FirstAdminReceipt
                 return ['result' => 'empty'];
             }
             $user = User::create(['name' => $request['name'], 'email' => $request['email'], 'password' => $request['password_hash']]);
+            $user->forceFill(['serial_console_access' => true])->save();
             $table->insert(['id' => 1, 'claim' => $request['claim'], 'user_id' => $user->id]);
             return ['result' => 'committed', 'claim' => $request['claim'], 'id' => $user->id];
         });

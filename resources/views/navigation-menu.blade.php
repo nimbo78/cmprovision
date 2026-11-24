@@ -1,6 +1,13 @@
 {{-- The top bar (layout A): the mark and the pages; the open batch, the uplink, Appearance and the account on the right --}}
-@php($pages = [['dashboard', 'Dashboard'], ['cms', 'CMs'], ['ports', 'Ports'], ['diagnostics', 'Diagnostics'], ['images', 'Images'], ['projects', 'Projects'], ['scripts', 'Scripts'], ['labels', 'Labels'], ['firmware', 'Firmware'], ['settings', 'Settings']])
-<nav x-data="{ open: false }" class="cmp-topbar">
+@php
+    $pages = [['dashboard', 'Dashboard'], ['cms', 'CMs'], ['ports', 'Ports'], ['diagnostics', 'Diagnostics'], ['images', 'Images'], ['projects', 'Projects'], ['scripts', 'Scripts'], ['labels', 'Labels'], ['firmware', 'Firmware'], ['settings', 'Settings']];
+    $consoleAccess = auth('web')->user()?->can('use-serial-console');
+    $currentPage = \Livewire\Livewire::originalUrl();
+    if ($consoleAccess && app(\App\Services\SerialConsoleBroker::class)->hasPorts()) {
+        array_splice($pages, 3, 0, [['serial-console.index', 'Console']]);
+    }
+@endphp
+<nav x-data="{ open: false }" class="cmp-topbar" @if($consoleAccess) wire:poll.visible.10s @endif>
     <div class="cmp-topbar-row">
         <a href="{{ route('dashboard') }}" class="shrink-0" aria-label="Dashboard">
             <x-application-mark class="cmp-mark" />
@@ -9,7 +16,7 @@
         {{-- Narrower than all the links, they scroll (app.css): bring the current page into view --}}
         <div class="cmp-nav hidden sm:flex" x-init="$el.querySelector('[aria-current=page]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })">
             @foreach ($pages as [$route, $label])
-                <x-nav-link href="{{ route($route) }}" :active="request()->routeIs($route)">{{ $label }}</x-nav-link>
+                <x-nav-link href="{{ route($route) }}" :active="$currentPage === route($route)">{{ $label }}</x-nav-link>
             @endforeach
         </div>
 
@@ -83,7 +90,7 @@
     <div :class="{'block': open, 'hidden': ! open}" class="hidden sm:hidden border-t border-pline">
         <div class="pt-2 pb-3 space-y-1" data-menu="phone">
             @foreach ($pages as [$route, $label])
-                <x-responsive-nav-link href="{{ route($route) }}" :active="request()->routeIs($route)">{{ $label }}</x-responsive-nav-link>
+                <x-responsive-nav-link href="{{ route($route) }}" :active="$currentPage === route($route)">{{ $label }}</x-responsive-nav-link>
             @endforeach
         </div>
         <div class="pt-4 pb-1 border-t border-pline">
@@ -92,9 +99,9 @@
                 <div class="font-medium text-sm text-fg-muted">{{ Auth::user()->email }}</div>
             </div>
             <div class="mt-3 space-y-1">
-                <x-responsive-nav-link href="{{ route('profile.show') }}" :active="request()->routeIs('profile.show')">{{ __('Profile') }}</x-responsive-nav-link>
+                <x-responsive-nav-link href="{{ route('profile.show') }}" :active="$currentPage === route('profile.show')">{{ __('Profile') }}</x-responsive-nav-link>
                 @if (Laravel\Jetstream\Jetstream::hasApiFeatures())
-                    <x-responsive-nav-link href="{{ route('api-tokens.index') }}" :active="request()->routeIs('api-tokens.index')">{{ __('API Tokens') }}</x-responsive-nav-link>
+                    <x-responsive-nav-link href="{{ route('api-tokens.index') }}" :active="$currentPage === route('api-tokens.index')">{{ __('API Tokens') }}</x-responsive-nav-link>
                 @endif
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf

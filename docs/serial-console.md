@@ -2,7 +2,36 @@
 
 # Connect to a USB serial console
 
-From an SSH session on the station, use a local FTDI or PL2303 USB adapter to reach a switch or a board. Choose a cable with the voltage levels and pinout required by the target. A Catalyst RJ45 console takes RS-232. A CM4 GPIO UART uses 3.3 V logic. Power off the carrier before changing an OTG jumper.
+Use a local FTDI or PL2303 USB adapter to reach a switch or a board from the web interface or an SSH session on the station. Choose a cable with the voltage levels and pinout required by the target. A Catalyst RJ45 console takes RS-232. A CM4 GPIO UART uses 3.3 V logic. Power off the carrier before changing an OTG jumper.
+
+## Use the browser terminal
+
+1. Plug the USB adapter into the station. An operator with console access will see **Console** beside **Ports** on the next inventory refresh. A busy adapter stays visible. Open **Console** and confirm your web password.
+2. Choose a cable by USB port, label or last observed hostname. **Identify** listens for output. **Connect** opens an interactive terminal. Auto needs repeated output to determine the line settings. For a quiet device, choose the known baud and format under **Port details**, save, then connect. If you move the target end of a cable, select **Re-detect** and check the current prompt.
+3. Type into the terminal. Only one session can own the port. Disconnect, leave the tab or sign out to release it. For a missing browser heartbeat, Smart pauses after two seconds and the station releases the port after twelve. Use HTTPS on the management network when entering device credentials.
+
+### Send a configuration
+
+At a device prompt, choose **Paste config from file** or paste multiple lines into the terminal. Review the UTF-8 text and original line numbers. The limit is 1 MiB per file and 8 KiB per command. The session sends one command at a time and checks its echo before sending Enter.
+
+| Mode | During transfer |
+| --- | --- |
+| **Step** | Send each subsequent command explicitly. Use this for an unfamiliar device transcript. |
+| **Smart** | Advance after an expected prompt. A CLI error stops on its source line for correction. At a confirmation or filename prompt, the operator chooses the response. |
+
+Cisco IOS, Huawei S5731 (VRP) and S5735-S-V2 (YunShan OS) have console profiles. On Huawei, run **Read version** (`display version`) at the authenticated prompt before using Smart. The common angle-bracket prompt provides the hostname. The version reply identifies the supported platform. After a disconnect, check the device and the last confirmed file line before resuming. Terminal output and uploaded configurations live only in the current session.
+
+### Grant access
+
+The first web administrator receives the console permission. An upgrade uses the recorded first administrator, or the only existing account if there is one. To grant or revoke access for another operator, run the following on the station with their account email.
+
+```sh
+cd /var/lib/cmprovision
+sudo -u www-data php artisan auth:serial-console engineer@example.com --grant
+sudo -u www-data php artisan auth:serial-console engineer@example.com --revoke
+```
+
+Running the command with the email alone shows the current permission. The terminal assets are bundled locally with the station package. [xterm.js](https://xtermjs.org/)
 
 ## Select the physical port
 
@@ -47,6 +76,8 @@ FTDI supports 7 or 8 data bits. The detector reads back the speed, frame and flo
 | `unavailable` | Check the adapter, permissions and the current identifier. The message gives the reason when available. |
 
 The optional `--target` label records the last confirmed speed and time for that piece of equipment, USB connection and profile. Use a different label when moving the target end of the cable. A saved speed is tried first and must be confirmed again. The station discards the console text it receives.
+
+On Huawei S5731 (VRP) and S5735-S-V2 (YunShan OS), Auto can use a user-view prompt such as `<rack-east-01>`, a distinctive interface-view prompt, or an OS banner. Both platforms share the same prompt conventions. Use `display version` to read the model and software. With `detect --profile huawei`, the detector scans the supported speeds using 8N1. If the line is silent and has no saved speed, the suggested manual command uses the Huawei default of 9600 baud. [Huawei console settings](https://info.support.huawei.com/network/ptmngsys/Web/tsrev_ce/en/content/ce/19_edesk_dc_console_login_failure/edesk_dc_console_login_failure_edesk002.html)
 
 ## Open a manual session
 

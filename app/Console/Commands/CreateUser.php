@@ -82,7 +82,11 @@ class CreateUser extends Command
 
         $hash = Hash::make($pass1);
         DB::transaction(function () use ($name, $email, $hash) {
-            User::create(['name' => $name, 'email' => $email, 'password' => $hash]);
+            $first = !User::query()->exists() && !DB::table('first_admin_receipts')->where('id', 1)->exists();
+            $user = User::create(['name' => $name, 'email' => $email, 'password' => $hash]);
+            if ($first) {
+                $user->forceFill(['serial_console_access' => true])->save();
+            }
             DB::table('first_admin_receipts')->insertOrIgnore(['id' => 1]);
         });
         app(\App\Services\FirstAdmin::class)->state();
