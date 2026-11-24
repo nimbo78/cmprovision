@@ -29,6 +29,82 @@ if SCRIPT.exists():
 
 
 class SerialConsoleTest(unittest.TestCase):
+    def test_auto_reports_each_readable_frame_and_never_uses_a_vendor_name_as_evidence(self):
+        banner = b"Cisco IOS Software, version 15.2\r\n"
+        for readable in (("8n1",), ("8n2",), ("8n1", "8n2"), ("7e1",), ("8e1",),
+                         ("7o1",), ("8o1",), ("7e1", "8e1")):
+            with self.subTest(readable=readable), patch.object(console, "read_window",
+                    side_effect=lambda fd, rate, frame, end: banner if rate == 19200 and frame in readable else b""):
+                result = console.probe_line(self.slave, "auto", None)
+                self.assertEqual((result.status, result.baud, result.frames), ("detected", 19200, readable))
+
+    def test_auto_rejects_conflicting_baud_rates_and_does_not_confirm_a_single_burst(self):
+        seen = set()
+        def once(fd, rate, frame, end):
+            if rate == 9600 and frame == "8n2" and frame not in seen:
+                seen.add(frame)
+                return b"switch01#\r\n"
+            return b""
+        for reader in (once, lambda fd, rate, frame, end:
+                       b"switch01#\r\n" if (rate, frame) in ((9600, "8n2"), (115200, "8n1")) else b""):
+            with self.subTest(), patch.object(console, "read_window", side_effect=reader):
+                self.assertEqual(console.probe_line(self.slave, "auto", None).status, "inconclusive")
+
+    def test_auto_connect_default_and_explicit_detect_profile(self):
+        for argv in (["connect"], ["detect", "--profile", "auto"]):
+            with patch.object(sys, "argv", ["cmprovision-console", *argv, "--port", self.line.by_id]), \
+                    patch.object(console, "run", side_effect=lambda args: args.profile):
+                self.assertEqual(console.main(), "auto")
+
+    def test_auto_skips_unsupported_formats_and_rejects_driver_marked_parity_errors(self):
+        def read(fd, rate, frame, end):
+            if frame == "8n1":
+                raise console.UnsupportedFrame("driver lacks 8N1")
+            if rate != 115200:
+                return b""
+            data = b"Cisco IOS Software, test console version\r\n" * 4
+            return data if frame == "8e1" else b"\xff\x00A" + data
+        with patch.object(console, "read_window", side_effect=read):
+            report = console.probe_line(self.slave, "auto", None)
+        self.assertEqual(report, console.Result("detected", 115200, ("8e1",)))
+        with patch.object(console, "read_window", side_effect=console.Unavailable("USB unplugged")):
+            with self.assertRaisesRegex(console.Unavailable, "unplugged"):
+                console.probe_line(self.slave, "auto", None)
+
+    def test_auto_wait_helper_returns_selected_frame_and_lists_ambiguity_outside_machine_output(self):
+        from argparse import Namespace
+        args = Namespace(operation="detect", profile="auto", wait=True, target=None, port=self.line.by_id)
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(console, "inventory", return_value=[self.line]), \
+                patch.object(os, "geteuid", return_value=0), \
+                patch.object(console, "claim", return_value=contextlib.nullcontext(self.slave)), \
+                patch.object(console, "read_window", side_effect=lambda fd, rate, frame, end:
+                             b"device#\r\n" if rate == 9600 and frame in ("7e1", "8e1") else b""), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            self.assertEqual(console.run(args), 0)
+        self.assertEqual(out.getvalue().strip(), "9600 7e1")
+        self.assertIn("7E1, 8E1", err.getvalue())
+
+    def test_connect_opens_the_frame_returned_by_auto_and_keeps_an_explicit_profile(self):
+        for profile, helper, expected in (("auto", b"19200 8e1\n", "8e1"),
+                                          ("cisco", b"19200\n", "8n2"),
+                                          ("auto", b"19200\n", None),
+                                          ("auto", b"19200 9x3\n", None)):
+            with self.subTest(profile=profile, helper=helper), \
+                    patch.object(console, "inventory", return_value=[self.line]), \
+                    patch.object(os, "geteuid", return_value=1000), patch.object(os, "isatty", return_value=True), \
+                    patch.object(shutil, "which", return_value="/usr/bin/picocom"), patch.object(termios, "tcflush"), \
+                    patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0, helper)), \
+                    patch.object(console, "picocom_session", return_value=False) as session:
+                args = (self.line, self.line.by_id, profile, console.PROFILES.get(profile, profile))
+                if expected:
+                    self.assertEqual(console.connect(*args), 0)
+                    session.assert_called_once_with(Path("/dev/serial") / self.line.by_id, 19200, expected)
+                else:
+                    with self.assertRaises(console.Unavailable):
+                        console.connect(*args)
+                    session.assert_not_called()
+
     def test_connect_exists_as_an_operator_command(self):
         result = subprocess.run([sys.executable, SCRIPT, "connect", "--help"], capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -44,7 +120,7 @@ class SerialConsoleTest(unittest.TestCase):
     def test_waiting_probe_retries_after_new_data_and_returns_only_confirmed_speed(self):
         replies = iter([console.Result("inconclusive", 9600), console.Result("detected", 115200)])
         with self.claim() as fd:
-            def scan(sample, hint):
+            def scan(sample, hint, frames):
                 result = next(replies)
                 if result.status == "inconclusive":
                     os.write(self.master, b"new-device\r\n")
@@ -81,20 +157,21 @@ class SerialConsoleTest(unittest.TestCase):
                     os.setuid(account.pw_uid)
                 def probe(cmd, stdout):
                     assert cmd[:4] == ["/usr/bin/sudo", "/usr/bin/cmprovision-console", "detect", "--wait"]
+                    assert cmd[-2:] == ["--profile", "auto"]
                     fd = os.open(self.node, os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY)
                     saved = termios.tcgetattr(fd)
                     try:
-                        result = console.wait_for_speed(fd, "8n2", None)
+                        result = console.wait_for_speed(fd, "auto", None)
                     finally:
                         termios.tcsetattr(fd, termios.TCSANOW, saved)
                         os.close(fd)
-                    return subprocess.CompletedProcess(cmd, 0, str(result.baud).encode())
+                    return subprocess.CompletedProcess(cmd, 0, f"{result.baud} {result.frames[0]}".encode())
                 # The station's sudo boundary and USB inventory are represented by local PTYs.
                 relay = console.picocom_session
                 with patch.object(console, "inventory", return_value=[self.line]), \
                         patch.object(subprocess, "run", side_effect=probe), \
                         patch.object(console, "picocom_session", lambda path, baud, frame: relay(self.node, baud, frame)):
-                    code = console.connect(self.line, self.line.by_id, "cisco", "8n2")
+                    code = console.connect(self.line, self.line.by_id, "auto", "auto")
             except BaseException:
                 import traceback
                 traceback.print_exc()
@@ -104,15 +181,17 @@ class SerialConsoleTest(unittest.TestCase):
         stop = threading.Event()
         source_rate = termios.B9600
         def target():
-            # A PTY normally delivers bytes at every speed. Model output decoded at the target rate.
+            # PTYs ignore wire timing. The second target only emits decodable data with two stop bits.
             while not stop.wait(0.05):
-                if source_rate and termios.tcgetattr(self.slave)[4] == source_rate:
+                settings = termios.tcgetattr(self.slave)
+                if (source_rate and settings[4] == source_rate and
+                        (source_rate != termios.B115200 or settings[2] & termios.CSTOPB)):
                     os.write(self.master, b"target-switch#\r\n")
         sender = threading.Thread(target=target)
         sender.start()
         def receive(fd, needle, announce=False):
             seen = bytearray()
-            end = time.monotonic() + 16
+            end = time.monotonic() + (45 if needle.startswith(b"Connected") else 5)
             while needle not in seen and time.monotonic() < end:
                 if announce:
                     os.write(self.master, b"sw-console#\r\n")
@@ -121,13 +200,15 @@ class SerialConsoleTest(unittest.TestCase):
             self.assertIn(needle, seen)
         try:
             for baud in (9600, 115200, 38400):
-                receive(control, f"Connected at {baud} baud".encode())
+                frame = "8N2" if baud == 115200 else "8N1"
+                receive(control, f"Connected at {baud} baud ({frame})".encode())
                 source_rate = None
                 end = time.monotonic() + 5
                 while termios.tcgetattr(self.slave)[4] != getattr(termios, f"B{baud}") and time.monotonic() < end:
                     time.sleep(0.01)
                 self.assertEqual(termios.tcgetattr(self.slave)[4], getattr(termios, f"B{baud}"))
                 receive(control, b"sw-console#", announce=True)
+                self.assertEqual(bool(termios.tcgetattr(self.slave)[2] & termios.CSTOPB), baud == 115200)
                 os.write(control, b"hello")
                 receive(self.master, b"hello")
                 if baud == 9600:
@@ -317,7 +398,7 @@ class SerialConsoleTest(unittest.TestCase):
         for speed in (9600, 115200, 19200, 38400, 57600):
             with self.subTest(speed=speed):
                 calls = []
-                def sample(baud, end):
+                def sample(baud, frame, end):
                     calls.append(baud)
                     return b"\x1b[32mLinux version 6.12.2-arm64\x1b[0m\r\n" if baud == speed else b"\xfe\0>>"
                 report = console.detect_speed(sample, hint=38400)
@@ -329,7 +410,7 @@ class SerialConsoleTest(unittest.TestCase):
         for banner in (b"U-Boot 2024.10 (Oct 07 2024 - 14:01:00 +0000)\r\n",
                        b"U-Boot SPL 2025.01-rc2\r\n"):
             with self.subTest(banner=banner):
-                result = console.detect_speed(lambda speed, end: banner if speed == 57600 else b"")
+                result = console.detect_speed(lambda speed, frame, end: banner if speed == 57600 else b"")
                 self.assertEqual((result.status, result.baud), ("detected", 57600))
 
     def test_ftdi_rejects_unavailable_data_width_before_claiming_line(self):
@@ -368,7 +449,7 @@ class SerialConsoleTest(unittest.TestCase):
         ]
         for samples, status, baud in outcomes:
             with self.subTest(samples=samples):
-                def sample(rate, end):
+                def sample(rate, frame, end):
                     return samples[rate].pop(0) if samples.get(rate) else b""
                 report = console.detect_speed(sample, hint=115200)
                 self.assertEqual((report.status, report.baud), (status, baud))
@@ -396,7 +477,7 @@ class SerialConsoleTest(unittest.TestCase):
     def test_overall_deadline_prevents_another_observation(self):
         with patch.object(time, "monotonic", side_effect=[0.0, 0.0, 12.1]):
             examined = []
-            def sample(baud, end):
+            def sample(baud, frame, end):
                 examined.append((baud, end))
                 return b""
             with self.assertRaises(console.Unavailable):

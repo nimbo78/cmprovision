@@ -17,10 +17,12 @@ Copy a complete `by-id/…` or `by-path/…` identifier from the output. The lis
 Run this from your operator account (usually in the `dialout` group). Use the USB identifier from `list`.
 
 ```sh
-cmprovision-console connect --port 'by-id/usb-EXAMPLE-if00-port0' --profile cisco
+cmprovision-console connect --port 'by-id/usb-EXAMPLE-if00-port0'
 ```
 
-The command uses `sudo` for the passive speed check and opens `picocom` as your user. Move the target end of the cable to the next device. If both use the same speed, the session continues. Sustained garbled output triggers a fresh check and reopens the terminal in the same window at the confirmed speed. A pause leaves the existing connection alone. This mode is for text consoles.
+By default, `connect` uses `sudo` to check five baud rates with **8N1, 8N2, 7E1, 8E1, 7O1 and 8O1**, then opens `picocom` as your user. One Auto scan takes up to 40 seconds. It skips formats rejected by the driver and discards samples with reported parity or framing errors. If several formats receive recognizable text twice at the same speed, it lists them and uses the first in the order above. For example, `Readable on RX: 8N1, 8N2. Using 8N1.` describes what the adapter could read. Both settings can read the same bytes, especially with gaps between characters. Use an explicit frame when the peer requires particular transmit settings. [Linux terminal modes](https://man7.org/linux/man-pages/man3/termios.3.html)
+
+Move the target end of the cable to the next device. Readable output keeps the session open. Sustained garbled output triggers a fresh check of speed and framing and reopens the terminal in the same window. A pause leaves the existing connection alone. This mode is for text consoles.
 
 Press **Ctrl+]** to request a fresh check in the connected session. During the check the wrapper waits for recognizable output. A silent device can stay at this step until it prints again. **Ctrl+C** cancels the check. In the connected terminal, **Ctrl+A**, then **Ctrl+X** exits. If you unplug the USB adapter itself, run `list` and select it again.
 
@@ -32,7 +34,9 @@ Replace the example identifier with one from your station. Detection needs admin
 sudo cmprovision-console detect --port 'by-id/usb-EXAMPLE-if00-port0' --profile cisco --target switch01
 ```
 
-The Cisco profile selects 8N2 and the default Linux profile selects 8N1. You can also supply a frame such as `7e1`. FTDI supports 7 or 8 data bits. The detector checks the settings applied by the driver, including speed, frame and disabled flow control. It confirms the baud rate from recognizable boot messages, login prompts or switch prompts in two fresh receive windows. Each window lasts up to 1.5 seconds, with a 12-second limit for the command. [Linux FTDI driver](https://github.com/torvalds/linux/blob/master/drivers/usb/serial/ftdi_sio.c)
+For a single scan, `detect --profile auto` also checks framing. Plain `detect` retains its 8N1 default. The existing `cisco` preset selects 8N2. Cisco documents the Catalyst 2960-CX factory console as 9600 8N1. You can also specify a frame directly, such as `7e1`. A fixed-profile scan takes up to 12 seconds and checks for recognizable output in two independent windows. [Cisco installation guide](https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst2960cx_3650cx/hardware/installation/guide/b_2960cx-3560cx_hig.pdf)
+
+FTDI supports 7 or 8 data bits. The detector reads back the speed, frame and flow control applied by the driver. Each receive window for a fixed profile lasts up to 1.5 seconds. [Linux FTDI driver](https://github.com/torvalds/linux/blob/master/drivers/usb/serial/ftdi_sio.c)
 
 | Result | What to do |
 |---|---|

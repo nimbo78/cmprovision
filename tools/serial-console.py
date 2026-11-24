@@ -28,6 +28,8 @@ import tty
 
 RATES = (9600, 115200, 19200, 38400, 57600)
 PROFILES = {"cisco": "8n2", "linux": "8n1"}
+AUTO_FRAMES = ("8n1", "8n2", "7e1", "8e1", "7o1", "8o1")
+AUTO_TIMEOUT = 40
 CACHE = Path("/var/cache/cmprovision-console")
 
 
@@ -36,6 +38,10 @@ class Busy(Exception):
 
 
 class Unavailable(Exception):
+    pass
+
+
+class UnsupportedFrame(Unavailable):
     pass
 
 
@@ -222,7 +228,8 @@ def claim(line, refresh, policies=reserved_services, proc=Path("/proc"),
 
 def set_frame(fd, baud, frame):
     attrs = termios.tcgetattr(fd)
-    attrs[0] = attrs[1] = attrs[3] = 0
+    attrs[0] = termios.INPCK | termios.PARMRK
+    attrs[1] = attrs[3] = 0
     attrs[2] &= ~(termios.CSIZE | termios.PARENB | termios.PARODD | termios.CSTOPB |
                   termios.CRTSCTS | getattr(termios, "CMSPAR", 0))
     attrs[2] |= termios.CLOCAL | termios.CREAD | getattr(termios, "CS" + frame[0])
@@ -234,14 +241,22 @@ def set_frame(fd, baud, frame):
         attrs[2] |= termios.CSTOPB
     attrs[4] = attrs[5] = getattr(termios, "B" + str(baud))
     attrs[6][termios.VMIN] = attrs[6][termios.VTIME] = 0
-    termios.tcsetattr(fd, termios.TCSANOW, attrs)
+    try:
+        termios.tcsetattr(fd, termios.TCSANOW, attrs)
+    except termios.error as exc:
+        if exc.args[0] == errno.EINVAL:
+            raise UnsupportedFrame("driver rejected the requested serial settings") from exc
+        raise
     actual = termios.tcgetattr(fd)
     frame_bits = (termios.CSIZE | termios.PARENB | termios.PARODD | termios.CSTOPB |
-                  termios.CRTSCTS | getattr(termios, "CMSPAR", 0))
-    if (actual[4:6] != attrs[4:6] or (actual[2] ^ attrs[2]) & frame_bits or
+                  getattr(termios, "CMSPAR", 0))
+    if (actual[4:6] != attrs[4:6] or actual[2] & termios.CRTSCTS or
+            (actual[0] & (termios.INPCK | termios.PARMRK | termios.IGNPAR | termios.ISTRIP)) != attrs[0] or
             actual[0] & (termios.IXON | termios.IXOFF) or
             actual[3] & (termios.ECHO | termios.ECHONL | termios.ICANON)):
         raise Unavailable("driver did not apply the requested serial settings")
+    if (actual[2] ^ attrs[2]) & frame_bits:
+        raise UnsupportedFrame("driver did not apply the requested serial settings")
 
 
 def read_window(fd, baud, frame, end):
@@ -280,6 +295,8 @@ CONSOLE_TEXT = re.compile(
 
 
 def recognizable(data):
+    if b"\xff\x00" in data.replace(b"\xff\xff", b""):
+        return False  # PARMRK tagged a parity/framing error or break in this sample.
     clean = re.sub(rb"\x1b\[[0-9;]{0,32}m", b"", data[:4096])
     noise = sum(byte not in b"\t\n\r" and not 32 <= byte <= 126 for byte in clean)
     if noise * 20 > len(clean):
@@ -291,27 +308,48 @@ def recognizable(data):
 class Result:
     status: str
     baud: int | None = None
+    frames: tuple[str, ...] = ()
 
 
-def detect_speed(sample, hint=None):
-    end = time.monotonic() + 12.0
-    candidates = []
+def detect_speed(sample, hint=None, frames=("8n1",)):
+    auto = len(frames) > 1
+    end = time.monotonic() + (AUTO_TIMEOUT if auto else 12)
+    window = 1.0 if auto else 1.5
+    candidates = {}
     any_bytes = False
-    def observe(rate):
+    supported = False
+    def observe(rate, frame):
         now = time.monotonic()
         if now >= end:
             raise Unavailable("detection timed out")
-        return sample(rate, min(end, now + 1.5))
+        try:
+            return sample(rate, frame, min(end, now + window))
+        except UnsupportedFrame:
+            if not auto:
+                raise
+            return None
     order = [hint] if hint in RATES else []
-    for rate in dict.fromkeys([*order, *RATES]):
-        data = observe(rate)
-        any_bytes |= bool(data)
-        if recognizable(data):
-            candidates.append(rate)
+    for frame in frames:
+        for rate in dict.fromkeys([*order, *RATES]):
+            data = observe(rate, frame)
+            if data is None:
+                break
+            supported = True
+            any_bytes |= bool(data)
+            if recognizable(data):
+                candidates.setdefault(rate, []).append(frame)
+    if not supported:
+        raise UnsupportedFrame("driver rejected all candidate frames")
     if len(candidates) == 1:
-        rate = candidates[0]
-        return Result("detected" if recognizable(observe(rate)) else "inconclusive", rate)
+        rate, matches = next(iter(candidates.items()))
+        confirmed = tuple(frame for frame in matches if recognizable(observe(rate, frame) or b""))
+        return Result("detected" if confirmed else "inconclusive", rate, confirmed)
     return Result("inconclusive" if any_bytes else "silent")
+
+
+def probe_line(fd, frame, hint):
+    frames = AUTO_FRAMES if frame == "auto" else (frame,)
+    return detect_speed(lambda rate, fmt, end: read_window(fd, rate, fmt, end), hint, frames)
 
 
 def cache_key(line, profile, target):
@@ -357,12 +395,24 @@ def wait_for_speed(fd, frame, hint, output=1):
     poller.register(fd, select.POLLIN)
     poller.register(output, 0)  # Caller gone: HUP/ERR still wake a silent line.
     while True:
-        print("Listening for the baud rate (Ctrl+C to exit)…", file=sys.stderr, flush=True)
-        result = detect_speed(lambda rate, end: read_window(fd, rate, frame, end), hint)
+        message = (f"Checking baud rate and frame (up to {AUTO_TIMEOUT}s, Ctrl+C to exit)…" if frame == "auto"
+                   else "Listening for the baud rate (Ctrl+C to exit)…")
+        print(message, file=sys.stderr, flush=True)
+        result = probe_line(fd, frame, hint)
         if result.status == "detected":
             return result
         print(f"{result.status}: waiting for more console output…", file=sys.stderr, flush=True)
-        set_frame(fd, hint or RATES[0], frame)
+        if frame != "auto":
+            set_frame(fd, hint or RATES[0], frame)
+        else:
+            for candidate in AUTO_FRAMES:
+                try:
+                    set_frame(fd, hint or RATES[0], candidate)
+                    break
+                except UnsupportedFrame:
+                    continue
+            else:
+                raise UnsupportedFrame("driver rejected all candidate frames")
         for ready, events in poller.poll():
             if ready == output:
                 raise Unavailable("operator session closed")
@@ -468,10 +518,15 @@ def connect(line, port, profile, frame):
         if probe.returncode:
             return 1
         speeds = {str(rate).encode(): rate for rate in RATES}
-        baud = speeds.get(probe.stdout.strip())
+        fields = probe.stdout.split()
+        if profile == "auto":
+            if len(fields) != 2 or fields[1] not in {fmt.encode() for fmt in AUTO_FRAMES}:
+                raise Unavailable("could not confirm the serial frame")
+            frame = fields.pop().decode("ascii")
+        baud = speeds.get(fields[0]) if len(fields) == 1 else None
         if not baud or select_line(inventory(), port) != line:
             raise Unavailable("could not confirm the adapter and its speed")
-        print(f"Connected at {baud} baud. Ctrl+] to rescan, Ctrl+A then Ctrl+X to exit.",
+        print(f"Connected at {baud} baud ({frame.upper()}). Ctrl+] to rescan, Ctrl+A then Ctrl+X to exit.",
               file=sys.stderr, flush=True)
         if not picocom_session(Path("/dev/serial") / port, baud, frame):
             return 0
@@ -492,7 +547,7 @@ def run(args):
         return connect(line, args.port, args.profile, frame)
     if os.geteuid() != 0:
         raise Unavailable("detect requires a station administrator (sudo)")
-    if line.driver == "ftdi_sio" and frame[0] not in "78":
+    if frame != "auto" and line.driver == "ftdi_sio" and frame[0] not in "78":
         raise Unavailable("FTDI UARTs require 7 or 8 data bits")
     refresh = lambda: select_line(inventory(), args.port)
     known = last_known(line, args.profile, args.target)
@@ -501,20 +556,32 @@ def run(args):
         if getattr(args, "wait", False):
             result = wait_for_speed(fd, frame, hint)
         else:
-            result = detect_speed(lambda baud, end: read_window(fd, baud, frame, end), hint)
+            result = probe_line(fd, frame, hint)
         if refresh() != line:
             raise Unavailable("adapter changed during detection")
     waiting = getattr(args, "wait", False)
+    if frame == "auto" and result.frames:
+        readable = ", ".join(fmt.upper() for fmt in result.frames)
+        print(f"Readable on RX: {readable}. Using {result.frames[0].upper()}.",
+              file=sys.stderr if waiting else sys.stdout)
     if result.status == "detected":
         try:
             remember(line, args.profile, args.target, result.baud)
         except (OSError, Unavailable):
             print("Could not save the optional speed hint.", file=sys.stderr if waiting else sys.stdout)
     if waiting:
-        print(result.baud)
+        if frame == "auto":
+            print(result.baud, result.frames[0])
+        else:
+            print(result.baud)
         return 0
     print(result.status)
-    print(f"Selected frame {frame.upper()}, flow control off")
+    if frame == "auto":
+        frame = result.frames[0] if result.frames else AUTO_FRAMES[0]
+        if not result.frames:
+            print(f"Frame unconfirmed. Manual fallback: {frame.upper()}.")
+    else:
+        print(f"Selected frame {frame.upper()}, flow control off")
     if known:
         print(f"Previous confirmation {known[0]} baud at {known[1]}")
     if result.status == "detected":
@@ -538,13 +605,14 @@ def main():
     session = commands.add_parser("connect", help="open picocom and automatically recheck its baud rate")
     for sub in (detect, session):
         sub.add_argument("--port", required=True, help="by-id/... or by-path/... from list")
-        sub.add_argument("--profile", default="linux", help="linux (8N1), cisco (8N2), or an explicit frame")
+        sub.add_argument("--profile", default="auto" if sub is session else "linux",
+                         help="auto, linux (8N1), cisco (8N2), or an explicit frame")
     detect.add_argument("--wait", action="store_true", help="wait for fresh data and print the confirmed baud rate")
     detect.add_argument("--target", help="optional equipment label for a line-specific speed hint")
     args = parser.parse_args()
     if args.operation in ("detect", "connect"):
         args.profile = args.profile.lower()
-        if args.profile not in PROFILES and not re.fullmatch(r"[5-8][neo][12]", args.profile):
+        if args.profile not in ("auto", *PROFILES) and not re.fullmatch(r"[5-8][neo][12]", args.profile):
             parser.error("unknown framing profile")
         if getattr(args, "target", None) and not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", args.target):
             parser.error("invalid target label")
@@ -553,7 +621,7 @@ def main():
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGALRM):
             signal.signal(signum, interrupt)
         if args.operation == "detect" and not args.wait:
-            signal.setitimer(signal.ITIMER_REAL, 12)
+            signal.setitimer(signal.ITIMER_REAL, AUTO_TIMEOUT if args.profile == "auto" else 12)
     try:
         return run(args)
     except Busy as exc:
