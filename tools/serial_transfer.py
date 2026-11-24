@@ -500,13 +500,12 @@ class ConsoleProtocol:
     def _review_rx(self, now):
         data = self._rx
         if self._phase == "pager":
-            # Some IOS versions erase the pager with BS/SP/BS before resuming.
-            width = self._pager_width
-            erase = b"\b" * width + b" " * width + b"\b" * width
-            if data.startswith(erase):
-                data = data[len(erase):]
-            elif erase.startswith(data):
-                return
+            for erase in self._pager_erasures:
+                if data.startswith(erase):
+                    data = data[len(erase):]
+                    break
+                if erase.startswith(data):
+                    return  # The USB read ended inside a known erase sequence.
         lines = screen_lines(data)
         if data.endswith(b"\r"):
             # A USB read can end between CR and LF.
@@ -544,7 +543,11 @@ class ConsoleProtocol:
         warning = next((s.strip() for s in lines if family == "huawei" and s.lstrip().lower().startswith("warning:")), "")
         if kind:
             if kind == "pager":
-                self._pager_width = len(lines[-1])
+                width = len(lines[-1])
+                self._pager_erasures = (b"\b" * width + b" " * width + b"\b" * width,)
+                if family == "ios" and lines[-1] == " --More-- ":
+                    # Catalyst 2960-CX backs over nine columns and blanks the eight marker characters.
+                    self._pager_erasures += (b"\b" * 9 + b" " * 8 + b"\b" * 9,)
             if cmd.lower() == "display version" and self._version is not None:
                 self._version += "\n".join(lines[:-1]) + "\n"
                 if kind != "pager" or len(self._version) > MAX_REPLY:

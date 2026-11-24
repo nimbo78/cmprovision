@@ -548,6 +548,31 @@ class SerialTransferTest(unittest.TestCase):
         self.rx(b"\b" * 5 + b" " * 8 + b"\b" * 8 + b"more\r\n\x1b[32mswitch#\x1b[0m")
         self.assertEqual(self.p.snapshot()["stage"], "done")
 
+    def test_catalyst_padded_pager_can_be_erased_across_usb_reads(self):
+        self.start("show version", mode="smart")
+        self.submit(b"show version")
+        self.rx(b"\r\nCisco IOS Software\r\n --More-- ")
+        self.assertEqual(self.p.take_output(), b" ")
+        self.rx(b"\b" * 9 + b" " * 3)
+        self.assertEqual(self.p.snapshot()["stage"], "awaiting")
+        self.assertEqual(self.p.take_output(), b"")
+        self.rx(b" " * 5 + b"\b" * 9 + b"Model number: WS-C2960CX-8PC-L\r\nswitch#")
+        self.assertEqual(self.p.snapshot()["stage"], "done")
+        self.assertEqual(self.p.snapshot()["pages"], 1)
+
+    def test_unexpected_catalyst_pager_erase_stops_before_next_command(self):
+        for marker, middle in [(b"--More--", 8), (b" --More-- ", 7)]:
+            with self.subTest(marker=marker, middle=middle):
+                self.setUp()
+                self.start("show version\nshow clock", mode="smart")
+                self.submit(b"show version")
+                self.rx(b"\r\n" + marker)
+                self.assertEqual(self.p.take_output(), b" ")
+                self.rx(b"\b" * 9 + b" " * middle + b"\b" * 9 + b"\r\nswitch#")
+                self.assertEqual(self.p.snapshot()["stage"], "uncertain")
+                self.assertEqual(self.p.snapshot()["done"], 0)
+                self.assertEqual(self.p.take_output(), b"")
+
     def test_carriage_return_overwrite_does_not_become_a_new_prompt_line(self):
         self.start("show clock\nshow clock", mode="smart")
         self.submit(b"show clock")
