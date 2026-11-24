@@ -21,6 +21,12 @@ At a device prompt, choose **Paste config from file** or paste multiple lines in
 
 Cisco IOS, Huawei S5731 (VRP) and S5735-S-V2 (YunShan OS) have console profiles. On Huawei, run **Read version** (`display version`) at the authenticated prompt before using Smart. The common angle-bracket prompt provides the hostname. The version reply identifies the supported platform. After a disconnect, check the device and the last confirmed file line before resuming. Terminal output and uploaded configurations live only in the current session.
 
+### Long output on a serial line
+
+On a Catalyst 2960-CX running IOS 15.2(7)E14, `show terminal` reports the current screen length. From the same EXEC prompt, `terminal length 0` lets `show version` finish without a `--More--` pause. Restore the value you read before disconnecting. On the lab switch it was 24, so the restore command was `terminal length 24`. Closing a browser tab can leave the physical console logged in. [Cisco IOS terminal length](https://www.cisco.com/c/en/us/td/docs/ios/fundamentals/command/reference/cf_book/cf_s5.html)
+
+Huawei documents `screen-length 0 temporary` for continuous output in user view and `mmi-mode enable` for machine-to-machine operation. MMI also lets some commands run without asking for confirmation. For a file that an engineer is supervising, keep confirmations enabled. Check command availability on the model, software version and console in use. [Huawei S5700 Command Reference, sections 2.5.17 and 2.5.20](https://www.scribd.com/document/960183015/01-02-Basic-Configurations-Commands)
+
 ### Grant access
 
 The first web administrator receives the console permission. An upgrade uses the recorded first administrator, or the only existing account if there is one. To grant or revoke access for another operator, run the following on the station with their account email.
