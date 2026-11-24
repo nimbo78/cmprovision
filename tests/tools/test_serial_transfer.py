@@ -573,6 +573,30 @@ class SerialTransferTest(unittest.TestCase):
                 self.assertEqual(self.p.snapshot()["done"], 0)
                 self.assertEqual(self.p.take_output(), b"")
 
+    def test_cisco_version_reference_is_output_with_and_without_paging(self):
+        notice = b"A summary of U.S. laws governing Cisco cryptographic products may be found at:"
+        for paging in (False, True):
+            with self.subTest(paging=paging):
+                self.setUp()
+                self.start("show version", mode="smart")
+                self.submit(b"show version")
+                if paging:
+                    self.rx(b"\r\n --More-- ")
+                    self.assertEqual(self.p.take_output(), b" ")
+                self.rx(b"\r\n" + notice)
+                self.rx(b"\r\nhttp://www.cis")
+                self.assertEqual(self.p.snapshot()["stage"], "awaiting")
+                self.assertEqual(self.p.take_output(), b"")
+                self.rx(b"co.com/wwl/export/crypto/tool/stqrg.html\r\nswitch#")
+                self.assertEqual(self.p.snapshot()["stage"], "done")
+
+    def test_reference_link_does_not_hide_an_interactive_prompt(self):
+        self.start("show version\nshow clock", mode="smart")
+        self.submit(b"show version")
+        self.rx(b"\r\nPassword:\r\nhttp://www.cisco.com/wwl/export/crypto/tool/stqrg.html\r\nswitch#")
+        self.assertEqual(self.p.snapshot()["stage"], "uncertain")
+        self.assertEqual(self.p.take_output(), b"")
+
     def test_carriage_return_overwrite_does_not_become_a_new_prompt_line(self):
         self.start("show clock\nshow clock", mode="smart")
         self.submit(b"show clock")

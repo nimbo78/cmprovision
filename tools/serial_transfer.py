@@ -22,6 +22,9 @@ IOS_ERROR = re.compile(r"%\s*(?:Invalid input|Incomplete command|Ambiguous comma
 MORE = {"ios": r"--More--", "huawei": r"----\s+More\s+----"}
 READ_ONLY = {"ios": r"show\s+(?:interfaces\s+status|version)",
              "huawei": r"display\s+(?:interface\s+brief|version|(?:current|saved)-configuration)"}
+IOS_VERSION_NOTICE = "A summary of U.S. laws governing Cisco cryptographic products may be found at:"
+IOS_VERSION_URLS = ("http://www.cisco.com/wwl/export/crypto/tool/stqrg.html",
+                    "https://www.cisco.com/wwl/export/crypto/tool/stqrg.html")
 
 
 @dataclass(frozen=True)
@@ -521,8 +524,15 @@ class ConsoleProtocol:
         tail = lines[-1].rstrip(" ")
         cmd = self._text.strip()
         family = self._context.family
-        for earlier in lines[:-1]:
+        ios_version = family == "ios" and cmd.lower().split() == ["show", "version"]
+        for index, earlier in enumerate(lines[:-1]):
             earlier = earlier.strip()
+            if ios_version and earlier == IOS_VERSION_NOTICE:
+                link = lines[index + 1].strip()
+                if link in IOS_VERSION_URLS:
+                    continue
+                if index + 2 == len(lines) and any(url.startswith(link) for url in IOS_VERSION_URLS):
+                    return  # The USB read ended in the middle of the printed link.
             if earlier != "[OK]" and (question(earlier, family) or looks_interactive(earlier)):
                 self._halt("uncertain", "Multiple device prompts arrived in one response.")
                 return
@@ -586,7 +596,7 @@ class ConsoleProtocol:
                 self._halt("uncertain", "Huawei identification changed. Read display version before another Smart transfer.")
             else:
                 self._stage, self._advance = "between", now + .090
-        elif looks_interactive(tail):
+        elif looks_interactive(tail) and not (ios_version and tail == IOS_VERSION_NOTICE):
             self._halt("uncertain", "Unexpected prompt. Inspect the terminal before continuing.")
 
     def action(self, action, now, *, value="", mode="smart", allow_default=False):
