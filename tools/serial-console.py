@@ -19,9 +19,11 @@ import signal
 import stat
 import struct
 import subprocess
+import sys
 import tempfile
 import termios
 import time
+import tty
 
 
 RATES = (9600, 115200, 19200, 38400, 57600)
@@ -344,9 +346,135 @@ def remember(line, profile, target, baud, folder=CACHE):
                 path.unlink(missing_ok=True)
 
 
-def manual_command(path, baud, frame):
-    return shlex.join(["picocom", "--baud", str(baud), "--databits", frame[0],
-                       "--parity", frame[1], "--stopbits", frame[2], "--flow", "n", str(path)])
+def picocom_arguments(path, baud, frame):
+    return ["picocom", "--baud", str(baud), "--databits", frame[0],
+            "--parity", frame[1], "--stopbits", frame[2], "--flow", "n", str(path)]
+
+
+def wait_for_speed(fd, frame, hint, output=1):
+    """Keep ownership during silence; fresh RX is the trigger for another scan."""
+    poller = select.poll()
+    poller.register(fd, select.POLLIN)
+    poller.register(output, 0)  # Caller gone: HUP/ERR still wake a silent line.
+    while True:
+        print("Listening for the baud rate (Ctrl+C to exit)…", file=sys.stderr, flush=True)
+        result = detect_speed(lambda rate, end: read_window(fd, rate, frame, end), hint)
+        if result.status == "detected":
+            return result
+        print(f"{result.status}: waiting for more console output…", file=sys.stderr, flush=True)
+        set_frame(fd, hint or RATES[0], frame)
+        for ready, events in poller.poll():
+            if ready == output:
+                raise Unavailable("operator session closed")
+            if events & (select.POLLHUP | select.POLLNVAL | select.POLLERR):
+                raise Unavailable("USB console disconnected")
+
+
+class SerialNoise:
+    """Two adjacent noisy windows; receive packet boundaries have no meaning."""
+    def __init__(self):
+        self.pending = bytearray()
+        self.previous_noisy = False
+
+    def feed(self, data):
+        self.pending.extend(data)
+        while len(self.pending) >= 24:
+            block = self.pending[:24].decode("utf-8", errors="replace")
+            del self.pending[:24]
+            bad = sum(c == "\ufffd" or ord(c) < 32 and c not in "\r\n\t\b\a\f\x1b" for c in block)
+            noisy = bad > 12
+            if self.previous_noisy and noisy:
+                return True
+            self.previous_noisy = noisy
+        return False
+
+
+def write_all(fd, data):
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]
+
+
+def picocom_session(path, baud, frame, keyboard=0, screen=1):
+    """Relay our own unprivileged picocom. True requests a new probe."""
+    args = picocom_arguments(path, baud, frame)
+    args[1:1] = ["--quiet"]
+    settings = termios.tcgetattr(keyboard)
+    master, terminal = os.openpty()
+    child = None
+    try:
+        tty.setraw(terminal)
+        tty.setraw(keyboard)
+        child = subprocess.Popen(args, stdin=terminal, stdout=terminal, stderr=terminal,
+                                 start_new_session=True)
+        os.close(terminal)
+        terminal = None
+        noise = SerialNoise()
+        while True:
+            readable, _, _ = select.select([master, keyboard], [], [])
+            if master in readable:
+                try:
+                    data = os.read(master, 4096)
+                except OSError as exc:
+                    if exc.errno != errno.EIO:
+                        raise
+                    data = b""
+                if not data:
+                    if child.wait() != 0:
+                        raise Unavailable("picocom closed with an error")
+                    return False
+                if noise.feed(data):
+                    return True
+                write_all(screen, data)
+            if keyboard in readable:
+                keys = os.read(keyboard, 4096)
+                if not keys:
+                    return False
+                if b"\x1d" in keys:  # Ctrl+] is local, including during a paste.
+                    return True
+                write_all(master, keys)
+    finally:
+        try:
+            if child is not None and child.poll() is None:
+                child.terminate()
+                try:
+                    child.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
+        finally:
+            os.close(master)
+            if terminal is not None:
+                os.close(terminal)
+            termios.tcsetattr(keyboard, termios.TCSAFLUSH, settings)
+
+
+def connect(line, port, profile, frame):
+    if os.geteuid() == 0:
+        raise Unavailable("run connect from your operator account without sudo")
+    if not os.isatty(0) or not os.isatty(1):
+        raise Unavailable("connect requires an interactive terminal")
+    if not shutil.which("picocom"):
+        raise Unavailable("install the Debian picocom package")
+    command = ["/usr/bin/sudo", "/usr/bin/cmprovision-console", "detect", "--wait",
+               "--port", port, "--profile", profile]
+    while True:
+        if select_line(inventory(), port) != line:
+            raise Unavailable("USB adapter changed; select it again")
+        try:
+            probe = subprocess.run(command, stdout=subprocess.PIPE)
+        finally:
+            termios.tcflush(0, termios.TCIFLUSH)  # Never replay input typed during detection.
+        if probe.returncode:
+            return 1
+        speeds = {str(rate).encode(): rate for rate in RATES}
+        baud = speeds.get(probe.stdout.strip())
+        if not baud or select_line(inventory(), port) != line:
+            raise Unavailable("could not confirm the adapter and its speed")
+        print(f"Connected at {baud} baud. Ctrl+] to rescan, Ctrl+A then Ctrl+X to exit.",
+              file=sys.stderr, flush=True)
+        if not picocom_session(Path("/dev/serial") / port, baud, frame):
+            return 0
 
 
 def run(args):
@@ -358,34 +486,45 @@ def run(args):
         if not any(p.by_path or p.by_id for p in ports):
             print("No supported USB consoles found.")
         return 0
-    if os.geteuid() != 0:
-        raise Unavailable("detect requires a station administrator (sudo)")
     line = select_line(ports, args.port)
     frame = PROFILES.get(args.profile, args.profile)
+    if args.operation == "connect":
+        return connect(line, args.port, args.profile, frame)
+    if os.geteuid() != 0:
+        raise Unavailable("detect requires a station administrator (sudo)")
     if line.driver == "ftdi_sio" and frame[0] not in "78":
         raise Unavailable("FTDI UARTs require 7 or 8 data bits")
     refresh = lambda: select_line(inventory(), args.port)
     known = last_known(line, args.profile, args.target)
     with claim(line, refresh) as fd:
-        result = detect_speed(lambda baud, end: read_window(fd, baud, frame, end), known[0] if known else None)
+        hint = known[0] if known else None
+        if getattr(args, "wait", False):
+            result = wait_for_speed(fd, frame, hint)
+        else:
+            result = detect_speed(lambda baud, end: read_window(fd, baud, frame, end), hint)
         if refresh() != line:
             raise Unavailable("adapter changed during detection")
+    waiting = getattr(args, "wait", False)
+    if result.status == "detected":
+        try:
+            remember(line, args.profile, args.target, result.baud)
+        except (OSError, Unavailable):
+            print("Could not save the optional speed hint.", file=sys.stderr if waiting else sys.stdout)
+    if waiting:
+        print(result.baud)
+        return 0
     print(result.status)
     print(f"Selected frame {frame.upper()}, flow control off")
     if known:
         print(f"Previous confirmation {known[0]} baud at {known[1]}")
     if result.status == "detected":
         print(f"Confirmed {result.baud} baud in two receive windows")
-        try:
-            remember(line, args.profile, args.target, result.baud)
-        except (OSError, Unavailable):
-            print("Could not save the optional speed hint.")
     elif result.baud:
         print(f"Possible {result.baud} baud from one window")
     elif result.status == "silent":
         print("No bytes were read in the sampling windows.")
     speed = result.baud or (known[0] if known else (9600 if args.profile == "cisco" else 115200))
-    print("Manual session:", manual_command(Path("/dev/serial") / args.port, speed, frame))
+    print("Manual session:", shlex.join(picocom_arguments(Path("/dev/serial") / args.port, speed, frame)))
     if not shutil.which("picocom"):
         print("Install the Debian picocom package to open the manual session.")
     return 0 if result.status == "detected" else 1
@@ -396,29 +535,34 @@ def main():
     commands = parser.add_subparsers(dest="operation", required=True)
     commands.add_parser("list", help="list stable local USB console identifiers")
     detect = commands.add_parser("detect", help="listen to one selected console")
-    detect.add_argument("--port", required=True, help="by-id/... or by-path/... from list")
-    detect.add_argument("--profile", default="linux", help="linux (8N1), cisco (8N2), or an explicit frame")
+    session = commands.add_parser("connect", help="open picocom and automatically recheck its baud rate")
+    for sub in (detect, session):
+        sub.add_argument("--port", required=True, help="by-id/... or by-path/... from list")
+        sub.add_argument("--profile", default="linux", help="linux (8N1), cisco (8N2), or an explicit frame")
+    detect.add_argument("--wait", action="store_true", help="wait for fresh data and print the confirmed baud rate")
     detect.add_argument("--target", help="optional equipment label for a line-specific speed hint")
     args = parser.parse_args()
-    if args.operation == "detect":
+    if args.operation in ("detect", "connect"):
         args.profile = args.profile.lower()
         if args.profile not in PROFILES and not re.fullmatch(r"[5-8][neo][12]", args.profile):
             parser.error("unknown framing profile")
-        if args.target and not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", args.target):
+        if getattr(args, "target", None) and not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", args.target):
             parser.error("invalid target label")
         def interrupt(signum, _frame):
             raise Unavailable("detection timed out" if signum == signal.SIGALRM else "detection interrupted")
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGALRM):
             signal.signal(signum, interrupt)
-        signal.setitimer(signal.ITIMER_REAL, 12)
+        if args.operation == "detect" and not args.wait:
+            signal.setitimer(signal.ITIMER_REAL, 12)
     try:
         return run(args)
     except Busy as exc:
-        print("busy:", exc)
+        print("busy:", exc, file=sys.stderr if getattr(args, "wait", False) else sys.stdout)
     except Unavailable as exc:
-        print("unavailable:", exc)
+        print("unavailable:", exc, file=sys.stderr if getattr(args, "wait", False) else sys.stdout)
     except (OSError, termios.error, UnicodeError):
-        print("unavailable: could not verify or read the selected terminal")
+        print("unavailable: could not verify or read the selected terminal",
+              file=sys.stderr if getattr(args, "wait", False) else sys.stdout)
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
     return 1

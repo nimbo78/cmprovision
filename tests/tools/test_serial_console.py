@@ -7,12 +7,13 @@ import os
 from pathlib import Path
 import pwd
 import select
-import shlex
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
 import termios
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -28,6 +29,133 @@ if SCRIPT.exists():
 
 
 class SerialConsoleTest(unittest.TestCase):
+    def test_connect_exists_as_an_operator_command(self):
+        result = subprocess.run([sys.executable, SCRIPT, "connect", "--help"], capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"--port", result.stdout)
+
+    def test_sustained_invalid_input_requests_redetection_but_console_text_does_not(self):
+        noise = console.SerialNoise()
+        for chunk in (b"switch#\r\n" * 20, "состояние сети\r\n".encode() * 8,
+                      b"\x1b[31mERROR\x1b[0m\r\n" * 8, b"\xff" * 24, b"normal output\r\n" * 10):
+            self.assertFalse(noise.feed(chunk))
+        self.assertTrue(any(noise.feed(b"\xff\x00") for _ in range(48)))
+
+    def test_waiting_probe_retries_after_new_data_and_returns_only_confirmed_speed(self):
+        replies = iter([console.Result("inconclusive", 9600), console.Result("detected", 115200)])
+        with self.claim() as fd:
+            def scan(sample, hint):
+                result = next(replies)
+                if result.status == "inconclusive":
+                    os.write(self.master, b"new-device\r\n")
+                return result
+            with patch.object(console, "detect_speed", side_effect=scan):
+                result = console.wait_for_speed(fd, "8n1", None)
+            self.assertEqual(result, console.Result("detected", 115200))
+
+    def test_waiting_probe_releases_silent_line_when_operator_disappears(self):
+        reader, output = os.pipe()
+        os.close(reader)
+        self.addCleanup(os.close, output)
+        with self.claim() as fd, patch.object(console, "detect_speed", return_value=console.Result("silent")):
+            with self.assertRaisesRegex(console.Unavailable, "session closed"):
+                console.wait_for_speed(fd, "8n1", None, output=output)
+
+    @unittest.skipUnless(shutil.which("picocom"), "picocom is required")
+    def test_one_operator_session_reopens_real_picocom_after_new_device_output(self):
+        control, keyboard = os.openpty()
+        self.addCleanup(os.close, control)
+        self.addCleanup(os.close, keyboard)
+        original = termios.tcgetattr(keyboard)
+        account = pwd.getpwnam("nobody") if os.geteuid() == 0 else None
+        if account:
+            os.fchown(self.slave, account.pw_uid, account.pw_gid)
+        pid = os.fork()
+        if pid == 0:
+            try:
+                for target in (0, 1, 2):
+                    os.dup2(keyboard, target)
+                if account:
+                    os.setgroups([])
+                    os.setgid(account.pw_gid)
+                    os.setuid(account.pw_uid)
+                def probe(cmd, stdout):
+                    assert cmd[:4] == ["/usr/bin/sudo", "/usr/bin/cmprovision-console", "detect", "--wait"]
+                    fd = os.open(self.node, os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY)
+                    saved = termios.tcgetattr(fd)
+                    try:
+                        result = console.wait_for_speed(fd, "8n2", None)
+                    finally:
+                        termios.tcsetattr(fd, termios.TCSANOW, saved)
+                        os.close(fd)
+                    return subprocess.CompletedProcess(cmd, 0, str(result.baud).encode())
+                # The station's sudo boundary and USB inventory are represented by local PTYs.
+                relay = console.picocom_session
+                with patch.object(console, "inventory", return_value=[self.line]), \
+                        patch.object(subprocess, "run", side_effect=probe), \
+                        patch.object(console, "picocom_session", lambda path, baud, frame: relay(self.node, baud, frame)):
+                    code = console.connect(self.line, self.line.by_id, "cisco", "8n2")
+            except BaseException:
+                import traceback
+                traceback.print_exc()
+                code = 2
+            os._exit(code)
+        finished = False
+        stop = threading.Event()
+        source_rate = termios.B9600
+        def target():
+            # A PTY normally delivers bytes at every speed. Model output decoded at the target rate.
+            while not stop.wait(0.05):
+                if source_rate and termios.tcgetattr(self.slave)[4] == source_rate:
+                    os.write(self.master, b"target-switch#\r\n")
+        sender = threading.Thread(target=target)
+        sender.start()
+        def receive(fd, needle, announce=False):
+            seen = bytearray()
+            end = time.monotonic() + 16
+            while needle not in seen and time.monotonic() < end:
+                if announce:
+                    os.write(self.master, b"sw-console#\r\n")
+                if select.select([fd], [], [], 0.1)[0]:
+                    seen.extend(os.read(fd, 4096))
+            self.assertIn(needle, seen)
+        try:
+            for baud in (9600, 115200, 38400):
+                receive(control, f"Connected at {baud} baud".encode())
+                source_rate = None
+                end = time.monotonic() + 5
+                while termios.tcgetattr(self.slave)[4] != getattr(termios, f"B{baud}") and time.monotonic() < end:
+                    time.sleep(0.01)
+                self.assertEqual(termios.tcgetattr(self.slave)[4], getattr(termios, f"B{baud}"))
+                receive(control, b"sw-console#", announce=True)
+                os.write(control, b"hello")
+                receive(self.master, b"hello")
+                if baud == 9600:
+                    source_rate = termios.B115200
+                    os.write(self.master, b"\xff\x00" * 80)
+                elif baud == 115200:
+                    source_rate = termios.B38400
+                    os.write(control, b"\x1d")
+                    if select.select([self.master], [], [], 0.1)[0]:
+                        self.assertNotIn(b"\x1d", os.read(self.master, 4096))
+            os.write(control, b"\x01\x18")
+            end = time.monotonic() + 5
+            while time.monotonic() < end:
+                done, status = os.waitpid(pid, os.WNOHANG)
+                if done:
+                    finished = True
+                    self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+                    break
+                time.sleep(0.01)
+            self.assertTrue(finished)
+            self.assertEqual(termios.tcgetattr(keyboard), original)
+        finally:
+            stop.set()
+            sender.join()
+            if not finished:
+                os.kill(pid, signal.SIGTERM)
+                os.waitpid(pid, 0)
+
     def setUp(self):
         self.assertIsNotNone(console, "The station has no USB console command")
         self.tmp = tempfile.TemporaryDirectory()
@@ -300,7 +428,7 @@ class SerialConsoleTest(unittest.TestCase):
             self.assertIsNone(console.last_known(line, profile, target, cache))
 
     def test_manual_command_preserves_framing_and_one_quoted_path(self):
-        args = shlex.split(console.manual_command("/dev/serial/by-id/port with spaces", 9600, "8n2"))
+        args = console.picocom_arguments("/dev/serial/by-id/port with spaces", 9600, "8n2")
         self.assertEqual(args[-1], "/dev/serial/by-id/port with spaces")
         self.assertEqual(args[args.index("--stopbits") + 1], "2")
         self.assertEqual(args[args.index("--baud") + 1], "9600")
@@ -317,7 +445,7 @@ class SerialConsoleTest(unittest.TestCase):
             os.fchown(self.slave, 0, group.gr_gid)
             os.fchmod(self.slave, 0o660)
             credentials = dict(user=account.pw_uid, group=account.pw_gid, extra_groups=[group.gr_gid])
-        args = shlex.split(console.manual_command(str(self.node), 9600, "8n2"))
+        args = console.picocom_arguments(str(self.node), 9600, "8n2")
         with subprocess.Popen(args, stdin=terminal, stdout=terminal, stderr=terminal, **credentials) as session:
             def expect(needle):
                 received = bytearray()

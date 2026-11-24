@@ -10,7 +10,19 @@ From an SSH session on the station, use a local FTDI or PL2303 USB adapter to re
 cmprovision-console list
 ```
 
-Copy a complete `by-id/…` or `by-path/…` identifier from the output. The list shows the USB interface and the kernel driver. Use the physical path for adapters with duplicate or missing serial numbers. Run the list again after moving a cable. On multiport adapters, select the interface and port attached to the intended target.
+Copy a complete `by-id/…` or `by-path/…` identifier from the output. The list shows the USB interface and the kernel driver. Use the physical path for adapters with duplicate or missing serial numbers. Run the list again if you move the adapter to another USB socket. On multiport adapters, select the interface and port attached to the intended target.
+
+## Move between devices in one SSH session
+
+Run this from your operator account (usually in the `dialout` group). Use the USB identifier from `list`.
+
+```sh
+cmprovision-console connect --port 'by-id/usb-EXAMPLE-if00-port0' --profile cisco
+```
+
+The command uses `sudo` for the passive speed check and opens `picocom` as your user. Move the target end of the cable to the next device. If both use the same speed, the session continues. Sustained garbled output triggers a fresh check and reopens the terminal in the same window at the confirmed speed. A pause leaves the existing connection alone. This mode is for text consoles.
+
+Press **Ctrl+]** to request a fresh check in the connected session. During the check the wrapper waits for recognizable output. A silent device can stay at this step until it prints again. **Ctrl+C** cancels the check. In the connected terminal, **Ctrl+A**, then **Ctrl+X** exits. If you unplug the USB adapter itself, run `list` and select it again.
 
 ## Listen for the speed
 
