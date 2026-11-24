@@ -8,6 +8,7 @@ Detailed behaviour of the project options and stand controls. Start with the [in
 
 For a CM4 that cannot enter normal network boot, use [USB provisioning](usb-provisioning.md).
 For direct diagnosis on a target's screen and keyboard, use its [tty2 console](local-console.md).
+With a USB serial cable connected to the station, you can inspect a switch or board from SSH. [USB serial console](serial-console.md)
 The [WLAN Pi M4+ guide](hardware/wlanpi-m4-plus.md) covers both units' connectors and USB roles.
 
 - [Provisioning workflow](#provisioning-workflow)
