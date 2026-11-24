@@ -216,6 +216,15 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(self.server.line_hint(self.line), (19200, "8n2"))
         self.assertFalse(select.select([self.master], [], [], .1)[0])
 
+    def test_cable_wake_permission_survives_a_service_restart_but_not_a_clean_restore(self):
+        scope = self.request("ports")["ports"][0]["wake_scope"]
+        def restart():
+            broker = web.Broker(inventory=lambda: self.ports, busy=lambda _: False)
+            return broker.list_ports()["ports"][0]["wake_scope"]
+        self.assertEqual(scope, restart())
+        with patch.object(web.cli, "CACHE", self.root / "new-install"):
+            self.assertNotEqual(scope, restart())
+
     def test_identify_is_read_only_and_releases_after_matching_prompt(self):
         lease = self.open(mode="identify")["session"]
         for _ in range(100):

@@ -36,14 +36,16 @@ class SerialConsoleController extends Controller
         if (!isset($body['label']) && !isset($body['wake_on_connect'])) return $this->invalid();
         $inventory = $broker->request(['op' => 'ports']);
         if (!$inventory['ok']) return $this->reply($inventory);
-        $current = collect($inventory['ports'])->contains(fn ($p) => $p['id'] === $body['port'] && $p['generation'] === $body['generation']);
+        $current = collect($inventory['ports'])->first(fn ($p) => $p['id'] === $body['port'] && $p['generation'] === $body['generation']);
         if (!$current) return $this->reply(['ok' => false, 'error' => 'conflict', 'message' => 'USB connection changed.']);
-        DB::transaction(function () use ($body) {
+        if (($body['wake_on_connect'] ?? false) && !isset($current['wake_scope'])) {
+            return $this->reply(['ok' => false, 'error' => 'unavailable', 'message' => 'Restart the console service to enable wake on connect.']);
+        }
+        DB::transaction(function () use ($body, $current) {
             $changes = [];
             if (isset($body['label'])) $changes[SerialConsoleBroker::labelKey($body['port'])] = trim($body['label']);
             if (isset($body['wake_on_connect'])) {
-                $changes[SerialConsoleBroker::wakeKey($body['port'])] = $body['wake_on_connect']
-                    ? SerialConsoleBroker::wakePermission($body['port'], $body['generation']) : '';
+                $changes[SerialConsoleBroker::wakeKey($body['port'])] = $body['wake_on_connect'] ? $current['wake_scope'] : '';
             }
             foreach ($changes as $key => $value) {
                 if ($value === '') Setting::whereKey($key)->delete();
@@ -74,8 +76,10 @@ class SerialConsoleController extends Controller
         if ($operation === 'open' && $body['baud'] !== 'auto' && !is_int($body['baud'])) return $this->invalid();
         if ($operation === 'open' && ($body['wake'] ?? false)) {
             if ($body['mode'] !== 'connect') return $this->invalid();
-            $body['wake'] = Setting::whereKey(SerialConsoleBroker::wakeKey($body['port']))->value('value')
-                === SerialConsoleBroker::wakePermission($body['port'], $body['generation']);
+            $inventory = $broker->ports();
+            if (!$inventory['ok']) return $this->reply($inventory);
+            $port = collect($inventory['ports'])->firstWhere('id', $body['port']);
+            $body['wake'] = $port && $port['generation'] === $body['generation'] && $port['wake_on_connect'];
         }
         if ($operation === 'file_preview' && strlen($body['text']) > 1048576) return $this->invalid();
         if ($operation === 'write') {

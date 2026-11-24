@@ -14,7 +14,7 @@ Use a local FTDI or PL2303 USB adapter to reach a switch or a board from the web
 
 For a dedicated console cable, enable **Port details → Send Enter on connect**, save, then press **Connect**. The station sends one carriage return after a quiet second or a recognized Cisco or Huawei login invitation. Other input, including a visible question, is shown in the terminal. If the device stays silent, the keyboard is ready. A silent console may already contain an unfinished command that Enter would submit.
 
-The setting starts off. A cable with a unique USB serial number keeps its setting when reconnected. For cables without a serial number, or with a serial number the station has seen on two adapters at once, enable it again after reconnecting the adapter or restarting the console service. **Identify**, **Re-detect**, and inventory checks only listen.
+The setting starts off. A cable with a unique USB serial number keeps its setting when reconnected. For cables without a serial number, or with a serial number the station has seen on two adapters at once, enable it again after reconnecting the adapter or restarting the console service. After restoring the database on a fresh station, enable it there as well. **Identify**, **Re-detect**, and inventory checks only listen.
 
 ### Send a configuration
 

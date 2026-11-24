@@ -27,6 +27,7 @@ class SerialConsoleWebTest extends TestCase
     private function inventory(): array
     {
         return ['ok' => true, 'ports' => [['id' => self::PORT, 'generation' => self::GENERATION,
+            'wake_scope' => str_repeat('c', 64),
             'driver' => 'ftdi_sio', 'usb' => '1-2', 'busy' => true, 'hostname' => '', 'seen_at' => null]]];
     }
 
@@ -154,7 +155,7 @@ class SerialConsoleWebTest extends TestCase
         $broker = Mockery::mock(SerialConsoleBroker::class)->makePartial();
         $this->app->instance(SerialConsoleBroker::class, $broker);
         $inventory = $this->inventory();
-        $inventory['ports'][] = ['id' => 'by-path/rack-usb', ...array_diff_key($inventory['ports'][0], ['id' => true])];
+        $inventory['ports'][] = array_replace($inventory['ports'][0], ['id' => 'by-path/rack-usb', 'wake_scope' => self::GENERATION]);
         $broker->shouldReceive('request')->with(['op' => 'ports'])->andReturnUsing(function () use (&$inventory) {
             return $inventory;
         });
@@ -167,7 +168,10 @@ class SerialConsoleWebTest extends TestCase
         $this->getJson('/console/ports')->assertJsonPath('ports.0.wake_on_connect', true)->assertJsonPath('ports.1.wake_on_connect', true);
         foreach ($inventory['ports'] as &$port) $port['generation'] = self::LEASE;
         unset($port);
+        $inventory['ports'][1]['wake_scope'] = self::LEASE;
         $this->getJson('/console/ports')->assertJsonPath('ports.0.wake_on_connect', true)->assertJsonPath('ports.1.wake_on_connect', false);
+        $inventory['ports'][0]['wake_scope'] = str_repeat('d', 64);
+        $this->getJson('/console/ports')->assertJsonPath('ports.0.wake_on_connect', false);
         $this->postJson($write, ['port' => self::PORT, 'generation' => self::GENERATION, 'wake_on_connect' => false])->assertConflict();
     }
 

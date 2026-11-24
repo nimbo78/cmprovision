@@ -88,6 +88,26 @@ def generation(line):
     return hashlib.sha256(GENERATION_SALT + json.dumps(identity).encode()).hexdigest()
 
 
+def wake_scope_for_install():
+    # Consent in a restored application DB must not outlive the USB collision history.
+    fallback = secrets.token_hex(32)
+    try:
+        cli.private_directory(cli.CACHE)
+        path = cli.CACHE / "web-wake-scope"
+        try:
+            with path.open("x") as output:
+                output.write(fallback)
+        except FileExistsError:
+            pass
+        with path.open() as source:
+            saved = source.read(65)
+        if token(saved):
+            return saved
+    except (OSError, cli.Unavailable):
+        pass
+    return fallback
+
+
 @contextmanager
 def claim_port(line, refresh, writable):
     with cli.operator_lock(line), cli.claim(line, refresh, writable=writable) as fd:
@@ -536,6 +556,7 @@ class Lease:
 class Broker:
     def __init__(self, inventory=cli.inventory, claim=claim_port, busy=port_busy):
         self.read_inventory, self.claim, self.busy = inventory, claim, busy
+        self.wake_scope = wake_scope_for_install()
         self.ambiguous = set()
         self.identity_lock = threading.Lock()
         self.lock = threading.RLock()
@@ -622,7 +643,7 @@ class Broker:
                         occupied |= not lease.released.is_set()
             with self.observed_lock:
                 host, seen = self.observed.get(gen, (None, None))[:2]
-            ports.append(dict(id=port, generation=gen, usb=Path(line.usb_path).name,
+            ports.append(dict(id=port, generation=gen, wake_scope=self.wake_scope if line.by_id else gen, usb=Path(line.usb_path).name,
                               driver=line.driver, busy=occupied or self.busy(line), hostname=host, seen_at=seen))
         return {"ports": ports}
 
