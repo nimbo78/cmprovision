@@ -233,6 +233,13 @@ def set_frame(fd, baud, frame):
     attrs[4] = attrs[5] = getattr(termios, "B" + str(baud))
     attrs[6][termios.VMIN] = attrs[6][termios.VTIME] = 0
     termios.tcsetattr(fd, termios.TCSANOW, attrs)
+    actual = termios.tcgetattr(fd)
+    frame_bits = (termios.CSIZE | termios.PARENB | termios.PARODD | termios.CSTOPB |
+                  termios.CRTSCTS | getattr(termios, "CMSPAR", 0))
+    if (actual[4:6] != attrs[4:6] or (actual[2] ^ attrs[2]) & frame_bits or
+            actual[0] & (termios.IXON | termios.IXOFF) or
+            actual[3] & (termios.ECHO | termios.ECHONL | termios.ICANON)):
+        raise Unavailable("driver did not apply the requested serial settings")
 
 
 def read_window(fd, baud, frame, end):
@@ -265,7 +272,8 @@ CONSOLE_TEXT = re.compile(
     rb"|[A-Za-z0-9_.-]{1,64} login:"
     rb"|Linux version \d+\.\d+[ -~]*"
     rb"|\[\s*\d+\.\d+\]\s+[A-Za-z0-9][ -~]{5,}"
-    rb"|(?:Cisco IOS|U-Boot \d{4}|systemd\[\d+\]:) [ -~]{4,}"
+    rb"|U-Boot (?:SPL )?20\d{2}\.\d{2}(?:[-+.][A-Za-z0-9._+-]+)?(?: [ -~]+)?"
+    rb"|(?:Cisco IOS|systemd\[\d+\]:) [ -~]{4,}"
     rb"|(?:[A-Za-z0-9 *.:-]+:\s+)?%[A-Z0-9_]+-[0-7]-[A-Z0-9_]+: [ -~]{4,})")
 
 
@@ -354,6 +362,8 @@ def run(args):
         raise Unavailable("detect requires a station administrator (sudo)")
     line = select_line(ports, args.port)
     frame = PROFILES.get(args.profile, args.profile)
+    if line.driver == "ftdi_sio" and frame[0] not in "78":
+        raise Unavailable("FTDI UARTs require 7 or 8 data bits")
     refresh = lambda: select_line(inventory(), args.port)
     known = last_known(line, args.profile, args.target)
     with claim(line, refresh) as fd:
@@ -372,6 +382,8 @@ def run(args):
             print("Could not save the optional speed hint.")
     elif result.baud:
         print(f"Possible {result.baud} baud from one window")
+    elif result.status == "silent":
+        print("No bytes were read in the sampling windows.")
     speed = result.baud or (known[0] if known else (9600 if args.profile == "cisco" else 115200))
     print("Manual session:", manual_command(Path("/dev/serial") / args.port, speed, frame))
     if not shutil.which("picocom"):

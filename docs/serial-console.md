@@ -20,12 +20,12 @@ Replace the example identifier with one from your station. Detection needs admin
 sudo cmprovision-console detect --port 'by-id/usb-EXAMPLE-if00-port0' --profile cisco --target switch01
 ```
 
-The Cisco profile selects 8N2 and the default Linux profile selects 8N1. You can also supply a frame such as `7e1`. All profiles disable flow control. The engineer selects the frame. The command tests the baud rate using recognizable boot messages, login prompts or switch prompts in two fresh receive windows. It listens for up to 1.5 seconds per rate, with a 12-second limit for the command.
+The Cisco profile selects 8N2 and the default Linux profile selects 8N1. You can also supply a frame such as `7e1`. FTDI supports 7 or 8 data bits. The detector checks the settings applied by the driver, including speed, frame and disabled flow control. It confirms the baud rate from recognizable boot messages, login prompts or switch prompts in two fresh receive windows. Each window lasts up to 1.5 seconds, with a 12-second limit for the command. [Linux FTDI driver](https://github.com/torvalds/linux/blob/master/drivers/usb/serial/ftdi_sio.c)
 
 | Result | What to do |
 |---|---|
 | `detected` | Two separate windows confirmed one speed. Open the printed `picocom` command from your own account. |
-| `silent` | The target sent no bytes. If its speed is known, open a manual session at that speed. |
+| `silent` | The detector read no bytes during its sampling windows. A short burst can fall in the interval discarded after a speed change. If the speed is known, open a manual session. |
 | `inconclusive` | Noise, a single burst or multiple possible speeds prevented confirmation. Wait for repeated output or choose the speed manually. |
 | `busy` | Another reader, service or terminal lock owns the line. Finish the existing session before retrying. |
 | `unavailable` | Check the adapter, permissions and the current identifier. The message gives the reason when available. |

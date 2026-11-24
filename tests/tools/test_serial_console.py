@@ -197,6 +197,38 @@ class SerialConsoleTest(unittest.TestCase):
                 self.assertEqual(calls[0], 38400)
                 self.assertEqual(calls.count(speed), 2)
 
+    def test_standard_uboot_banner_confirms_without_other_output(self):
+        for banner in (b"U-Boot 2024.10 (Oct 07 2024 - 14:01:00 +0000)\r\n",
+                       b"U-Boot SPL 2025.01-rc2\r\n"):
+            with self.subTest(banner=banner):
+                result = console.detect_speed(lambda speed, end: banner if speed == 57600 else b"")
+                self.assertEqual((result.status, result.baud), ("detected", 57600))
+
+    def test_ftdi_rejects_unavailable_data_width_before_claiming_line(self):
+        from argparse import Namespace
+        for frame in ("5n1", "6n1"):
+            args = Namespace(operation="detect", port=self.line.by_id, target=None, profile=frame)
+            with self.subTest(frame=frame), patch.object(console, "inventory", return_value=[self.line]), \
+                    patch.object(console.os, "geteuid", return_value=0), \
+                    patch.object(console, "claim", side_effect=AssertionError("unsupported FTDI frame opened")):
+                with self.assertRaisesRegex(console.Unavailable, "FTDI"):
+                    console.run(args)
+
+    def test_silently_changed_driver_speed_or_stop_bits_disqualify_sample(self):
+        with self.claim() as fd:
+            apply = termios.tcsetattr
+            for field in ("speed", "stop"):
+                def changed(handle, when, attrs):
+                    effective = list(attrs)
+                    if field == "speed":
+                        effective[4] = effective[5] = termios.B19200
+                    else:
+                        effective[2] &= ~termios.CSTOPB
+                    apply(handle, when, effective)
+                with self.subTest(field=field), patch.object(termios, "tcsetattr", side_effect=changed):
+                    with self.assertRaises(console.Unavailable):
+                        console.set_frame(fd, 9600, "8n2")
+
     def test_silence_noise_one_burst_and_tied_rates(self):
         outcomes = [
             ({}, "silent", None),
