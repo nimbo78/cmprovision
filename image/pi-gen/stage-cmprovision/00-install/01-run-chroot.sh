@@ -5,7 +5,7 @@ export DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8
 # production /run before package scripts initialize privileged controllers.
 chmod 0755 /run
 apt-get -o Acquire::Retries=3 update
-apt-get -o Acquire::Retries=3 install --no-install-recommends -y network-manager wpasupplicant iw nftables python3-kms++
+apt-get -o Acquire::Retries=3 install --no-install-recommends -y network-manager wpasupplicant iw nftables python3-kms++ raspi-utils-core raspi-utils-dt
 if [ -f /opt/cmprovision-image-fpms.deb ]; then
     apt-get -o Acquire::Retries=3 install --no-install-recommends -y firmware-iwlwifi lldpd /opt/cmprovision-image.deb /opt/cmprovision-image-fpms.deb
     systemctl disable fpms-lite.service

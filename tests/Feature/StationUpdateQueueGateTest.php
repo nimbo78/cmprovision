@@ -9,6 +9,41 @@ use Tests\TestCase;
 class StationUpdateQueueGateTest extends TestCase
 {
     use \Illuminate\Foundation\Testing\RefreshDatabase;
+
+    public function test_a_scheduled_panel_reboot_prevents_reserving_another_job(): void
+    {
+        $power = new class extends \App\Services\StationPowerControl {
+            public function pending(): ?array { return ['action' => 'reboot']; }
+        };
+        $this->app->instance(\App\Services\StationPowerControl::class, $power);
+        $gate = new StationUpdateQueueGate(new StationUpdatesControl());
+        $this->assertFalse($gate->reserve());
+    }
+
+    public function test_available_power_control_alone_still_locks_reservations(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'queue-panel-lock-');
+        $this->beforeApplicationDestroyed(fn () => unlink($path));
+        $updates = new class extends StationUpdatesControl {
+            public function available(): bool { return false; }
+            public function pending(): bool { return false; }
+        };
+        $this->app->instance(\App\Services\StationBackupsControl::class, new class extends \App\Services\StationBackupsControl {
+            public function available(): bool { return false; }
+            public function pending(): bool { return false; }
+        });
+        $this->app->instance(\App\Services\StationPowerControl::class, new class extends \App\Services\StationPowerControl {
+            public function available(): bool { return true; }
+            public function pending(): ?array { return null; }
+        });
+        $gate = new StationUpdateQueueGate($updates, $path, false);
+        $other = fopen($path, 'r');
+        $this->assertTrue($gate->reserve());
+        $this->assertFalse(flock($other, LOCK_EX | LOCK_NB));
+        $gate->release();
+        fclose($other);
+    }
+
     public function test_reservation_holds_admission_until_its_guard_is_released(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'queue-update-lock-');
