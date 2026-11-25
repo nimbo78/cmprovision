@@ -66,6 +66,40 @@ class DisplayBootProbeTest(unittest.TestCase):
         self.assertIsNone(probe.identify(both, self.spi))
         self.spi.assert_not_called()
 
+    def test_spi_reads_each_reply_bit_before_the_panel_releases_sda(self):
+        # RDDID from da2. The controller presents a bit while SCLK is low,
+        # then releases SDA on the rising edge. The pull-up reads high afterwards.
+        reply = bytes.fromhex('3e44f87f')
+        bits = [bool(byte & (1 << shift)) for byte in reply for shift in reversed(range(8))]
+        sent = []
+
+        class PanelBus(probe.Header):
+            selected = False
+            released = True
+
+            def drive(self, pin, high):
+                if pin == 8:
+                    self.selected = not high
+                elif pin == 10:
+                    self.released = high
+
+            def clock(self, high):
+                self.clock_high = high
+                if high and self.selected:
+                    sent.append(self.released)
+
+            def high(self, pin):
+                index = len(sent) - 8
+                if self.selected and not self.clock_high and 0 <= index < len(bits):
+                    return self.released and bits[index]
+                return self.released
+
+        bus = PanelBus(None, None)
+        bus.spi_ready = True
+        self.assertEqual(bus.read_spi(0x04, len(reply)), reply)
+        self.assertEqual(sent[:8], [int(bit) for bit in '00000100'])
+        self.assertEqual(sent[8:], [True] * len(bits))
+
     def test_busy_header_output_outside_the_probe_blocks_its_target_profile(self):
         self.assertFalse(probe.target_available('hyperpixel-4-touch', lambda pin: pin == 18))
         self.assertFalse(probe.target_available('waveshare-144', lambda pin: pin == 19))
