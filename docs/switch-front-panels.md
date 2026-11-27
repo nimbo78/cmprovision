@@ -42,5 +42,12 @@ Huawei and Cisco Business models retain automatic ordering until their particula
 CBS350-8P-2G has copper/SFP combo connectors: drawing both physical connectors as separate ports would incorrectly
 duplicate one logical interface. Automatic mode retains the existing connector detection.
 
+On the CloudEngine **S5735I-S8U4XN-V2**, the switch reports the family on the chassis and the exact model
+on the main board. cmprovision matches their serial numbers and groups `GE1/0/1–8` as copper and
+`10GE1/0/1–4` as SFP+ uplinks, including empty cages. The diagram uses automatic port order.
+On V600R022C10SPC500 with patch V600R022SPH180, our switch supplied power but returned no PoE readings
+through SNMP. Use `display poe power-state interface GE1/0/8` in the console to check that port.
+The [Huawei hardware specification](https://info.support.huawei.com/info-finder/vue/mbTool/en/enterprise/hardwarecenter?partNum=98012066&productModel=S5735I-S8U4XN-V2) lists the connector types.
+
 New verified models belong in `app/Support/SwitchFrontPanel.php`, with a manufacturer reference and tests for the complete
 port set, printed numbering and unchanged interface keys.
