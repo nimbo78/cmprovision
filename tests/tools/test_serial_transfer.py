@@ -12,6 +12,10 @@ VRP_VERSION = (b"Huawei Versatile Routing Platform Software\r\n"
 YUN_VERSION = (b"Huawei YunShan OS\r\nVersion 1.24.1.1 (S5700 V600R024C10)\r\n"
                b"CloudEngine S5735-S-V2 uptime is 1 day\r\n"
                b"S5735-S24T4XE-V2(Master) 1 : uptime is 1 day")
+YUN_INDUSTRIAL_VERSION = (b"Huawei YunShan OS\r\nVersion 1.22.1.1 (S5700 V600R022C10SPC500)\r\n"
+                          b"HUAWEI CloudEngine S5735I-S-V2 uptime is 1 day\r\n"
+                          b"Patch Version: V600R022SPH180\r\n"
+                          b"S5735I-S8U4XN-V2(Master) 1 : uptime is 1 day")
 
 
 class SerialTransferTest(unittest.TestCase):
@@ -449,7 +453,8 @@ class SerialTransferTest(unittest.TestCase):
         self.assertEqual(self.p.take_output(), b"")
 
     def test_explicit_identification_unlocks_smart_for_both_platforms(self):
-        for output, model in [(VRP_VERSION, "S5731-H24T4XC"), (YUN_VERSION, "S5735-S24T4XE-V2")]:
+        for output, model in [(VRP_VERSION, "S5731-H24T4XC"), (YUN_VERSION, "S5735-S24T4XE-V2"),
+                              (YUN_INDUSTRIAL_VERSION, "S5735I-S8U4XN-V2")]:
             with self.subTest(model=model):
                 self.setUp()
                 self.rx(b"<sw>")
@@ -462,6 +467,17 @@ class SerialTransferTest(unittest.TestCase):
                 self.submit(b"display clock")
                 self.rx(b"\r\n<sw>")
                 self.assertEqual(self.p.snapshot()["stage"], "done")
+
+    def test_industrial_family_alone_or_a_conflicting_board_cannot_enable_automatic_answers(self):
+        for output in (YUN_INDUSTRIAL_VERSION.rsplit(b"\r\n", 1)[0],
+                       YUN_INDUSTRIAL_VERSION.replace(b"S8U4XN", b"S8T4XN"),
+                       YUN_INDUSTRIAL_VERSION.replace(b"CloudEngine S5735I", b"CloudEngine S5735"),
+                       YUN_INDUSTRIAL_VERSION + b"\r\nS5735I-S8T4XN-V2(Master) 2 : uptime is 1 day"):
+            with self.subTest(output=output):
+                self.setUp()
+                self.rx(b"<sw>")
+                self.read_version(output, b"<sw>")
+                self.assertFalse(self.p.smart_ready)
 
     def test_manual_version_accepts_cli_casing_and_one_crlf(self):
         self.rx(b"<sw>")

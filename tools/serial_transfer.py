@@ -115,20 +115,21 @@ def version_label(text, family):
     vrp = bool(re.search(r"^(?:Huawei Versatile Routing Platform Software\b|VRP \(R\) software,\s*Version\b)", text, re.I | re.M))
     if yun == vrp or re.search(r"^[ \t]*(?:%|(?:Error|Password|Username|Login)\s*:|<[^\n]+>[ \t]*$|\[[^\n]+\][ \t]*$)", text, re.I | re.M):
         return None
-    model_pattern = r"(S5731-[A-Z0-9-]+|S5735-S[A-Z0-9-]*-V2)"
+    model_pattern = r"(S5731-[A-Z0-9-]+|S5735I?-S[A-Z0-9-]*-V2)"
     chassis = re.findall(r"^(?:HUAWEI[ \t]+)?(?:CloudEngine[ \t]+)?" + model_pattern +
                          r"(?:[ \t]+(?:Routing Switch|Switch|Device))?[ \t]+uptime\s+is\b", text, re.I | re.M)
     master = re.findall(r"^[ \t]*" + model_pattern + r"[ \t]*\(Master\)[ \t]*\d+[ \t]*:[ \t]*uptime\s+is\b", text, re.I | re.M)
     products = {name.upper() for name in chassis + master}
-    if len(products) == 2 and "S5735-S-V2" in products and all(p.startswith("S5735-S") for p in products):
-        products.remove("S5735-S-V2")
+    for family in ("S5735-S", "S5735I-S"):
+        if len(products) == 2 and family + "-V2" in products and all(p.startswith(family) for p in products):
+            products.remove(family + "-V2")
     releases = {v.upper() for v in re.findall(r"\b(V(?:200|600)R\d{3}C\d{2}(?:SPC\d+)?)\b", text, re.I)}
     if len(products) != 1 or len(releases) != 1:
         return None
     model, version = products.pop(), releases.pop()
     if vrp and model.startswith("S5731-") and version.startswith("V200"):
         return f"{model} · VRP {version}"
-    if yun and model.startswith("S5735-S") and version.startswith("V600"):
+    if yun and (model.startswith("S5735-S") or model == "S5735I-S8U4XN-V2") and version.startswith("V600"):
         return f"{model} · YunShan OS {version}"
     return None
 

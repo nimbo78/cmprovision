@@ -26,7 +26,7 @@ At a device prompt, choose **Paste config from file** or paste multiple lines in
 | **Step** | Send each subsequent command explicitly. Use this for an unfamiliar device transcript. |
 | **Smart** | Advance after an expected prompt. A CLI error stops on its source line for correction. At a confirmation or filename prompt, the operator chooses the response. |
 
-Cisco IOS, Huawei S5731 (VRP) and S5735-S-V2 (YunShan OS) have console profiles. On Huawei, run **Read version** (`display version`) at the authenticated prompt before using Automatic or Smart. Supply CLI commands with explicit view changes. For example, a Huawei file can end with `return` and `save`; Automatic handles the save and overwrite questions. A repeated question, missing value, login prompt or rejected command pauses the transfer at that line. After a disconnect, check the last confirmed file line on the device before resuming. Terminal output and uploaded configurations live only in the current session.
+Cisco IOS, Huawei S5731 (VRP), S5735-S-V2 and S5735I-S8U4XN-V2 (YunShan OS) have console profiles. On Huawei, run **Read version** (`display version`) at the authenticated prompt before using Automatic or Smart. Supply CLI commands with explicit view changes. For example, a Huawei file can end with `return` and `save`; Automatic handles the save and overwrite questions. A repeated question, missing value, login prompt or rejected command pauses the transfer at that line. After a disconnect, check the last confirmed file line on the device before resuming. Terminal output and uploaded configurations live only in the current session.
 
 ### Long output on a serial line
 
