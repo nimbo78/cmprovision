@@ -381,7 +381,9 @@ body { background: var(--page); color: var(--text); }
     .ports-media-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
     .ports-media-label small { display: inline; }
     .ports-media-port { padding-inline: 1px; }
-    .ports-media-port .ports-logo { width: min(26px, 100%); height: auto; }
+    .ports-media-port .ports-tile .short { max-width: 100%; font-size: clamp(9px, 2.8cqi, 13px); }
+    .ports-media-port .ports-tile .mark { max-width: 100%; }
+    .ports-media-port .ports-tile .ports-logo { width: 26px; max-width: 100%; height: auto; }
 }
 @media (max-width: 400px) {
     .ports-switch-industrial { padding-inline: 8px; }

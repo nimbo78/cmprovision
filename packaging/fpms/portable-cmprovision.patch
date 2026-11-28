@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..a98d6c3
+index 0000000..a703727
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,578 @@
+@@ -0,0 +1,587 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10562,6 +10562,15 @@ index 0000000..a98d6c3
 +                        view["columns"].extend((None, i, group) for i in range(start, end))
 +                if len(view["slots"]) != len(rows) - view["first"]:
 +                    view["slots"].clear()  # incomplete geometry uses the ordinary map
++                # The industrial SFP+ bank cannot supply PoE, even if the snapshot carries a reading.
++                for group, _, index in view["slots"]:
++                    if group == 1:
++                        row = rows[index]
++                        row.pop("watts", None)
++                        row.pop("poe_state", None)
++                        info = row.get("info")
++                        if isinstance(info, dict) and "poe_class" in info:
++                            row["info"] = {k: v for k, v in info.items() if k != "poe_class"}
 +            view["end"] = len(rows)
 +        return rows, views
 +
@@ -14662,10 +14671,10 @@ index 0000000..e3e2077
 +    assert result.returncode == 0, result.stderr
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..21ca16e
+index 0000000..1fa3314
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1761 @@
+@@ -0,0 +1,1769 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -15910,6 +15919,7 @@ index 0000000..21ca16e
 +    snap = demo_snapshot()
 +    switch = industrial_switch()
 +    switch["blocks"][0]["ports"][-1].update(server=True, link_up=True, speed=1000, watts=4.2)
++    switch["blocks"][1]["ports"][0].update(watts=9.7, poe_state="delivering")
 +    snap.update(panel={"theme": theme, "color_mode": color_mode}, switches=[switch])
 +    p = panel_with(tmp_path, snap)
 +    p.page = 1
@@ -15938,8 +15948,12 @@ index 0000000..21ca16e
 +            assert f"{prefix}1/0/{n}" in frame_labels
 +            if prefix == "GE" and n == 8:
 +                assert "Up 1G  4.2 W" in frame_labels
++            if prefix == "10GE" and n == 1:
++                assert "Down" in frame_labels and not any("9.7" in word for word in frame_labels)
 +            p.key("CENTER")
 +            assert p.detail_row()["port_id"] == f"4:{start+n}"
++            if prefix == "10GE" and n == 1:
++                assert not any("9.7" in word for word in strings(drawn(p)[1]))
 +            p.key("KEY2")
 +            p.key("DOWN")
 +
@@ -15953,6 +15967,7 @@ index 0000000..21ca16e
 +    snap = demo_snapshot()
 +    first = industrial_switch()
 +    first["blocks"][0]["ports"][7].update(server=True, endpoint="wlanpi-da2", link_up=True, speed=1000)
++    first["blocks"][1]["ports"][0].update(poe_state="delivering", watts=9.7, info={"poe_class": 3, "alias": "uplink"})
 +    first["blocks"][1]["ports"][3].update(state="uplink", link_up=True, speed=10000, endpoint="rack-core")
 +    snap.update(panel={"theme": theme, "color_mode": color_mode}, switches=[first, snap["switches"][0]])
 +    p = panel_with(tmp_path, snap)
@@ -16016,6 +16031,7 @@ index 0000000..21ca16e
 +                       for x, y, icon, word in links)
 +    assert touch.icon("sfp", 14).tobytes() != touch.icon("Ports", 14).tobytes()
 +    assert touch.icon("sfp", 14).getbbox()
++    assert "0:10GE1/0/1" not in {row["pin"] for row in menu.connected_ports(p.rows())}
 +    assert labels.count("wlanpi-da2") == 2   # the header and the endpoint on GE8
 +    assert "rack-core" in labels
 +    for upper, lower in ((copper[:4], copper[4:]), (cages[:2], cages[2:])):
@@ -16034,6 +16050,7 @@ index 0000000..21ca16e
 +        tap(("key", "KEY2"))
 +    tap(("row", "0:10GE1/0/1"))
 +    tap(("section", "physical"))
++    assert "uplink" in labels and "PoE class" not in labels and not any("9.7" in str(word) for word in labels)
 +    first.update(answering=False, serial="HX-1")
 +    p.snapshot.write_text(json.dumps(snap))
 +    p.refresh(now=102, force=True)
