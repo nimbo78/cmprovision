@@ -61,6 +61,66 @@ class StationAccessSettingsTest extends TestCase
         $this->assertStringNotContainsString('ssh-ed25519 TEST', $snapshot);
     }
 
+    public function test_second_admin_and_scoped_password_login_go_through_review_and_refresh_the_list(): void
+    {
+        $control = $this->createMock(StationAccessControl::class);
+        $control->method('available')->willReturn(true);
+        $before = ['users' => [['user' => 'claude']], 'ssh_active' => true];
+        $after = ['users' => [['user' => 'claude'], ['user' => 'engineer']], 'ssh_active' => true];
+        $control->method('status')->willReturnOnConsecutiveCalls(['ok' => true, 'result' => $before], ['ok' => true, 'result' => $after]);
+        $plan = ['id' => str_repeat('c', 32), 'user' => 'engineer', 'changes' => ['Create Linux administrator', 'Allow SSH password login for this user']];
+        $control->expects($this->once())->method('prepare')->with([
+            'user' => 'engineer', 'password' => 'private-test-value', 'keys' => '', 'enable_ssh' => false,
+            'create_user' => true, 'allow_password_login' => true,
+        ])->willReturn(['ok' => true, 'result' => $plan]);
+        $control->expects($this->once())->method('apply')->with($plan['id'], 'ONE-TIME')->willReturn(['ok' => true, 'result' => ['applied' => $plan['changes']]]);
+        $this->app->instance(StationAccessControl::class, $control);
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        $page = Livewire::test(StationAccessSettings::class)->assertSee('Create administrator')
+            ->set('createUser', true)->set('newLinuxUser', 'engineer')->set('allowPasswordLogin', true)
+            ->call('prepareSsh', 'private-test-value', '')->assertSee('Authorize changes for engineer');
+        $this->assertStringNotContainsString('private-test-value', json_encode($page->snapshot));
+        $page->call('applySsh', 'ONE-TIME')->assertSet('linuxUser', 'engineer')->assertSet('createUser', false)
+            ->assertSet('allowPasswordLogin', false)->assertSee('SSH access updated.')
+            ->assertSeeHtml('value="engineer"');
+    }
+
+    public function test_password_login_can_be_requested_for_an_existing_admin_without_creating_one(): void
+    {
+        $control = $this->controller();
+        $control->expects($this->once())->method('prepare')->with($this->callback(fn ($input) =>
+            $input['user'] === 'operator' && $input['allow_password_login'] && empty($input['create_user'])
+        ))->willReturn(['ok' => false, 'error' => 'Set a password first.']);
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        Livewire::test(StationAccessSettings::class)->set('allowPasswordLogin', true)
+            ->call('prepareSsh', '', '')->assertSee('Set a password first.');
+    }
+
+    public function test_failed_apply_allows_retry_only_while_the_request_is_still_pending(): void
+    {
+        $control = $this->createMock(StationAccessControl::class);
+        $control->method('available')->willReturn(true);
+        $plan = ['id' => str_repeat('b', 32), 'user' => 'engineer', 'changes' => ['Create Linux administrator']];
+        $status = ['users' => [['user' => 'operator']], 'ssh_active' => true];
+        $control->method('status')->willReturnOnConsecutiveCalls(
+            ['ok' => true, 'result' => $status],
+            ['ok' => true, 'result' => $status + ['pending' => $plan]],
+            ['ok' => true, 'result' => $status],
+        );
+        $control->method('prepare')->willReturn(['ok' => true, 'result' => $plan]);
+        $control->method('apply')->willReturnOnConsecutiveCalls(
+            ['ok' => false, 'error' => 'Incorrect code.'],
+            ['ok' => false, 'error' => 'The account changed. Prepare a new request.'],
+        );
+        $this->app->instance(StationAccessControl::class, $control);
+        $this->actingAs(User::factory()->create())->withSession(['auth.password_confirmed_at' => time()]);
+        Livewire::test(StationAccessSettings::class)->set('createUser', true)->set('newLinuxUser', 'engineer')
+            ->call('prepareSsh', 'private-test-value', '')->call('applySsh', 'WRONG')
+            ->assertSee('Incorrect code.')->assertSee('Authorize changes for engineer')
+            ->call('applySsh', 'ONE-TIME')->assertSet('plan', null)->assertSee('Prepare a new request.')
+            ->assertSee('Review SSH changes');
+    }
+
     public function test_ssh_apply_uses_server_owned_request_reference_and_one_time_code(): void
     {
         $control = $this->controller();

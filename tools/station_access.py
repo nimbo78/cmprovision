@@ -96,24 +96,39 @@ class Controller:
                 plan = self.pending()
                 return self.backend.status() | {'pending': self.summary(plan) if plan else None}
             if action == 'prepare':
-                self.schema(data, ['action', 'user', 'password', 'keys', 'enable_ssh'])
+                data = {'create_user': False, 'allow_password_login': False} | data
+                self.schema(data, ['action', 'user', 'password', 'keys', 'enable_ssh', 'create_user', 'allow_password_login'])
                 if self.pending():
                     raise ValueError('Finish or cancel the existing access request first.')
                 user, password, keys, enable = (data[k] for k in ['user', 'password', 'keys', 'enable_ssh'])
+                create = data['create_user']
+                allow_password = data['allow_password_login']
                 if not isinstance(user, str) or not re.fullmatch('[a-z_][a-z0-9_-]{0,31}', user) or user == 'root':
-                    raise ValueError('Choose an existing ordinary Linux administrator.')
+                    raise ValueError('Choose an ordinary Linux username.')
                 if not isinstance(password, str) or len(password) > 256 or any(c in password for c in '\r\n\x00') or (password and len(password) < 8):
                     raise ValueError('Use a Linux password of 8–256 characters without line breaks.')
-                if not isinstance(keys, str) or len(keys) > 16384 or type(enable) is not bool:
-                    raise ValueError('Invalid keys or SSH service choice.')
-                if not password and not keys.strip() and not enable:
-                    raise ValueError('Choose at least one SSH access change.')
-                identity = self.backend.inspect(user)
+                if not isinstance(keys, str) or len(keys) > 16384 or any(type(flag) is not bool for flag in (enable, create, allow_password)):
+                    raise ValueError('Invalid keys or station access choice.')
                 keys = self.backend.validate_keys(keys)
+                if create and not (password or keys):
+                    raise ValueError('Set a Linux password or add a public SSH key for the new administrator.')
+                if create and allow_password and not password:
+                    raise ValueError('Set a Linux password to allow SSH password login for the new administrator.')
+                if not (password or keys or enable or allow_password):
+                    raise ValueError('Choose at least one SSH access change.')
+                identity = self.backend.inspect(user, create_user=create, allow_password_login=allow_password,
+                                                require_password=allow_password and not password)
                 changes = {'password_hash': self.backend.hash_password(password) if password else '',
-                           'keys': keys, 'enable_ssh': enable}
+                           'keys': keys, 'enable_ssh': enable, 'create_user': create, 'allow_password_login': allow_password}
                 fingerprints = ['SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(key.split()[1])).digest()).decode().rstrip('=') for key in keys.splitlines()]
-                labels = (['Change Linux password'] if password else []) + ['Add SSH key ' + value + '; preserve existing keys' for value in fingerprints] + (['Enable SSH service'] if enable else [])
+                labels = ['Create Linux administrator (sudo group)'] if create else []
+                if password:
+                    labels.append('Change Linux password')
+                labels.extend('Add SSH key ' + value + '; preserve existing keys' for value in fingerprints)
+                if allow_password:
+                    labels.append('Allow SSH password login for this user')
+                if enable:
+                    labels.append('Enable SSH service')
                 now = int(self.clock())
                 plan = {'id': secrets.token_hex(16), 'user': user, 'identity': identity, 'payload': changes,
                         'changes': labels, 'created_at': now, 'expires_at': now + 300, 'state': 'awaiting_approval', 'attempts': 0}
@@ -143,9 +158,14 @@ class Controller:
                 (self.root / 'pending.json').unlink()
                 receipt = self.summary(plan) | {'state': 'failed', 'finished_at': int(self.clock())}
                 self.write('receipt.json', receipt)
-                if self.backend.inspect(plan['user']) != plan['identity']:
+                changes = plan['payload']
+                allow_password = changes.get('allow_password_login', False)
+                identity = self.backend.inspect(plan['user'], create_user=changes.get('create_user', False),
+                                                allow_password_login=allow_password,
+                                                require_password=allow_password and not changes['password_hash'])
+                if identity != plan['identity']:
                     raise ValueError('The Linux account changed after preparation. Prepare and approve a new request.')
-                applied = self.backend.apply(plan['identity'], plan['payload'])
+                applied = self.backend.apply(identity, changes)
                 receipt.update(state='applied', applied=applied)
                 self.write('receipt.json', receipt)
                 return receipt
