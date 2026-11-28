@@ -598,6 +598,7 @@ def industrial_ports(c, x, y, width, height, switch, tick, by_serial, by_locatio
 
 
 def ports(c, x, y, width, height, switches, modules, tick, host=None, observations=()):
+    """Draw the current panel and return the bracket-key hint when it has another page."""
     from hdmi_port_info import industrial_columns
     if not switches:
         c.box(x, y, width, height, 'PORTS')
@@ -664,6 +665,7 @@ def ports(c, x, y, width, height, switches, modules, tick, host=None, observatio
         if len(switches) > 1:
             label += ' / Next: ' + safe(switches[(tick + 1) % len(switches)]['name'])
         c.marquee(x + 2, y + height - 2, label, width - 4, 'dim')
+        return '[ ] switches' if len(switches) > 1 else '[ ] port pages'
 
 
 def hardware_lines(module):
@@ -734,12 +736,13 @@ def desk(c, data, module, now, tick, switch_offset=0):
                    + max(0, len(s['blocks']) - 1) + 4 for s in switches if s.get('answering') is not False), default=0)
     width = max(30, min(c.cols - 42, max(round(c.cols * 0.60), natural)))
     height = min(17, max(11, c.rows - y - 10))
-    ports(c, 0, y, c.cols if c.cols < 100 else width, height, switches,
-          data.get('modules', []), tick + switch_offset, data.get('host'), observations)
+    switch_keys = ports(c, 0, y, c.cols if c.cols < 100 else width, height, switches,
+                        data.get('modules', []), tick + switch_offset, data.get('host'), observations)
     if c.cols >= 100:
         c.box(width + 2, y, c.cols - width - 2, height, 'DEVICE CARD')
         detail(c, width + 4, y + 1, c.cols - width - 6, module, now, height=height - 2)
     table(c, y + height + 1, data.get('modules', []) + data.get('recognized', []), tick, data.get('unknown', []))
+    return switch_keys
 
 
 def table_rows(modules, unknown):
@@ -905,16 +908,19 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
         c.wrap(0, 0, 'cmprovision HDMI: terminal too small. Need at least 60 columns and 24 rows. Use Settings > HDMI display or a smaller console font.', cols, rows, 'warn')
         return c
     modules = data.get('modules', [])
+    switches = data.get('switches', [])
+    online = [s for s in switches if s.get('answering') is not False]
     cards = passports(data) if view == 'engineer' else modules + data.get('recognized', [])
     module = cards[selected % len(cards)] if cards else None
     if view == 'auto':
         view = 'engineer' if module and module['state'] in ('fail', 'stale') else 'desk'
     elif view in ('map', 'tour'):
         view = 'desk'  # The text console paginates the physical panel.
+    switch_keys = None
     if view in ('flow', 'engineer'):
         (flow if view == 'flow' else engineer)(c, data, module, now, tick)
     else:
-        desk(c, data, module, now, tick, switch_offset)
+        switch_keys = desk(c, data, module, now, tick, switch_offset)
     problems = [m for m in modules if m['state'] in ('fail', 'stale')]
     stale = now - data.get('generated_at', 0) > 10
     c.line(rows - 5)
@@ -923,10 +929,10 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
     elif problems:
         m = problems[tick % len(problems)]
         c.marquee(0, rows - 4, '! ' + m['port'] + ': ' + (m.get('detail') or phase(m)), cols, 'fail')
-    elif any(not s['answering'] for s in data.get('switches', [])):
+    elif view != 'desk' and len(online) < len(switches):
         c.text(0, rows - 4, '! A switch is offline.', 'warn')
     else:
-        unknown = sum(p.get('state') in ('unrecognized', 'quiet') for s in data.get('switches', []) for b in s['blocks'] for p in b['ports'])
+        unknown = sum(p.get('state') in ('unrecognized', 'quiet') for s in online for b in s['blocks'] for p in b['ports'])
         c.text(0, rows - 4, ('! %d unrecognized/quiet ports. Open Ports in the web UI.' % unknown) if unknown else 'READ ONLY / ' + safe(data.get('clock')), 'warn' if unknown else 'dim')
     if rows < 30:
         # Short consoles keep their card height; the otherwise empty footer row holds scrolling links.
@@ -934,8 +940,11 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
     c.text(0, rows - 2, ('PAUSED' if paused else 'AUTO ROTATION') + ' / CARD %d/%d / %s' %
            ((selected % len(cards)) + 1 if cards else 0, len(cards), view.upper()), 'dim')
     keys = 'Alt+F1 console / Alt+F8 board / <- -> / Space pause / V view'
-    if len(data.get('switches', [])) > 1:
-        keys += ' / [ ] switches'
+    if switch_keys:
+        if len(keys) + 3 + len(switch_keys) <= cols:
+            keys += ' / ' + switch_keys
+        else:
+            c.text(cols - len(switch_keys), rows - 2, switch_keys, 'dim')
     c.text(max(0, cols - len(keys)), rows - 1, keys, 'dim')
     return c
 
@@ -1297,10 +1306,13 @@ def display(screen):
             geometry = graphics.output.size if graphics.output else None
             if update is not None or geometry != last_geometry:
                 switches = data.get('switches') or []
-                stops = len(switches)
-                if geometry:
+                if not switches:
+                    stops = 1  # A stand without a configured switch has its own overview.
+                elif geometry:
                     from hdmi_graphics import tour_stops
                     stops = tour_stops(switches, geometry)
+                else:
+                    stops = sum(s.get('answering') is not False for s in switches)
                 last_geometry = geometry
             if view != 'auto':
                 profile = None
@@ -1316,7 +1328,7 @@ def display(screen):
                     last_rotation = monotonic
                 if view == 'auto' and (profile is None or (rotation.pending and not urgent_profile)):
                     urgent_profile = bool(rotation.pending)
-                    index = rotation.take(profiles, tick, len(cards)+max(1, stops), periodic=profile is None)
+                    index = rotation.take(profiles, tick, len(cards)+stops, periodic=profile is None)
                     if index is not None:
                         profile = card_key(profiles[index])
                         last_rotation = monotonic
@@ -1362,7 +1374,7 @@ def display(screen):
                 rotation.last_tour = 0
                 tick, switch_offset = 0, 0
                 last_rotation = time.monotonic()
-            elif key in (ord('['), ord(']')):
+            elif key in (ord('['), ord(']')) and stops:
                 profile = None
                 switch_offset += 1 if key == ord(']') else -1
                 last_rotation = time.monotonic()

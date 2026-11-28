@@ -90,7 +90,7 @@ In **Settings → System → HDMI display**, set **Screen** to **Full switch map
 
 - **24 copper ports** fit in two banks of twelve. Odd ports sit above even ports, and the device table fits below the four SFP or SFP+ uplinks.
 - **48 copper ports** occupy four banks of twelve. Read ports 1–24 across the upper half, then 25–48 across the lower half. The four uplinks have their own row below the copper ports.
-- **Huawei S5735I-S8U4XN-V2** has eight GE copper ports on the left and four 10GE SFP+ cages on the right. Both columns are numbered from the top. The first cage sits beside GE3 and the last beside GE8.
+- **Huawei S5735I-S8U4XN-V2** uses two groups of tiles in landscape. The left group shows GE1–GE4 above GE5–GE8. The four 10GE SFP+ cages form a 2 × 2 group on the right. Each tile shows its endpoint and link. Copper tiles also show PoE.
 
 ![Demonstration Catalyst 9200L showing all 48 copper ports, their devices, Ethernet and PoE, and four SFP+ uplinks on a single HDMI screen.](assets/guides/hdmi-full-switch-48.png)
 
@@ -182,7 +182,7 @@ port. A new USB-only board can appear as **Unregistered module**, separate from 
 Progress, rate and ETA use the same calculations as the web UI. Silent modules are marked **NO REPORT**. Diagnostic
 temperature, power and other facts are **saved snapshots**: their source and age are always shown. They are not live
 hardware sensors. If application data stops updating for more than ten seconds, **DATA STALE** replaces the normal
-footer. When a switch goes offline, its name, model and last known serial share one summary row. Its port map returns on the next successful poll. The Huawei S5735I-S8U4XN-V2 map follows the front panel, with eight RJ45 ports on the left and four 10GE SFP+ cages on the right.
+footer. An offline switch appears as one row with its name, model and last known serial. The automatic tour and the bracket keys visit only responding switches. Its map returns on the next successful poll.
 
 No image files, project scripts, account passwords, SNMP credentials or run tokens are sent to the terminal. The local
 screen is intended for a trusted support area: it shows device names, MAC addresses, serial numbers, project names and failure hints.

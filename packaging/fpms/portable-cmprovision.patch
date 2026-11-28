@@ -14644,10 +14644,10 @@ index 0000000..e3e2077
 +    assert result.returncode == 0, result.stderr
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..296aefc
+index 0000000..778fac6
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1539 @@
+@@ -0,0 +1,1662 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -15909,18 +15909,21 @@ index 0000000..296aefc
 +
 +
 +@pytest.mark.parametrize("theme", ["new", "classic"])
-+def test_hyperpixel_industrial_face_targets_and_offline_navigation(tmp_path, theme, monkeypatch):
++@pytest.mark.parametrize("color_mode", ["dark", "light"])
++def test_hyperpixel_industrial_face_targets_and_offline_navigation(tmp_path, theme, color_mode, monkeypatch):
++    import fpms.integrations.cmprovision_touch as touch
 +    from fpms.integrations.cmprovision_touch import TouchMenu
 +
 +    snap = demo_snapshot()
 +    first = industrial_switch()
-+    snap.update(panel={"theme": theme}, switches=[first, snap["switches"][0]])
++    first["blocks"][0]["ports"][7].update(server=True, endpoint="wlanpi-da2", link_up=True, speed=1000)
++    snap.update(panel={"theme": theme, "color_mode": color_mode}, switches=[first, snap["switches"][0]])
 +    p = panel_with(tmp_path, snap)
 +    p.page = 1
 +    menu = TouchMenu(p)
 +    labels = []
-+    bolts, unknowns = [], []
-+    label, mark = menu.label, menu.mark
++    bolts, unknowns, links = [], [], []
++    label, mark, icon_caption = menu.label, menu.mark, touch.icon_caption
 +
 +    def record(x, y, value, *args, **kw):
 +        labels.append(value)
@@ -15933,6 +15936,15 @@ index 0000000..296aefc
 +            bolts.append((x, y))
 +        return mark(x, y, symbol, *args, **kw)
 +
++    def record_caption(draw, x, y, symbol, caption, *args, **kw):
++        if symbol == "Ports":
++            links.append((x, y, caption))
++        if symbol == "bolt":
++            bolts.append((x, y))
++            if caption == "?":
++                unknowns.append((x, y))
++        return icon_caption(draw, x, y, symbol, caption, *args, **kw)
++
 +    def render():
 +        labels.clear()
 +        menu.frame()
@@ -15944,15 +15956,27 @@ index 0000000..296aefc
 +
 +    monkeypatch.setattr(menu, "label", record)
 +    monkeypatch.setattr(menu, "mark", record_mark)
++    monkeypatch.setattr(touch, "icon_caption", record_caption)
 +    render()
-+    assert {"S5735I-S8U4XN-V2", "RJ45", "10GE SFP+"} <= set(labels)
 +    tiles = {key: box for box, (kind, key) in menu.targets if kind == "row"}
 +    copper = [tiles[f"0:GE1/0/{n}"] for n in range(1, 9)]
 +    cages = [tiles[f"0:10GE1/0/{n}"] for n in range(1, 5)]
-+    assert len(tiles) == 12 and copper[0][2] < cages[0][0]
-+    assert copper[2][1] == cages[0][1] and copper[7][1] == cages[3][1]
-+    assert copper[4][1] - copper[3][1] > copper[1][1] - copper[0][1]
-+    assert all(b[3] < c[1] for bank in (copper, cages) for b,c in zip(bank, bank[1:]))
++    assert len(tiles) == 12 and max(b[2] for b in copper) < min(b[0] for b in cages)
++    for left, top, right, bottom in tiles.values():
++        width, height = right - left + 1, bottom - top + 1
++        assert min(width, height) >= 44 and max(width, height) <= 1.5 * min(width, height)
++        mid_x = (left + right) // 2
++        assert menu.image.getpixel((mid_x, top)) != menu.image.getpixel((mid_x, top - 2))
++    assert {"S5735I-S8U4XN-V2", "GE RJ45", "10GE SFP+"} <= set(labels)
++    assert {f"GE{n}" for n in range(1, 9)} | {f"10GE{n}" for n in range(1, 5)} <= set(labels)
++    assert labels.count("wlanpi-da2") == 2   # the header and the endpoint on GE8
++    assert any(copper[7][0] <= x <= copper[7][2] and copper[7][1] <= y <= copper[7][3]
++               and caption == "Up · 1G" for x, y, caption in links)
++    for upper, lower in ((copper[:4], copper[4:]), (cages[:2], cages[2:])):
++        assert len({b[1] for b in upper}) == len({b[1] for b in lower}) == 1
++        assert upper[0][3] < lower[0][1]
++        assert [b[0] for b in upper] == [b[0] for b in lower]
++        assert all(a[2] < b[0] for a, b in zip(upper, upper[1:]))
 +    for bank, supports_poe in ((copper, True), (cages, False)):
 +        for left, top, right, bottom in bank:
 +            for readings in (bolts, unknowns):
@@ -15968,18 +15992,117 @@ index 0000000..296aefc
 +    p.refresh(now=102, force=True)
 +    render()
 +    assert p.detail is None and {"rack-hw", "S5735I-S8U4XN-V2", "HX-1"} <= set(labels)
-+    assert not any(action[0] in ("row", "port_device", "section") for _, action in menu.targets)
-+    assert ("offset", 1) in [a for _, a in menu.targets]
-+    tap(("offset", 1))
++    assert not any(kind in ("offset", "port_device", "section") for _, (kind, _) in menu.targets)
++    assert {key.split(":")[0] for _, (kind, key) in menu.targets if kind == "row"} == {"1"}
 +    tap(("row", "1:Gi0/1"))
 +    assert menu.port_row()["name"] == SWITCH + " Gi0/1"
 +    tap(("key", "KEY2"))
-+    tap(("offset", 0))
 +    first["answering"] = True
 +    p.snapshot.write_text(json.dumps(snap))
 +    p.refresh(now=103, force=True)
 +    render()
++    assert "HX-1" not in labels and ("offset", 0) in [a for _, a in menu.targets]
++    tap(("offset", 0))
 +    assert {key for _, (kind, key) in menu.targets if kind == "row"} == set(tiles)
++
++
++@pytest.mark.parametrize("industrial", [True, False])
++def test_hyperpixel_map_respects_an_explicitly_unidentified_endpoint(tmp_path, monkeypatch, industrial):
++    from fpms.integrations.cmprovision_touch import TouchMenu
++
++    snap = demo_snapshot()
++    switch = industrial_switch() if industrial else dict(name="rack-sw", blocks=[
++        dict(rows=2, label="RJ45", ports=[dict(name="Gi0/1", number=1), dict(name="Gi0/2", number=2)])])
++    port = switch["blocks"][0]["ports"][0]
++    port.update(port_id="s4p5", state="unrecognized", link_up=True, serials=[], endpoint=None)
++    second = switch["blocks"][0]["ports"][1]
++    second.update(state="free", link_up=False, endpoint=None)
++    snap.update(switches=[switch], modules=[], unknown=[dict(
++        port_id="s4p5", state="unrecognized", name="Cisco IP Phone", mac="00:11:22:33:aa:bb")])
++    p = panel_with(tmp_path, snap)
++    p.page = 1
++    menu, seen = TouchMenu(p), []
++    label = menu.label
++
++    def record(x, y, value, *args, **kw):
++        seen.append((x, y, value))
++        return label(x, y, value, *args, **kw)
++
++    def tile_labels(name):
++        seen.clear()
++        menu.frame()
++        left, top, right, bottom = next(box for box, action in menu.targets if action == ("row", "0:" + name))
++        return {value for x, y, value in seen if left <= x <= right and top <= y <= bottom}
++
++    monkeypatch.setattr(menu, "label", record)
++    port = p.data["switches"][0]["blocks"][0]["ports"][0]
++    shown = tile_labels(port["name"])
++    assert "No ID" in shown and not shown.intersection({"Cisco IP Phone", "AABB"})
++    assert "No ID" not in tile_labels(second["name"])
++    port["endpoint"] = "verified-host"
++    assert "verified-host" in tile_labels(port["name"]) and "Cisco IP Phone" not in tile_labels(port["name"])
++    del port["endpoint"]
++    assert {"Cisco IP Phone", "AABB"} <= tile_labels(port["name"])
++
++
++def test_hyperpixel_offline_list_pages_independently_of_the_live_map_and_connected(tmp_path, monkeypatch):
++    from fpms.integrations.cmprovision_touch import TouchMenu
++
++    def switch(name, up):
++        return dict(name=name, host=name + ".lab", answering=up, model="CX", serial="SN-" + name,
++                    blocks=[dict(rows=1, ports=[dict(name="Ge1", port_id=name + "-1", link_up=True)])])
++
++    snap = demo_snapshot()
++    snap["switches"] = [switch("down1", False), switch("a", True), switch("down2", False),
++                        switch("b", True), switch("down3", False), switch("down4", False), switch("down5", False)]
++    p = panel_with(tmp_path, snap)
++    p.page = 1
++    menu, seen = TouchMenu(p), []
++    label = menu.label
++
++    def record(x, y, value, *args, **kw):
++        seen.append(value)
++        return label(x, y, value, *args, **kw)
++
++    def render():
++        seen.clear()
++        menu.frame()
++        return {key for _, (kind, key) in menu.targets if kind == "row"}
++
++    def tap(target):
++        left, top, right, bottom = next(box for box, action in menu.targets if action == target)
++        menu.tap((left + right) // 2, (top + bottom) // 2)
++        return render()
++
++    monkeypatch.setattr(menu, "label", record)
++    assert render() == {"1:Ge1"} and "down1" in seen
++    assert tap(("offset", 1)) == {"3:Ge1"} and "down1" in seen
++    assert tap(("offline_offset", 2)) == {"3:Ge1"} and "down3" in seen
++    assert tap(("offline_offset", 4)) == {"3:Ge1"} and "down5" in seen
++    assert tap(("offset", 0)) == {"1:Ge1"} and "down5" in seen
++    assert tap(("offset", 1)) == {"3:Ge1"}
++    assert tap(("port_mode", "list")) == {"1:Ge1", "3:Ge1"} and "down5" in seen
++    assert tap(("offline_offset", 2)) == {"1:Ge1", "3:Ge1"} and "down3" in seen
++    assert tap(("port_mode", "map")) == {"3:Ge1"}
++    tap(("row", "3:Ge1"))
++
++    snap["switches"][1]["answering"] = False
++    p.snapshot.write_text(json.dumps(snap))
++    p.refresh(now=102, force=True)
++    render()
++    assert menu.port_row()["port_id"] == "b-1"
++    assert tap(("key", "KEY2")) == {"3:Ge1"} and not any(a[0] == "offset" for _, a in menu.targets)
++    snap["switches"][3]["answering"] = False
++    p.snapshot.write_text(json.dumps(snap))
++    p.refresh(now=103, force=True)
++    assert render() == set() and not any(a[0] in ("offset", "port_mode") for _, a in menu.targets)
++    assert "No switches responding" in seen
++    tap(("offline_offset", 4))
++    assert "down5" in seen
++    snap["switches"][0]["answering"] = True
++    p.snapshot.write_text(json.dumps(snap))
++    p.refresh(now=104, force=True)
++    assert render() == {"0:Ge1"} and "No switches responding" not in seen
 +
 +
 +def test_typographic_punctuation_from_the_server_is_drawn_as_ascii():
@@ -17084,10 +17207,10 @@ index 0000000..922834a
 +    /bin/sh "$0" --inside "$mode" "$root" "$source"
 diff --git a/fpms/integrations/cmprovision_touch.py b/fpms/integrations/cmprovision_touch.py
 new file mode 100644
-index 0000000..eeaf72d
+index 0000000..099dadd
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_touch.py
-@@ -0,0 +1,878 @@
+@@ -0,0 +1,916 @@
 +"""Native landscape station menu for the rectangular HyperPixel 4.0 Touch."""
 +
 +import ipaddress
@@ -17146,6 +17269,12 @@ index 0000000..eeaf72d
 +    return "?", "No reading", "muted"
 +
 +
++def port_connected(row, power_ink):
++    return (row.get("link_up") is True or bool(row.get("server")) or isinstance(row.get("station"), dict)
++            or row.get("state") in ("module", "recognized", "unrecognized", "quiet", "boot", "uplink")
++            or power_ink == "good")
++
++
 +class TouchMenu:
 +    def __init__(self, panel):
 +        self.panel = panel
@@ -17153,6 +17282,7 @@ index 0000000..eeaf72d
 +        self.filter_state = None
 +        self.port_mode = "map"
 +        self.map_anchor = None
++        self.offline_offset = 0
 +        self.history = []
 +        self.section = None
 +        self.bound_port = None
@@ -17211,20 +17341,24 @@ index 0000000..eeaf72d
 +        return x + width
 +
 +    def header_pager(self, length, step, right, y):
++        self.offset = self.page_arrows(length, step, right, y, self.offset, "offset")
++
++    def page_arrows(self, length, step, right, y, current, action):
 +        last = max(0, (length - 1) // step * step)
-+        self.offset = min(max(0, self.offset), last)
++        current = min(max(0, current), last)
 +        if not last:
-+            return
++            return current
 +        for x, symbol, offset in (
-+            (right - 92, "back", self.offset - step),
-+            (right - 44, "next", self.offset + step),
++            (right - 92, "back", current - step),
++            (right - 44, "next", current + step),
 +        ):
 +            box = (x, y, x + 43, y + 43)
 +            allowed = 0 <= offset <= last
 +            self.draw.rounded_rectangle(box, radius=8, fill=self.c["surface"], outline=self.c["line"])
 +            self.mark(x + 12, y + 12, symbol, 20, "fg" if allowed else "line")
 +            if allowed:
-+                self.targets.append((box, ("offset", offset)))
++                self.targets.append((box, (action, offset)))
++        return current
 +
 +    def card(self, box, color="surface"):
 +        self.draw.rounded_rectangle(
@@ -17291,9 +17425,13 @@ index 0000000..eeaf72d
 +                self.history.clear()
 +                self.section = self.bound_port = None
 +                self.map_anchor = None
++                self.offline_offset = 0
 +            elif kind == "offset":
 +                self.offset = value
-+                self.map_anchor = None
++                if p.page == 1 and p.detail is None and self.port_mode == "map":
++                    self.map_anchor = None
++            elif kind == "offline_offset":
++                self.offline_offset = value
 +            elif kind == "key":
 +                modal = any(self.presented[i] for i in (3, 6, 7))
 +                p.key(value)
@@ -17309,7 +17447,6 @@ index 0000000..eeaf72d
 +                p.scroll = self.offset = 0
 +            elif kind == "port_mode":
 +                self.port_mode, self.offset = value, 0
-+                self.map_anchor = None
 +            elif kind == "rescue" and p.rescue_available():
 +                p.rescue_menu.show()
 +            elif kind == "section" and p.detail and p.detail[0] == "port" and self.port_row():
@@ -17358,11 +17495,9 @@ index 0000000..eeaf72d
 +        p = self.panel
 +        if p.page == 1 and p.detail is None and self.history and self.history[0][0] == 1:
 +            # A poll closed the card of a switch which stopped answering.
++            self.offset = self.history[0][2]
 +            self.history.clear()
 +            self.section = self.bound_port = None
-+            self.port_mode = "map"
-+            selected = p.selected()
-+            self.map_anchor = (selected["switch_key"], 0) if selected else None
 +        self.presented = self.state()
 +        _, detail, theme, setup, _, _, power, rescue = self.presented
 +        self.targets = []
@@ -17546,19 +17681,7 @@ index 0000000..eeaf72d
 +            self.device_line((25, y + 1, 769, y + 56), row, ("row", identity(row)))
 +
 +    def connected_ports(self, rows):
-+        result = []
-+        for row in rows:
-+            if "pin" not in row:
-+                continue
-+            if (
-+                row.get("link_up") is True
-+                or row.get("server")
-+                or isinstance(row.get("station"), dict)
-+                or row.get("state") in ("module", "recognized", "unrecognized", "quiet", "boot", "uplink")
-+                or port_power(row)[2] == "good"
-+            ):
-+                result.append(row)
-+        return result
++        return [row for row in rows if "pin" in row and port_connected(row, port_power(row)[2])]
 +
 +    def port_identity(self, row):
 +        if row.get("state") == "free" or (row.get("link_up") is False and not row.get("serials")):
@@ -17590,52 +17713,104 @@ index 0000000..eeaf72d
 +        self.rendered_ports = {row.get("pin"): row["port_id"] for row in rows if row.get("port_id")}
 +        connected = self.connected_ports(rows)
 +        switches = objects(p.data.get("switches"), 64)
++        offline = [s for s in switches if s.get("answering") is False]
 +        self.label(19, 76, "Ports", 30, width=330, weight="bold")
++        if offline:
++            all_offline = len(offline) == len(switches)
++            self.offline_switches(offline, all_offline)
++            if all_offline:
++                self.map_anchor, self.offset = None, 0
++                return
++        else:
++            self.offline_offset = 0
 +        for x, right, mode, label in (
 +            (524, 602, "map", "Map"),
 +            (609, 781, "list", f"Connected {len(connected)}"),
 +        ):
 +            self.button((x, 69, right, 113), label, ("port_mode", mode), mode == self.port_mode)
 +        if self.port_mode == "list":
-+            switch = text(switches[0].get("name")) if len(switches) == 1 else f"{len(switches)} switches"
++            online = [s for s in switches if s.get("answering") is not False]
++            switch = text(online[0].get("name") or online[0].get("host")) if len(online) == 1 else f"{len(online)} switches"
 +            self.label(20, 109, switch, 15, "muted", 350)
-+            self.header_pager(len(connected), 4, 510, 69)
-+            self.connections(connected, len(switches) > 1)
++            step = 3 if offline else 4
++            self.offset = self.offset // step * step
++            self.header_pager(len(connected), step, 510, 69)
++            self.connections(connected, len(online) > 1, step)
 +            return
 +        cols = 14 if p.ports_map() == "whole" else 10
 +        banks = [
-+            (view, view["columns"][i : i + cols], objects(switches[n].get("blocks"), 32), i // cols)
-+            for n, view in enumerate(views)
++            (n, view, view["columns"][i : i + cols], i // cols)
++            for n, view in enumerate(views) if view["answering"]
 +            for i in range(0, 1 if view["slots"] else max(1, len(view["columns"])), cols)
 +        ]
 +        if self.map_anchor:
-+            pages = [i for i, (view, _, _, _) in enumerate(banks) if view["key"] == self.map_anchor[0]]
++            key, bank, switch_index = self.map_anchor
++            pages = [i for i, (_, view, _, _) in enumerate(banks) if view["key"] == key]
 +            if pages:
-+                self.offset = pages[min(self.map_anchor[1], len(pages) - 1)]
++                self.offset = pages[min(bank, len(pages) - 1)]
++            else:
++                self.offset = next((i for i, (n, _, _, _) in enumerate(banks) if n >= switch_index), 0)
 +        self.header_pager(len(banks), 1, 510, 69)
 +        if not banks:
 +            self.label(22, 167, "No switches configured", 22, "muted")
 +            return
-+        view, columns, blocks, bank = banks[self.offset]
-+        self.map_anchor = (view["key"], bank)
-+        if not view["answering"]:
-+            self.card((18, 135, 781, 179))
-+            self.label(29, 148, "No response", 17, "warn", 124, "bold")
-+            fields = list(dict.fromkeys(v for v in (view["name"], view["model"], view["serial"] or view["host"]) if v))
-+            width = 616 // len(fields)
-+            for i, value in enumerate(fields):
-+                self.label(154 + i * width, 148, value, 16, "fg", width - 10, hostname=True)
-+            return
++        n, view, columns, bank = banks[self.offset]
++        self.map_anchor = (view["key"], bank, n)
 +        self.label(20, 109, view["name"], 15, "muted", 192 if view["slots"] else 354, hostname=True)
++        self.card((18, 137, 781, 336))
 +        if view["slots"]:
 +            self.label(224, 109, view["model"], 15, "fg", 266, "bold")
-+            self.label(20, 134, "RJ45", 15, "muted", 355, "bold")
-+            self.label(409, 134, "10GE SFP+", 15, "muted", 355, "bold")
-+            for group, pos, i in view["slots"]:
-+                x, y = 20 + group * 389, 154 + pos * 15
-+                self.map_tile(rows[i], (x, y, x + 370, y + 27), supports_poe=group == 0)
-+            return
-+        self.card((18, 137, 781, 336))
++            for group, left, per_row, prefix, caption in ((0, 36, 4, "GE", "GE RJ45"),
++                                                        (1, 544, 2, "10GE", "10GE SFP+")):
++                self.label(left, 146, caption, 15, "muted", 190, "bold")
++                slots = sorted((pos, i) for g, pos, i in view["slots"] if g == group)
++                for k, (_, i) in enumerate(slots):
++                    x, y = left + (k % per_row) * 112, 167 + (k // per_row) * 83
++                    row = rows[i]
++                    self.map_tile(row, (x, y, x + 103, y + 77), supports_poe=group == 0,
++                                  caption=prefix + text(row.get("number")))
++        else:
++            self.switch_tiles(rows, columns, objects(switches[n].get("blocks"), 32))
++        y = 341 if offline else 358
++        self.mark(23, y + 3, "Ports", 17)
++        self.label(46, y + 5, "Link", 16, "muted", 47)
++        self.mark(103, y + 3, "bolt", 17)
++        self.label(126, y + 5, "PoE", 16, "muted", 45)
++        self.label(183, y + 5, "?  No reading", 16, "muted", 145)
++        self.logo(427, y, 23)
++        self.label(456, y + 5, "This station", 16, "muted", 130)
++        self.logo(589, y, 23, True)
++        self.label(620, y + 5, "Other station", 16, "muted", 150)
++
++    def offline_switches(self, switches, all_offline):
++        step = 4 if all_offline else 2
++        if all_offline:
++            self.label(21, 112, "No switches responding", 16, "warn", 540)
++            self.card((18, 138, 781, 138 + 54 * min(step, len(switches))))
++        else:
++            self.card((18, 367, 781, 411))
++            caption = "Offline" if len(switches) == 1 else f"Offline {len(switches)}"
++            self.label(28, 381, caption, 16, "warn", 93, "bold")
++        first = self.offline_offset // step * step
++        self.offline_offset = self.page_arrows(len(switches), step, 781, 69 if all_offline else 367,
++                                              first, "offline_offset")
++        for k, switch in enumerate(switches[self.offline_offset:self.offline_offset + step]):
++            name = text(switch.get("name") or switch.get("host")) or "Switch"
++            model, serial = text(switch.get("model")), text(switch.get("serial") or switch.get("host"))
++            if all_offline or len(switches) == 1:
++                x, y = (31, 155 + k * 54) if all_offline else (131, 381)
++                if all_offline and k:
++                    self.draw.line((19, y - 17, 780, y - 17), fill=self.c["line"])
++                self.label(x, y, name, 17, "fg", 240, "bold", hostname=True)
++                self.label(x + 248, y, model, 16, "muted", 207, hostname=True)
++                self.label(x + 464, y, serial if serial != name else "", 16, "muted", 176, "mono", hostname=True)
++            else:
++                x = 132 + k * 273
++                self.label(x, 372, name, 16, "fg", 261, "bold", hostname=True)
++                detail = " · ".join(s for s in (model, serial) if s and s != name)
++                self.label(x, 393, detail, 14, "muted", 261, hostname=True)
++
++    def switch_tiles(self, rows, columns, blocks):
 +        count = max(1, len(columns))
 +        splits = sum(a[2] != b[2] for a, b in zip(columns, columns[1:]))
 +        width, gap = 741, 6
@@ -17657,17 +17832,8 @@ index 0000000..eeaf72d
 +                y = 167 + side * 83
 +                self.map_tile(row, (x, y, x + cell - 1, y + 77))
 +            x += cell + gap
-+        self.mark(23, 361, "Ports", 17)
-+        self.label(46, 363, "Link", 16, "muted", 47)
-+        self.mark(103, 361, "bolt", 17)
-+        self.label(126, 363, "PoE", 16, "muted", 45)
-+        self.label(183, 363, "?  No reading", 16, "muted", 145)
-+        self.logo(427, 358, 23)
-+        self.label(456, 363, "This station", 16, "muted", 130)
-+        self.logo(589, 358, 23, True)
-+        self.label(620, 363, "Other station", 16, "muted", 150)
 +
-+    def map_tile(self, row, box, *, supports_poe=True):
++    def map_tile(self, row, box, *, supports_poe=True, caption=None):
 +        x, y, right, bottom = box
 +        width = right - x + 1
 +        local = bool(row.get("server"))
@@ -17683,25 +17849,15 @@ index 0000000..eeaf72d
 +        bg = "tint" if local else "surface" if row.get("link_up") is True and not peer else "raised"
 +        self.draw.rounded_rectangle(box, 8, fill=self.c[bg], outline=self.c[edge])
 +        self.targets.append((box, ("row", row.get("pin") or row.get("name"))))
-+        if bottom - y < 38:  # a wide socket row in the two vertical industrial banks
-+            self.label(x + 8, y + 6, row["portname"], 16, "accent" if local else "fg", 109, "mono")
-+            if local or peer:
-+                self.logo(x + 119, y + 3, 21, peer)
-+            self.label(x + 145, y + 7, row.get("endpoint"), 14, "muted", 95, hostname=True)
-+            link, _, link_ink = port_link(row)
-+            self.mark(right - 122, y + 6, "Ports", 15, link_ink)
-+            self.label(right - 104, y + 7, link, 14, link_ink, 42)
-+            if supports_poe:
-+                self.mark(right - 60, y + 6, "bolt", 15, power_ink)
-+                self.label(right - 42, y + 7, power, 14, power_ink, 40)
-+            return
-+        name = text(row.get("number")) or text(row.get("portname")).rsplit("/", 1)[-1]
++        name = caption or text(row.get("number")) or text(row.get("portname")).rsplit("/", 1)[-1]
 +        self.label(x + 5, y + 6, name, 17, "accent" if local else "fg", width - 9, "mono")
 +        device_name, _, ink, device = self.port_identity(row)
++        # A present but empty endpoint means the publisher could not establish a port-local identity.
++        endpoint = text(row["endpoint"]) if "endpoint" in row else (device_name if device or local or peer else "")
 +        if local or peer:
 +            self.logo(right - 23, y + 2, 22, peer)
 +        elif width >= 72:
-+            if device:
++            if device and endpoint:
 +                tail = text(device.get("mac")).replace(":", "")[-4:].upper()
 +                if tail:
 +                    if width >= 80 and device.get("state") in ("ok", "recognized"):
@@ -17713,8 +17869,9 @@ index 0000000..eeaf72d
 +                            ink,
 +                        )
 +                    self.label(right - 36, y + 9, tail, 12, ink, 35, "mono")
-+        link, _, link_ink = port_link(row)
-+        endpoint = text(row.get("endpoint")) or (device_name if device or local or peer else "")
++        link, link_detail, link_ink = port_link(row)
++        if caption and row.get("link_up") is True:
++            link = link_detail
 +        if endpoint:
 +            label_width = width - 10
 +            first, separator, count = endpoint.rpartition(" +")
@@ -17725,10 +17882,14 @@ index 0000000..eeaf72d
 +                label_width -= tail_width + 3
 +                endpoint = first
 +            self.label(x + 5, y + 22, endpoint, 14, width=label_width, weight="mono", hostname=True)
++        elif port_connected(row, power_ink):
++            self.label(x + 5, y + 22, "No ID", 14, "muted", width - 10)
 +        for dy, label, ink, symbol in (
 +            (39, link, link_ink, "Ports" if row.get("link_up") is True else "down"),
 +            (58, power, "warn" if power_ink == "good" else power_ink, "bolt"),
 +        ):
++            if symbol == "bolt" and not supports_poe:
++                continue
 +            if width >= 62:
 +                caption = fit(label, font(15, "bold"), width - 25)
 +                icon_caption(
@@ -17743,13 +17904,13 @@ index 0000000..eeaf72d
 +                    self.c[ink],
 +                )
 +
-+    def connections(self, rows, multiple):
-+        self.card((18, 135, 781, 167 + 56 * max(1, min(4, len(rows)))))
++    def connections(self, rows, multiple, step):
++        self.card((18, 135, 781, 167 + 56 * max(1, min(step, len(rows)))))
 +        for x, caption in ((31, "Port"), (132, "Device"), (511, "Ethernet"), (645, "PoE")):
 +            self.label(x, 145, caption, 14, "muted", 115, "bold")
 +        if not rows:
 +            self.label(32, 185, "No connected ports", 18, "muted")
-+        for i, row in enumerate(rows[self.offset : self.offset + 4]):
++        for i, row in enumerate(rows[self.offset : self.offset + step]):
 +            y = 168 + i * 56
 +            self.draw.line((19, y, 780, y), fill=self.c["line"])
 +            name, role, ink, _ = self.port_identity(row)
