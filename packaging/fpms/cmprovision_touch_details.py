@@ -3,7 +3,7 @@ import time
 from . import display_details as fields
 from .cmprovision import identity, text
 from .cmprovision_new import STATE
-from .cmprovision_touch_style import font, wrap
+from .cmprovision_touch_style import connector_icon, font, wrap
 
 
 def facts(menu, pairs, top, empty, per_page=5):
@@ -36,8 +36,8 @@ def port(menu, row, switch, link, power):
         menu.label(35, 168, "Switch not responding", 22, "warn")
         return
     connector = row.get("panel_connector")
-    readings = [(34, connector or "Ethernet", "sfp" if connector == "SFP+" else "Ports", link)]
-    if connector != "SFP+":
+    readings = [(34, connector or "Link", connector_icon(connector), link)]
+    if power[0] is not None:
         readings.append((295, "PoE", "bolt", power))
     if menu.section == "physical":
         pairs = [("Link" if connector and title == connector else title, reading[1])

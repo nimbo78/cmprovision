@@ -74,12 +74,14 @@ def diagnostic_rows(device, now):
 def physical_rows(port, switch, *, connector=None):
     info = record(port.get("info"))
     macs = info.get("macs") or []
-    media = {"copper": "RJ45", "sfp": "SFP", "combo": "RJ45 / SFP"}.get(info.get("media"))
+    media = info.get("media")
+    if connector is None and isinstance(media, str):
+        connector = {"copper": "RJ45", "sfp": "SFP", "combo": "RJ45 / SFP"}.get(media)
     fitted = info.get("transceiver")
     changed = elapsed(info.get("changed"))
     return rows(("Switch", switch.get("name")), ("Switch S/N", switch.get("serial")),
                 ("Interface", port.get("portname") or port.get("name")), ("Alias", info.get("alias")),
-                ("Connector", connector or media), ("Transceiver", ("Present" if fitted else "Empty") if isinstance(fitted, bool) else None),
+                ("Connector", connector), ("Transceiver", ("Present" if fitted else "Empty") if isinstance(fitted, bool) else None),
                 ("Last link change", changed and changed+" ago"),
                 ("PoE class", info.get("poe_class")), ("Learned MACs", info.get("mac_count")),
                 *(("MAC", mac) for mac in macs[:8] if isinstance(mac, str)))
