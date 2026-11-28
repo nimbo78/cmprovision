@@ -1,6 +1,6 @@
 """Fixed Linux operations. User-owned home files are touched only after dropping privileges."""
 import base64
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, ExitStack, nullcontext
 import grp
 import hashlib
 import os
@@ -19,6 +19,7 @@ class AccountChanged(ValueError):
 
 class Linux:
     home_root = Path('/home')
+    sshd = Path('/usr/sbin/sshd')
     sshd_config = Path('/etc/ssh/sshd_config')
 
     @staticmethod
@@ -44,6 +45,11 @@ class Linux:
         return {'users': [{'user': p.pw_name, 'uid': p.pw_uid} for p in self.accounts()], 'ssh_active': active}
 
     def inspect(self, user, create_user=False, require_password=False, allow_password_login=False):
+        identity = {'user': user}
+        if allow_password_login:
+            exclusion = self.local_exclusion_revision(self.local_exclusion_path(user))
+            if exclusion is not None:
+                identity['local_ssh_exclusion'] = exclusion
         if create_user:
             try:
                 pwd.getpwnam(user)
@@ -64,7 +70,7 @@ class Linux:
                 raise ValueError('The Linux home directory parent is unsafe.')
             if os.path.lexists(self.home_root / user):
                 raise ValueError('A home directory entry already uses that name.')
-            return {'user': user}
+            return identity
         account = next((p for p in self.accounts() if p.pw_name == user), None)
         if account is None:
             raise ValueError('Choose an existing ordinary Linux administrator in the sudo group.')
@@ -78,8 +84,8 @@ class Linux:
             last, maximum = (int(fields[i] or '-1') for i in (2, 4))
             if not valid_hash or last == 0 or (maximum >= 0 and last >= 0 and last + maximum < today):
                 raise ValueError('Set a usable Linux password before enabling SSH password login.')
-        return {'user': user, 'uid': account.pw_uid, 'gid': account.pw_gid, 'home': account.pw_dir,
-                'shell': account.pw_shell, 'credential_revision': hashlib.sha256(':'.join(fields).encode()).hexdigest()}
+        return identity | {'uid': account.pw_uid, 'gid': account.pw_gid, 'home': account.pw_dir,
+                           'shell': account.pw_shell, 'credential_revision': hashlib.sha256(':'.join(fields).encode()).hexdigest()}
 
     def shadow_record(self, user):
         fields = self.run(['/usr/bin/getent', 'shadow', user]).split(':')
@@ -149,7 +155,7 @@ class Linux:
             os.close(fd)
 
     def policy(self, user, config):
-        data = self.run(['/usr/sbin/sshd', '-T', '-f', str(config), '-C', f'user={user},host=localhost,addr=127.0.0.1'])
+        data = self.run([str(self.sshd), '-T', '-f', str(config), '-C', f'user={user},host=localhost,addr=127.0.0.1'])
         return dict(line.split(' ', 1) for line in data.splitlines() if ' ' in line)
 
     def reload_ssh(self):
@@ -217,8 +223,110 @@ class Linux:
         finally:
             path.unlink(missing_ok=True)
 
+    @staticmethod
+    def trusted_ssh_directory(folder):
+        info = folder.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
+            raise ValueError('Unsafe SSH configuration directory. Review it using the existing console.')
+
+    @staticmethod
+    def local_deny_rule(user):
+        return f'# cmprovision local administrator\nDenyUsers {user}\n'.encode()
+
+    def local_exclusion_path(self, user):
+        return self.sshd_config.with_name('sshd_config.d') / f'00-cmprovision-local-{user}.conf'
+
+    def local_exclusion_revision(self, path):
+        if not os.path.lexists(path):
+            return None
+        self.trusted_ssh_directory(path.parent.parent)
+        self.trusted_ssh_directory(path.parent)
+        info = self.verify_local_deny(path)
+        return [info.st_dev, info.st_ino, info.st_ctime_ns]
+
+    def verify_local_deny(self, path):
+        name = re.fullmatch(r'00-cmprovision-local-([a-z_][a-z0-9_-]{0,31})\.conf', path.name)
+        if name:
+            try:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, 'rb') as rule:
+                    info = os.fstat(fd)
+                    if (stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o022
+                            and info.st_nlink == 1 and rule.read(256) == self.local_deny_rule(name[1])):
+                        return info
+            except OSError:
+                pass
+        raise ValueError('An SSH configuration is already managed locally. Review it using the existing console.')
+
     @contextmanager
-    def password_login(self, user):
+    def keep_new_account_local(self, user):
+        # A new Debian openssh-server reads this directory on its first start.
+        # Without sshd we cannot evaluate a site's existing Includes or Match rules.
+        path = self.local_exclusion_path(user)
+        folder = path.parent
+
+        def verify_layout():
+            if os.path.lexists(self.sshd) or os.path.lexists(self.sshd_config):
+                raise ValueError('Cannot verify the SSH configuration while OpenSSH is changing or absent. Use the existing console.')
+            self.trusted_ssh_directory(folder.parent)
+            self.trusted_ssh_directory(folder)
+            for entry in folder.glob('*.conf'):
+                self.verify_local_deny(entry)
+
+        self.trusted_ssh_directory(folder.parent)
+        folder.mkdir(mode=0o755, exist_ok=True)
+        verify_layout()
+        created = None
+        if not os.path.lexists(path):
+            with tempfile.NamedTemporaryFile(dir=folder) as rule:
+                rule.write(self.local_deny_rule(user))
+                rule.flush()
+                os.link(rule.name, path)  # Publish the complete rule without replacing an existing file.
+            created = path.lstat()
+
+        def verify_before_activation():
+            verify_layout()
+            self.verify_local_deny(path)
+
+        try:
+            yield verify_before_activation
+        except BaseException:
+            if created is not None:
+                try:
+                    pwd.getpwnam(user)
+                except KeyError:
+                    if os.path.lexists(path):
+                        current = self.verify_local_deny(path)
+                        if os.path.samestat(current, created) and current.st_ctime_ns == created.st_ctime_ns:
+                            path.unlink()
+            raise
+
+    @contextmanager
+    def release_local_deny(self, user, approved):
+        path = self.local_exclusion_path(user)
+        revision = self.local_exclusion_revision(path)
+        if revision != approved:
+            raise ValueError('The SSH exclusion changed after approval. Prepare a new request.')
+        if revision is None:
+            yield False
+            return
+        with tempfile.TemporaryDirectory(dir=path.parent) as temporary:
+            backup = Path(temporary) / path.name
+            path.rename(backup)
+            try:
+                moved = self.verify_local_deny(backup)
+                if [moved.st_dev, moved.st_ino] != approved[:2]:
+                    raise ValueError('The SSH exclusion changed. Review it using the existing console.')
+                yield True
+            except BaseException:
+                try:
+                    os.link(backup, path, follow_symlinks=False)  # Preserve any independent administrator edit.
+                except FileExistsError:
+                    raise ValueError('The SSH exclusion changed. Review it using the existing console.') from None
+                raise
+
+    @contextmanager
+    def password_login(self, user, exclusion):
         # Appending a literal Match at EOF preserves global-only directives following the vendor Include.
         # An earlier matching PasswordAuthentication or AuthenticationMethods keeps precedence.
         fd = os.open(self.sshd_config, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -231,32 +339,37 @@ class Linux:
         content = original if block in original else original + block
         with self.config_copy(content, info) as candidate, self.config_copy(original, info) as backup:
             try:
-                self.run(['/usr/sbin/sshd', '-t', '-f', str(candidate)])
+                self.run([str(self.sshd), '-t', '-f', str(candidate)])
                 policy = self.policy(user, candidate)
             except RuntimeError:
                 raise ValueError('OpenSSH rejected the candidate configuration. Check SSH settings in the existing console.') from None
             if policy.get('passwordauthentication') != 'yes' or not {'any', 'password'}.intersection(policy['authenticationmethods'].split()):
                 raise ValueError('Existing SSH rules prevent password login for this user. Review them using the existing console.')
             installed = None
+            released = False
+            exclusions = ExitStack()
 
             def install():
-                nonlocal installed
+                nonlocal installed, released
                 current = self.sshd_config.lstat()
                 if not os.path.samestat(current, info) or current.st_ctime_ns != info.st_ctime_ns:
                     raise ValueError('The SSH configuration changed during this request. Prepare a new request.')
                 if content != original:
                     os.replace(candidate, self.sshd_config)
                     installed = self.sshd_config.lstat()
+                released = exclusions.enter_context(self.release_local_deny(user, exclusion))
                 self.reload_ssh()
 
             try:
-                yield policy, install
+                with exclusions:
+                    yield policy, install
             except BaseException:
                 if installed is not None:
                     current = self.sshd_config.lstat()
                     if not os.path.samestat(current, installed) or current.st_ctime_ns != installed.st_ctime_ns:
                         raise ValueError('SSH configuration changed again. Inspect it using the existing console.') from None
                     os.replace(backup, self.sshd_config)
+                if installed is not None or released:
                     self.reload_ssh()
                 raise
 
@@ -310,11 +423,21 @@ class Linux:
         create = changes.get('create_user', False)
         allow_password = changes.get('allow_password_login', False)
         applied = ['New Linux administrator in the sudo group'] if create else []
+        if not os.access(self.sshd, os.X_OK):
+            if (not create or not changes['password_hash'] or changes['keys'] or changes['enable_ssh']
+                    or allow_password or os.path.lexists(self.sshd)):
+                raise ValueError('Install or repair openssh-server using the existing console before requesting SSH access.')
+            with self.keep_new_account_local(user) as verify_exclusion, self.new_admin(user) as account:
+                self.run(['/usr/sbin/chpasswd', '-e'], user + ':' + changes['password_hash'] + '\n')
+                verify_exclusion()
+                self.activate_admin(account, changes['password_hash'])
+            return applied + ['password', 'Local login only; Debian OpenSSH excludes this user until SSH password login is approved']
         self.prepare_sshd_runtime()
         target = self.new_admin(user) if create else nullcontext(identity)
         service = self.service_activation() if changes['enable_ssh'] else nullcontext(None)
         with service as enable_service, target as account:
-            config = self.password_login(user) if allow_password else nullcontext((self.policy(user, self.sshd_config), None))
+            config = (self.password_login(user, identity.get('local_ssh_exclusion')) if allow_password
+                      else nullcontext((self.policy(user, self.sshd_config), None)))
             password_guard = nullcontext()
             if allow_password and not create and changes['password_hash']:
                 password_guard = self.preserve_password_on_failure(user, changes['password_hash'])

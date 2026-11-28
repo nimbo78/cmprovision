@@ -80,6 +80,8 @@ The same form is in **Settings → System → Station access**.
 5. Check the username, requested actions and key fingerprints in the terminal. Type `YES` for your expected request and enter its code in the browser.
 6. Select **Apply SSH changes**. Keep your current session open and test the new login in another terminal. To test just the password, run `ssh -o PubkeyAuthentication=no engineer@station-address` with the chosen username and station address.
 
+On a fresh package-only station without `openssh-server`, you can create a local administrator with a Linux password. Leave the SSH key and both SSH options empty. The wizard adds a `DenyUsers` rule for that username in `/etc/ssh/sshd_config.d/`. It applies from the first start of Debian OpenSSH. After installing the server, select **Allow SSH password login for this user** and approve the request to lift the wizard's rule. Site-managed SSH restrictions still apply. If the station already has a custom server configuration, install OpenSSH first or create the account from the local console so you can review that policy.
+
 ```mermaid
 sequenceDiagram
     participant W as Browser

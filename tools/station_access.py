@@ -124,9 +124,13 @@ class Controller:
                 labels = ['Create Linux administrator (sudo group)'] if create else []
                 if password:
                     labels.append('Change Linux password')
+                if create and not (keys or allow_password or enable):
+                    labels.append('If OpenSSH is absent, exclude this user from SSH until password login is explicitly approved')
                 labels.extend('Add SSH key ' + value + '; preserve existing keys' for value in fingerprints)
                 if allow_password:
                     labels.append('Allow SSH password login for this user')
+                    if 'local_ssh_exclusion' in identity:
+                        labels.append('Remove the cmprovision local-only SSH exclusion; site authentication rules apply')
                 if enable:
                     labels.append('Enable SSH service')
                 now = int(self.clock())

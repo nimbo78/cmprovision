@@ -126,6 +126,7 @@ class StationAccessTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.prepare(create_user=True)
         plan = self.prepare(user='newadmin', create_user=True)
+        self.assertTrue(any('exclude this user from SSH' in change for change in self.control.review(plan['id'])['changes']))
         code = self.control.approve(plan['id'])['code']
         self.backend.users.append({'user': 'newadmin', 'uid': 1103})
         with self.assertRaises(ValueError):
@@ -410,11 +411,143 @@ class PasswordPolicyTest(unittest.TestCase):
         self.assertEqual([], self.linux.reloaded)
 
 
+class WithoutSshdTest(unittest.TestCase):
+    def setUp(self):
+        from station_access_linux import Linux
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.linux = Linux()
+        self.linux.sshd_config = self.root / 'sshd_config'
+        self.linux.sshd = self.root / 'absent-sshd'
+        self.user = 'cmp-local-user'
+        self.identity = {'user': self.user}
+        self.changes = {'create_user': True, 'password_hash': 'fixture-hash', 'keys': '', 'enable_ssh': False}
+        self.created = self.enterContext(patch.object(self.linux, 'new_admin', return_value=nullcontext(self.identity)))
+        self.activated = self.enterContext(patch.object(self.linux, 'activate_admin'))
+        self.commands = []
+        def command(argv, data=None):
+            self.commands.append((argv, data))
+            if argv[0] != '/usr/sbin/chpasswd':
+                raise AssertionError('A local password-only request tried to run ' + argv[0])
+        self.enterContext(patch.object(self.linux, 'run', side_effect=command))
+        self.guard = self.root / 'sshd_config.d' / ('00-cmprovision-local-' + self.user + '.conf')
+
+    def test_local_password_works_and_future_debian_sshd_excludes_only_the_new_user(self):
+        self.linux.apply(self.identity, self.changes)
+        self.assertEqual([(['/usr/sbin/chpasswd', '-e'], self.user + ':fixture-hash\n')], self.commands)
+        self.activated.assert_called_once_with(self.identity, 'fixture-hash')
+        directives = [line for line in self.guard.read_text().splitlines() if line and not line.startswith('#')]
+        self.assertEqual(['DenyUsers ' + self.user], directives)
+        self.assertFalse(self.linux.sshd_config.exists())
+
+    def test_explicit_ssh_operations_fail_before_staging_an_account(self):
+        for option in [{'keys': 'ssh-ed25519 fixture'}, {'allow_password_login': True}, {'enable_ssh': True}]:
+            with self.subTest(option=option), self.assertRaisesRegex(ValueError, 'openssh-server'):
+                self.linux.apply(self.identity, self.changes | option)
+        self.created.assert_not_called()
+        self.assertEqual([], self.commands)
+        self.assertFalse(self.guard.exists())
+
+    def test_unverifiable_site_configuration_is_preserved_before_account_creation(self):
+        self.guard.parent.mkdir()
+        site = self.guard.parent / 'site.conf'
+        for existing in (site, self.linux.sshd_config):
+            with self.subTest(path=existing):
+                existing.write_text('DenyUsers site-account\n')
+                with self.assertRaisesRegex(ValueError, 'existing console'):
+                    self.linux.apply(self.identity, self.changes)
+                self.assertEqual('DenyUsers site-account\n', existing.read_text())
+                existing.unlink()
+        self.created.assert_not_called()
+        self.assertFalse(self.guard.exists())
+
+    def test_failed_account_creation_does_not_reserve_an_unused_name(self):
+        self.activated.side_effect = RuntimeError('activation failed')
+        with patch('pwd.getpwnam', side_effect=KeyError), self.assertRaisesRegex(RuntimeError, 'activation failed'):
+            self.linux.apply(self.identity, self.changes)
+        self.assertFalse(self.guard.exists())
+
+    def test_local_account_stays_inactive_if_the_exclusion_changes_before_activation(self):
+        def external_edit(argv, data):
+            self.guard.write_text('DenyUsers site-account\n')
+        self.linux.run.side_effect = external_edit
+        with patch('pwd.getpwnam', side_effect=KeyError), self.assertRaisesRegex(ValueError, 'existing console'):
+            self.linux.apply(self.identity, self.changes)
+        self.activated.assert_not_called()
+        self.assertEqual('DenyUsers site-account\n', self.guard.read_text())
+
+    def existing_operator(self, server):
+        account = SimpleNamespace(pw_name=self.user, pw_uid=1001, pw_gid=1001, pw_dir='/home/'+self.user, pw_shell='/bin/bash')
+        self.enterContext(patch.object(server, 'accounts', return_value=[account]))
+        self.enterContext(patch.object(server, 'shadow_record', return_value=[self.user, '$6$salt$' + 'a'*86, '20000', '0', '99999', '7', '', '', '']))
+
+    def test_local_operator_approves_the_specific_exclusion_being_lifted(self):
+        from station_access import Controller
+        from station_access_linux import Linux
+
+        self.linux.apply(self.identity, self.changes)
+        server = Linux()
+        server.sshd_config = self.linux.sshd_config
+        self.existing_operator(server)
+        control = Controller(self.root / 'state', server)
+        plan = control.request({'action': 'prepare', 'user': self.user, 'password': '', 'keys': '',
+                                'enable_ssh': False, 'allow_password_login': True})
+        self.assertTrue(any('local-only SSH exclusion' in change for change in control.review(plan['id'])['changes']))
+        code = control.approve(plan['id'])['code']
+        self.guard.unlink()
+        with self.assertRaisesRegex(ValueError, 'new request'):
+            control.request({'action': 'apply', 'id': plan['id'], 'code': code})
+
+    @unittest.skipUnless(Path('/usr/sbin/sshd').is_file() and shutil.which('ssh-keygen') and Path('/run/sshd').is_dir(),
+                         'OpenSSH server and its privilege separation directory are required')
+    def test_later_approved_password_login_releases_only_our_rule_and_a_failed_reload_restores_it(self):
+        from station_access_linux import Linux
+
+        self.linux.apply(self.identity, self.changes)
+        original = self.guard.read_bytes()
+        server = Linux()
+        server.sshd_config = self.linux.sshd_config
+        self.existing_operator(server)
+        hostkey = self.root / 'hostkey'
+        subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(hostkey)], check=True)
+        server.sshd_config.write_text(f'Include {self.guard.parent}/*.conf\nHostKey {hostkey}\nPasswordAuthentication no\n')
+        site = self.guard.parent / 'site.conf'
+        site.write_text('DenyUsers site-account\n')
+        def denied():
+            effective = subprocess.check_output(['/usr/sbin/sshd', '-T', '-f', str(server.sshd_config)], text=True)
+            return {name for line in effective.splitlines() if line.startswith('denyusers ') for name in line.split()[1:]}
+
+        self.assertEqual({self.user, 'site-account'}, denied())
+        grant = {'keys': '', 'enable_ssh': False, 'password_hash': '', 'allow_password_login': True}
+        approved = server.inspect(self.user, allow_password_login=True)
+        self.guard.write_bytes(original + b'# site-edited\n')
+        with patch.object(server, 'reload_ssh'), self.assertRaisesRegex(ValueError, 'existing console'):
+            server.apply(approved, grant)
+        self.assertEqual(original + b'# site-edited\n', self.guard.read_bytes())
+        self.guard.write_bytes(original)
+        approved = server.inspect(self.user, allow_password_login=True)
+        with patch.object(server, 'reload_ssh', side_effect=[RuntimeError('reload failed'), None]):
+            with self.assertRaisesRegex(RuntimeError, 'reload failed'):
+                server.apply(approved, grant)
+        self.assertEqual(original, self.guard.read_bytes())
+        self.assertEqual({self.user, 'site-account'}, denied())
+        with patch.object(server, 'reload_ssh'):
+            server.apply(server.inspect(self.user, allow_password_login=True), grant)
+        self.assertEqual({'site-account'}, denied())
+        self.assertEqual('yes', server.policy(self.user, server.sshd_config)['passwordauthentication'])
+        self.assertEqual('no', server.policy('other', server.sshd_config)['passwordauthentication'])
+        self.assertEqual('DenyUsers site-account\n', site.read_text())
+
+
 class ServiceRollbackTest(unittest.TestCase):
     def station(self, unit_file, active, fail):
         from station_access_linux import Linux
 
         class ServiceLinux(Linux):
+            sshd = Path('/bin/true')  # Service state is simulated even on test hosts without openssh-server.
+
             def __init__(self):
                 self.unit_file = unit_file
                 self.active = active
