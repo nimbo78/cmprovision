@@ -1,3 +1,16 @@
+cmprovision4 (2.30.14) trixie; urgency=medium
+
+  * Add a browser terminal for local USB serial adapters, with per-user
+    access, baud and framing detection, and paced configuration transfers.
+  * Let an operator create a second Linux administrator and enable SSH
+    password login for a selected account after station approval.
+  * Match the Huawei S5735I-S8U4XN-V2 front panel across station displays.
+    Collapse unavailable switches to one row and skip them during rotation.
+  * Activate the graphical HDMI output on reconnect and improve Waveshare
+    detection during a neutral GPIO boot on CM4.
+
+ -- cmprovision contributors <cmprovision@localhost>  Sat, 28 Nov 2026 21:40:00 +0300
+
 cmprovision4 (2.30.13) trixie; urgency=medium
 
   * Detect Waveshare 1.44-inch and HyperPixel 4.0 Touch panels on boot.
