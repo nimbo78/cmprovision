@@ -653,7 +653,8 @@ class RenderingTest(unittest.TestCase):
         sw['answering'] = False
         canvas = w.Canvas(110, 22)
         w.ports(canvas, 0, 0, 90, 17, [sw], [], 0)
-        self.assertIn('last known', canvas.plain())
+        self.assertIn('OFFLINE', canvas.plain())
+        self.assertNotIn('3.2 W', canvas.plain())
         self.assertIn('S/N DEMO-WEST-02', canvas.plain())
 
     def test_cisco_uplinks_align_with_bottom_row_and_double_digit_labels_fit(self):

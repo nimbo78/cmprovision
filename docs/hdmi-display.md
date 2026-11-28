@@ -74,7 +74,7 @@ On the graphical port map, names that fit are stationary. A longer device name s
 Choose the view in Settings or press **V** on the station keyboard.
 
 - **Stand console** shows a switch front panel, a selected device and the stand's module list. Each port tile shows the connected device, Ethernet link and PoE readings.
-- **Full switch map** shows all 24 or 48 copper ports and four uplinks of a supported Catalyst 9200L in one frame. Use `[` and `]` to move between switches.
+- **Full switch map** shows the physical ports of a supported Catalyst 9200L or Huawei S5735I-S8U4XN-V2 in one frame. Use `[` and `]` to move between online switches.
 - **All device cards** shows several modules together. Read host names, physical ports, phases and progress across the batch. Larger batches use additional pages.
 - **Large device card and diagnostics** shows the hardware, project and image used for this run, saved diagnostic source and age, evidence and next step. The arrow keys also select verified sensors, discovered neighbors and ports delivering PoE without carrier. The port card beside the smaller maps includes link speed and PoE.
 - **Automatic** tours the stand, including each switch map, then shows one device in detail for one rotation interval. The next tour shows a different device. A newly failed run opens its diagnostics immediately during automatic playback. Simultaneous failures are shown in turn. **Space** holds the current screen.
@@ -90,10 +90,11 @@ In **Settings → System → HDMI display**, set **Screen** to **Full switch map
 
 - **24 copper ports** fit in two banks of twelve. Odd ports sit above even ports, and the device table fits below the four SFP or SFP+ uplinks.
 - **48 copper ports** occupy four banks of twelve. Read ports 1–24 across the upper half, then 25–48 across the lower half. The four uplinks have their own row below the copper ports.
+- **Huawei S5735I-S8U4XN-V2** has eight GE copper ports on the left and four 10GE SFP+ cages on the right. Both columns are numbered from the top. The first cage sits beside GE3 and the last beside GE8.
 
 ![Demonstration Catalyst 9200L showing all 48 copper ports, their devices, Ethernet and PoE, and four SFP+ uplinks on a single HDMI screen.](assets/guides/hdmi-full-switch-48.png)
 
-The full map uses the verified front-panel layouts for Cisco Catalyst C9200L-24P/24T and C9200L-48P/48T with four fixed uplinks. Both sizes fit on Full HD and ultrawide HDMI. The screenshot uses a synthetic switch snapshot. If the reported ports do not match a supported panel, the display uses the paged stand console. The tty8 text fallback also uses the stand console. [Supported models and physical port order](switch-front-panels.md)
+The Catalyst layouts cover C9200L-24P/24T and C9200L-48P/48T with four fixed uplinks. Both sizes fit on Full HD and ultrawide HDMI. The screenshot uses a synthetic switch snapshot. If the reported ports do not match a supported panel, the display uses the paged stand console. The tty8 text fallback also uses the stand console. [Supported models and physical port order](switch-front-panels.md)
 
 ### Finding a port on a multi-switch stand
 
@@ -181,7 +182,7 @@ port. A new USB-only board can appear as **Unregistered module**, separate from 
 Progress, rate and ETA use the same calculations as the web UI. Silent modules are marked **NO REPORT**. Diagnostic
 temperature, power and other facts are **saved snapshots**: their source and age are always shown. They are not live
 hardware sensors. If application data stops updating for more than ten seconds, **DATA STALE** replaces the normal
-footer. A switch that stops answering keeps its last known ports with an explicit warning.
+footer. When a switch goes offline, its name, model and last known serial share one summary row. Its port map returns on the next successful poll. The Huawei S5735I-S8U4XN-V2 map follows the front panel, with eight RJ45 ports on the left and four 10GE SFP+ cages on the right.
 
 No image files, project scripts, account passwords, SNMP credentials or run tokens are sent to the terminal. The local
 screen is intended for a trusted support area: it shows device names, MAC addresses, serial numbers, project names and failure hints.

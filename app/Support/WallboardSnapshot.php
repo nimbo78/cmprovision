@@ -24,11 +24,14 @@ class WallboardSnapshot
         $map = $stand['map'] ?? null;
         $host = gethostname();
         $modules = $switches = $unknown = $recognized = [];
-        foreach ($map['switches'] ?? [] as $id => $switch)
+        foreach ($stand['switches'] ?? [] as $id => $state)
         {
-            $state = $stand['switches'][$id];
+            if ($state['same_as'])
+                continue;
+            $switch = $map['switches'][$id] ?? null;
+            $answering = Stand::answering($state);
             $blocks = [];
-            foreach ($switch['blocks'] as $block)
+            foreach ($switch['blocks'] ?? [] as $block)
             {
                 $ports = [];
                 foreach ($block['tiles'] as $tile)
@@ -41,10 +44,13 @@ class WallboardSnapshot
                     }
                     $tile['neighbors'] = $this->currentNeighbors($tile);
                     $serials = [];
-                    if ($tile['filter'] === 'recognized')
-                        $recognized[] = $this->recognized($tile);
-                    elseif (in_array($tile['state'], ['foreign', 'quiet'], true))
-                        $unknown[] = $this->unknown($tile);
+                    if ($answering)
+                    {
+                        if ($tile['filter'] === 'recognized')
+                            $recognized[] = $this->recognized($tile);
+                        elseif (in_array($tile['state'], ['foreign', 'quiet'], true))
+                            $unknown[] = $this->unknown($tile);
+                    }
                     foreach ($tile['modules'] as $cm)
                     {
                         $serials[] = $cm->serial;
@@ -58,22 +64,19 @@ class WallboardSnapshot
                         'station' => $tile['station'] ?? null, 'endpoint' => $this->endpoint($tile, $host),
                         'link_up' => $tile['link_up'], 'speed' => $tile['speed'],
                         'port_id' => $tile['key'], 'info' => $this->portInfo($tile),
-                        'poe_state' => $tile['poe']['state'] ?? null, 'watts' => $tile['poe']['watts'] ?? null];
+                        'poe_state' => $tile['poe']['state'] ?? null, 'watts' => $tile['poe']['watts'] ?? null]
+                        + array_intersect_key($tile, ['panel_y' => true]);
                 }
                 $blocks[] = ['rows' => $block['rows'], 'label' => $block['label'] ?? ($block['uplinks'] ? 'UPLINK' : 'PORTS'),
                     'ports' => $ports];
             }
-            $switches[] = ['name' => $switch['name'], 'model' => $switch['panel']['model'] ?? ($state['snapshot']['model'] ?? ''),
+            $switches[] = ['name' => $state['switch']->hostname(), 'host' => $state['config']['host'],
+                'model' => $switch['panel']['model'] ?? ($state['snapshot']['model'] ?? ''),
                 'serial' => $state['snapshot']['identity']['serial'] ?? null,
-                'verified_layout' => $switch['panel'] !== null, 'answering' => Stand::answering($state),
-                'checked_at' => $state['checked_at'], 'silent_since' => $state['error']['since'] ?? null, 'blocks' => $blocks];
+                'verified_layout' => isset($switch['panel']), 'answering' => $answering,
+                'checked_at' => $state['checked_at'], 'silent_since' => $state['error']['since'] ?? null, 'blocks' => $blocks]
+                + array_intersect_key($switch['panel'] ?? [], ['layout' => true]);
         }
-        // A switch which has never answered has no map yet. Keep its outage visible too.
-        foreach ($stand['switches'] ?? [] as $id => $state)
-            if (!isset($map['switches'][$id]) && !$state['same_as'])
-                $switches[] = ['name' => $state['switch']->hostname(), 'model' => '', 'serial' => null, 'verified_layout' => false,
-                    'answering' => false, 'checked_at' => $state['checked_at'], 'silent_since' => $state['error']['since'] ?? null,
-                    'blocks' => []];
 
         // No map: no switch configured, or none has answered yet. The modules that are on the bench still count.
         if (!$map)

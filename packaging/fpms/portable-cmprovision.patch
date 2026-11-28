@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..e3d0bdc
+index 0000000..a98d6c3
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,576 @@
+@@ -0,0 +1,578 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10293,6 +10293,7 @@ index 0000000..e3d0bdc
 +        self.prompt_until = None
 +        self.config, self.snapshot = Path(config), Path(snapshot)
 +        self.page, self.index, self.detail, self.scroll = 0, 0, None, 0
++        self.caption_key, self.caption_since = None, 0
 +        self.data, self.problem, self.age = {}, "Waiting for data", None
 +        self.enabled, self.last_read = False, -1e10
 +        self.lock = threading.RLock()
@@ -10326,7 +10327,18 @@ index 0000000..e3d0bdc
 +                    None,
 +                )
 +                return
++            previous = self.selected() if self.page == 1 and self.data else None
 +            self.data, self.age = data, int(now - generated)
++            if previous:
++                rows, views = self.port_map()
++                view = next((v for v in views if v["key"] == previous["switch_key"]), None)
++                if view and not view["answering"]:
++                    self.index, self.detail, self.scroll = view["first"], None, 0
++                elif view:
++                    key = previous.get("port_id") or previous.get("portname")
++                    self.index = next((i for i in range(view["first"], view["end"])
++                                       if key and (rows[i].get("port_id") or rows[i].get("portname")) == key),
++                                      view["first"])
 +            # old data stays on the screen, told by its age (age_label): the values are the last ones saved
 +            self.problem = ""
 +
@@ -10401,30 +10413,7 @@ index 0000000..e3d0bdc
 +
 +    def rows(self):
 +        if self.page == 1:
-+            rows = []
-+            for s_index, switch in enumerate(objects(self.data.get("switches"), 64)):
-+                if switch.get("answering") is False:
-+                    rows.append(
-+                        {
-+                            "name": text(switch.get("name")),
-+                            "state": "No response",
-+                            "serials": [],
-+                        }
-+                    )
-+                for block in objects(switch.get("blocks"), 32):
-+                    for port in objects(block.get("ports"), 256):
-+                        rows.append(
-+                            dict(
-+                                port,
-+                                name=text(switch.get("name"))
-+                                + " "
-+                                + text(port.get("name")),
-+                                # two switches may have the same name: the place of the switch in the list tells them apart
-+                                pin=f"{s_index}:{text(port.get('name'))}",
-+                                portname=text(port.get("name")),
-+                            )
-+                        )
-+            return rows[:512]
++            return self.port_map()[0]
 +        modules = objects(self.data.get("modules"))
 +        if self.page == 2:
 +            modules += objects(self.data.get("recognized"))
@@ -10513,7 +10502,7 @@ index 0000000..e3d0bdc
 +                    self.page, self.index = 3, 0
 +            elif key == "CENTER" and self.page in (1, 2, 3):
 +                row = self.selected()
-+                if row:
++                if row and (self.page != 1 or "pin" in row):
 +                    serials = (
 +                        row.get("serials")
 +                        if isinstance(row.get("serials"), list)
@@ -10539,32 +10528,45 @@ index 0000000..e3d0bdc
 +        matches = [m for m in rows if identity(m) == pinned]
 +        return matches[0] if len(matches) == 1 else None
 +
-+    def map_view(self):
-+        """The ports of every switch as the columns of its front panel, in the order of rows(): [{name, answering, first,
-+        columns: [(top, bottom, block)]}], where top and bottom are indexes into rows() or None. A block of two rows is read
-+        column by column (1 above 2, 3 above 4); a block of one row (uplinks, SFP) sits on the lower row, as on the switch."""
-+        views, n = [], 0
-+        for switch in objects(self.data.get("switches"), 64):
-+            view = {
-+                "name": text(switch.get("name")),
-+                "answering": switch.get("answering") is not False,
-+                "first": n,
-+                "columns": [],
-+            }
-+            if not view["answering"]:
-+                n += 1
-+            for b, block in enumerate(objects(switch.get("blocks"), 32)):
-+                indexes = list(range(n, n + len(objects(block.get("ports"), 256))))
-+                n += len(indexes)
-+                if number(block.get("rows"), 1) >= 2:
-+                    for i in range(0, len(indexes), 2):
-+                        view["columns"].append(
-+                            (indexes[i], indexes[i + 1] if i + 1 < len(indexes) else None, b)
-+                        )
-+                else:
-+                    view["columns"] += [(None, i, b) for i in indexes]
++    def port_map(self):
++        """Build the joystick rows and the drawing indexes together. An offline switch occupies one row."""
++        rows, views = [], []
++        for s_index, switch in enumerate(objects(self.data.get("switches"), 64)):
++            if len(rows) >= 512:
++                break
++            host = text(switch.get("host"))
++            name = text(switch.get("name")) or host or "Switch"
++            key = host or f"{s_index}:{name}"
++            view = dict(name=name, model=text(switch.get("model")), serial=text(switch.get("serial")),
++                        host=host, key=key, answering=switch.get("answering") is not False,
++                        first=len(rows), columns=[], slots=[])
 +            views.append(view)
-+        return views
++            if not view["answering"]:
++                rows.append(dict(name=name, switch_key=key, state="No response", serials=[]))
++            else:
++                industrial = switch.get("layout") == "industrial-columns"
++                for group, block in enumerate(objects(switch.get("blocks"), 32)):
++                    start = len(rows)
++                    for port in objects(block.get("ports"), 256)[:512-start]:
++                        portname = text(port.get("name"))
++                        y = port.get("panel_y")
++                        if industrial and group < 2 and type(y) is int and 0 <= y <= 15:
++                            view["slots"].append((group, y, len(rows)))
++                        rows.append(dict(port, name=name + " " + portname, switch_key=key,
++                                         portname=portname, pin=f"{s_index}:{portname}"))
++                    end = len(rows)
++                    if number(block.get("rows"), 1) >= 2:
++                        view["columns"].extend((i, i + 1 if i + 1 < end else None, group)
++                                               for i in range(start, end, 2))
++                    else:
++                        view["columns"].extend((None, i, group) for i in range(start, end))
++                if len(view["slots"]) != len(rows) - view["first"]:
++                    view["slots"].clear()  # incomplete geometry uses the ordinary map
++            view["end"] = len(rows)
++        return rows, views
++
++    def map_view(self):
++        return self.port_map()[1]
 +
 +    def rescue_available(self):
 +        from .cmprovision_rescue import info
@@ -10622,10 +10624,10 @@ index 0000000..e3d0bdc
 +                COLORS.update(old)
 diff --git a/fpms/integrations/cmprovision_classic.py b/fpms/integrations/cmprovision_classic.py
 new file mode 100644
-index 0000000..0389398
+index 0000000..27c61ad
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_classic.py
-@@ -0,0 +1,371 @@
+@@ -0,0 +1,375 @@
 +"""The classic look of the cmprovision panel (Settings → Provisioning → FPMS display: Classic): the first look of
 +the panel, kept as it was with its defects fixed, for whom it suits and for a bigger screen later."""
 +
@@ -10695,16 +10697,20 @@ index 0000000..0389398
 +    key = {"free": "muted", "uplink": "accent", "boot": "info"}.get(state, "warn")
 +    return None, key, key
 +
-+def draw_map(panel, draw, label):
-+    rows = panel.rows()
++def draw_map(panel, image, draw, label):
++    rows, views = panel.port_map()
 +    if not rows:
 +        label(5, 50, "No switches: add one in", "muted", panel.small)
 +        label(5, 62, "Settings > Network", "muted", panel.small)
 +        return
++    from .cmprovision_new import compact_switch
++    panel.index = min(panel.index, len(rows) - 1)
++    view = next(v for v in views if v["first"] <= panel.index < v["end"])
++    colors = dict(COLORS, fg=COLORS["text"], dim=COLORS["muted"], run=COLORS["info"])
++    if compact_switch(image, draw, panel, view, rows, 36, colors):
++        return
 +    name, bank, banks, answering, cells = map_cells(panel)
 +    label(4, 36, name + (f"  {bank + 1}/{banks}" if banks > 1 else ""), "text", panel.small, 120)
-+    if not answering:
-+        label(5, 60, "No response", "warn")
 +    for x, y, index in cells:
 +        row = rows[index] if index < len(rows) else {}
 +        fill, outline, ink = map_style(row)
@@ -10900,7 +10906,7 @@ index 0000000..0389398
 +                label(x + 3, y + 1, str(min(999, value)), color, panel.large, 32)
 +                label(x + 27, y + 16, title, "muted", panel.small, 30)
 +        elif panel.page == 1:
-+            draw_map(panel, draw, label)
++            draw_map(panel, image, draw, label)
 +        elif panel.page in (2, 3):
 +            rows = panel.rows()
 +            panel.selected()
@@ -11376,10 +11382,10 @@ index 0000000..ba50d9d
 +            return True
 diff --git a/fpms/integrations/cmprovision_new.py b/fpms/integrations/cmprovision_new.py
 new file mode 100644
-index 0000000..2aa966a
+index 0000000..fbc6db0
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_new.py
-@@ -0,0 +1,1022 @@
+@@ -0,0 +1,1053 @@
 +"""The new look of the cmprovision panel (Settings → Provisioning → FPMS display: New).
 +
 +Drawn for a 1.44" 128x128 screen whose backlight washes out the dark: bitmap fonts one to one (cmprovision_fonts),
@@ -11625,6 +11631,8 @@ index 0000000..2aa966a
 +
 +    out = []
 +    for switch in objects(switches, 64):
++        if switch.get("answering") is False:
++            continue
 +        columns = []
 +        for b, block in enumerate(objects(switch.get("blocks"), 32)):
 +            ports = objects(block.get("ports"), 256)
@@ -11751,26 +11759,20 @@ index 0000000..2aa966a
 +    from .cmprovision import text
 +
 +    body, tiny = header(img, d, panel, "Ports"), fonts.font("tiny")
-+    rows = panel.rows()
++    rows, views = panel.port_map()
 +    if not rows:
 +        for i, line in enumerate(("No switches: add one in", "Settings > Network")):
 +            body.draw(img, (128 - body.width(line)) // 2, 52 + i * (body.h + 2), line, P["muted"])
 +        return
-+    panel.selected()
-+    view = next((v for v in panel.map_view() if any(panel.index in (t, b) for t, b, _ in v["columns"])
-+                 or (not v["answering"] and v["first"] == panel.index)), None)
-+    if view is None:
++    panel.index = min(panel.index, len(rows) - 1)
++    view = next(v for v in views if v["first"] <= panel.index < v["end"])
++    if compact_switch(img, d, panel, view, rows, 20, P):
 +        return
 +    band = cap(body) + 5
 +    yb = mid_y(body, 17, band, "t")
-+    if not view["answering"] and not view["columns"]:
-+        body.draw(img, 2, yb, fonts.fit(body, view["name"], LINE_W), P["muted"])
-+        body.draw(img, (128 - body.width("No response")) // 2, 52, "No response", P["warn"])
-+        return
-+    # a switch that stopped answering keeps its last map: the ports as they were, said to be old
 +    cells, numbered, bank, banks, detail_y = map_layout(view["columns"], panel.ports_map(), panel.index)
 +    pages = f"{bank + 1}/{banks}" if banks > 1 else ""
-+    tag, tag_colour = ("not answering", "warn") if not view["answering"] else (pages, "fg")
++    tag, tag_colour = pages, "fg"
 +    right = 126 - (body.width(tag) + 4 if tag else 0)
 +    body.draw(img, 2, yb, fonts.fit(body, view["name"], right - 2), P["muted"])
 +    if tag:
@@ -11793,6 +11795,41 @@ index 0000000..2aa966a
 +            d.rectangle((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2), outline=P["fg"])
 +            d.rectangle((box[0] - 1, box[1] - 1, box[2] + 1, box[3] + 1), outline=P["bg"])
 +    port_detail(img, d, panel, detail_y, rows[panel.index])
++
++
++def compact_switch(img, draw, panel, view, rows, top, colors):
++    """One outage row or a complete two-bank industrial face on either 128-pixel theme."""
++    tiny = fonts.font("tiny")
++    if not view["answering"]:
++        # Keep the warning fixed. Give every identifier, including the suffix of a long serial, time on screen.
++        fields = tuple(dict.fromkeys(v for v in (view["name"], view["model"], view["serial"], view["host"]) if v))
++        if fields != panel.caption_key:
++            panel.caption_key, panel.caption_since = fields, panel.clock()
++        draw.rectangle((1, top, 126, top + 12), fill=colors["panel"])
++        x = tiny.draw(img, 3, top + 3, "No response", colors["warn"]) + 4
++        length = max(1, (126 - x) // tiny.width("0"))
++        parts = [s[i:i + length] for s in fields for i in range(0, len(s), length)]
++        part = int((panel.clock() - panel.caption_since) // 2) % len(parts)
++        tiny.draw(img, x, top + 3, parts[part], colors["fg"])
++        return True
++    if not view["slots"]:
++        return False
++    model = fonts.fit(tiny, view["model"], 122)
++    x = tiny.draw(img, 2, top, model, colors["fg"]) + 3
++    if x < 116:
++        tiny.draw(img, x, top, fonts.fit(tiny, view["name"], 126 - x), colors["muted"])
++    for x, caption in ((2, "RJ45"), (66, "10GE SFP+")):
++        tiny.draw(img, x, top + 9, caption, colors["muted"])
++    for group, pos, i in view["slots"]:
++        x, y = 2 + 64 * group, top + 19 + (7 * pos) // 2
++        row = rows[i]
++        if i == panel.index:
++            draw.rectangle((x - 1, y, x + 59, y + 6), fill=colors["panel"])
++            draw.line((x - 1, y, x - 1, y + 6), fill=colors["fg"])
++        fill, edge = port_style(row)
++        draw.rectangle((x + 2, y + 1, x + 9, y + 5), fill=colors[fill] if fill else None, outline=colors[edge])
++        tiny.draw(img, x + 12, y, fonts.fit(tiny, row["portname"], 48), colors["fg"])
++    return True
 +
 +
 +def port_detail(img, d, panel, y, row):
@@ -14607,10 +14644,10 @@ index 0000000..e3e2077
 +    assert result.returncode == 0, result.stderr
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..d1d97f6
+index 0000000..296aefc
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1411 @@
+@@ -0,0 +1,1539 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -15802,19 +15839,147 @@ index 0000000..d1d97f6
 +        assert fonts.overlaps(ink) == []
 +
 +
-+def test_a_silent_switch_keeps_its_last_map(tmp_path):
++@pytest.mark.parametrize("theme", ["new", "classic"])
++def test_offline_switch_has_one_identifiable_row_and_recovers(tmp_path, theme):
 +    snap = demo_snapshot()
-+    snap["switches"][0]["answering"] = False
-+    p = panel_with(tmp_path, snap)
-+    p.page, p.index = 1, 3                               # Gi0/3: the row before the ports is the switch itself
-+    _, ink, _ = drawn(p)
-+    s = strings(ink)
-+    assert {"1", "3", "5", "7"} <= set(s) and any("not answering" in t for t in s)
-+    p.index = 0                                          # the switch itself
++    snap["panel"] = {"theme": theme}
++    first = snap["switches"][0]
++    first.update(name="rack-1", model="CX", serial="FOC123")
++    snap["switches"].append(dict(name="rack-2", blocks=[dict(ports=[dict(name="eth7", number=7)])]))
++    clock = Clock()
++    p = panel_with(tmp_path, snap, clock=clock)
++    p.page, p.index = 1, 9
 +    p.key("CENTER")
++    first["answering"] = False
++    p.snapshot.write_text(json.dumps(snap))
++    p.refresh(now=102, force=True)
++    p.frame()
++    assert p.detail is None and p.selected()["state"] == "No response"
++    assert len(p.rows()) == 2
++    p.key("CENTER")
++    assert p.detail is None
++    seen = set()
++    for seconds in range(16):
++        clock.now += 1
++        _, ink, _ = drawn(p)
++        seen.update(strings(ink))
++        assert "No response" in strings(ink) and "Gi0/10" not in strings(ink)
++        assert fonts.overlaps(ink) == []
++    assert {"rack-1", "CX", "FOC123"} <= seen
++    p.key("DOWN")
++    assert p.selected()["portname"] == "eth7" and "eth7" in strings(drawn(p)[1])
++    p.key("UP")
++    first["answering"] = True
++    p.snapshot.write_text(json.dumps(snap))
++    p.refresh(now=103, force=True)
++    assert p.selected()["portname"] == "Gi0/1" and len(p.rows()) == 13
++
++
++def industrial_switch():
++    def bank(prefix, label, ys, start):
++        return dict(label=label, rows=len(ys), ports=[
++            dict(name=f"{prefix}1/0/{n}", number=n, panel_y=y, port_id=f"4:{start+n}",
++                 state="free", serials=[], link_up=False) for n, y in enumerate(ys, 1)])
++    return dict(name="rack-hw", model="S5735I-S8U4XN-V2", verified_layout=True,
++                layout="industrial-columns", answering=True, blocks=[
++                    bank("GE", "RJ45", [0, 2, 4, 6, 9, 11, 13, 15], 0),
++                    bank("10GE", "SFP+", [4, 8, 12, 15], 100)])
++
++
++@pytest.mark.parametrize("theme", ["new", "classic"])
++def test_waveshare_industrial_face_keeps_all_labels_and_joystick_cards(tmp_path, theme):
++    snap = demo_snapshot()
++    snap.update(panel={"theme": theme}, switches=[industrial_switch()])
++    p = panel_with(tmp_path, snap)
++    p.page = 1
 +    _, ink, _ = drawn(p)
-+    assert "NO RESPO" not in strings(ink) and "SILENT" in strings(ink)
-+    assert fonts.overlaps(ink) == []
++    assert {"RJ45", "10GE SFP+", "S5735I-S8U4XN-V2"} <= set(strings(ink))
++    copper = [box_of(ink, f"GE1/0/{n}") for n in range(1, 9)]
++    cages = [box_of(ink, f"10GE1/0/{n}") for n in range(1, 5)]
++    assert len({x for x, _, _, _ in copper}) == len({x for x, _, _, _ in cages}) == 1
++    assert copper[0][2] < cages[0][0] and copper[2][1] == cages[0][1] and copper[7][1] == cages[3][1]
++    assert copper[4][1] - copper[3][1] > copper[1][1] - copper[0][1]
++    assert fonts.overlaps(ink) == [] and all(0 <= b[1] <= b[3] < 128 for b in ink)
++    for prefix, count, start in (("GE", 8, 0), ("10GE", 4, 100)):
++        for n in range(1, count + 1):
++            p.key("CENTER")
++            assert p.detail_row()["port_id"] == f"4:{start+n}"
++            p.key("KEY2")
++            p.key("DOWN")
++
++
++@pytest.mark.parametrize("theme", ["new", "classic"])
++def test_hyperpixel_industrial_face_targets_and_offline_navigation(tmp_path, theme, monkeypatch):
++    from fpms.integrations.cmprovision_touch import TouchMenu
++
++    snap = demo_snapshot()
++    first = industrial_switch()
++    snap.update(panel={"theme": theme}, switches=[first, snap["switches"][0]])
++    p = panel_with(tmp_path, snap)
++    p.page = 1
++    menu = TouchMenu(p)
++    labels = []
++    bolts, unknowns = [], []
++    label, mark = menu.label, menu.mark
++
++    def record(x, y, value, *args, **kw):
++        labels.append(value)
++        if value == "?":
++            unknowns.append((x, y))
++        return label(x, y, value, *args, **kw)
++
++    def record_mark(x, y, symbol, *args, **kw):
++        if symbol == "bolt":
++            bolts.append((x, y))
++        return mark(x, y, symbol, *args, **kw)
++
++    def render():
++        labels.clear()
++        menu.frame()
++
++    def tap(target):
++        x, y, right, bottom = next(box for box, action in menu.targets if action == target)
++        menu.tap((x + right) // 2, (y + bottom) // 2)
++        render()
++
++    monkeypatch.setattr(menu, "label", record)
++    monkeypatch.setattr(menu, "mark", record_mark)
++    render()
++    assert {"S5735I-S8U4XN-V2", "RJ45", "10GE SFP+"} <= set(labels)
++    tiles = {key: box for box, (kind, key) in menu.targets if kind == "row"}
++    copper = [tiles[f"0:GE1/0/{n}"] for n in range(1, 9)]
++    cages = [tiles[f"0:10GE1/0/{n}"] for n in range(1, 5)]
++    assert len(tiles) == 12 and copper[0][2] < cages[0][0]
++    assert copper[2][1] == cages[0][1] and copper[7][1] == cages[3][1]
++    assert copper[4][1] - copper[3][1] > copper[1][1] - copper[0][1]
++    assert all(b[3] < c[1] for bank in (copper, cages) for b,c in zip(bank, bank[1:]))
++    for bank, supports_poe in ((copper, True), (cages, False)):
++        for left, top, right, bottom in bank:
++            for readings in (bolts, unknowns):
++                assert any(left <= x <= right and top <= y <= bottom for x, y in readings) is supports_poe
++    for pin in tiles:
++        tap(("row", pin))
++        assert p.detail == ("port", pin) and menu.port_row()["portname"] == pin.split(":")[1]
++        tap(("key", "KEY2"))
++    tap(("row", "0:10GE1/0/1"))
++    tap(("section", "physical"))
++    first.update(answering=False, serial="HX-1")
++    p.snapshot.write_text(json.dumps(snap))
++    p.refresh(now=102, force=True)
++    render()
++    assert p.detail is None and {"rack-hw", "S5735I-S8U4XN-V2", "HX-1"} <= set(labels)
++    assert not any(action[0] in ("row", "port_device", "section") for _, action in menu.targets)
++    assert ("offset", 1) in [a for _, a in menu.targets]
++    tap(("offset", 1))
++    tap(("row", "1:Gi0/1"))
++    assert menu.port_row()["name"] == SWITCH + " Gi0/1"
++    tap(("key", "KEY2"))
++    tap(("offset", 0))
++    first["answering"] = True
++    p.snapshot.write_text(json.dumps(snap))
++    p.refresh(now=103, force=True)
++    render()
++    assert {key for _, (kind, key) in menu.targets if kind == "row"} == set(tiles)
 +
 +
 +def test_typographic_punctuation_from_the_server_is_drawn_as_ascii():
@@ -16919,10 +17084,10 @@ index 0000000..922834a
 +    /bin/sh "$0" --inside "$mode" "$root" "$source"
 diff --git a/fpms/integrations/cmprovision_touch.py b/fpms/integrations/cmprovision_touch.py
 new file mode 100644
-index 0000000..83bdc08
+index 0000000..eeaf72d
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_touch.py
-@@ -0,0 +1,836 @@
+@@ -0,0 +1,878 @@
 +"""Native landscape station menu for the rectangular HyperPixel 4.0 Touch."""
 +
 +import ipaddress
@@ -16987,6 +17152,7 @@ index 0000000..83bdc08
 +        self.offset = 0
 +        self.filter_state = None
 +        self.port_mode = "map"
++        self.map_anchor = None
 +        self.history = []
 +        self.section = None
 +        self.bound_port = None
@@ -17124,8 +17290,10 @@ index 0000000..83bdc08
 +                self.filter_state, self.port_mode = None, "map"
 +                self.history.clear()
 +                self.section = self.bound_port = None
++                self.map_anchor = None
 +            elif kind == "offset":
 +                self.offset = value
++                self.map_anchor = None
 +            elif kind == "key":
 +                modal = any(self.presented[i] for i in (3, 6, 7))
 +                p.key(value)
@@ -17141,6 +17309,7 @@ index 0000000..83bdc08
 +                p.scroll = self.offset = 0
 +            elif kind == "port_mode":
 +                self.port_mode, self.offset = value, 0
++                self.map_anchor = None
 +            elif kind == "rescue" and p.rescue_available():
 +                p.rescue_menu.show()
 +            elif kind == "section" and p.detail and p.detail[0] == "port" and self.port_row():
@@ -17187,6 +17356,13 @@ index 0000000..83bdc08
 +
 +    def frame(self, now=None):
 +        p = self.panel
++        if p.page == 1 and p.detail is None and self.history and self.history[0][0] == 1:
++            # A poll closed the card of a switch which stopped answering.
++            self.history.clear()
++            self.section = self.bound_port = None
++            self.port_mode = "map"
++            selected = p.selected()
++            self.map_anchor = (selected["switch_key"], 0) if selected else None
 +        self.presented = self.state()
 +        _, detail, theme, setup, _, _, power, rescue = self.presented
 +        self.targets = []
@@ -17370,10 +17546,9 @@ index 0000000..83bdc08
 +            self.device_line((25, y + 1, 769, y + 56), row, ("row", identity(row)))
 +
 +    def connected_ports(self, rows):
-+        switches = objects(self.panel.data.get("switches"), 64)
 +        result = []
 +        for row in rows:
-+            if "pin" not in row or switches[int(row["pin"].split(":")[0])].get("answering") is False:
++            if "pin" not in row:
 +                continue
 +            if (
 +                row.get("link_up") is True
@@ -17411,7 +17586,7 @@ index 0000000..83bdc08
 +
 +    def ports(self):
 +        p = self.panel
-+        rows = p.rows()
++        rows, views = p.port_map()
 +        self.rendered_ports = {row.get("pin"): row["port_id"] for row in rows if row.get("port_id")}
 +        connected = self.connected_ports(rows)
 +        switches = objects(p.data.get("switches"), 64)
@@ -17429,20 +17604,38 @@ index 0000000..83bdc08
 +            return
 +        cols = 14 if p.ports_map() == "whole" else 10
 +        banks = [
-+            (view, view["columns"][i : i + cols], objects(switches[n].get("blocks"), 32))
-+            for n, view in enumerate(p.map_view())
-+            for i in range(0, max(1, len(view["columns"])), cols)
++            (view, view["columns"][i : i + cols], objects(switches[n].get("blocks"), 32), i // cols)
++            for n, view in enumerate(views)
++            for i in range(0, 1 if view["slots"] else max(1, len(view["columns"])), cols)
 +        ]
++        if self.map_anchor:
++            pages = [i for i, (view, _, _, _) in enumerate(banks) if view["key"] == self.map_anchor[0]]
++            if pages:
++                self.offset = pages[min(self.map_anchor[1], len(pages) - 1)]
 +        self.header_pager(len(banks), 1, 510, 69)
 +        if not banks:
 +            self.label(22, 167, "No switches configured", 22, "muted")
 +            return
-+        view, columns, blocks = banks[self.offset]
-+        self.label(20, 109, view["name"], 15, "muted", 354)
-+        self.card((18, 137, 781, 336))
++        view, columns, blocks, bank = banks[self.offset]
++        self.map_anchor = (view["key"], bank)
 +        if not view["answering"]:
-+            self.label(35, 160, "Switch not responding", 21, "warn")
++            self.card((18, 135, 781, 179))
++            self.label(29, 148, "No response", 17, "warn", 124, "bold")
++            fields = list(dict.fromkeys(v for v in (view["name"], view["model"], view["serial"] or view["host"]) if v))
++            width = 616 // len(fields)
++            for i, value in enumerate(fields):
++                self.label(154 + i * width, 148, value, 16, "fg", width - 10, hostname=True)
 +            return
++        self.label(20, 109, view["name"], 15, "muted", 192 if view["slots"] else 354, hostname=True)
++        if view["slots"]:
++            self.label(224, 109, view["model"], 15, "fg", 266, "bold")
++            self.label(20, 134, "RJ45", 15, "muted", 355, "bold")
++            self.label(409, 134, "10GE SFP+", 15, "muted", 355, "bold")
++            for group, pos, i in view["slots"]:
++                x, y = 20 + group * 389, 154 + pos * 15
++                self.map_tile(rows[i], (x, y, x + 370, y + 27), supports_poe=group == 0)
++            return
++        self.card((18, 137, 781, 336))
 +        count = max(1, len(columns))
 +        splits = sum(a[2] != b[2] for a, b in zip(columns, columns[1:]))
 +        width, gap = 741, 6
@@ -17474,7 +17667,7 @@ index 0000000..83bdc08
 +        self.logo(589, 358, 23, True)
 +        self.label(620, 363, "Other station", 16, "muted", 150)
 +
-+    def map_tile(self, row, box):
++    def map_tile(self, row, box, *, supports_poe=True):
 +        x, y, right, bottom = box
 +        width = right - x + 1
 +        local = bool(row.get("server"))
@@ -17485,10 +17678,23 @@ index 0000000..83bdc08
 +        if edge == "line" and row.get("link_up") is True:
 +            edge = "good"
 +        power, _, power_ink = port_power(row)
-+        if edge == "line" and power_ink == "good":
++        if supports_poe and edge == "line" and power_ink == "good":
 +            edge = "warn"
 +        bg = "tint" if local else "surface" if row.get("link_up") is True and not peer else "raised"
 +        self.draw.rounded_rectangle(box, 8, fill=self.c[bg], outline=self.c[edge])
++        self.targets.append((box, ("row", row.get("pin") or row.get("name"))))
++        if bottom - y < 38:  # a wide socket row in the two vertical industrial banks
++            self.label(x + 8, y + 6, row["portname"], 16, "accent" if local else "fg", 109, "mono")
++            if local or peer:
++                self.logo(x + 119, y + 3, 21, peer)
++            self.label(x + 145, y + 7, row.get("endpoint"), 14, "muted", 95, hostname=True)
++            link, _, link_ink = port_link(row)
++            self.mark(right - 122, y + 6, "Ports", 15, link_ink)
++            self.label(right - 104, y + 7, link, 14, link_ink, 42)
++            if supports_poe:
++                self.mark(right - 60, y + 6, "bolt", 15, power_ink)
++                self.label(right - 42, y + 7, power, 14, power_ink, 40)
++            return
 +        name = text(row.get("number")) or text(row.get("portname")).rsplit("/", 1)[-1]
 +        self.label(x + 5, y + 6, name, 17, "accent" if local else "fg", width - 9, "mono")
 +        device_name, _, ink, device = self.port_identity(row)
@@ -17536,7 +17742,6 @@ index 0000000..83bdc08
 +                    font(14, "bold"),
 +                    self.c[ink],
 +                )
-+        self.targets.append((box, ("row", row.get("pin") or row.get("name"))))
 +
 +    def connections(self, rows, multiple):
 +        self.card((18, 135, 781, 167 + 56 * max(1, min(4, len(rows)))))
@@ -17581,6 +17786,8 @@ index 0000000..83bdc08
 +    def observed_port(self, device):
 +        matches = []
 +        for switch in objects(self.panel.data.get("switches")):
++            if switch.get("answering") is False:
++                continue
 +            for block in objects(switch.get("blocks")):
 +                for port in objects(block.get("ports")):
 +                    if device.get("port_id"):

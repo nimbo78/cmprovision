@@ -126,18 +126,15 @@ class GraphicsTest(unittest.TestCase):
         data = example()
         data.update(switches=[first, switch("spare", online=False), last], recognized=[])
         data["modules"][0].update(name="writer", port="old label")
-        for offset, wanted in ((0, "Gi2/0/29"), (1, "No selected card on this switch"), (2, "No port data available"),
-                               (3, "Gi2/0/29"), (-1, "No port data available")):
+        for offset in (0, 1, 2, 3, -1):
+            wanted = "No selected card on this switch" if offset % 2 else "Gi2/0/29"
             with self.subTest(offset=offset):
                 _, items = self.draw(data, view="map", switch_offset=offset)
                 labels = [word for word, _ in items]
                 self.assertTrue(any(wanted in word for word in labels))
-                if offset in (2, -1):
-                    self.assertTrue(any("Stand console" in word for word in labels))
-                    self.assertTrue(any("Full map unavailable" in word for word in labels))
-                else:
-                    self.assertTrue(any("Full switch map" in word for word in labels))
-                    self.assertEqual("Devices on the stand" in labels, offset == 1)
+                self.assertIn("Offline", labels)
+                self.assertTrue(any("Full switch map" in word for word in labels))
+                self.assertEqual("Devices on the stand" in labels, bool(offset % 2))
 
     def test_short_automatic_slides_reveal_the_end_of_a_64_character_port_name(self):
         east, west = catalyst(48, name="east"), catalyst(48, name="west")
@@ -172,13 +169,14 @@ class GraphicsTest(unittest.TestCase):
         sw.update(answering=False, serial=None)
         sw["blocks"][0]["ports"][0].update(serials=["s1"], state="module")
         data["switches"] = [sw, switch("small", bank("Copper", 2, [port(1)]))]
-        for offset, expected in ((0, "Full switch map"), (1, "Stand console")):
+        for offset in (0, 1):
             _, items = self.draw(data, view="auto", switch_offset=offset)
             labels = [word for word, _ in items]
-            self.assertTrue(any(expected in word for word in labels))
-            if offset == 0:
-                self.assertIn("S/N unavailable", labels)
-                self.assertIn("Offline · last known ports", labels)
+            self.assertTrue(any("Stand console" in word for word in labels))
+            self.assertIn("Offline", labels)
+            self.assertIn(sw["model"], labels)
+            self.assertNotIn("fiber-1", labels)
+        self.assertEqual(self.graphics.tour_stops(data["switches"], (1600,900)), 1)
         for state in ("fail", "stale"):
             data["modules"][0]["state"] = state
             _, items = self.draw(data, view="auto")
@@ -210,12 +208,78 @@ class GraphicsTest(unittest.TestCase):
                     groups[-1]["label"] = "SFP"
                 elif problem == "null bank":
                     groups[0] = None
-                    sw["answering"] = False
                 elif problem == "null socket":
                     groups[0]["ports"][0] = None
                 _, items = self.draw({"switches": [] if problem == "no switches" else [sw]}, view="map")
                 self.assertIn("Device card", dict(items))
                 self.assertTrue(any("Full map unavailable" in word for word, _ in items))
+
+    def test_industrial_ports_match_the_front_panel_in_both_hdmi_renderers(self):
+        copper = [dict(number=n, name=f'GE1/0/{n}', panel_y=y, endpoint=f'copper-{n}', state='free')
+                  for n,y in enumerate((0,2,4,6,9,11,13,15),1)]
+        cages = [dict(number=n, name=f'10GE1/0/{n}', panel_y=y, endpoint=f'fiber-{n}', state='free')
+                 for n,y in enumerate((4,8,12,15),1)]
+        sw = dict(name='DIN', model='S5735I-S8U4XN-V2', serial='DIN-TEST', verified_layout=True,
+                  layout='industrial-columns', answering=True, blocks=[bank('RJ45',8,copper),bank('SFP+',4,cages)])
+        data = dict(generated_at=100, switches=[sw], modules=[])
+        for view in ('desk','auto','map'):
+            _, painted = self.draw(data, view=view)
+            coords = dict(painted)
+            self.assertIn(sw['model'], coords)
+            self.assertTrue(any('SFP+' in label for label in coords))
+            self.assertEqual(len({coords[f'copper-{n}'][0] for n in range(1,9)}), 1)
+            self.assertEqual(len({coords[f'fiber-{n}'][0] for n in range(1,5)}), 1)
+            self.assertLess(coords['copper-1'][0], coords['fiber-1'][0])
+            self.assertEqual(coords['copper-3'][1], coords['fiber-1'][1])
+            self.assertEqual(coords['copper-8'][1], coords['fiber-4'][1])
+            self.assertLess(coords['copper-4'][1],coords['copper-5'][1])
+        text = board.frame(data,160,40,now=102,view='desk').plain()
+        lines = text.splitlines()
+        self.assertIn('SFP+',text)
+        for copper_num, fiber_num in [(3,1),(8,4)]:
+            line = next(line for line in lines if f'copper-{copper_num}' in line)
+            self.assertLess(line.index(f'copper-{copper_num}'), line.index(f'fiber-{fiber_num}'))
+
+    def test_offline_switch_with_cached_ports_only_shows_one_identifying_row(self):
+        sw = catalyst(24)
+        sw.update(answering=False, name='disconnected', serial='DIN-OFFLINE')
+        data = dict(generated_at=100, switches=[sw], modules=[])
+        _, painted = self.draw(data,view='map')
+        labels = dict(painted)
+        self.assertIn('Offline',labels)
+        self.assertIn(sw['model'], labels)
+        self.assertIn('S/N DIN-OFFLINE', labels)
+        self.assertNotIn('fiber-1',labels)
+        text = board.frame(data,160,40,now=102,view='desk').plain()
+        row = next(line for line in text.splitlines() if 'disconnected' in line)
+        self.assertIn(sw['model'],row)
+        self.assertIn('DIN-OFFLINE',row)
+        self.assertNotIn('fiber-1',text)
+        sw['answering'] = True
+        self.assertIn('fiber-1',dict(self.draw(data,view='map')[1]))
+
+    def test_usb_module_card_and_progress_survive_an_outage_of_all_switches(self):
+        data = example()
+        data.update(switches=[switch("disconnected", online=False)], recognized=[])
+        data["modules"][0].update(port="USB / port unknown")
+        for view in ("desk", "auto", "map"):
+            with self.subTest(view=view):
+                _, items = self.draw(data, view=view)
+                labels = dict(items)
+                for label in ("Offline", "Device card", "Devices on the stand", "63%", "wlanpi-fd3"):
+                    self.assertIn(label, labels)
+                self.assertNotIn("Switch ports", labels)
+                self.assertLess(labels["Devices on the stand"][0], labels["Device card"][0])
+
+    def test_text_engineer_card_does_not_show_stale_port_readings(self):
+        data = example()
+        observed = dict(name="neighbor", state="quiet", port="sw Gi0/1", port_id="s:p1", detail="Link only")
+        cached_port = port(1, port_id="s:p1", speed=1000, link_up=True, poe_state="delivering", watts=6.5)
+        sw = switch("sw", bank("RJ45", 1, [cached_port]))
+        data.update(switches=[sw], modules=[], recognized=[], unknown=[observed])
+        self.assertIn("6.5 W", board.frame(data, 160, 40, view="engineer", now=102).plain())
+        sw["answering"] = False
+        self.assertNotIn("6.5 W", board.frame(data, 160, 40, view="engineer", now=102).plain())
 
     def test_front_panel_shows_each_endpoint_with_independent_link_and_poe_rows(self):
         ports = [
@@ -285,20 +349,19 @@ class GraphicsTest(unittest.TestCase):
         x, y = dict(items)["33"]
         self.assertNotIn("camera", [word for word, (px, py) in items if px == x and y < py < y+dy])
 
-    def test_switch_serials_identify_the_roster_and_the_selected_saved_panel(self):
+    def test_switch_serials_identify_the_online_panel_and_the_offline_rows(self):
         data = example()
         data["switches"][0].update(name="assembly", serial="EAST0042")
         data["switches"][1].update(name="assembly", serial="WEST0088", answering=False)
         _, items = self.draw(data, view="desk")
         captions = [word for word, _ in items]
         self.assertEqual(captions.count("S/N EAST0042"), 1)
-        self.assertEqual(captions.count("S/N WEST0088"), 2)
+        self.assertEqual(captions.count("S/N WEST0088"), 1)
         self.assertIn("S/N unavailable", captions)
-        self.assertTrue(any("last known ports" in word for word in captions))
-        roster = [xy for word, xy in items if word in ("S/N EAST0042", "S/N WEST0088", "S/N unavailable")]
-        self.assertEqual(roster[0][1], roster[1][1])
-        self.assertEqual(roster[1][1], roster[2][1])
-        self.assertGreater(roster[3][1], roster[0][1])
+        self.assertEqual(captions.count("Offline"), 2)
+        positions = dict(items)
+        self.assertLess(positions["S/N WEST0088"][1], positions["S/N unavailable"][1])
+        self.assertLess(positions["S/N unavailable"][1], positions["S/N EAST0042"][1])
 
     def test_long_endpoint_keeps_its_additional_device_count_inside_the_tile(self):
         data = example()
@@ -363,8 +426,8 @@ class GraphicsTest(unittest.TestCase):
         self.assertEqual(overview.page(cards[0], 2, 0, 0), 1)
         self.assertEqual(overview.page(cards[0], 2, 0, 1), 2)  # next bank of the same switch
         self.assertEqual(overview.page(cards[0], 2, 0, -1), 0)
-        self.assertEqual([overview.page(cards[0], 2, tick, 0) for tick in range(2, 6)], [0, 1, 2, 3])
-        self.assertEqual(overview.pages[-1], (2, []))  # offline without a cached panel is still navigable
+        self.assertEqual([overview.page(cards[0], 2, tick, 0) for tick in range(2, 5)], [0, 1, 2])
+        self.assertNotIn(2, [index for index, groups in overview.pages])
         self.assertIsNone(overview.owner({"port": "Gi0/1"}))
 
     def test_large_physical_banks_keep_every_column_in_wire_order(self):
@@ -452,7 +515,7 @@ class GraphicsTest(unittest.TestCase):
 
     def test_no_saved_panel_is_identified_in_offline_warning(self):
         _, items = self.draw()
-        self.assertTrue(any("assembly-spare offline" in label and "no saved ports" in label for label, _ in items))
+        self.assertIn("assembly-spare offline",dict(items))
 
     def test_partial_module_and_unnamed_switch_do_not_stop_rendering(self):
         data = {"modules":[{"serial":"s1"}], "switches":[switch(None, bank("Copper", 2, [port(1, "module", ["s1"])]))]}

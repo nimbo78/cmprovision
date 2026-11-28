@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
-from hdmi_port_info import link_reading, port_endpoint, power_reading
+from hdmi_port_info import industrial_columns, link_reading, port_endpoint, power_reading
 from display_marquee import Marquee
 import display_details as details
 from hdmi_rotation import passports
@@ -305,14 +305,17 @@ class PortMap:
         self.modules = {m["serial"]:m for m in cards if m.get("serial")}
         columns = max(1, columns)
         for index, switch in enumerate(self.switches):
+            if switch.get("answering") is False:
+                continue
+            industrial = industrial_columns(switch)
             groups, used = [], 0
             for block in object_rows(switch.get("blocks")):
-                rows = 2 if block.get("rows") in (2,"2") else 1
+                rows = block["rows"] if industrial else (2 if block.get("rows") in (2,"2") else 1)
                 ports = object_rows(block.get("ports"))
                 for offset in range(0, len(ports), columns*rows):
                     chunk = ports[offset:offset+columns*rows]
                     needed = math.ceil(len(chunk)/rows)
-                    if groups and used+needed > columns:
+                    if groups and used+needed > columns and not industrial:
                         self.pages.append((index, groups))
                         groups, used = [], 0
                     groups.append(dict(label=clean(block.get("label")) or "Ports", rows=rows, ports=chunk))
@@ -329,7 +332,7 @@ class PortMap:
                         self.by_label[label] = None if label in self.by_label else location
                         for serial in port.get("serials") or []:
                             self.by_serial[serial] = location
-            self.pages.append((index, groups))   # even when the switch has never answered
+            self.pages.append((index, groups))
         self.observed = {}
         for item in observed:
             location = self.location(item)
@@ -393,8 +396,10 @@ class PortMap:
 
 def supports_full_map(switch):
     """SwitchFrontPanel verified the hardware. Check geometry before laying out every reported connector."""
-    if switch.get("verified_layout") is not True:
+    if switch.get("answering") is False or switch.get("verified_layout") is not True:
         return False
+    if industrial_columns(switch):
+        return True
     model = re.fullmatch(r"C9200L-(24|48)[PT]-4([GX])(?:-[AE])?", clean(switch.get("model")))
     if not model:
         return False
@@ -590,40 +595,48 @@ def switch_serial(p, switch, x, y, width):
     return width
 
 
-def roster(p, switches, active, y):
-    """Show neighbouring switches together, always reserving space for identity and outage state."""
+def roster(p, switches, active, y, tick):
+    offline = [sw for sw in switches if sw.get("answering") is False]
+    online = [i for i, sw in enumerate(switches) if sw.get("answering") is not False]
+    # Keep space for the working front panel. Larger outage lists rotate in groups.
+    limit = 2 if online else 8
+    if offline:
+        start = (tick % math.ceil(len(offline)/limit))*limit
+        for sw in offline[start:start+limit]:
+            p.rect(42,y,p.w-84,27,"surface","line",5)
+            p.label(55,y+14,"Offline",15,"bad","bold")
+            p.label(141,y+14,sw.get("name") or sw.get("host") or "Unnamed switch",16,"fg","mono",p.w*.29,hostname=True)
+            p.label(p.w*.41,y+14,sw.get("model") or sw.get("host") or "",15,"muted","bold",p.w*.27,scroll=True)
+            switch_serial(p,sw,p.w*.70,y+14,p.w*.26)
+            y += 32
+    if len(online) < 2:
+        return y
     start_x, gap = 157, 9
-    capacity = min(len(switches), max(2, int((p.w-start_x-42+gap)/270)))
-    start = active//capacity*capacity
-    end = min(len(switches), start+capacity)
+    capacity = min(len(online), max(2, int((p.w-start_x-42+gap)/270)))
+    start = online.index(active)//capacity*capacity
+    end = min(len(online), start+capacity)
     p.label(42, y+15, "Switches", 19, weight="bold")
-    summary = "%d total" % len(switches) if capacity == len(switches) else "%d–%d of %d" % (start+1, end, len(switches))
+    summary = "%d online" % len(online) if capacity == len(online) else "%d–%d of %d" % (start+1, end, len(online))
     p.label(42, y+36, summary, 14, "muted")
     width = (p.w-start_x-42-(capacity-1)*gap)/capacity
-    for i in range(start,end):
+    for col, i in enumerate(online[start:end]):
         switch = switches[i]
-        x = start_x+(i-start)*(width+gap)
+        x = start_x+col*(width+gap)
         ink = "accent" if i == active else "muted"
-        online = switch.get("answering") is True
-        state, tone = ("Online", "good") if online else ("Offline", "bad")
         p.rect(x, y, width, 48, "tint" if i == active else "surface", ink if i == active else "line", 9, 2)
         number = "#%d" % (i+1)
         p.label(x+13, y+14, number, 16, ink, "mono")
         nx = x+23+p.measure(number,16,"mono")
         p.label(nx, y+14, switch.get("name") or "Unnamed switch", 16, weight="mono",
                 width=x+width-92-nx, hostname=True)
-        p.rect(x+width-78, y+11, 6, 6, tone, radius=3)
-        p.label(x+width-65, y+14, state, 15, tone, "bold")
+        p.rect(x+width-78, y+11, 6, 6, "good", radius=3)
+        p.label(x+width-65, y+14, "Online", 15, "good", "bold")
         switch_serial(p, switch, x+13, y+35, width-26)
     return y+62
 
 
-def switch_details(p, switch, x, y, width, has_ports):
+def switch_details(p, switch, x, y, width):
     sx = x+switch_serial(p, switch, x, y, width*.42)+18
-    if switch.get("answering") is not True:
-        note = "Offline · " + ("last known ports" if has_ports else "no port data")
-        p.label(sx, y, note, 15, "bad", "bold")
-        sx += p.measure(note, 15, "bold")+18
     p.label(sx, y, switch.get("model") or "Automatic port layout", 15, "muted", "bold", x+width-sx, scroll=True)
 
 
@@ -648,9 +661,11 @@ def switch_panel(p, board, stand, page_idx, card, x, y, w, h, map_fallback=False
     chip_x = x+w-38-p.measure(page_name,14,"bold")
     p.chip(chip_x, y+27, page_name, size=14, outlined=True)
     p.label(x+71, y+27, switch.get("name") or "Switch %d" % (index+1), 21, weight="mono", width=chip_x-x-84, hostname=True)
-    switch_details(p, switch, x+71, y+51, w-91, bool(groups))
+    switch_details(p, switch, x+71, y+51, w-91)
     legend_y = y+h-40
-    if groups:
+    if industrial_columns(switch):
+        industrial_panel(p, board, stand, index, groups, card, x+20, y+65, w-40, legend_y-y-72)
+    elif groups:
         columns = [math.ceil(len(b["ports"])/b["rows"]) for b in groups]
         inner = w-42
         gaps = (len(groups)-1)*16+(sum(columns)-len(groups))*6
@@ -703,7 +718,21 @@ def endpoint_label(p, x, y, endpoint, width, ink):
     p.label(x, y, endpoint, size, ink, "bold", width, hostname=True)
 
 
-def port_tile(p, board, stand, index, port, group, x, y, w, h, selected, *, compact=False):
+def industrial_panel(p, board, stand, index, groups, card, x, y, w, h):
+    gap = 18
+    width = (w-gap)/2
+    pitch = (h-23)/8.5
+    owner = stand.owner(card)
+    for col, group in enumerate(groups):
+        gx = x+col*(width+gap)
+        p.label(gx,y+9,"RJ45 · 1G" if col == 0 else "SFP+ · 10G",16,"muted","bold")
+        for port in group["ports"]:
+            gy = y+22+port["panel_y"]*pitch/2
+            port_tile(p,board,stand,index,port,group["label"],gx,gy,width,pitch-2,
+                      owner == (index,port.get("name")),inline=True)
+
+
+def port_tile(p, board, stand, index, port, group, x, y, w, h, selected, *, compact=False, inline=False):
     members = [stand.modules[s] for s in port.get("serials") or [] if s in stand.modules]
     mark, old_ink = board.port_mark(port, [m for m in members if m.get("state") in ("fail","stale","run","unknown","ok")])
     tag = port.get("state")
@@ -726,6 +755,25 @@ def port_tile(p, board, stand, index, port, group, x, y, w, h, selected, *, comp
         p.rect(x+2,y+2,w-4,h-4,None,edge,6)
     number = port.get("number")
     number = str(number) if number is not None else clean(port.get("name") or "?")
+    observed = stand.observed.get((index, port.get("name")))
+    endpoint = port_endpoint(port, stand.host, modules=members, observed=observed)
+    if inline:
+        fiber = "SFP" in group.upper()
+        cy = y+h/2
+        p.symbol("sfp" if fiber else "rj",x+8,cy-8,16,link_ink)
+        p.label(x+31,cy,("10GE" if fiber else "GE")+number,15,"fg","mono")
+        ex = x+88
+        if local or peer:
+            p.mark(ex,cy-8,16,peer=peer)
+            ex += 21
+        rw = 63 if fiber else 128
+        endpoint_label(p,ex,cy,clean(endpoint or mark or "—"),x+w-rw-ex-6,ink)
+        rx = x+w-rw
+        p.label(rx,cy,link,15,link_ink,"bold",56)
+        if not fiber:
+            p.symbol("bolt",rx+57,cy-7,14,"warn" if powered else power_ink)
+            p.label(rx+74,cy,power,15,power_ink,"bold",52)
+        return
     padding = 6 if w < 110 else 8
     ix, inner = x+padding, w-2*padding
     mark_w = 20 if local or peer else min(inner*.57, p.measure(mark, 14, "bold")+1)
@@ -735,8 +783,6 @@ def port_tile(p, board, stand, index, port, group, x, y, w, h, selected, *, comp
     elif mark:
         p.label(x+w-8, y+15, mark, 14, ink, "bold", mark_w, align="right")
 
-    observed = stand.observed.get((index, port.get("name")))
-    endpoint = port_endpoint(port, stand.host, modules=members, observed=observed)
     ey = y+30 if compact else y+h*.39
     if endpoint:
         endpoint_label(p, ix, ey, clean(endpoint), inner, "local" if local else "fg")
@@ -874,9 +920,18 @@ def desk(p, board, data, stand, cards, selected, tick, page, map_fallback=False)
     x, y, w, bottom = 42, 237, p.w-84, p.h-80
     left = (w-16)*.616
     m = cards[selected] if cards else None
-    if len(stand.switches)>1:
-        y = roster(p,stand.switches,stand.pages[page][0],y)
-    height = min(445,max(328,(bottom-y-15)*.65))
+    if stand.switches:
+        active = stand.pages[page][0] if page is not None else None
+        y = roster(p,stand.switches,active,y,tick)
+        if page is None:
+            height = bottom-y
+            device_table(p,board,stand,cards,data.get("unknown") or [],selected,tick,
+                         x,y,left if m else w,height)
+            if m:
+                device_card(p,board,m,stand,selected,len(cards),x+left+16,y,w-left-16,height)
+            return
+    available = bottom-y-15
+    height = max(280,min(445,available*.65,available-175))
     switch_panel(p,board,stand,page,m,x,y,left,height,map_fallback)
     device_card(p,board,m,stand,selected,len(cards),x+left+16,y,w-left-16,height)
     table_y = y+height+15
@@ -890,7 +945,15 @@ def full_switch_map(p, board, data, stand, index, cards, selected, tick):
     owner = stand.owner(card)
     x, right, y = 42, p.w-42, 237
     if len(stand.switches)>1:
-        y = roster(p, stand.switches, index, y)
+        y = roster(p, stand.switches, index, y, tick)
+    if industrial_columns(switch):
+        width = right-x
+        height = min(465,p.h-y-228)
+        page = next(i for i, (sw, _) in enumerate(stand.pages) if sw == index)
+        switch_panel(p,board,stand,page,card,x,y,width,height)
+        table_y = y+height+13
+        device_table(p,board,stand,cards,data.get("unknown") or [],selected,tick,x,table_y,width,p.h-80-table_y)
+        return
     gx, width = x+17, right-x
     tiers = len(copper)//2
     gap, between = 5, 22
@@ -906,7 +969,7 @@ def full_switch_map(p, board, data, stand, index, cards, selected, tick):
     p.rect(x,y,width,bottom-y,"surface","line",14)
     p.icon_box("switch",x+17,y+12)
     p.label(x+71,y+22,switch.get("name") or f"Switch {index+1}",22,"fg","mono", width-530,hostname=True)
-    switch_details(p,switch,x+71,y+46,width-421,True)
+    switch_details(p,switch,x+71,y+46,width-421)
     count = 12*len(copper)
     order = "1–24 above 25–48" if count == 48 else "Odd ports above even ports"
     p.label(right-18,y+22,f"{count} RJ45  ·  4 {fiber['label']}  ·  {order}",17,"fg","bold",align="right")
@@ -1128,8 +1191,7 @@ def footer(p, board, data, stand, cards, selected, tick, actual, paused, switch_
         message, tone = stand.card_port(m)+" · "+clean(m.get("detail") or phase(board,m)), "bad" if m["state"] == "fail" else "warn"
     elif offline:
         lost = next(s for s in stand.switches if s.get("answering") is not True)
-        saved = any(groups for index,groups in stand.pages if stand.switches[index] is lost)
-        message = clean(lost.get("name") or "Switch")+" offline · "+("last known ports" if saved else "no saved ports")
+        message = clean(lost.get("name") or lost.get("host") or "Switch")+" offline"
         tone = "bad"
     elif data.get("unknown"):
         message, tone = "%d unrecognized or quiet ports · See Ports in the web UI" % len(data["unknown"]), "warn"

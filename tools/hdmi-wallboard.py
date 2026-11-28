@@ -568,29 +568,75 @@ def port_pages(switch, width, height):
     return pages or [[]]
 
 
+def industrial_ports(c, x, y, width, height, switch, tick, by_serial, by_location, host):
+    from hdmi_port_info import link_reading, port_endpoint, power_reading
+    col_w = (width-4)//2
+    slots = max(1, height-4)
+    # At full height, leave the gap between the top and bottom RJ45 banks.
+    gap = int(slots >= 9)
+    pages = math.ceil((8+gap)/slots)
+    page = tick % pages
+    for col, block in enumerate(switch['blocks']):
+        cx = x+2+col*col_w
+        c.text(cx,y+1,'RJ45 / 1G' if col == 0 else 'SFP+ / 10G', 'dim', col_w-1)
+        for port in block['ports']:
+            row = (port['panel_y']+gap)//2
+            if row//slots != page:
+                continue
+            cy = y+2+row%slots
+            members = [by_serial[s] for s in port.get('serials', []) if s in by_serial]
+            observed = by_location.get(switch['name']+' '+port['name'])
+            endpoint = port_endpoint(port,host,modules=members,observed=observed)
+            mark, ink = port_mark(port, members)
+            label = ('GE' if col == 0 else '10GE')+str(port['number'])
+            reading = link_reading(port)[0]
+            if col == 0:
+                reading += ' PoE '+power_reading(port)[0]
+            c.text(cx,cy,label,ink,6)
+            c.marquee(cx+6,cy,(endpoint or mark.strip() or '-')+' / '+reading,col_w-7,'fg')
+    return page,pages
+
+
 def ports(c, x, y, width, height, switches, modules, tick, host=None, observations=()):
+    from hdmi_port_info import industrial_columns
     if not switches:
         c.box(x, y, width, height, 'PORTS')
         c.wrap(x + 2, y + 2, 'No managed switch configured. Device cards use recent module reports.', width - 4, 3, 'dim')
         return
+    offline = [s for s in switches if s.get('answering') is False]
+    switches = [s for s in switches if s.get('answering') is not False]
+    if offline:
+        limit = min(height,2) if switches else height
+        start = (tick % math.ceil(len(offline)/limit))*limit
+        for sw in offline[start:start+limit]:
+            fields = ['OFFLINE', sw.get('name') or sw.get('host'), sw.get('model'),
+                      'S/N '+safe(sw['serial']) if sw.get('serial') else None]
+            c.marquee(x+1,y,' / '.join(safe(v) for v in fields if v),width-2,'warn')
+            y, height = y+1, height-1
+    if not switches:
+        return
     switch = switches[tick % len(switches)]
-    pages = port_pages(switch, width - 4, height - 4)
-    page_no = (tick // len(switches)) % len(pages)
     title = '%s / %s' % (switch['name'], switch.get('model') or 'automatic layout')
     c.box(x, y, width, height, title)
     pitch = port_pitch(switch)
-    notes = [] if switch['answering'] else ['SNMP NOT RESPONDING / last known ports']
-    if pitch > 10:
-        from hdmi_port_info import link_reading, port_endpoint, power_reading
-        notes.append('S/N ' + (safe(switch.get('serial')) or 'unknown'))
-    c.marquee(x + 2, y + 1, ' / '.join(notes), width - 4, 'dim' if switch['answering'] else 'warn')
     by_serial = {m['serial']: m for m in modules if m.get('serial')}
     by_location = {}
     if sum(s['name'] == switch['name'] for s in switches) == 1:
         for device in observations:
             label = device.get('port')
             by_location[label] = None if label in by_location else device
-    for bx, by, bank in pages[page_no]:
+    if industrial_columns(switch):
+        page_no, page_count = industrial_ports(c,x,y,width,height,switch,tick//len(switches),by_serial,by_location,host)
+        banks_on_page = []
+    else:
+        pages = port_pages(switch,width-4,height-4)
+        page_count = len(pages)
+        page_no = (tick//len(switches)) % page_count
+        banks_on_page = pages[page_no]
+        if pitch > 10:
+            from hdmi_port_info import link_reading, port_endpoint, power_reading
+            c.marquee(x+2,y+1,'S/N '+(safe(switch.get('serial')) or 'unknown'),width-4,'dim')
+    for bx, by, bank in banks_on_page:
         c.text(x + 2 + bx, y + 2 + by, bank['label'], 'dim', bank['width'])
         for i, port in enumerate(bank['ports']):
             px, py = x + 2 + bx + (i // bank['rows']) * pitch, y + 3 + by + (i % bank['rows']) * 3
@@ -612,9 +658,9 @@ def ports(c, x, y, width, height, switches, modules, tick, host=None, observatio
             c.text(px, py, '.-------.', 'dim')
             c.text(px, py + 1, '|%s|' % (number + ' ' + mark)[:7].ljust(7), ink)
             c.text(px, py + 2, "'-------'", 'dim')
-    if len(pages) > 1 or len(switches) > 1:
+    if page_count > 1 or len(switches) > 1:
         label = 'SWITCH %d/%d / PORT PAGE %d/%d' % (
-            tick % len(switches) + 1, len(switches), page_no + 1, len(pages))
+            tick % len(switches) + 1, len(switches), page_no + 1, page_count)
         if len(switches) > 1:
             label += ' / Next: ' + safe(switches[(tick + 1) % len(switches)]['name'])
         c.marquee(x + 2, y + height - 2, label, width - 4, 'dim')
@@ -685,7 +731,7 @@ def desk(c, data, module, now, tick, switch_offset=0):
     observations = data.get('recognized', []) + data.get('unknown', [])
     # Fit compact physical panels beside a readable card; larger banks paginate.
     natural = max((sum(math.ceil(len(b['ports']) / max(1, b['rows'])) for b in s['blocks']) * port_pitch(s)
-                   + max(0, len(s['blocks']) - 1) + 4 for s in switches), default=0)
+                   + max(0, len(s['blocks']) - 1) + 4 for s in switches if s.get('answering') is not False), default=0)
     width = max(30, min(c.cols - 42, max(round(c.cols * 0.60), natural)))
     height = min(17, max(11, c.rows - y - 10))
     ports(c, 0, y, c.cols if c.cols < 100 else width, height, switches,
@@ -772,6 +818,8 @@ def engineer(c, data, module, now, tick):
         c.marquee(0, y, module.get('port', '')+' / '+module.get('name', ''), c.cols, 'accent')
         fields = []
         for switch in data.get('switches', []):
+            if switch.get('answering') is False:
+                continue
             for block in switch.get('blocks', []):
                 for port in block.get('ports', []):
                     if module.get('port_id') and port.get('port_id') == module['port_id']:
@@ -876,7 +924,7 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
         m = problems[tick % len(problems)]
         c.marquee(0, rows - 4, '! ' + m['port'] + ': ' + (m.get('detail') or phase(m)), cols, 'fail')
     elif any(not s['answering'] for s in data.get('switches', [])):
-        c.text(0, rows - 4, '! A switch is not answering. Ports are last known data.', 'warn')
+        c.text(0, rows - 4, '! A switch is offline.', 'warn')
     else:
         unknown = sum(p.get('state') in ('unrecognized', 'quiet') for s in data.get('switches', []) for b in s['blocks'] for p in b['ports'])
         c.text(0, rows - 4, ('! %d unrecognized/quiet ports. Open Ports in the web UI.' % unknown) if unknown else 'READ ONLY / ' + safe(data.get('clock')), 'warn' if unknown else 'dim')

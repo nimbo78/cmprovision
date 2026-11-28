@@ -21,12 +21,12 @@
         </div>
     @endforeach
 
-    @if ($map)
+    @if ($hasLivePorts)
         @php($s = $map['summary'])
-        @php($verdictColor = ['running' => 'bg-info-bg text-info', 'failed' => 'bg-neg-bg text-neg', 'done' => 'bg-pos-bg text-pos', 'empty' => 'bg-head text-fg'][$s['verdict']])
+        @php($verdictColor = ['running' => 'bg-info-bg text-info', 'failed' => 'bg-neg-bg text-neg', 'done' => 'bg-pos-bg text-pos', 'empty' => 'bg-head text-fg', 'incomplete' => 'bg-warn-bg text-warn'][$s['verdict']])
         <section class="cmp-card px-4 py-3 grid gap-3 md:grid-cols-[1fr_auto] items-center" aria-label="The stand now">
             <div class="font-bold md:col-span-2">
-                {{ $s['modules'] }} {{ $s['counts']['recognized'] ? 'local ' : '' }}{{ $s['modules'] === 1 ? 'module' : 'modules' }} on the stand
+                {{ $s['modules'] }} {{ $s['counts']['recognized'] ? 'local ' : '' }}{{ $s['modules'] === 1 ? 'module' : 'modules' }} {{ $s['verdict'] === 'incomplete' ? 'on reporting switches' : 'on the stand' }}
                 <span class="text-fg-muted font-semibold">· {{ $s['counts']['free'] }} of {{ $s['ports'] }} ports free</span>
             </div>
             <div class="flex flex-wrap gap-2 items-center" role="group" aria-label="Show only">
@@ -43,10 +43,9 @@
             </div>
             {{-- one-line php directives only: Blade would read a php block here, or even its closing word in a comment, as running from the first one-line directive above --}}
             @php($unknown = $s['counts']['unknown'] ? ', '.$s['counts']['unknown'].' without data' : '')
-            @php($verdict = ['running' => $s['busy'].' still in progress, '.$s['counts']['fail'].' failed: keep the batch on the stand', 'failed' => 'All finished, '.$s['counts']['fail'].' failed'.$unknown.': restart or replace them', 'done' => 'All done: the batch can be replaced', 'empty' => $s['counts']['recognized'] ? 'No local modules on the stand' : 'No modules on the stand'][$s['verdict']])
-            {{-- a map from before a switch went silent may no longer be the stand --}}
-            <div class="text-sm font-bold rounded px-3 py-2 {{ $asOf ? 'bg-head text-fg' : $verdictColor }}">
-                {{ $asOf.$verdict }}
+            @php($verdict = ['running' => $s['busy'].' still in progress, '.$s['counts']['fail'].' failed: keep the batch on the stand', 'failed' => 'All finished, '.$s['counts']['fail'].' failed'.$unknown.': restart or replace them', 'done' => 'All done: the batch can be replaced', 'empty' => $s['counts']['recognized'] ? 'No local modules on the stand' : 'No modules on the stand', 'incomplete' => $s['answering'].' of '.$s['switches'].' switches reporting. Batch status is incomplete.'][$s['verdict']])
+            <div class="text-sm font-bold rounded px-3 py-2 {{ $verdictColor }}">
+                {{ $verdict }}
             </div>
             @if ($writable && $failed)
                 <button type="button" wire:click="restartFailed" wire:confirm="{{ \App\Services\Switch\PoeRestart::confirmFailed($failed) }}" wire:loading.attr="disabled"
@@ -56,12 +55,20 @@
                 </button>
             @endif
         </section>
+    @else
+        <p class="cmp-card px-4 py-3 text-sm text-fg-muted" role="status">Live port counts and batch status are unavailable.</p>
     @endif
 
-        <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
+        <div class="grid gap-4 {{ $hasLivePorts ? 'lg:grid-cols-[minmax(0,1fr)_20rem]' : '' }} items-start">
             <div class="grid gap-4 min-w-0">
             @foreach ($switches as $sw)
-            <section class="cmp-card px-4 py-3 min-w-0" aria-label="{{ $sw['name'] }}">
+            <section wire:key="switch-{{ $sw['id'] }}" @class(['cmp-card px-4 py-3 min-w-0', 'ports-switch-industrial' => $sw['modelHeading'] !== null]) aria-label="{{ $sw['name'] }}">
+                @if ($sw['offline'] !== null)
+                    <p class="flex items-baseline gap-1 text-sm" title="{{ $sw['offline'] }}">
+                        <span class="min-w-0 overflow-x-auto whitespace-nowrap">{{ $sw['line'] }}</span>
+                        <span class="shrink-0 font-semibold text-warn">· Offline</span>
+                    </p>
+                @else
                 @if ($sw['noMacTable'])
                     <div class="bg-warn-bg border-l-4 border-warn-bar text-warn px-4 py-3 rounded mb-3" role="status">
                         The switch gave no MAC address table, so modules cannot be matched to its ports. Check the MAC table method under
@@ -71,7 +78,8 @@
                 <div class="overflow-x-auto pb-1">
                     <div class="ports-chassis">
                         <div class="ports-model">
-                            <span class="ports-line">{{ $sw['line'] }}@if ($sw['note']) · <span class="ports-silent">{{ $sw['note'] }}</span>@endif</span>
+                            @if ($sw['modelHeading'])<h3 class="ports-panel-model">{{ $sw['modelHeading'] }}</h3>@endif
+                            <span class="ports-line">{{ $sw['line'] }}</span>
                             <span>{{ $sw['part']['composition'] ?? '' }}</span>
                         </div>
                         @if ($sw['placeholder'])
@@ -112,14 +120,15 @@
                         @endif
                     </div>
                 </div>
+                @endif
             </section>
             @endforeach
-            @if ($map)
+            @if ($hasLivePorts)
                 <p class="text-xs text-fg-muted">The last 4 characters of the MAC address and the result (✓, ✕, write %) per port; ⚡ the port powers its device; → a link to another switch of the stand; OURS: a verified sensor flashed by a station with the same key; the cmprovision mark: orange is this station, grey is another station; dashed: an SFP cage; a dashed corner: a combo port, RJ45 or SFP, filled when an SFP is in.</p>
             @endif
             </div>
 
-            @if ($map)
+            @if ($hasLivePorts)
             <aside class="cmp-card px-4 py-3 text-sm" aria-live="polite">
                 @if ($tile)
                     <h3 class="ports-serial font-bold text-base">{{ $tile['label'] }}</h3>

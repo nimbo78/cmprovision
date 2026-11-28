@@ -355,7 +355,6 @@ body { background: var(--page); color: var(--text); }
 .ports-chassis { --tile: 50px; background: #2b2f36; border-radius: 8px; padding: 10px 12px 12px; display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; }
 .ports-model { width: 100%; display: flex; justify-content: space-between; gap: 12px; color: #c9ced6; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .ports-model .ports-line { text-transform: none; letter-spacing: normal; font-size: 12px; }
-.ports-silent { color: #f2c94c; }
 .ports-empty { width: 100%; margin: 0; color: #c9ced6; font-size: 13px; }
 .ports-layout-label { width: 100%; color: #c9ced6; font-size: 11px; }
 /* Verified panels never wrap their banks: scrolling preserves the physical port positions on a phone. */
@@ -364,6 +363,13 @@ body { background: var(--page); color: var(--text); }
 .ports-panel-hint { margin-top: 4px; color: #c9ced6; font-size: 11px; }
 .ports-panel-scroll:focus-visible { outline: 2px solid #c9ced6; outline-offset: 2px; }
 .ports-panel { display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 18px; width: max-content; }
+.ports-switch-industrial { width: min(100%, 22rem); }
+.ports-switch-industrial .ports-model { flex-direction: column; gap: 4px; }
+.ports-panel-model { color: white; font-size: 18px; line-height: 1.25; font-weight: 800; letter-spacing: normal; }
+.ports-panel.industrial-columns { align-items: flex-start; gap: 26px; margin-inline: auto; }
+.ports-column { display: grid; grid-auto-rows: calc((var(--tile) + 8px) / 2); }
+.ports-column-port { position: relative; display: flex; align-items: center; gap: 6px; }
+.ports-column.uplinks .ports-tile { height: calc(var(--tile) + 8px); }
 .ports-bank { position: relative; display: grid; grid-auto-flow: column; grid-template-rows: 12px var(--tile) var(--tile) 12px; gap: 4px 5px; flex: none; }
 .ports-bank.one-row { grid-template-rows: 12px var(--tile) 12px; }
 .ports-bank.uplinks { background: #343a44; border-radius: 3px; box-shadow: 0 0 0 6px #343a44; }

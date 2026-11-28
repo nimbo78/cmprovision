@@ -2,6 +2,25 @@
 import math
 
 
+def industrial_columns(switch):
+    """The publisher supplies socket positions in half-row units for a verified DIN panel."""
+    if switch.get('layout') != 'industrial-columns':
+        return False
+    blocks = switch.get('blocks')
+    if not isinstance(blocks, list) or len(blocks) != 2:
+        return False
+    for block, count in zip(blocks, (8, 4)):
+        if not isinstance(block, dict) or block.get('rows') != count:
+            return False
+        ports = block.get('ports')
+        if not isinstance(ports, list) or len(ports) != count:
+            return False
+        if any(not isinstance(p, dict) or type(p.get('panel_y')) is not int or
+               not 0 <= p['panel_y'] <= 15 for p in ports):
+            return False
+    return True
+
+
 def _positive(value):
     if isinstance(value, bool):
         return None
