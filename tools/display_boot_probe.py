@@ -117,7 +117,12 @@ class Header:
     def spi_byte(self, value):
         result = 0
         for shift in reversed(range(8)):
-            result = (result << 1) | self.pulse(bool(value & (1 << shift)))
+            self.drive(10, bool(value & (1 << shift)))
+            # The ST7735S presents its reply while SCLK is low. By the time
+            # clock(True) returns, the panel has already released SDA.
+            result = (result << 1) | int(self.high(10))
+            self.clock(True)
+            self.clock(False)
         return result
 
     def read_spi(self, command, length):

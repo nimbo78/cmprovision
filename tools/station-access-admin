@@ -12,10 +12,9 @@ try:
     controller = Controller(STATE, Linux())
     plan = controller.review(sys.argv[2])
     print('Station access request:', plan['id'])
-    print('Existing Linux administrator:', plan['user'])
+    print('Linux administrator:', plan['user'])
     for change in plan['changes']:
         print(' -', change)
-    print('Existing SSH keys and sudo policy are retained.')
     if input('Approve exactly this request? Type YES: ') != 'YES':
         raise SystemExit('Not approved.')
     approved = controller.approve(plan['id'])

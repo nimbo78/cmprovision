@@ -8,6 +8,8 @@ def passports(data):
     cards = entries(data.get("modules")) + entries(data.get("recognized")) + entries(data.get("unknown"))
     occupied = {c.get("port_id") for c in cards if c.get("port_id")}
     for switch in entries(data.get("switches")):
+        if switch.get("answering") is False:
+            continue
         for block in entries(switch.get("blocks")):
             for port in entries(block.get("ports")):
                 key = port.get("port_id")

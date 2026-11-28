@@ -71,7 +71,9 @@ class Hardware:
         self.other_format = self.plane(14, 'overlay', 0, 0, 'NV12')
         self.overlay = self.plane(15, 'overlay', 0, 0)
         self.crtc.possible_planes = [self.primary, self.busy, self.other_format, self.overlay]
-        self.card = SimpleNamespace(fd=9, has_atomic=True, connectors=[self.hdmi, self.dpi], crtcs=[self.crtc])
+        self.card = SimpleNamespace(fd=9, has_atomic=True, connectors=[self.hdmi, self.dpi], crtcs=[self.crtc],
+                                    planes=self.crtc.possible_planes)
+        self.mode_tests, self.modesets, self.closed_fbs = [], [], []
         self.master = False
         self.fail_acquire = False
         self.busy_attempts = 0
@@ -86,12 +88,21 @@ class Hardware:
             drmSetMaster=self.call(self.acquire),
             drmDropMaster=self.call(self.drop),
             drmIsMaster=self.call(lambda fd: int(self.master)),
+            drmModeCloseFB=lambda fd, fb: self.closed_fbs.append(fb) or 0,
         )
         self.kms = SimpleNamespace(
             Card=self.open_card, DumbFramebuffer=self.buffer, AtomicReq=self.request,
-            PlaneType=SimpleNamespace(Overlay='overlay'), PixelFormat=SimpleNamespace(XRGB8888='XR24'),
+            PlaneType=SimpleNamespace(Overlay='overlay', Primary='primary'), PixelFormat=SimpleNamespace(XRGB8888='XR24'),
             DrmEventType=SimpleNamespace(FLIP_COMPLETE='flip'),
         )
+
+    def hotplug(self):
+        self.hdmi.crtc = None
+        self.hdmi.live['CRTC_ID'] = 0
+        self.crtc.live.update(ACTIVE=0, MODE_ID=0)
+        self.primary.live.update(CRTC_ID=0, FB_ID=0)
+        self.hdmi.get_possible_crtcs = lambda: [self.crtc]
+        self.hdmi.get_default_mode = lambda: SimpleNamespace(hdisplay=8, vdisplay=3, to_blob=lambda card: Object(318))
 
     @staticmethod
     def plane(number, kind, route, fb, fmt='XR24'):
@@ -146,31 +157,40 @@ class Hardware:
         hw = self
 
         class Request:
-            def add(self, plane, props):
+            def __init__(self):
+                self.changes = []
+
+            def add(self, obj, props):
                 assert hw.master
-                self.plane, self.props = plane, props
+                self.changes.append((obj, props.copy()))
 
             def add_plane(self, plane, fb, crtc, src=None, dst=None):
                 self.add(plane, {'FB_ID': fb.id, 'CRTC_ID': crtc.id, 'dst': dst})
 
-            def test(self):
+            def test(self, allow_modeset=False):
                 assert hw.master
-                return -errno.EINVAL if self.plane.id in hw.rejected else 0
+                if allow_modeset:
+                    hw.mode_tests.append(list(self.changes))
+                return -errno.EINVAL if any(obj.id in hw.rejected for obj, _ in self.changes) else 0
 
-            def commit(self, token):
-                result = self.apply()
+            def commit(self, token, allow_modeset=False):
+                result = self.apply(allow_modeset)
                 if result == 0:
                     hw.flips.append(token)
                 return result
 
-            def commit_sync(self):
-                return self.apply()
+            def commit_sync(self, allow_modeset=False):
+                return self.apply(allow_modeset)
 
-            def apply(self):
+            def apply(self, allow_modeset):
                 assert hw.master
-                hw.commits.append((self.plane, self.props.copy()))
+                assert allow_modeset or all(obj not in (hw.crtc, hw.hdmi, hw.dpi) for obj, _ in self.changes)
+                if allow_modeset:
+                    hw.modesets.append(list(self.changes))
+                hw.commits.extend(self.changes)
                 if not hw.commit_error:
-                    self.plane.live.update(self.props)
+                    for obj, props in self.changes:
+                        obj.live.update(props)
                 return hw.commit_error
 
         return Request()
@@ -255,6 +275,69 @@ class HdmiOutputTest(unittest.TestCase):
             with self.subTest(vt=vt, status=status), self.assertRaises(OSError):
                 self.module.open_output()
         self.assertFalse(self.hw.opened)
+
+    def test_hotplug_lights_an_idle_hdmi_with_the_first_frame_and_releases_only_its_route(self):
+        self.hw.hotplug()
+        screen = self.open()
+        self.assertTrue(self.hw.mode_tests)
+        self.assertEqual(self.hw.commits, [])
+        frame = Image.new('RGB', screen.size, 'orange')
+        screen.show(frame)
+        self.assertEqual(self.hw.hdmi.live['CRTC_ID'], 105)
+        self.assertEqual(self.hw.crtc.live, {'ACTIVE': 1, 'MODE_ID': 318})
+        self.assertEqual(self.hw.primary.live['FB_ID'], self.hw.buffers[0].id)
+        screen.show(frame)
+        self.assertEqual(self.hw.primary.live['FB_ID'], self.hw.buffers[1].id)
+        self.assertEqual(len(self.hw.modesets), 1)
+        self.hw.status.write_text('disconnected')
+        screen.close()
+        self.assertEqual(self.hw.hdmi.live['CRTC_ID'], 0)
+        self.assertEqual(self.hw.crtc.live, {'ACTIVE': 0, 'MODE_ID': 0})
+        self.assertEqual(self.hw.primary.live['FB_ID'], 0)
+        self.assertEqual(self.hw.dpi.live['CRTC_ID'], 81)
+        self.assertEqual(self.hw.busy.live, {'CRTC_ID': 81, 'FB_ID': 701})
+
+    def test_hotplug_never_claims_a_busy_or_rejected_route(self):
+        self.hw.hotplug()
+        for obj, props in [(self.hw.crtc, {'ACTIVE': 1}), (self.hw.crtc, {'MODE_ID': 77}),
+                           (self.hw.dpi, {'CRTC_ID': 105}), (self.hw.primary, {'FB_ID': 778}),
+                           (self.hw.busy, {'CRTC_ID': 105})]:
+            with self.subTest(props=props), patch.dict(obj.live, props), self.assertRaises(OSError):
+                self.module.open_output()
+        self.hw.rejected.add(self.hw.primary.id)
+        with self.assertRaises(OSError):
+            self.module.open_output()
+        self.assertEqual(self.hw.commits, [])
+
+    def test_hotplug_rechecks_ownership_before_first_frame_and_before_disabling(self):
+        self.hw.hotplug()
+        screen = self.open()
+        frame = Image.new('RGB', screen.size)
+        self.hw.vt.write_text('tty1')
+        with self.assertRaises(OSError):
+            screen.show(frame)
+        self.hw.vt.write_text('tty8')
+        with patch.dict(self.hw.dpi.live, {'CRTC_ID': 105}), self.assertRaises(OSError):
+            screen.show(frame)
+        self.assertEqual(self.hw.commits, [])
+        screen.show(frame)
+        self.hw.primary.live['FB_ID'] = 999
+        previous = list(self.hw.commits)
+        screen.close()
+        self.assertEqual(self.hw.commits, previous)
+        self.assertEqual(self.hw.primary.live['FB_ID'], 999)
+
+    def test_hotplug_preserves_scanout_if_a_peer_starts_using_the_same_route(self):
+        self.hw.hotplug()
+        screen = self.open()
+        screen.show(Image.new('RGB', screen.size))
+        self.hw.overlay.live.update(CRTC_ID=105, FB_ID=225)
+        previous = list(self.hw.commits)
+        screen.close()
+        self.assertEqual(self.hw.commits, previous)
+        self.assertEqual(self.hw.crtc.live['ACTIVE'], 1)
+        self.assertEqual(self.hw.closed_fbs, [fb.id for fb in self.hw.buffers])
+
 
     def test_late_vt_switch_hot_unplug_mode_change_or_taken_plane_never_presents(self):
         screen = self.open()

@@ -61,6 +61,27 @@ class SwitchFrontPanel
             $blocks[] = self::bank($uplinks, [1, 2, 3, 4], 1, true, 'sfp', $m[2] === 'X' ? 'SFP+' : 'SFP');
             return ['model' => $model, 'blocks' => $blocks];
         }
+        if ($model === 'S5735I-S8U4XN-V2')
+        {
+            $banks = ['GE' => [], '10GE' => []];
+            foreach ($tiles as $tile)
+            {
+                if (!preg_match('/^(GE|10GE)1\/0\/([1-8])$/iD', $tile['name'], $m))
+                    return null;
+                $type = strtoupper($m[1]);
+                $number = (int) $m[2];
+                if (isset($banks[$type][$number]))
+                    return null;
+                $banks[$type][$number] = $tile;
+            }
+            if (!self::complete($banks['GE'], 8) || !self::complete($banks['10GE'], 4))
+                return null;
+            // Front view, in half-row pitches from GE1. The copper bank has a gap after GE4.
+            return ['model' => $model, 'layout' => 'industrial-columns', 'blocks' => [
+                self::bank($banks['GE'], range(1, 8), 8, false, 'copper', 'RJ45', panelY: [0, 2, 4, 6, 9, 11, 13, 15]),
+                self::bank($banks['10GE'], range(1, 4), 4, true, 'sfp', 'SFP+', panelY: [4, 8, 12, 15]),
+            ]];
+        }
         if (preg_match('/^(?:ROUTEROS )?CRS309(?:-1G-8S\+(?:IN)?)?$/', $model))
         {
             $fiber = [];
@@ -102,11 +123,17 @@ class SwitchFrontPanel
         return count($ports) === $count && !array_diff(range(1, $count), array_keys($ports));
     }
 
-    protected static function bank(array $ports, array $numbers, int $rows, bool $uplinks, string $media, string $label, ?array $printed = null): array
+    protected static function bank(array $ports, array $numbers, int $rows, bool $uplinks, string $media, string $label, ?array $printed = null, ?array $panelY = null): array
     {
         $tiles = [];
         foreach ($numbers as $i => $number)
-            $tiles[] = array_merge($ports[$number], ['panel_number' => $printed[$i] ?? $number]);
+        {
+            $tile = $ports[$number];
+            $tile['panel_number'] = $printed[$i] ?? $number;
+            if ($panelY !== null)
+                $tile['panel_y'] = $panelY[$i];
+            $tiles[] = $tile;
+        }
         return ['rows' => $rows, 'uplinks' => $uplinks, 'media' => $media, 'label' => $label, 'tiles' => $tiles];
     }
 }

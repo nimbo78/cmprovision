@@ -68,16 +68,19 @@ The primary check verifies image preparation/files, required hashes and split co
 
 The same form is in **Settings → System → Station access**.
 
-1. Choose an existing Linux administrator in the `sudo` group. Enter an optional new password/public keys and, if needed, **Enable SSH service**. OpenSSH server must already be installed.
-2. Select **Review SSH changes** and confirm your web password if asked.
-3. In an existing administrator SSH session/local console, run the command shown by the form:
+1. Choose an existing Linux administrator, or select **Create administrator** and enter a new username. A new account joins the `sudo` group and needs a Linux password, a public SSH key, or both. Give it a password if the operator will use sudo.
+2. For a backup login without a key, enter a Linux password and select **Allow SSH password login for this user**. This adds a rule for the selected user. **Enable SSH service** starts the installed OpenSSH server if needed.
+3. Select **Review SSH changes** and confirm your web password if asked.
+4. In an existing administrator SSH session or local console, run the command shown by the form.
 
    ```sh
    sudo cmprovision-access approve <reference>
    ```
 
-4. Check the username, requested actions and key fingerprints in the terminal. Type `YES` for your expected request and enter its code in the browser.
-5. Select **Apply SSH changes**. Keep the old SSH session open until a new login succeeds.
+5. Check the username, requested actions and key fingerprints in the terminal. Type `YES` for your expected request and enter its code in the browser.
+6. Select **Apply SSH changes**. Keep your current session open and test the new login in another terminal. To test just the password, run `ssh -o PubkeyAuthentication=no engineer@station-address` with the chosen username and station address.
+
+On a fresh package-only station without `openssh-server`, you can create a local administrator with a Linux password. Leave the SSH key and both SSH options empty. The wizard adds a `DenyUsers` rule for that username in `/etc/ssh/sshd_config.d/`. It applies from the first start of Debian OpenSSH. After installing the server, select **Allow SSH password login for this user** and approve the request to lift the wizard's rule. Site-managed SSH restrictions still apply. If the station already has a custom server configuration, install OpenSSH first or create the account from the local console so you can review that policy.
 
 ```mermaid
 sequenceDiagram
@@ -96,6 +99,6 @@ sequenceDiagram
 > [!NOTE]
 > Requests last five minutes; approval codes last at most two minutes and work once. Five incorrect attempts revoke a request. Refresh an expired request and prepare it again. The web helper cannot issue its own code.
 
-Existing users, keys, sudo policy and global SSH configuration remain. The form adds keys; it does not create/rename administrators or enable passwordless sudo. A Linux password does not override disabled SSH password login, `Match` rules or other OS restrictions. Custom key locations require OS tools; the form reports them rather than rewriting the SSH server.
+OpenSSH validates the per-user rule before applying it. Site-specific restrictions such as `AllowUsers` and address-based `Match` rules still apply. Use the OS administration tools for custom key locations.
 
 For a flashed sensor's login, use [Project SSH access](image-access.md). **Sensor accounts** are credentials used to check/re-provision sensors; they do not change the provisioner's login.

@@ -11,7 +11,11 @@ class StationAccessControl
 
     public function available(): bool { return is_file(self::HELPER); }
     public function status(): array { return $this->request(['action' => 'status']); }
-    public function prepare(#[\SensitiveParameter] array $input): array { return $this->request(['action' => 'prepare'] + array_intersect_key($input, array_flip(['user', 'password', 'keys', 'enable_ssh']))); }
+    public function prepare(#[\SensitiveParameter] array $input): array
+    {
+        $fields = ['user', 'password', 'keys', 'enable_ssh', 'create_user', 'allow_password_login'];
+        return $this->request(['action' => 'prepare'] + array_intersect_key($input, array_flip($fields)));
+    }
     public function apply(string $id, #[\SensitiveParameter] string $code): array { return $this->request(['action' => 'apply', 'id' => $id, 'code' => $code]); }
     public function cancel(string $id): array { return $this->request(['action' => 'cancel', 'id' => $id]); }
 

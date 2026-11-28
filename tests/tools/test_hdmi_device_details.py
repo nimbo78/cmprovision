@@ -82,3 +82,13 @@ class CardDetailsTest(unittest.TestCase):
         slides.observe(cards)
         self.assertEqual(1, slides.take(cards, 0, 4))
         self.assertIsNone(slides.take(cards, 0, 4))
+
+    def test_lost_switch_drops_power_only_profiles_but_keeps_reporting_modules(self):
+        sensor = dict(serial="USB-sensor", state="run")
+        port = dict(name="Gi0/2", port_id="sw:2", poe_state="delivering", link_up=False)
+        sw = dict(name="spare", answering=False, blocks=[dict(ports=[port])])
+        data = dict(modules=[sensor], switches=[sw])
+        self.assertEqual([sensor], passports(data))
+        sw["answering"] = True
+        self.assertEqual(["USB-sensor", None], [card.get("serial") for card in passports(data)])
+        self.assertEqual("PoE without link", passports(data)[1]["name"])

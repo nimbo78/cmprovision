@@ -1,6 +1,8 @@
 """Exercise the HDMI artwork with real Pillow fonts, pixels and wallboard helpers."""
 import importlib.util
+from itertools import combinations
 from pathlib import Path
+import re
 import sys
 import unittest
 from unittest.mock import patch
@@ -40,6 +42,17 @@ def catalyst(count, suffix="P-4X", name="rack"):
                                   for n in range(1, 5)]))
     return dict(name=name, model=f"C9200L-{count}{suffix}", serial=f"SN-{count}", verified_layout=True,
                 answering=True, blocks=blocks)
+
+
+def industrial():
+    copper = [dict(number=n, name=f'GE1/0/{n}', panel_y=y, endpoint=f'copper-{n}', state='free')
+              for n, y in enumerate((0, 2, 4, 6, 9, 11, 13, 15), 1)]
+    cages = [dict(number=n, name=f'10GE1/0/{n}', panel_y=y, endpoint=f'fiber-{n}', state='free')
+             for n, y in enumerate((4, 8, 12, 15), 1)]
+    copper[0].update(link_up=True, speed=1000, poe_state='delivering', watts=5.5)
+    cages[0].update(link_up=True, speed=10000, watts=9.7)
+    return dict(name='DIN', model='S5735I-S8U4XN-V2', serial='DIN-TEST', verified_layout=True,
+                layout='industrial-columns', answering=True, blocks=[bank('RJ45', 8, copper), bank('SFP+', 4, cages)])
 
 
 def example():
@@ -126,18 +139,15 @@ class GraphicsTest(unittest.TestCase):
         data = example()
         data.update(switches=[first, switch("spare", online=False), last], recognized=[])
         data["modules"][0].update(name="writer", port="old label")
-        for offset, wanted in ((0, "Gi2/0/29"), (1, "No selected card on this switch"), (2, "No port data available"),
-                               (3, "Gi2/0/29"), (-1, "No port data available")):
+        for offset in (0, 1, 2, 3, -1):
+            wanted = "No selected card on this switch" if offset % 2 else "Gi2/0/29"
             with self.subTest(offset=offset):
                 _, items = self.draw(data, view="map", switch_offset=offset)
                 labels = [word for word, _ in items]
                 self.assertTrue(any(wanted in word for word in labels))
-                if offset in (2, -1):
-                    self.assertTrue(any("Stand console" in word for word in labels))
-                    self.assertTrue(any("Full map unavailable" in word for word in labels))
-                else:
-                    self.assertTrue(any("Full switch map" in word for word in labels))
-                    self.assertEqual("Devices on the stand" in labels, offset == 1)
+                self.assertIn("Offline", labels)
+                self.assertTrue(any("Full switch map" in word for word in labels))
+                self.assertEqual("Devices on the stand" in labels, bool(offset % 2))
 
     def test_short_automatic_slides_reveal_the_end_of_a_64_character_port_name(self):
         east, west = catalyst(48, name="east"), catalyst(48, name="west")
@@ -172,13 +182,14 @@ class GraphicsTest(unittest.TestCase):
         sw.update(answering=False, serial=None)
         sw["blocks"][0]["ports"][0].update(serials=["s1"], state="module")
         data["switches"] = [sw, switch("small", bank("Copper", 2, [port(1)]))]
-        for offset, expected in ((0, "Full switch map"), (1, "Stand console")):
+        for offset in (0, 1):
             _, items = self.draw(data, view="auto", switch_offset=offset)
             labels = [word for word, _ in items]
-            self.assertTrue(any(expected in word for word in labels))
-            if offset == 0:
-                self.assertIn("S/N unavailable", labels)
-                self.assertIn("Offline · last known ports", labels)
+            self.assertTrue(any("Stand console" in word for word in labels))
+            self.assertIn("Offline", labels)
+            self.assertIn(sw["model"], labels)
+            self.assertNotIn("fiber-1", labels)
+        self.assertEqual(self.graphics.tour_stops(data["switches"], (1600,900)), 1)
         for state in ("fail", "stale"):
             data["modules"][0]["state"] = state
             _, items = self.draw(data, view="auto")
@@ -210,12 +221,226 @@ class GraphicsTest(unittest.TestCase):
                     groups[-1]["label"] = "SFP"
                 elif problem == "null bank":
                     groups[0] = None
-                    sw["answering"] = False
                 elif problem == "null socket":
                     groups[0]["ports"][0] = None
                 _, items = self.draw({"switches": [] if problem == "no switches" else [sw]}, view="map")
                 self.assertIn("Device card", dict(items))
                 self.assertTrue(any("Full map unavailable" in word for word, _ in items))
+
+    def industrial_art(self, switches, size, view):
+        # Use the same pixel coordinates for the rounded tile and its final, clipped glyphs.
+        boxes, words = [], []
+        rect = self.graphics.Painter.rect
+        paint = self.graphics.Painter.paint_label
+        def record_rect(p, x, y, w, h, *args, **kwargs):
+            boxes.append((p.px(x), p.px(y), p.px(x+w), p.px(y+h)))
+            return rect(p, x, y, w, h, *args, **kwargs)
+        def record_label(p, xy, value, px, weight, ink, anchor):
+            left, top, right, bottom = self.graphics.face(px, weight).getbbox(value, anchor=anchor)
+            x, y = xy
+            words.append((value, (x+left, y+top, x+right, y+bottom)))
+            return paint(p, xy, value, px, weight, ink, anchor)
+        with patch.object(self.graphics.Painter, 'rect', record_rect), patch.object(self.graphics.Painter, 'paint_label', record_label):
+            self.graphics.render_frame(board, {'switches': switches}, size, view=view, now=102)
+        sockets = {}
+        for word, (left, top, right, bottom) in words:
+            if re.fullmatch(r'(?:10)?GE[1-8]', word):
+                surrounding = [box for box in boxes if box[0] <= left and box[1] <= top and box[2] >= right and box[3] >= bottom]
+                sockets[word] = min(surrounding, key=lambda box: (box[2]-box[0])*(box[3]-box[1]))
+        return sockets, words
+
+    def test_industrial_sockets_follow_the_sideways_faceplate_in_every_graphical_view(self):
+        sw = industrial()
+        for size in ((1280, 720), (1600, 900)):
+            for view in ('desk', 'auto', 'map'):
+                with self.subTest(size=size, view=view):
+                    sockets, words = self.industrial_art([sw], size, view)
+                    copper = [sockets[f'GE{n}'] for n in range(1, 9)]
+                    fiber = [sockets[f'10GE{n}'] for n in range(1, 5)]
+                    for row in (copper, fiber):
+                        self.assertEqual(len({(top, bottom) for _, top, _, bottom in row}), 1)
+                        self.assertTrue(all(a[2] < b[0] for a, b in zip(row, row[1:])))
+                    self.assertLess(fiber[0][3], copper[0][1])
+                    first = (copper[0][0]+copper[0][2])/2
+                    pitch = ((copper[-1][0]+copper[-1][2])/2-first)/15
+                    for box, offset in zip(copper+fiber, (0, 2, 4, 6, 9, 11, 13, 15, 4, 8, 12, 15)):
+                        left, top, right, bottom = box
+                        self.assertAlmostEqual((left+right)/2, first+offset*pitch, delta=1)
+                        self.assertGreater(right-left, bottom-top)
+                        self.assertLessEqual(right-left, 2.3*(bottom-top))
+                        self.assertTrue(0 <= left < right < size[0] and 0 <= top < bottom < size[1])
+                    for row, captions in ((fiber, ('SFP+', '10G')), (copper, ('RJ45', '1G', 'PoE'))):
+                        first_port = row[0]
+                        heading = ' '.join(word for word, (l,t,r,b) in words
+                                           if r < first_port[0] and first_port[1] <= t < b <= first_port[3])
+                        for caption in captions:
+                            self.assertIn(caption, heading)
+                    self.assertIn(sw['model'], dict(words))
+                    self.assertIn('5.5 W', dict(words))
+                    self.assertNotIn('9.7 W', dict(words))
+
+        # The publisher owns the coordinates, including an offset different from the factory profile.
+        sw['blocks'][1]['ports'][0]['panel_y'] = 2
+        sockets, _ = self.industrial_art([sw], (1600, 900), 'desk')
+        self.assertEqual(sockets['10GE1'][::2], sockets['GE2'][::2])
+
+    def test_short_industrial_panel_keeps_the_endpoint_link_and_power_inside_each_socket(self):
+        sw = industrial()
+        copper, fiber = [block['ports'] for block in sw['blocks']]
+        copper[0].update(speed=100, watts=24.9)
+        copper[1].update(state='module', link_up=True, speed=1000, poe_state='disabled')
+        copper[-1].update(link_up=False, watts=52.7, state='uplink', server=True)
+        fiber[0]['state'] = 'uplink'
+        switches = [sw, catalyst(24), switch('offline-a', online=False), switch('offline-b', online=False)]
+        for size in ((1280, 720), (1600, 900), (1280, 800)):
+            for view in ('desk', 'map'):
+                with self.subTest(size=size, view=view):
+                    sockets, words = self.industrial_art(switches, size, view)
+                    self.assertEqual([word for word, _ in words].count('Offline'), 2)
+                    for number, readings in (('GE1', ('copper-1', '100M', '24.9 W')),
+                                             ('GE2', ('copper-2', '1G', 'Off')),
+                                             ('GE8', ('copper-8', 'Down', '52.7 W')),
+                                             ('10GE1', ('fiber-1', '10G'))):
+                        self.assertIn(number, sockets)
+                        left, top, right, bottom = sockets[number]
+                        inside = {word: box for word, box in words
+                                  if left < box[0] <= box[2] < right and top < box[1] <= box[3] < bottom}
+                        if number == '10GE1':
+                            self.assertIn('Uplink', inside)
+                        if number == 'GE2':
+                            self.assertIn('Module', inside)
+                        for a, b in combinations(inside.values(), 2):
+                            self.assertTrue(a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], number)
+                        bottom_line = inside[number][3]
+                        for reading in readings:
+                            self.assertIn(reading, inside, number)
+                            self.assertLess(bottom_line, inside[reading][1], number)
+                            bottom_line = inside[reading][3]
+
+    def test_tty_shows_the_industrial_switch_on_its_side_at_the_physical_half_pitches(self):
+        data = dict(generated_at=100, switches=[industrial()], modules=[])
+        text = board.frame(data, 160, 40, now=102, view='desk').plain()
+        lines = text.splitlines()
+        copper_y = next(row for row, line in enumerate(lines) if re.search(r'\bGE1\b', line))
+        fiber_y = next(row for row, line in enumerate(lines) if re.search(r'\b10GE1\b', line))
+        self.assertLess(fiber_y, copper_y)
+        copper = list(re.finditer(r'\bGE[1-8]\b', lines[copper_y]))
+        fiber = list(re.finditer(r'\b10GE[1-4]\b', lines[fiber_y]))
+        self.assertEqual([m.group() for m in copper], [f'GE{n}' for n in range(1, 9)])
+        self.assertEqual([m.group() for m in fiber], [f'10GE{n}' for n in range(1, 5)])
+        def center(match):
+            return (match.start() + match.end()) / 2
+
+        left = center(copper[0])
+        half_pitch = (center(copper[-1]) - left) / 15
+        for match, offset in zip(copper + fiber, (0, 2, 4, 6, 9, 11, 13, 15, 4, 8, 12, 15)):
+            self.assertAlmostEqual(center(match), left + offset * half_pitch, delta=1)
+        for value in ('S/N DIN-TEST', 'SFP+', 'RJ45', 'fiber-4', 'copper-8', 'PoE'):
+            self.assertIn(value, text)
+        self.assertRegex(lines[fiber_y + 2], r'\b10G\b')
+        self.assertRegex(lines[copper_y + 2], r'\b1G\b')
+        self.assertIn('5.5 W', lines[copper_y + 3])
+        self.assertNotIn('9.7 W', text)
+        # A landscape panel and the neighbouring device card still fit on a 128-column console.
+        narrower = board.frame(data, 128, 38, now=102, view='desk').plain()
+        for label in ('GE8', '10GE4', 'DEVICE CARD'):
+            self.assertIn(label, narrower)
+        self.assertNotIn('PORT PAGE', narrower)
+
+    def test_short_tty_pages_the_industrial_panel_horizontally_with_offline_switches(self):
+        din = industrial()
+        din['blocks'][0]['ports'][7].update(link_up=False, watts=52.7)
+        west = switch('west', bank('RJ45', 1, [port(1, endpoint='west-peer')]))
+        spare = switch('spare', bank('RJ45', 1, [port(1, endpoint='stale-peer')]), online=False)
+        data = dict(generated_at=100, switches=[din, west, spare, switch('offline-b', online=False)],
+                    modules=[example()['modules'][0]])
+        for cols in (60, 100):
+            for offset, expected_ge, expected_optics in ((0, (1, 2, 3, 4), (1,)), (2, (5, 6, 7, 8), (2, 3, 4))):
+                with self.subTest(cols=cols, offset=offset):
+                    screens = [board.frame(data, cols, 24, now=102, view='map', switch_offset=offset, step=step).plain()
+                               for step in range(20)]
+                    lines = screens[0].splitlines()
+                    fiber_y = next(row for row, line in enumerate(lines) if re.search(r'\b10GE[1-4]\b', line))
+                    copper_y = next(row for row, line in enumerate(lines) if re.search(r'\bGE[1-8]\b', line))
+                    self.assertLess(fiber_y, copper_y)
+                    self.assertEqual(re.findall(r'\bGE([1-8])\b', lines[copper_y]), list(map(str, expected_ge)))
+                    self.assertEqual(re.findall(r'\b10GE([1-4])\b', lines[fiber_y]), list(map(str, expected_optics)))
+                    for label in ('OFFLINE / spare', 'OFFLINE / offline-b', 'S/N DIN-TEST', 'Next: west', '[ ] switches',
+                                  f'PORT PAGE {offset // 2 + 1}/2'):
+                        self.assertIn(label, screens[0])
+                    self.assertNotIn('stale-peer', screens[0])
+                    if cols == 100:
+                        card_x = next(line.index('DEVICE CARD') for line in lines if 'DEVICE CARD' in line)
+                        self.assertIn('wlanpi-fd3', '\n'.join(line[card_x-1:] for line in lines))
+                    for value in (('copper-1', 'fiber-1', '5.5 W', '10G') if offset == 0 else
+                                  ('copper-8', 'fiber-4', 'Down', '52.7 W')):
+                        self.assertTrue(any(re.search(r'\b' + re.escape(value) + r'\b', screen) for screen in screens), value)
+                    self.assertFalse(any('9.7 W' in screen for screen in screens))
+        self.assertIn('west-peer', board.frame(data, 60, 24, now=102, view='desk', switch_offset=1).plain())
+        data['switches'] = [din]
+        previous = board.frame(data, 60, 24, now=102, view='desk', switch_offset=-1).plain()
+        self.assertIn('PORT PAGE 2/2', previous)
+        self.assertIn('[ ] port pages', previous)
+
+    def test_offline_switch_does_not_offer_a_second_page_or_repeat_its_outage(self):
+        spare = switch('unplugged', bank('RJ45', 1, [port(1, endpoint='old-port')]), online=False)
+        live = switch('stand', bank('RJ45', 1, [port(1, endpoint='live-port')]))
+        data = dict(generated_at=100, switches=[spare, live], modules=[])
+        for view in ('desk', 'map', 'auto'):
+            for tick, offset in ((0, 0), (1, 1), (2, -1)):
+                labels = [s for s,_ in self.draw(data, view=view, tick=tick, switch_offset=offset)[1]]
+                self.assertIn('live-port', labels)
+                self.assertNotIn('old-port', labels)
+                self.assertEqual([s for s in labels if 'offline' in s.lower()], ['Offline'])
+                self.assertNotIn('[ ]', labels)
+                self.assertFalse(any('Switch 2 / 2' in s for s in labels))
+        spare['answering'] = True
+        for tick, endpoint in ((0, 'old-port'), (1, 'live-port')):
+            labels = dict(self.draw(data, view='map', tick=tick)[1])
+            self.assertIn(endpoint, labels)
+            self.assertIn('[ ]', labels)
+            self.assertNotIn('Offline', labels)
+
+    def test_offline_switch_with_cached_ports_only_shows_one_identifying_row(self):
+        sw = catalyst(24)
+        sw.update(answering=False, name='disconnected', serial='DIN-OFFLINE')
+        data = dict(generated_at=100, switches=[sw], modules=[])
+        _, painted = self.draw(data,view='map')
+        labels = dict(painted)
+        self.assertIn('Offline',labels)
+        self.assertIn(sw['model'], labels)
+        self.assertIn('S/N DIN-OFFLINE', labels)
+        self.assertNotIn('fiber-1',labels)
+        text = board.frame(data,160,40,now=102,view='desk').plain()
+        row = next(line for line in text.splitlines() if 'disconnected' in line)
+        self.assertIn(sw['model'],row)
+        self.assertIn('DIN-OFFLINE',row)
+        self.assertNotIn('fiber-1',text)
+        sw['answering'] = True
+        self.assertIn('fiber-1',dict(self.draw(data,view='map')[1]))
+
+    def test_usb_module_card_and_progress_survive_an_outage_of_all_switches(self):
+        data = example()
+        data.update(switches=[switch("disconnected", online=False)], recognized=[])
+        data["modules"][0].update(port="USB / port unknown")
+        for view in ("desk", "auto", "map"):
+            with self.subTest(view=view):
+                _, items = self.draw(data, view=view)
+                labels = dict(items)
+                for label in ("Offline", "Device card", "Devices on the stand", "63%", "wlanpi-fd3"):
+                    self.assertIn(label, labels)
+                self.assertNotIn("Switch ports", labels)
+                self.assertLess(labels["Devices on the stand"][0], labels["Device card"][0])
+
+    def test_text_engineer_card_does_not_show_stale_port_readings(self):
+        data = example()
+        observed = dict(name="neighbor", state="quiet", port="sw Gi0/1", port_id="s:p1", detail="Link only")
+        cached_port = port(1, port_id="s:p1", speed=1000, link_up=True, poe_state="delivering", watts=6.5)
+        sw = switch("sw", bank("RJ45", 1, [cached_port]))
+        data.update(switches=[sw], modules=[], recognized=[], unknown=[observed])
+        self.assertIn("6.5 W", board.frame(data, 160, 40, view="engineer", now=102).plain())
+        sw["answering"] = False
+        self.assertNotIn("6.5 W", board.frame(data, 160, 40, view="engineer", now=102).plain())
 
     def test_front_panel_shows_each_endpoint_with_independent_link_and_poe_rows(self):
         ports = [
@@ -285,20 +510,19 @@ class GraphicsTest(unittest.TestCase):
         x, y = dict(items)["33"]
         self.assertNotIn("camera", [word for word, (px, py) in items if px == x and y < py < y+dy])
 
-    def test_switch_serials_identify_the_roster_and_the_selected_saved_panel(self):
+    def test_switch_serials_identify_the_online_panel_and_the_offline_rows(self):
         data = example()
         data["switches"][0].update(name="assembly", serial="EAST0042")
         data["switches"][1].update(name="assembly", serial="WEST0088", answering=False)
         _, items = self.draw(data, view="desk")
         captions = [word for word, _ in items]
         self.assertEqual(captions.count("S/N EAST0042"), 1)
-        self.assertEqual(captions.count("S/N WEST0088"), 2)
+        self.assertEqual(captions.count("S/N WEST0088"), 1)
         self.assertIn("S/N unavailable", captions)
-        self.assertTrue(any("last known ports" in word for word in captions))
-        roster = [xy for word, xy in items if word in ("S/N EAST0042", "S/N WEST0088", "S/N unavailable")]
-        self.assertEqual(roster[0][1], roster[1][1])
-        self.assertEqual(roster[1][1], roster[2][1])
-        self.assertGreater(roster[3][1], roster[0][1])
+        self.assertEqual(captions.count("Offline"), 2)
+        positions = dict(items)
+        self.assertLess(positions["S/N WEST0088"][1], positions["S/N unavailable"][1])
+        self.assertLess(positions["S/N unavailable"][1], positions["S/N EAST0042"][1])
 
     def test_long_endpoint_keeps_its_additional_device_count_inside_the_tile(self):
         data = example()
@@ -363,8 +587,8 @@ class GraphicsTest(unittest.TestCase):
         self.assertEqual(overview.page(cards[0], 2, 0, 0), 1)
         self.assertEqual(overview.page(cards[0], 2, 0, 1), 2)  # next bank of the same switch
         self.assertEqual(overview.page(cards[0], 2, 0, -1), 0)
-        self.assertEqual([overview.page(cards[0], 2, tick, 0) for tick in range(2, 6)], [0, 1, 2, 3])
-        self.assertEqual(overview.pages[-1], (2, []))  # offline without a cached panel is still navigable
+        self.assertEqual([overview.page(cards[0], 2, tick, 0) for tick in range(2, 5)], [0, 1, 2])
+        self.assertNotIn(2, [index for index, groups in overview.pages])
         self.assertIsNone(overview.owner({"port": "Gi0/1"}))
 
     def test_large_physical_banks_keep_every_column_in_wire_order(self):
@@ -450,9 +674,10 @@ class GraphicsTest(unittest.TestCase):
                 self.assertTrue(any("#2 · Gi0/1" in label for label, _ in items),
                                 "The interface and its unique switch number must stay visible while the long name scrolls")
 
-    def test_no_saved_panel_is_identified_in_offline_warning(self):
-        _, items = self.draw()
-        self.assertTrue(any("assembly-spare offline" in label and "no saved ports" in label for label, _ in items))
+    def test_card_views_name_an_offline_switch_without_a_saved_panel(self):
+        for view in ("flow", "engineer"):
+            _, items = self.draw(view=view)
+            self.assertIn("assembly-spare offline", dict(items))
 
     def test_partial_module_and_unnamed_switch_do_not_stop_rendering(self):
         data = {"modules":[{"serial":"s1"}], "switches":[switch(None, bank("Copper", 2, [port(1, "module", ["s1"])]))]}

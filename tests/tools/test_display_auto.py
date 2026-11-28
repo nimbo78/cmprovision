@@ -172,6 +172,15 @@ class AutoDisplayTest(unittest.TestCase):
             display_auto.exclusive_file(self.config, 'new')
         self.assertEqual(self.config.read_text(), 'operator configuration')
 
+    def test_pcie_dma_overlay_allows_neutral_detection_on_da2(self):
+        config = self.boot / 'config.txt'
+        original = config.read_bytes() + b'dtoverlay=pcie-32bit-dma\n'
+        config.write_bytes(original)
+        self.io.profile.return_value = 'waveshare-144'
+        self.assertEqual(self.session.step(), 'active')
+        self.io.profile.assert_called_once()
+        self.assertEqual(config.read_bytes(), original)
+
     def test_a_gpio_fan_or_serial_overlay_is_preserved(self):
         for line in ('dtoverlay=gpio-fan,gpiopin=18,temp=55000', 'enable_uart=1', 'gpio=18=op,dh'):
             (self.boot / 'config.txt').write_text('dtoverlay=vc4-kms-v3d\n'+line+'\n')

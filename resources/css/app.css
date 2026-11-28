@@ -355,7 +355,6 @@ body { background: var(--page); color: var(--text); }
 .ports-chassis { --tile: 50px; background: #2b2f36; border-radius: 8px; padding: 10px 12px 12px; display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; }
 .ports-model { width: 100%; display: flex; justify-content: space-between; gap: 12px; color: #c9ced6; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .ports-model .ports-line { text-transform: none; letter-spacing: normal; font-size: 12px; }
-.ports-silent { color: #f2c94c; }
 .ports-empty { width: 100%; margin: 0; color: #c9ced6; font-size: 13px; }
 .ports-layout-label { width: 100%; color: #c9ced6; font-size: 11px; }
 /* Verified panels never wrap their banks: scrolling preserves the physical port positions on a phone. */
@@ -364,6 +363,32 @@ body { background: var(--page); color: var(--text); }
 .ports-panel-hint { margin-top: 4px; color: #c9ced6; font-size: 11px; }
 .ports-panel-scroll:focus-visible { outline: 2px solid #c9ced6; outline-offset: 2px; }
 .ports-panel { display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 18px; width: max-content; }
+.ports-switch-industrial { width: min(100%, 38rem); }
+.ports-switch-industrial .ports-model { flex-direction: column; gap: 4px; }
+.ports-panel-model { color: white; font-size: 18px; line-height: 1.25; font-weight: 800; letter-spacing: normal; }
+.ports-switch-industrial .ports-panel-area { container-type: inline-size; }
+.ports-switch-industrial .ports-panel-scroll { padding: 5px; }
+.ports-panel-landscape { display: grid; width: 100%; align-items: stretch; gap: 14px; }
+.ports-media-row { display: grid; grid-template-columns: 3rem minmax(0, 1fr); align-items: center; gap: 8px; }
+.ports-media-label { color: #c9ced6; font-size: 13px; font-weight: 700; line-height: 1.2; }
+.ports-media-label small { display: block; font-size: 11px; font-weight: 500; }
+/* Seventeen half-pitches preserve the gap between the copper banks and the stagger of the four cages. */
+.ports-media-sockets { display: grid; grid-template-columns: repeat(17, minmax(0, 1fr)); }
+.ports-media-port { display: grid; justify-items: center; gap: 3px; min-width: 0; padding-inline: 2px; }
+.ports-media-port .ports-tile { width: 100%; max-width: var(--tile); min-height: 44px; }
+.ports-media-port .ports-tile.cage { height: 44px; }
+@container (max-width: 28rem) {
+    .ports-media-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .ports-media-label small { display: inline; }
+    .ports-media-port { padding-inline: 1px; }
+    .ports-media-port .ports-tile .short { max-width: 100%; font-size: clamp(9px, 2.8cqi, 13px); }
+    .ports-media-port .ports-tile .mark { max-width: 100%; }
+    .ports-media-port .ports-tile .ports-logo { width: 26px; max-width: 100%; height: auto; }
+}
+@media (max-width: 400px) {
+    .ports-switch-industrial { padding-inline: 5px; }
+    .ports-switch-industrial .ports-chassis { padding-inline: 6px; }
+}
 .ports-bank { position: relative; display: grid; grid-auto-flow: column; grid-template-rows: 12px var(--tile) var(--tile) 12px; gap: 4px 5px; flex: none; }
 .ports-bank.one-row { grid-template-rows: 12px var(--tile) 12px; }
 .ports-bank.uplinks { background: #343a44; border-radius: 3px; box-shadow: 0 0 0 6px #343a44; }
