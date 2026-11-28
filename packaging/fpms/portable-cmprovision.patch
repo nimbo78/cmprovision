@@ -14662,10 +14662,10 @@ index 0000000..e3e2077
 +    assert result.returncode == 0, result.stderr
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..1c93942
+index 0000000..21ca16e
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1755 @@
+@@ -0,0 +1,1761 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -16118,11 +16118,17 @@ index 0000000..1c93942
 +                for (left, top, _, _), (kind, _) in menu.targets if kind == "row"]
 +
 +    # A legacy or estimated bank caption and a fast interface name do not identify the connector.
-+    assert headings() == ["SFP 1", "RJ45 2", "RJ45/SFP 3", "4", "5"]
++    initial = headings()
++    left, _, right, _ = next(box for box, target in menu.targets if target == ("row", "0:Te0/3"))
++    combo = "RJ45/SFP 3"
++    # The packaged Nunito and Pillow's fallback have different advances in the same tile.
++    if touch.font(15, "bold").getlength(combo) + 10 > right - left + 1:
++        combo = "3"
++    assert initial == ["SFP 1", "RJ45 2", combo, "4", "5"]
 +    assert link_icons == ["sfp", "Ports", "link", "link", "link"]
 +    switch = p.data["switches"][0]
 +    switch["verified_layout"] = True
-+    assert headings() == ["SFP+ 1", "RJ45 2", "RJ45/SFP 3", "4", "SFP+ 5"]
++    assert headings() == ["SFP+ 1", "RJ45 2", combo, "4", "SFP+ 5"]
 +    del switch["verified_layout"]
 +    switch["blocks"][0]["ports"].extend(dict(name=f"Te0/{i}", number=i, info={"media": "combo"})
 +                                        for i in range(6, 15))
