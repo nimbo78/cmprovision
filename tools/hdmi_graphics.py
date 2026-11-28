@@ -724,25 +724,27 @@ def endpoint_label(p, x, y, endpoint, width, ink):
 
 
 def industrial_panel(p, board, stand, index, groups, card, x, y, w, h):
-    # Each physical block of four copper jacks gets one row on a landscape screen.
-    gap, bank_gap, heading = 7, 30, 24
-    tile_h = min(104, (h-heading-gap)/2)
-    tile_w = min(186, tile_h*2, (w-bank_gap-4*gap)/6)
-    grid_w = 6*tile_w + 4*gap + bank_gap
-    gx = x+(w-grid_w)/2
-    top = y+(h-heading-gap-2*tile_h)/2
+    gap = 7
+    gutter = p.measure("1G · PoE", 15, "bold")+14
+    # With the DIN switch on its side, panel_y runs left to right. A socket
+    # takes two half-pitches and the last one starts at half-pitch 15.
+    half_pitch = min((186+gap)/2, (w-gutter+gap)/17)
+    tile_w = 2*half_pitch-gap
+    tile_h = min(104, tile_w*.85, (h-gap)/2)
+    grid_w = gutter+15*half_pitch+tile_w
+    left = x+(w-grid_w)/2
+    top = y+(h-2*tile_h-gap)/2
     owner = stand.owner(card)
-    banks = ((4, "RJ45 · 1G", "GE"), (2, "SFP+ · 10G", "10GE"))
-    for group, (columns, caption, prefix) in zip(groups, banks):
-        p.label(gx, top+9, caption, 16, "muted", "bold")
-        for slot, port in enumerate(group["ports"]):
-            row, col = divmod(slot, columns)
-            tx = gx+col*(tile_w+gap)
-            ty = top+heading+row*(tile_h+gap)
-            port_tile(p, board, stand, index, port, group["label"], tx, ty, tile_w, tile_h,
+    copper, fiber = groups
+    for group, prefix, rate in ((fiber, "10GE", "10G"), (copper, "GE", "1G · PoE")):
+        p.label(left, top+tile_h/2-10, group["label"], 17, "muted", "bold")
+        p.label(left, top+tile_h/2+10, rate, 15, "muted", "bold")
+        for port in group["ports"]:
+            tx = left+gutter+port["panel_y"]*half_pitch
+            port_tile(p, board, stand, index, port, group["label"], tx, top, tile_w, tile_h,
                       owner == (index,port.get("name")), compact=tile_h < 90, number_prefix=prefix,
                       show_poe=group["label"] == "RJ45")
-        gx += columns*tile_w+(columns-1)*gap+bank_gap
+        top += tile_h+gap
 
 
 def port_tile(p, board, stand, index, port, group, x, y, w, h, selected, *, compact=False, number_prefix="", show_poe=True):
@@ -772,12 +774,29 @@ def port_tile(p, board, stand, index, port, group, x, y, w, h, selected, *, comp
     endpoint = port_endpoint(port, stand.host, modules=members, observed=observed)
     padding = 6 if w < 110 else 8
     ix, inner = x+padding, w-2*padding
-    mark_w = 20 if local or peer else min(inner*.57, p.measure(mark, 14, "bold")+1)
-    p.label(ix, y+15, number, 17, "fg", "mono", width=inner-mark_w-3, scroll=True)
+    short_industrial = compact and bool(number_prefix)
+    number_y = y+(12 if short_industrial else 15)
+    badge_size = 16 if short_industrial else 20
+    bottom = y+h-(10 if compact else 13)
+    reading_step = 16 if compact else 21
+    number_size, mark_size = 17, 14
+    if short_industrial and show_poe and not (local or peer):
+        if p.measure(number, 17, "mono")+p.measure(mark, 14, "bold")+4 > inner:
+            number_size, mark_size = 14, 12
+    mark_w = badge_size if local or peer else min(inner*.57, p.measure(mark, mark_size, "bold")+1)
+    if number_prefix and not (local or peer):
+        available = max(0, inner-p.measure(number, number_size, "mono")-4)
+        if not show_poe and mark_w > available:
+            # A narrow SFP+ tile has a spare line between its endpoint and link.
+            p.label(ix, bottom-reading_step, mark, 14, ink, "bold", inner)
+            mark_w = 0
+        else:
+            mark_w = min(mark_w, available)
+    p.label(ix, number_y, number, number_size, "fg", "mono", width=inner-mark_w-3, scroll=True)
     if local or peer:
-        p.mark(x+w-28, y+5, 20, peer=peer)
-    elif mark:
-        p.label(x+w-8, y+15, mark, 14, ink, "bold", mark_w, align="right")
+        p.mark(x+w-8-badge_size, number_y-badge_size/2, badge_size, peer=peer)
+    elif mark and mark_w:
+        p.label(x+w-8, number_y, mark, mark_size, ink, "bold", mark_w, align="right")
 
     ey = y+28 if compact else y+h*.39
     if endpoint:
@@ -790,10 +809,9 @@ def port_tile(p, board, stand, index, port, group, x, y, w, h, selected, *, comp
     # keep link and power on separate lines, including two-digit watt readings.
     inline_readings = compact and h < 64 and show_poe
     span = inner/2 if inline_readings else inner
-    bottom = y+h-(10 if compact else 13)
     link_y = bottom
     if show_poe and not inline_readings:
-        link_y -= 16 if compact else 21
+        link_y -= reading_step
     readings = [(ix, link_y, "sfp" if "SFP" in group.upper() else "rj", link, link_ink)]
     if show_poe:
         readings.append((ix+span if inline_readings else ix, bottom, "bolt",

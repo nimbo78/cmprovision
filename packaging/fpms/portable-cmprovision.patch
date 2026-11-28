@@ -14678,10 +14678,10 @@ index 0000000..e3e2077
 +    assert result.returncode == 0, result.stderr
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..4fd3679
+index 0000000..9e8935f
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1880 @@
+@@ -0,0 +1,1897 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -15973,10 +15973,14 @@ index 0000000..4fd3679
 +
 +    snap = demo_snapshot()
 +    first = industrial_switch()
++    first["blocks"][0]["ports"][2].update(link_up=True, speed=100)
 +    first["blocks"][0]["ports"][7].update(server=True, endpoint="wlanpi-da2", link_up=True, speed=1000)
 +    first["blocks"][1]["ports"][0].update(poe_state="delivering", watts=9.7, info={"poe_class": 3, "alias": "uplink"})
 +    first["blocks"][1]["ports"][3].update(state="uplink", link_up=True, speed=10000, endpoint="rack-core")
-+    snap.update(panel={"theme": theme, "color_mode": color_mode}, switches=[first, snap["switches"][0]])
++    first["blocks"][1]["ports"].reverse()
++    second = snap["switches"][0]
++    second["answering"] = False
++    snap.update(panel={"theme": theme, "color_mode": color_mode}, switches=[first, second])
 +    p = panel_with(tmp_path, snap)
 +    p.page = 1
 +    menu = TouchMenu(p)
@@ -16022,18 +16026,33 @@ index 0000000..4fd3679
 +    tiles = {key: box for box, (kind, key) in menu.targets if kind == "row"}
 +    copper = [tiles[f"0:GE1/0/{n}"] for n in range(1, 9)]
 +    cages = [tiles[f"0:10GE1/0/{n}"] for n in range(1, 5)]
-+    assert len(tiles) == 12 and max(b[2] for b in copper) < min(b[0] for b in cages)
++    assert len(tiles) == 12
++    assert len({b[1] for b in cages}) == len({b[1] for b in copper}) == 1
++    assert max(b[3] for b in cages) < min(b[1] for b in copper)
++    for sockets in (cages, copper):
++        assert all(a[2] < b[0] for a, b in zip(sockets, sockets[1:]))
++    centers = [(left + right) // 2 for left, _, right, _ in copper + cages]
++    pitch = centers[1] - centers[0]
++    for x, half_pitches in zip(centers, (0, 2, 4, 6, 9, 11, 13, 15, 4, 8, 12, 15)):
++        assert abs(2 * (x - centers[0]) - half_pitches * pitch) <= 2
++    legend_y = next(y for _, y, word in positions if word == "Link")
++    offline_y = next(y for _, y, word in positions if word == "Offline")
++    nav_y = min(box[1] for box, (kind, _) in menu.targets if kind == "page")
++    assert copper[0][3] < legend_y < offline_y < nav_y and SWITCH in labels
 +    for left, top, right, bottom in tiles.values():
 +        width, height = right - left + 1, bottom - top + 1
 +        assert min(width, height) >= 44 and max(width, height) <= 1.5 * min(width, height)
 +        mid_x = (left + right) // 2
 +        assert menu.image.getpixel((mid_x, top)) != menu.image.getpixel((mid_x, top - 2))
-+    assert {"S5735I-S8U4XN-V2", "GE RJ45", "10GE SFP+"} <= set(labels)
-+    for sockets, connector, symbol in ((copper, "RJ45", "Ports"), (cages, "SFP+", "sfp")):
++    assert {"S5735I-S8U4XN-V2", "GE RJ45 · PoE", "10GE SFP+"} <= set(labels)
++    for sockets, connector, symbol, active in (
++        (copper, "RJ45", "Ports", {3: "Up · 100M", 8: "Up · 1G"}),
++        (cages, "SFP+", "sfp", {4: "Up · 10G"}),
++    ):
 +        for n, (left, top, right, bottom) in enumerate(sockets, 1):
 +            assert any(left <= x <= right and top <= y <= bottom and word == f"{connector} {n}"
 +                       for x, y, word in positions)
-+            reading = "Down" if n != len(sockets) else ("Up · 1G" if connector == "RJ45" else "Up · 10G")
++            reading = active.get(n, "Down")
 +            assert any(left <= x <= right and top <= y <= bottom and icon == symbol and word == reading
 +                       for x, y, icon, word in links)
 +    assert touch.icon("sfp", 14).tobytes() != touch.icon("Ports", 14).tobytes()
@@ -16041,11 +16060,6 @@ index 0000000..4fd3679
 +    assert "0:10GE1/0/1" not in {row["pin"] for row in menu.connected_ports(p.rows())}
 +    assert labels.count("wlanpi-da2") == 2   # the header and the endpoint on GE8
 +    assert "rack-core" in labels
-+    for upper, lower in ((copper[:4], copper[4:]), (cages[:2], cages[2:])):
-+        assert len({b[1] for b in upper}) == len({b[1] for b in lower}) == 1
-+        assert upper[0][3] < lower[0][1]
-+        assert [b[0] for b in upper] == [b[0] for b in lower]
-+        assert all(a[2] < b[0] for a, b in zip(upper, upper[1:]))
 +    for bank, supports_poe in ((copper, True), (cages, False)):
 +        for left, top, right, bottom in bank:
 +            for readings in (bolts, unknowns):
@@ -16053,12 +16067,15 @@ index 0000000..4fd3679
 +    for pin in tiles:
 +        tap(("row", pin))
 +        assert p.detail == ("port", pin) and menu.port_row()["portname"] == pin.split(":")[1]
++        number = int(pin.rsplit("/", 1)[1])
++        assert menu.port_row()["port_id"] == f"4:{number + (100 if pin.startswith('0:10GE') else 0)}"
 +        assert pin.split(":")[1] in labels
 +        tap(("key", "KEY2"))
 +    tap(("row", "0:10GE1/0/1"))
 +    tap(("section", "physical"))
 +    assert "uplink" in labels and "PoE class" not in labels and not any("9.7" in str(word) for word in labels)
 +    first.update(answering=False, serial="HX-1")
++    second["answering"] = True
 +    p.snapshot.write_text(json.dumps(snap))
 +    p.refresh(now=102, force=True)
 +    render()
@@ -17459,10 +17476,10 @@ index 0000000..922834a
 +    /bin/sh "$0" --inside "$mode" "$root" "$source"
 diff --git a/fpms/integrations/cmprovision_touch.py b/fpms/integrations/cmprovision_touch.py
 new file mode 100644
-index 0000000..55a45a6
+index 0000000..c3c5be9
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_touch.py
-@@ -0,0 +1,922 @@
+@@ -0,0 +1,925 @@
 +"""Native landscape station menu for the rectangular HyperPixel 4.0 Touch."""
 +
 +import ipaddress
@@ -18018,13 +18035,13 @@ index 0000000..55a45a6
 +        self.card((18, 137, 781, 336))
 +        if view["slots"]:
 +            self.label(224, 109, view["model"], 15, "fg", 266, "bold")
-+            for group, left, per_row, caption in ((0, 36, 4, "GE RJ45"), (1, 544, 2, "10GE SFP+")):
-+                self.label(left, 146, caption, 15, "muted", 190, "bold")
-+                slots = sorted((pos, i) for g, pos, i in view["slots"] if g == group)
-+                for k, (_, i) in enumerate(slots):
-+                    x, y = left + (k % per_row) * 112, 167 + (k // per_row) * 83
-+                    row = rows[i]
-+                    self.map_tile(row, (x, y, x + 103, y + 77), industrial=True)
++            self.label(28, 142, "10GE SFP+", 15, "muted", 175, "bold")
++            self.label(28, 238, "GE RJ45 · PoE", 15, "muted", 175, "bold")
++            for group, half_pitch, i in view["slots"]:
++                # Both rows share the same pitch so the first cage lines up with GE3.
++                x = 28 + half_pitch * 44
++                y = 254 if group == 0 else 158
++                self.map_tile(rows[i], (x, y, x + 83, y + 77), industrial=True)
 +        else:
 +            self.switch_tiles(rows, columns, switches[n])
 +        y = 341 if offline else 358
@@ -18148,9 +18165,12 @@ index 0000000..55a45a6
 +            if label is None:
 +                continue
 +            if width >= 62:
-+                caption = fit(label, font(15, "bold"), width - 25)
++                size = 15
++                if industrial:
++                    size = 14 if font(14, "bold").getlength(label) <= width - 25 else 12
++                caption = fit(label, font(size, "bold"), width - 25)
 +                icon_caption(
-+                    self.draw, x + 5, y + dy + 7, symbol, caption, self.c[ink], self.c[ink], 14, 15, 3
++                    self.draw, x + 5, y + dy + 7, symbol, caption, self.c[ink], self.c[ink], 14, size, 3
 +                )
 +            else:
 +                centered(

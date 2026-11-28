@@ -18,6 +18,9 @@ def industrial_columns(switch):
         if any(not isinstance(p, dict) or type(p.get('panel_y')) is not int or
                not 0 <= p['panel_y'] <= 15 for p in ports):
             return False
+        positions = sorted(p['panel_y'] for p in ports)
+        if any(right - left < 2 for left, right in zip(positions, positions[1:])):
+            return False
     return True
 
 

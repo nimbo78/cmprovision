@@ -1,5 +1,6 @@
 """Exercise the HDMI artwork with real Pillow fonts, pixels and wallboard helpers."""
 import importlib.util
+from itertools import combinations
 from pathlib import Path
 import re
 import sys
@@ -226,48 +227,95 @@ class GraphicsTest(unittest.TestCase):
                 self.assertIn("Device card", dict(items))
                 self.assertTrue(any("Full map unavailable" in word for word, _ in items))
 
-    def test_industrial_ports_use_landscape_tiles(self):
+    def industrial_art(self, switches, size, view):
+        # Use the same pixel coordinates for the rounded tile and its final, clipped glyphs.
+        boxes, words = [], []
+        rect = self.graphics.Painter.rect
+        paint = self.graphics.Painter.paint_label
+        def record_rect(p, x, y, w, h, *args, **kwargs):
+            boxes.append((p.px(x), p.px(y), p.px(x+w), p.px(y+h)))
+            return rect(p, x, y, w, h, *args, **kwargs)
+        def record_label(p, xy, value, px, weight, ink, anchor):
+            left, top, right, bottom = self.graphics.face(px, weight).getbbox(value, anchor=anchor)
+            x, y = xy
+            words.append((value, (x+left, y+top, x+right, y+bottom)))
+            return paint(p, xy, value, px, weight, ink, anchor)
+        with patch.object(self.graphics.Painter, 'rect', record_rect), patch.object(self.graphics.Painter, 'paint_label', record_label):
+            self.graphics.render_frame(board, {'switches': switches}, size, view=view, now=102)
+        sockets = {}
+        for word, (left, top, right, bottom) in words:
+            if re.fullmatch(r'(?:10)?GE[1-8]', word):
+                surrounding = [box for box in boxes if box[0] <= left and box[1] <= top and box[2] >= right and box[3] >= bottom]
+                sockets[word] = min(surrounding, key=lambda box: (box[2]-box[0])*(box[3]-box[1]))
+        return sockets, words
+
+    def test_industrial_sockets_follow_the_sideways_faceplate_in_every_graphical_view(self):
         sw = industrial()
-        copper = sw['blocks'][0]['ports']
-        data = dict(generated_at=100, switches=[sw], modules=[])
-        for view in ('desk', 'auto', 'map'):
-            boxes = []
-            paint_rect = self.graphics.Painter.rect
-            def record_rect(p, x, y, w, h, *args, **kwargs):
-                boxes.append((x, y, w, h))
-                return paint_rect(p, x, y, w, h, *args, **kwargs)
-            with patch.object(self.graphics.Painter, 'rect', record_rect):
-                _, painted = self.draw(data, view=view)
-            coords = dict(painted)
-            self.assertIn(sw['model'], coords)
-            self.assertTrue(any('SFP+' in label for label in coords))
-            for label in ('GE1', '10GE1', '1G', '10G', '5.5 W'):
-                self.assertIn(label, coords)
-            self.assertNotIn('9.7 W', coords)
-            for prefix, columns in [('copper', 4), ('fiber', 2)]:
-                top = [coords[f'{prefix}-{n}'] for n in range(1, columns+1)]
-                lower = [coords[f'{prefix}-{n}'] for n in range(columns+1, 2*columns+1)]
-                self.assertEqual(len({x for x, _ in top}), columns)
-                self.assertEqual(top, sorted(top))
-                self.assertEqual([x for x, _ in top], [x for x, _ in lower])
-                self.assertEqual(len({y for _, y in top}), 1)
-                self.assertEqual(len({y for _, y in lower}), 1)
-                self.assertLess(top[0][1], lower[0][1])
-                for px, py in top + lower:
-                    _, w, h = min((w*h, w, h) for x,y,w,h in boxes if x <= px < x+w and y <= py < y+h)
-                    self.assertGreaterEqual(h, 54, 'a socket has room for its identity and link reading')
-                    self.assertLessEqual(w, 2.3*h, 'individual sockets must not turn into list rows')
-            self.assertLess(coords['copper-4'][0], coords['fiber-1'][0])
-        # Two offline rows and the second live switch leave the shortest desk panel.
-        data['switches'] += [catalyst(24), switch('offline-a', online=False), switch('offline-b', online=False)]
-        copper[0].update(speed=100, watts=24.9)
-        copper[7].update(link_up=False, watts=52.7)
         for size in ((1280, 720), (1600, 900)):
-            with self.subTest(size=size):
-                _, painted = self.draw(data, size=size, view='desk')
-                labels = dict(painted)
-                for reading in ('100M', '24.9 W', 'Down', '52.7 W'):
-                    self.assertIn(reading, labels)
+            for view in ('desk', 'auto', 'map'):
+                with self.subTest(size=size, view=view):
+                    sockets, words = self.industrial_art([sw], size, view)
+                    copper = [sockets[f'GE{n}'] for n in range(1, 9)]
+                    fiber = [sockets[f'10GE{n}'] for n in range(1, 5)]
+                    for row in (copper, fiber):
+                        self.assertEqual(len({(top, bottom) for _, top, _, bottom in row}), 1)
+                        self.assertTrue(all(a[2] < b[0] for a, b in zip(row, row[1:])))
+                    self.assertLess(fiber[0][3], copper[0][1])
+                    first = (copper[0][0]+copper[0][2])/2
+                    pitch = ((copper[-1][0]+copper[-1][2])/2-first)/15
+                    for box, offset in zip(copper+fiber, (0, 2, 4, 6, 9, 11, 13, 15, 4, 8, 12, 15)):
+                        left, top, right, bottom = box
+                        self.assertAlmostEqual((left+right)/2, first+offset*pitch, delta=1)
+                        self.assertGreater(right-left, bottom-top)
+                        self.assertLessEqual(right-left, 2.3*(bottom-top))
+                        self.assertTrue(0 <= left < right < size[0] and 0 <= top < bottom < size[1])
+                    for row, captions in ((fiber, ('SFP+', '10G')), (copper, ('RJ45', '1G', 'PoE'))):
+                        first_port = row[0]
+                        heading = ' '.join(word for word, (l,t,r,b) in words
+                                           if r < first_port[0] and first_port[1] <= t < b <= first_port[3])
+                        for caption in captions:
+                            self.assertIn(caption, heading)
+                    self.assertIn(sw['model'], dict(words))
+                    self.assertIn('5.5 W', dict(words))
+                    self.assertNotIn('9.7 W', dict(words))
+
+        # The publisher owns the coordinates, including an offset different from the factory profile.
+        sw['blocks'][1]['ports'][0]['panel_y'] = 2
+        sockets, _ = self.industrial_art([sw], (1600, 900), 'desk')
+        self.assertEqual(sockets['10GE1'][::2], sockets['GE2'][::2])
+
+    def test_short_industrial_panel_keeps_the_endpoint_link_and_power_inside_each_socket(self):
+        sw = industrial()
+        copper, fiber = [block['ports'] for block in sw['blocks']]
+        copper[0].update(speed=100, watts=24.9)
+        copper[1].update(state='module', link_up=True, speed=1000, poe_state='disabled')
+        copper[-1].update(link_up=False, watts=52.7, state='uplink', server=True)
+        fiber[0]['state'] = 'uplink'
+        switches = [sw, catalyst(24), switch('offline-a', online=False), switch('offline-b', online=False)]
+        for size in ((1280, 720), (1600, 900), (1280, 800)):
+            for view in ('desk', 'map'):
+                with self.subTest(size=size, view=view):
+                    sockets, words = self.industrial_art(switches, size, view)
+                    self.assertEqual([word for word, _ in words].count('Offline'), 2)
+                    for number, readings in (('GE1', ('copper-1', '100M', '24.9 W')),
+                                             ('GE2', ('copper-2', '1G', 'Off')),
+                                             ('GE8', ('copper-8', 'Down', '52.7 W')),
+                                             ('10GE1', ('fiber-1', '10G'))):
+                        self.assertIn(number, sockets)
+                        left, top, right, bottom = sockets[number]
+                        inside = {word: box for word, box in words
+                                  if left < box[0] <= box[2] < right and top < box[1] <= box[3] < bottom}
+                        if number == '10GE1':
+                            self.assertIn('Uplink', inside)
+                        if number == 'GE2':
+                            self.assertIn('Module', inside)
+                        for a, b in combinations(inside.values(), 2):
+                            self.assertTrue(a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], number)
+                        bottom_line = inside[number][3]
+                        for reading in readings:
+                            self.assertIn(reading, inside, number)
+                            self.assertLess(bottom_line, inside[reading][1], number)
+                            bottom_line = inside[reading][3]
 
     def test_tty_shows_the_industrial_switch_on_its_side_at_the_physical_half_pitches(self):
         data = dict(generated_at=100, switches=[industrial()], modules=[])

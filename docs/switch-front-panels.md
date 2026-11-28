@@ -28,8 +28,7 @@ On the 2960CX, the case calls the SFP slots **1** and **2**, while IOS calls tho
 The panel uses the case's numbers. The tooltip and port details retain the full interface name; selecting a port or
 operating its PoE always uses its original switch ID and SNMP interface index.
 
-The web map shows the Huawei lying on its side, rotated 90° counterclockwise from its upright mounting position.
-The 1.44-inch Waveshare uses the same two rows. Moving the joystick selects a socket and shows its full interface name below the map.
+The web, HDMI, HyperPixel and 1.44-inch Waveshare maps show the Huawei on its side, rotated 90° counterclockwise from its upright mounting position. On the Waveshare, moving the joystick selects a socket and shows its full interface name below the map.
 The chassis reports the S5735I family. Its main board supplies the exact model, and cmprovision matches their
 serials. The panel requires all eight `GE1/0/1–8` and all four `10GE1/0/1–4` interfaces, including empty cages.
 On V600R022C10SPC500 with patch V600R022SPH180, our switch supplied power but returned no PoE readings through SNMP.
