@@ -12,6 +12,7 @@ use App\Services\Snmp\SnmpClient;
 use App\Services\Switch\MacTable;
 use App\Services\Switch\Poe;
 use App\Services\Switch\SwitchSnapshot;
+use App\Support\WallboardSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -105,6 +106,53 @@ class PortsPageTest extends TestCase
         $this->actingAs(User::factory()->create());
         $this->get('/dashboard')->assertSee('href="'.route('ports').'"', false);
         $this->get('/ports')->assertOk()->assertSeeLivewire('ports')->assertSee('No switch is set up');
+    }
+
+    public function test_industrial_huawei_ports_keep_their_physical_positions_and_selection_on_web_and_displays()
+    {
+        $switch = SwitchRow::put(['ip' => '192.0.2.10', 'snmp_community' => 'public']);
+        $table = [SwitchSnapshot::OID_SYSNAME.'.0' => 'sw-din',
+            SwitchSnapshot::OID_ENT_CLASS.'.1' => 3, SwitchSnapshot::OID_ENT_MODEL.'.1' => 'S5735I-S8U4XN-V2',
+            SwitchSnapshot::OID_ENT_SERIAL.'.1' => 'SW-DIN-123'];
+        foreach (['GE' => [8, 5], '10GE' => [4, 16]] as $type => [$count, $base])
+            for ($n = 1; $n <= $count; $n++) {
+                $index = $base + $n;
+                $table += [SwitchSnapshot::OID_IFNAME.'.'.$index => $type.'1/0/'.$n,
+                    SwitchSnapshot::OID_IFTYPE.'.'.$index => 6,
+                    SwitchSnapshot::OID_IFCONNECTOR.'.'.$index => 1,
+                    SwitchSnapshot::OID_IFOPERSTATUS.'.'.$index => $index === 20 ? 1 : 2,
+                    SwitchSnapshot::OID_IFHIGHSPEED.'.'.$index => $index === 20 ? 10000 : 0];
+            }
+        $this->bindSwitches(['192.0.2.10' => new FakeSnmp(['' => $table])]);
+        $portKey = 's'.$switch->id.'p20';
+        $page = Livewire::test(Ports::class)
+            ->assertSee('Front panel · 90° counterclockwise')
+            ->assertSeeHtml('aria-label="sw-din front panel"')
+            ->assertSeeHtml('<h3 class="ports-panel-model">S5735I-S8U4XN-V2</h3>')
+            ->assertSee('4 × 10GE SFP+')
+            ->assertSeeInOrder(['aria-label="10G SFP+"', 'grid-column: 5 / span 2', 'grid-column: 9 / span 2',
+                'grid-column: 13 / span 2', 'grid-column: 16 / span 2', 'aria-label="1G RJ45"',
+                'grid-column: 1 / span 2', 'grid-column: 3 / span 2', 'grid-column: 5 / span 2',
+                'grid-column: 7 / span 2', 'grid-column: 10 / span 2', 'grid-column: 12 / span 2',
+                'grid-column: 14 / span 2', 'grid-column: 16 / span 2'], false)
+            ->call('select', 's'.$switch->id.'p6')
+            ->assertViewHas('tile', fn ($t) => $t['name'] === 'GE1/0/1' && !$t['sfp'])
+            ->call('select', 's'.$switch->id.'p17')
+            ->assertViewHas('tile', fn ($t) => $t['name'] === '10GE1/0/1' && $t['sfp'])
+            ->call('select', $portKey)
+            ->assertViewHas('tile', fn ($t) => $t['name'] === '10GE1/0/4' && $t['ifIndex'] === 20
+                && $t['sfp'] && $t['up'] && $t['panel_number'] === 4)
+            ->assertSee('10 Gbit/s');
+        $this->assertSame(12, substr_count($page->html(), 'class="ports-tile '));
+
+        $display = app(WallboardSnapshot::class)->current()['switches'][0];
+        $this->assertTrue($display['verified_layout']);
+        $this->assertSame('industrial-columns', $display['layout']);
+        [$left, $right] = array_column($display['blocks'], 'ports');
+        $this->assertSame([0, 2, 4, 6, 9, 11, 13, 15], array_column($left, 'panel_y'));
+        $this->assertSame([4, 8, 12, 15], array_column($right, 'panel_y'));
+        $this->assertSame([4, '10GE1/0/4', $portKey, true, 10000],
+            [$right[3]['number'], $right[3]['name'], $right[3]['port_id'], $right[3]['link_up'], $right[3]['speed']]);
     }
 
     public function test_without_a_switch_it_says_where_to_set_one_up()
@@ -257,24 +305,32 @@ class PortsPageTest extends TestCase
         $this->assertSame($walks, count($this->fake->walks));
     }
 
-    public function test_a_switch_that_stops_answering_keeps_its_last_picture_with_a_warning()
+    public function test_a_switch_that_stops_answering_hides_its_ports_and_recovers_on_refresh()
     {
         Carbon::setTestNow('2026-10-12 10:00:00');
         $this->switchWithModule();
-        $page = Livewire::test(Ports::class);
+        $page = Livewire::test(Ports::class)->call('select', 's1p8')->assertSee('9FD3');
         $this->fake->timeout = true;
         Carbon::setTestNow('2026-10-12 10:00:30');
         $page->call('$refresh')
-            ->assertSee('not answering since')
-            ->assertSee('No response from 192.0.2.1')
-            ->assertSee('9FD3');
+            ->assertSee('192.0.2.10 · S5731-S24P4X')
+            ->assertSee('Offline')
+            ->assertDontSeeHtml('wire:key="s1p8"')
+            ->assertDontSee('9FD3')
+            ->assertViewHas('tile', fn ($tile) => $tile === null);
+        $this->assertCount(4, Cache::get('switch-snapshot:192.0.2.10')['snapshot']['ports']);
+
+        $this->fake->timeout = false;
+        Carbon::setTestNow('2026-10-12 10:01:01');
+        $page->call('$refresh')->assertSeeHtml('wire:key="s1p8"')->assertDontSee('Offline')->assertSee('9FD3');
     }
 
     public function test_a_switch_that_never_answered_says_so()
     {
         $this->switchWithModule();
         $this->fake->timeout = true;
-        Livewire::test(Ports::class)->assertSee('Cannot read the switch: No response from 192.0.2.1');
+        Livewire::test(Ports::class)->assertSee('192.0.2.10')->assertSee('Offline')
+            ->assertDontSee('S/N')->assertDontSeeHtml('class="ports-chassis"');
     }
 
     public function test_a_switch_name_that_does_not_resolve_says_so_instead_of_breaking_the_page()
@@ -284,7 +340,8 @@ class PortsPageTest extends TestCase
             throw new \ErrorException('SNMP::__construct(): Unknown host switch.invalid');
         });
 
-        Livewire::test(Ports::class)->assertSee('Cannot read the switch: SNMP::__construct(): Unknown host switch.invalid');
+        Livewire::test(Ports::class)->assertSee('switch.invalid')->assertSee('Offline')
+            ->assertSee('Unknown host switch.invalid');
     }
 
     public function test_four_modules_behind_one_port_are_all_on_the_map()
@@ -302,14 +359,16 @@ class PortsPageTest extends TestCase
             ->assertSee('×4');
     }
 
-    public function test_a_map_from_before_the_switch_went_silent_says_so_in_the_verdict()
+    public function test_an_offline_stand_shows_neither_live_counts_nor_a_batch_verdict()
     {
         Carbon::setTestNow('2026-10-12 10:00:00');
         $this->switchWithModule();
         $page = Livewire::test(Ports::class);
         $this->fake->timeout = true;
         Carbon::setTestNow('2026-10-12 10:00:30');
-        $page->call('$refresh')->assertSee('192.0.2.10 is not answering: All done: the batch can be replaced');
+        $page->call('$refresh')->assertSee('Live port counts and batch status are unavailable.')
+            ->assertDontSee('ports free')->assertDontSee('on the stand')->assertDontSee('the batch can be replaced')
+            ->assertDontSeeHtml('aria-label="Show only"');
     }
 
     public function test_while_another_page_asks_the_switch_it_says_so_and_names_the_switch_once()
@@ -352,19 +411,35 @@ class PortsPageTest extends TestCase
             ->assertSeeHtml('wire:key="s2p8"');
     }
 
-    public function test_a_silent_switch_keeps_its_last_snapshot_in_its_block()
+    public function test_only_the_silent_switch_collapses_to_its_name_model_serial_and_offline_state()
     {
         Carbon::setTestNow('2026-10-14 10:00:00');
         $this->switchWithModule();
         $second = $this->secondFakeSwitch();
-        Livewire::test(Ports::class);                 // both answer once
+        $second->tables[''] += [SwitchSnapshot::OID_ENT_CLASS.'.1' => 3, SwitchSnapshot::OID_ENT_SERIAL.'.1' => 'SW02-5678',
+            SwitchSnapshot::OID_IFNAME.'.7' => 'GE0/0/2', SwitchSnapshot::OID_IFTYPE.'.7' => 6,
+            SwitchSnapshot::OID_IFOPERSTATUS.'.7' => 2, SwitchSnapshot::OID_IFCONNECTOR.'.7' => 1,
+            MacTable::OID_HUAWEI_FDB_PORT.'.228.95.1.98.159.212.10.0' => 8];
+        Cm::create(['serial' => '10000000e611110d', 'mac' => 'e4:5f:01:62:9f:d4', 'phase' => 'failed', 'timeline' => []]);
+        $page = Livewire::test(Ports::class)->assertSee('2 modules on the stand')->assertSee('3 of 5 ports free')
+            ->assertSeeHtml('<span class="label">1 failed</span>');
         $second->timeout = true;
         Carbon::setTestNow('2026-10-14 10:00:40');
-        Livewire::test(Ports::class)
-            ->assertSee('not answering since')
-            ->assertSee('No response from 192.0.2.11')
-            ->assertSee('sw02 is not answering: ')
-            ->assertSeeHtml('wire:key="s2p8"');      // its last snapshot's ports stay
+        $page->call('$refresh')
+            ->assertSee('1 module on reporting switches')->assertSee('2 of 3 ports free')
+            ->assertSee('1 of 2 switches reporting')->assertDontSee('the batch can be replaced')
+            ->assertSeeHtml('<span class="label">0 failed</span>')
+            ->assertSeeHtml('wire:key="s1p8"')
+            ->assertDontSeeHtml('wire:key="s2p8"');
+        $doc = new \DOMDocument;
+        @$doc->loadHTML('<?xml encoding="UTF-8">'.$page->html());
+        $summary = (new \DOMXPath($doc))->query('//section[@aria-label="sw02"]')->item(0);
+        $this->assertSame('sw02 · S5735-S24P4X · S/N SW02-5678 · Offline', trim(preg_replace('/\s+/u', ' ', $summary->textContent)));
+
+        $second->timeout = false;
+        Carbon::setTestNow('2026-10-14 10:01:11');
+        $page->call('$refresh')->assertSee('2 modules on the stand')->assertSee('3 of 5 ports free')
+            ->assertSeeHtml('<span class="label">1 failed</span>')->assertDontSee('switches reporting');
     }
 
     public function test_a_switch_that_never_answered_shows_a_placeholder()
@@ -372,7 +447,7 @@ class PortsPageTest extends TestCase
         $this->switchWithModule();
         $this->secondFakeSwitch(true);
         Livewire::test(Ports::class)
-            ->assertSee('Cannot read the switch: No response from 192.0.2.11')
+            ->assertSee('192.0.2.11')->assertSee('Offline')
             ->assertDontSeeHtml('wire:key="s2p8"')
             ->assertSeeHtml('wire:key="s1p8"');
     }
@@ -530,10 +605,16 @@ class PortsPageTest extends TestCase
         $cm = $this->switchWithModule();
         $cm->update(['phase' => 'failed', 'phase_detail' => 'Missing eMMC/SD card.', 'provisioning_complete_at' => null]);
         $this->writeAccess();
-        Livewire::test(Ports::class)
+        $page = Livewire::test(Ports::class)
             ->assertSee('Restart failed (1)')
-            ->assertSeeHtml('wire:confirm="Restart 1 module (failed or without a report)? PoE goes off for 5 s on each port."')
-            ->call('restartFailed')
+            ->assertSeeHtml('wire:confirm="Restart 1 module (failed or without a report)? PoE goes off for 5 s on each port."');
+        $this->fake->timeout = true;
+        $this->travel(31)->seconds();
+        $page->call('$refresh')->assertDontSee('Restart failed (1)')->call('restartFailed')->assertSee('Nothing to restart.');
+        $this->assertEmpty($this->fake->sets);
+        $this->fake->timeout = false;
+        $this->travel(31)->seconds();
+        $page->call('$refresh')->assertSee('Restart failed (1)')->call('restartFailed')
             ->assertSee('Restarted 192.0.2.10 GE0/0/3 (e4:5f:01:62:9f:d3): PoE was off for 5 s.');
     }
 

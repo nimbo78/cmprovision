@@ -16,8 +16,8 @@ class StationAccessSettings extends Component
 {
     use ConfirmsPasswords;
 
-    public string $name = '', $email = '', $linuxUser = '';
-    public bool $enableSsh = false;
+    public string $name = '', $email = '', $linuxUser = '', $newLinuxUser = '';
+    public bool $enableSsh = false, $createUser = false, $allowPasswordLogin = false;
     #[Locked] public bool $compact = false;
     #[Locked] public ?array $plan = null;
     #[Locked] public array $status = [];
@@ -70,8 +70,13 @@ class StationAccessSettings extends Component
         $this->ensurePasswordIsConfirmed();
         $this->error = $this->notice = null;
         try {
-            $result = app(StationAccessControl::class)->prepare(['user' => $this->linuxUser, 'password' => $password,
-                'keys' => $keys, 'enable_ssh' => $this->enableSsh]);
+            $request = [
+                'user' => $this->createUser ? $this->newLinuxUser : $this->linuxUser,
+                'password' => $password, 'keys' => $keys, 'enable_ssh' => $this->enableSsh,
+            ];
+            if ($this->createUser) $request['create_user'] = true;
+            if ($this->allowPasswordLogin) $request['allow_password_login'] = true;
+            $result = app(StationAccessControl::class)->prepare($request);
             if (!($result['ok'] ?? false)) { $this->error = $result['error'] ?? 'Could not prepare SSH access.'; return; }
             $this->plan = $result['result'];
             session()->put('station_access_request', $this->plan['id']);
@@ -84,10 +89,17 @@ class StationAccessSettings extends Component
         if ($this->plan === null) { $this->error = 'Prepare an SSH access request first.'; return; }
         $result = app(StationAccessControl::class)->apply($this->plan['id'], $code);
         $this->dispatch('station-access-clear-secrets', scope: 'ssh');
-        if (!($result['ok'] ?? false)) { $this->error = $result['error'] ?? 'Could not update SSH access.'; return; }
+        if (!($result['ok'] ?? false)) {
+            $this->refreshStatus();
+            $this->error = $result['error'] ?? 'Could not update SSH access.';
+            return;
+        }
         $this->error = null;
         $this->notice = 'SSH access updated. '.implode('. ', $result['result']['applied'] ?? []);
+        $this->linuxUser = $this->plan['user'];
+        $this->reset('createUser', 'newLinuxUser', 'allowPasswordLogin', 'enableSsh');
         $this->plan = null; session()->forget('station_access_request');
+        $this->refreshStatus();
         $this->dispatch('station-wizard-saved', scope: 'station-ssh-access-form');
     }
 
@@ -123,8 +135,22 @@ class StationAccessSettings extends Component
         abort_unless(auth()->check(), 403);
         if ($this->plan) { $this->error = 'Apply or cancel the prepared SSH request first.'; return; }
         $this->linuxUser = $this->status['users'][0]['user'] ?? '';
-        $this->enableSsh = false; $this->error = $this->notice = null;
+        $this->reset('createUser', 'newLinuxUser', 'allowPasswordLogin', 'enableSsh');
+        $this->error = $this->notice = null;
         $this->dispatch('station-access-clear-secrets', scope: 'ssh'); $this->dispatch('station-wizard-saved', scope: 'station-ssh-access-form');
+    }
+
+    public function updatedCreateUser(): void
+    {
+        $this->newLinuxUser = '';
+        $this->updatedLinuxUser();
+    }
+
+    public function updatedLinuxUser(): void
+    {
+        $this->allowPasswordLogin = false;
+        $this->error = null;
+        $this->dispatch('station-access-clear-secrets', scope: 'ssh');
     }
 
     public function render() { return view('livewire.station-access-settings'); }

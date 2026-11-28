@@ -79,14 +79,16 @@ class Ports extends Component
                 $state['same_as'] ? $stand['switches'][$state['same_as']] : null);
         usort($switches, function ($a, $b) { return strnatcasecmp($a['name'], $b['name']) ?: $a['id'] - $b['id']; });
         $tile = $stand['map']['tiles'][$this->selected] ?? null;
+        if ($tile && !Stand::answering($stand['switches'][$tile['switch_id']]))
+            $tile = null;
         $writable = (bool) array_filter($stand['switches'], function ($state) { return PoeControl::writable($state['config']); });
         return view('livewire.ports', [
             'configured' => true,
             'switches' => $switches,
+            'hasLivePorts' => ($stand['map']['summary']['answering'] ?? 0) > 0,
             // two switches with one name give boards nobody can tell apart (one switch under two addresses says so itself)
             'duplicates' => array_keys(array_filter(array_count_values(array_column(array_filter($switches, function ($s) { return !$s['same']; }), 'name')),
                 function ($n) { return $n > 1; })),
-            'asOf' => self::asOf($stand['switches']),
             'map' => $stand['map'],
             'tile' => $tile,
             // the utility OS of the stand runs on the device (it says so over LLDP): it booted and has not reached the server
@@ -126,23 +128,25 @@ class Ports extends Component
     {
         $snapshot = $state['snapshot'];
         $error = $state['error'];
-        $note = $placeholder = null;
+        $offline = $placeholder = null;
         if ($same)
             $placeholder = 'Same switch as '.$same['switch']->hostname().' ('.$same['switch']->host
                 .'): delete one of them under Settings → Ethernet switches.';
-        elseif ($snapshot && $error)
-            $note = 'As of '.self::clock($snapshot['taken_at']).', not answering since '.self::clock($error['since']).': '.$error['message'];
+        elseif ($error)
+            $offline = 'Not answering since '.self::clock($error['since']).': '.$error['message'];
         elseif (!$snapshot)
             // another page may hold the poll: its snapshot comes with the next refresh
-            $placeholder = $error ? 'Cannot read the switch: '.$error['message'] : 'Asking the switch…';
-        return ['id' => $id, 'name' => $state['switch']->hostname(), 'line' => self::header($state, $now), 'note' => $note,
+            $placeholder = 'Asking the switch…';
+        $modelHeading = $offline === null && ($part['panel']['layout'] ?? null) === 'industrial-columns' ? $part['panel']['model'] : null;
+        return ['id' => $id, 'name' => $state['switch']->hostname(), 'modelHeading' => $modelHeading,
+                'line' => self::header($state, $now, $offline !== null, $modelHeading !== null), 'offline' => $offline,
                 'placeholder' => $placeholder, 'part' => $part, 'same' => (bool) $same,
                 'noMacTable' => $snapshot && $snapshot['mac_method'] === null && in_array(true, array_column($snapshot['ports'], 'up'), true)];
     }
 
     /* The line inside a switch's block: its name first, then its serial, base MAC and address, its model and revision,
        when it was polled and what its ports draw. A snapshot kept by 2.3.0 has no identity yet */
-    protected static function header(array $state, int $now): string
+    protected static function header(array $state, int $now, bool $offline, bool $modelInHeading): string
     {
         $snapshot = $state['snapshot'];
         $who = $snapshot['identity'] ?? [];
@@ -150,14 +154,18 @@ class Ports extends Component
         $host = $state['config']['host'];
         $model = $snapshot['model'] ?? null;
         // without a sysDescr the model is the switch's own name
-        $model = $model !== null && $model !== $name && $model !== ($who['name'] ?? null) ? trim($model.' '.($who['revision'] ?? '')) : null;
+        if ($model === $name || $model === ($who['name'] ?? null) || $model === $host)
+            $model = null;
+        $serial = isset($who['serial']) ? 'S/N '.$who['serial'] : null;
+        if ($offline)
+            return implode(' · ', array_filter([$name, $model, $serial]));
         $watts = !empty($snapshot['poe']) ? array_sum(array_map(function ($p) { return $p['poe']['watts'] ?? 0; }, $snapshot['ports'])) : null;
         return implode(' · ', array_filter([
             $name,
-            isset($who['serial']) ? 'S/N '.$who['serial'] : null,
+            $serial,
             isset($who['mac']) ? 'MAC '.$who['mac'] : null,
             $host !== $name ? $host : null,
-            $model,
+            $model !== null ? trim(($modelInHeading ? '' : $model).' '.($who['revision'] ?? '')) : null,
             $snapshot ? 'polled '.max(0, $now - $snapshot['taken_at']).' s ago' : null,
             $watts !== null ? 'PoE '.number_format($watts, 1).' W' : null,
             $snapshot ? self::discovery($snapshot) : null,
@@ -174,23 +182,6 @@ class Ports extends Component
         if ($count > 0)
             return $count.' '.($count === 1 ? 'neighbor' : 'neighbors').' via LLDP/CDP';
         return $on ? 'LLDP/CDP on, no neighbors' : 'no LLDP/CDP data';
-    }
-
-    /* The verdict's start while switches do not answer: what the stand looked like and who is silent */
-    protected static function asOf(array $states): string
-    {
-        $silent = [];
-        $oldest = null;
-        foreach ($states as $state)
-            if ($state['error'])
-            {
-                $silent[] = $state['switch']->hostname();
-                if ($state['snapshot'])
-                    $oldest = min($oldest ?? PHP_INT_MAX, $state['snapshot']['taken_at']);
-            }
-        if (!$silent)
-            return '';
-        return ($oldest !== null ? 'As of '.self::clock($oldest).', ' : '').implode(', ', $silent).' '.(count($silent) === 1 ? 'is' : 'are').' not answering: ';
     }
 
     /* A moment as the page shows it: the time today, the day and time before */

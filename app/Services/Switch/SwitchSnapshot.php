@@ -143,11 +143,22 @@ class SwitchSnapshot
                 $ports[$ifIndex]['neighbors'] = $list;
 
         $classes = $this->column(self::OID_ENT_CLASS);
+        $identity = $this->identity($classes);
         $media = $this->media($ports, $classes);
         foreach (array_keys($ports) as $ifIndex)
-            $ports[$ifIndex] += $media[$ifIndex] ?? ['media' => null, 'transceiver' => null];
+        {
+            $connector = null;
+            if ($identity['model'] === 'S5735I-S8U4XN-V2')
+            {
+                $name = $ports[$ifIndex]['name'];
+                if (preg_match('/^GE1\/0\/[1-8]$/iD', $name))
+                    $connector = 'copper';
+                elseif (preg_match('/^10GE1\/0\/[1-4]$/iD', $name))
+                    $connector = 'sfp';
+            }
+            $ports[$ifIndex] += $media[$ifIndex] ?? ['media' => $connector, 'transceiver' => null];
+        }
 
-        $identity = $this->identity($classes);
         return [
             'id' => $this->id,
             'model' => $identity['model'],
@@ -255,6 +266,16 @@ class SwitchSnapshot
             $model = $this->value(self::OID_ENT_MODEL.'.'.$chassis);
             $revision = $this->value(self::OID_ENT_HW_REV.'.'.$chassis);
             $serial = $this->value(self::OID_ENT_SERIAL.'.'.$chassis);
+            if ($model === null && $this->value(self::OID_ENT_NAME.'.'.$chassis) === 'CloudEngine S5735I-S-V2')
+            {
+                $model = 'CloudEngine S5735I-S-V2';
+                $board = $this->yunshanFixedBoard($classes, $serial);
+                if ($board !== null)
+                {
+                    $model = $board['model'];
+                    $revision ??= $this->value(self::OID_ENT_HW_REV.'.'.$board['index']);
+                }
+            }
             if ($serial === null)
             {
                 $serials = $this->column(self::OID_ENT_SERIAL);
@@ -274,6 +295,27 @@ class SwitchSnapshot
             'name' => $this->value(self::OID_SYSNAME.'.0'),
             'mac' => self::mac($mac),
         ];
+    }
+
+    /* On this fixed YunShan chassis, entPhysicalName gives the family. Its main board reports the
+       product name followed by the member number and repeats the chassis serial. */
+    protected function yunshanFixedBoard(array $classes, ?string $serial): ?array
+    {
+        if ($serial === null || count(array_keys(array_map('intval', $classes), 3, true)) !== 1)
+            return null;
+
+        $serials = $this->column(self::OID_ENT_SERIAL);
+        $board = null;
+        foreach ($classes as $index => $class)
+        {
+            if ((int) $class !== 9 || $this->text($serials[$index] ?? '') !== $serial)
+                continue;
+            $name = $this->value(self::OID_ENT_NAME.'.'.$index);
+            if ($board !== null || !preg_match('/^(S5735I-S[A-Z0-9-]+-V2) \d+$/D', $name ?? '', $match))
+                return null;
+            $board = ['index' => $index, 'model' => $match[1]];
+        }
+        return $board;
     }
 
     /* [ifIndex => ['media' => copper|sfp|combo, 'transceiver' => bool|null]] as Cisco lists its connectors in ENTITY-MIB:

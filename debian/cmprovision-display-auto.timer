@@ -1,0 +1,10 @@
+[Unit]
+Description=Check the cmprovision GPIO display at startup and retry deferred work
+
+[Timer]
+OnBootSec=8s
+OnUnitInactiveSec=45s
+AccuracySec=2s
+
+[Install]
+WantedBy=timers.target

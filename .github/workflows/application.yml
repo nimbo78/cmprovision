@@ -83,6 +83,12 @@ jobs:
       - run: python3 -m unittest discover -s tests/power -p 'test_*.py' -v
       - run: python3 -m unittest discover -s tests/time -p 'test_*.py' -v
       - run: python3 -m unittest discover -s tests/storage -p 'test_*.py' -v
+      - name: USB console ownership and passive baud detection
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get install -y --no-install-recommends picocom
+          python3 -m unittest discover -s tests/tools -p 'test_serial*.py' -v
+          python3 -m unittest discover -s tests/tools -p 'test_usb_diagnostics.py' -v
       - run: sudo python3 tests/power/check_systemd.py
 
   prepare-auto-release:

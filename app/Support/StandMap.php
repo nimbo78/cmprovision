@@ -67,7 +67,7 @@ class StandMap
 
     /**
      * ['switches' => [id => ['id', 'name', 'blocks', 'composition', 'links' => [ifIndex => id of the neighbour]]],
-     *  'tiles' => [key => tile] of every switch, 'summary' => the whole stand,
+     *  'tiles' => [key => tile] of every switch, 'summary' => live ports and how many switches answered,
      *  'owners' => [module MAC => ['key' => its port or null, 'seen' => every port that lists it]],
      *  'blocks' => the first switch's blocks]
      */
@@ -86,23 +86,22 @@ class StandMap
         $owners = $this->owners($ports, $uplinks);
 
         $switches = $tiles = [];
-        $allMain = [];
         foreach ($this->parts as $id => $part)
         {
             $mine = array_filter($ports, function ($p) use ($id) { return $p['switch'] === $id; });
             [$blocks, $main, $aside, $withPoe, $panel] = $this->layout($mine, $owners, $links, $uplinks, $part['snapshot']['model'] ?? null);
             foreach (array_merge($main, $aside) as $tile)
                 $tiles[$tile['key']] = $tile;
-            $allMain = array_merge($allMain, $main);
             $found = [];
             foreach ($mine as $key => $p)
                 if (isset($links[$key]))
                     $found[$p['port']['ifIndex']] = $links[$key];
+            $sfpLabel = ($panel['layout'] ?? null) === 'industrial-columns' ? '10GE SFP+' : 'SFP';
             $switches[$id] = ['id' => $id, 'name' => $part['name'], 'blocks' => $blocks, 'panel' => $panel,
-                              'composition' => $main || $aside ? $this->composition($main, $aside, $withPoe) : '', 'links' => $found];
+                              'composition' => $this->composition($main, $aside, $withPoe, $sfpLabel), 'links' => $found];
         }
         $first = reset($switches);
-        return ['switches' => $switches, 'tiles' => $tiles, 'summary' => $this->summary($allMain, $tiles),
+        return ['switches' => $switches, 'tiles' => $tiles, 'summary' => $this->summary($tiles),
                 'owners' => $owners, 'blocks' => $first ? $first['blocks'] : []];
     }
 
@@ -346,7 +345,8 @@ class StandMap
                         $main[] = $tile;
                 }
             unset($block, $tile);
-            return [$blocks, $main, $aside, $withPoe, ['model' => $panel['model']]];
+            unset($panel['blocks']);
+            return [$blocks, $main, $aside, $withPoe, $panel];
         }
 
         $rows = count($main) > self::BLOCK ? 2 : 1;
@@ -593,22 +593,32 @@ class StandMap
         return self::STEP_MARKS[$cm->phase] ?? '';
     }
 
-    protected function summary(array $main, array $tiles): array
+    protected function summary(array $tiles): array
     {
         $counts = array_fill_keys(['ok', 'run', 'fail', 'stale', 'unknown', 'boot', 'foreign', 'recognized', 'free'], 0);
-        $modules = 0;
+        $ports = $modules = 0;
         foreach ($tiles as $tile)
+        {
+            if (!$this->parts[$tile['switch_id']]['answering'])
+                continue;
             foreach ($tile['modules'] as $cm)
             {
                 $counts[self::moduleState($cm)]++;
                 $modules++;
             }
-        foreach ($main as $tile)
+            if ($tile['aside'])
+                continue;
+            $ports++;
             if (in_array($tile['state'], ['boot', 'foreign', 'quiet', 'free'], true))
                 $counts[$tile['filter']]++;
+        }
 
         $busy = $counts['run'] + $counts['stale'] + $counts['boot'];
-        if ($busy)
+        $switches = count($this->parts);
+        $answering = count(array_filter($this->parts, static fn ($part) => $part['answering']));
+        if ($answering < $switches)
+            $verdict = 'incomplete';
+        elseif ($busy)
             $verdict = 'running';
         elseif ($counts['fail'] + $counts['unknown'])
             $verdict = 'failed';
@@ -617,12 +627,13 @@ class StandMap
         else
             $verdict = 'empty';
 
-        return ['modules' => $modules, 'ports' => count($main), 'counts' => $counts, 'verdict' => $verdict, 'busy' => $busy];
+        return ['modules' => $modules, 'ports' => $ports, 'counts' => $counts, 'verdict' => $verdict, 'busy' => $busy,
+                'answering' => $answering, 'switches' => $switches];
     }
 
     /* "8 × 1G PoE · 2 × 1G · 2 × SFP": the main ports with their usual speed, then beside them the copper uplinks,
        the cages and the combo ports */
-    protected function composition(array $main, array $aside, bool $withPoe): string
+    protected function composition(array $main, array $aside, bool $withPoe, string $sfpLabel): string
     {
         $parts = [];
         if ($main)
@@ -637,7 +648,7 @@ class StandMap
             $speed = self::usualSpeed($copper);
             $parts[] = count($copper).' × '.($speed ? self::speedLabel($speed) : 'RJ45');
         }
-        foreach (['sfp' => 'SFP', 'combo' => 'combo'] as $media => $word)
+        foreach (['sfp' => $sfpLabel, 'combo' => 'combo'] as $media => $word)
         {
             $count = count(array_filter($aside, function ($t) use ($media) { return $t['media'] === $media; }));
             if ($count)

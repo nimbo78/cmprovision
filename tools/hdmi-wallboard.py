@@ -568,29 +568,106 @@ def port_pages(switch, width, height):
     return pages or [[]]
 
 
+# The sideways front spans 17 half-pitches including the width of the last socket.
+# Each socket needs seven characters for [10GE4] and a one-character separator.
+INDUSTRIAL_GUTTER = 9
+INDUSTRIAL_MIN_WIDTH = 4 + INDUSTRIAL_GUTTER + 17 * 8 // 2
+
+
+def industrial_ports(c, x, y, width, height, switch, tick, by_serial, by_location, host):
+    from hdmi_port_info import link_reading, port_endpoint, power_reading
+    span = 16 if width >= INDUSTRIAL_MIN_WIDTH else 8
+    pages = 16 // span
+    page = tick % pages
+    available = width - 4 - INDUSTRIAL_GUTTER
+    tile_width = 2 * available // (span + 1) - 1
+    left = x + 2
+    c.marquee(left, y + 1, 'S/N ' + (safe(switch.get('serial')) or 'unknown'), width - 4, 'dim')
+
+    # Two offline summaries can leave just six rows above the navigation hint.
+    fiber_link_row = height >= 10
+    power_row = height >= 11
+    fiber_y = y + 2
+    copper_y = fiber_y + 2 + int(fiber_link_row) + int(height >= 12)
+    copper, fiber = switch['blocks']
+    for block, is_copper, top in ((fiber, False, fiber_y), (copper, True, copper_y)):
+        c.text(left, top, 'RJ45' if is_copper else 'SFP+', 'dim')
+        c.text(left, top + 1, 'Device' if is_copper or fiber_link_row else 'ID/Link', 'dim')
+        if is_copper or fiber_link_row:
+            c.text(left, top + 2, 'Link/PoE' if is_copper and not power_row else 'Link', 'dim')
+        if is_copper and power_row:
+            c.text(left, top + 3, 'PoE', 'dim')
+        for port in block['ports']:
+            # Rotating the original two columns counterclockwise makes panel_y the horizontal axis.
+            offset = port['panel_y'] - page * span
+            if not 0 <= offset < span:
+                continue
+            px = left + INDUSTRIAL_GUTTER + offset * available // (span + 1)
+            members = [by_serial[s] for s in port.get('serials', []) if s in by_serial]
+            observed = by_location.get(switch['name'] + ' ' + port['name'])
+            mark, ink = port_mark(port, members)
+            label = ('GE' if is_copper else '10GE') + str(port['number'])
+            c.text(px, top, '[' + label.center(tile_width - 2) + ']', ink, tile_width)
+            endpoint = port_endpoint(port, host, modules=members, observed=observed) or mark.strip() or '-'
+            link = link_reading(port)[0]
+            reading_ink = 'dim'
+            if is_copper:
+                power, power_ink = power_reading(port)
+                reading_ink = {'bad': 'fail', 'warn': 'warn'}.get(power_ink, 'dim')
+                if power_row:
+                    c.marquee(px, top + 3, power, tile_width, reading_ink)
+                    reading_ink = 'dim'
+                else:
+                    link += '/' + power
+            if is_copper or fiber_link_row:
+                c.marquee(px, top + 2, link, tile_width, reading_ink)
+            else:
+                endpoint += ' / ' + link
+            c.marquee(px, top + 1, endpoint, tile_width, 'fg')
+    return page, pages
+
+
 def ports(c, x, y, width, height, switches, modules, tick, host=None, observations=()):
+    """Draw the current panel and return the bracket-key hint when it has another page."""
+    from hdmi_port_info import industrial_columns
     if not switches:
         c.box(x, y, width, height, 'PORTS')
         c.wrap(x + 2, y + 2, 'No managed switch configured. Device cards use recent module reports.', width - 4, 3, 'dim')
         return
+    offline = [s for s in switches if s.get('answering') is False]
+    switches = [s for s in switches if s.get('answering') is not False]
+    if offline:
+        limit = min(height,2) if switches else height
+        start = (tick % math.ceil(len(offline)/limit))*limit
+        for sw in offline[start:start+limit]:
+            fields = ['OFFLINE', sw.get('name') or sw.get('host'), sw.get('model'),
+                      'S/N '+safe(sw['serial']) if sw.get('serial') else None]
+            c.marquee(x+1,y,' / '.join(safe(v) for v in fields if v),width-2,'warn')
+            y, height = y+1, height-1
+    if not switches:
+        return
     switch = switches[tick % len(switches)]
-    pages = port_pages(switch, width - 4, height - 4)
-    page_no = (tick // len(switches)) % len(pages)
     title = '%s / %s' % (switch['name'], switch.get('model') or 'automatic layout')
     c.box(x, y, width, height, title)
     pitch = port_pitch(switch)
-    notes = [] if switch['answering'] else ['SNMP NOT RESPONDING / last known ports']
-    if pitch > 10:
-        from hdmi_port_info import link_reading, port_endpoint, power_reading
-        notes.append('S/N ' + (safe(switch.get('serial')) or 'unknown'))
-    c.marquee(x + 2, y + 1, ' / '.join(notes), width - 4, 'dim' if switch['answering'] else 'warn')
     by_serial = {m['serial']: m for m in modules if m.get('serial')}
     by_location = {}
     if sum(s['name'] == switch['name'] for s in switches) == 1:
         for device in observations:
             label = device.get('port')
             by_location[label] = None if label in by_location else device
-    for bx, by, bank in pages[page_no]:
+    if industrial_columns(switch):
+        page_no, page_count = industrial_ports(c,x,y,width,height,switch,tick//len(switches),by_serial,by_location,host)
+        banks_on_page = []
+    else:
+        pages = port_pages(switch,width-4,height-4)
+        page_count = len(pages)
+        page_no = (tick//len(switches)) % page_count
+        banks_on_page = pages[page_no]
+        if pitch > 10:
+            from hdmi_port_info import link_reading, port_endpoint, power_reading
+            c.marquee(x+2,y+1,'S/N '+(safe(switch.get('serial')) or 'unknown'),width-4,'dim')
+    for bx, by, bank in banks_on_page:
         c.text(x + 2 + bx, y + 2 + by, bank['label'], 'dim', bank['width'])
         for i, port in enumerate(bank['ports']):
             px, py = x + 2 + bx + (i // bank['rows']) * pitch, y + 3 + by + (i % bank['rows']) * 3
@@ -612,12 +689,13 @@ def ports(c, x, y, width, height, switches, modules, tick, host=None, observatio
             c.text(px, py, '.-------.', 'dim')
             c.text(px, py + 1, '|%s|' % (number + ' ' + mark)[:7].ljust(7), ink)
             c.text(px, py + 2, "'-------'", 'dim')
-    if len(pages) > 1 or len(switches) > 1:
+    if page_count > 1 or len(switches) > 1:
         label = 'SWITCH %d/%d / PORT PAGE %d/%d' % (
-            tick % len(switches) + 1, len(switches), page_no + 1, len(pages))
+            tick % len(switches) + 1, len(switches), page_no + 1, page_count)
         if len(switches) > 1:
             label += ' / Next: ' + safe(switches[(tick + 1) % len(switches)]['name'])
         c.marquee(x + 2, y + height - 2, label, width - 4, 'dim')
+        return '[ ] switches' if len(switches) > 1 else '[ ] port pages'
 
 
 def hardware_lines(module):
@@ -680,20 +758,23 @@ def detail(c, x, y, width, module, now, height=15):
 
 
 def desk(c, data, module, now, tick, switch_offset=0):
+    from hdmi_port_info import industrial_columns
     y = header(c, data, now)
     switches = data.get('switches', [])
     observations = data.get('recognized', []) + data.get('unknown', [])
     # Fit compact physical panels beside a readable card; larger banks paginate.
-    natural = max((sum(math.ceil(len(b['ports']) / max(1, b['rows'])) for b in s['blocks']) * port_pitch(s)
-                   + max(0, len(s['blocks']) - 1) + 4 for s in switches), default=0)
+    natural = max((INDUSTRIAL_MIN_WIDTH if industrial_columns(s) else
+                   sum(math.ceil(len(b['ports']) / max(1, b['rows'])) for b in s['blocks']) * port_pitch(s)
+                   + max(0, len(s['blocks']) - 1) + 4 for s in switches if s.get('answering') is not False), default=0)
     width = max(30, min(c.cols - 42, max(round(c.cols * 0.60), natural)))
     height = min(17, max(11, c.rows - y - 10))
-    ports(c, 0, y, c.cols if c.cols < 100 else width, height, switches,
-          data.get('modules', []), tick + switch_offset, data.get('host'), observations)
+    switch_keys = ports(c, 0, y, c.cols if c.cols < 100 else width, height, switches,
+                        data.get('modules', []), tick + switch_offset, data.get('host'), observations)
     if c.cols >= 100:
         c.box(width + 2, y, c.cols - width - 2, height, 'DEVICE CARD')
         detail(c, width + 4, y + 1, c.cols - width - 6, module, now, height=height - 2)
     table(c, y + height + 1, data.get('modules', []) + data.get('recognized', []), tick, data.get('unknown', []))
+    return switch_keys
 
 
 def table_rows(modules, unknown):
@@ -772,6 +853,8 @@ def engineer(c, data, module, now, tick):
         c.marquee(0, y, module.get('port', '')+' / '+module.get('name', ''), c.cols, 'accent')
         fields = []
         for switch in data.get('switches', []):
+            if switch.get('answering') is False:
+                continue
             for block in switch.get('blocks', []):
                 for port in block.get('ports', []):
                     if module.get('port_id') and port.get('port_id') == module['port_id']:
@@ -857,16 +940,19 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
         c.wrap(0, 0, 'cmprovision HDMI: terminal too small. Need at least 60 columns and 24 rows. Use Settings > HDMI display or a smaller console font.', cols, rows, 'warn')
         return c
     modules = data.get('modules', [])
+    switches = data.get('switches', [])
+    online = [s for s in switches if s.get('answering') is not False]
     cards = passports(data) if view == 'engineer' else modules + data.get('recognized', [])
     module = cards[selected % len(cards)] if cards else None
     if view == 'auto':
         view = 'engineer' if module and module['state'] in ('fail', 'stale') else 'desk'
     elif view in ('map', 'tour'):
         view = 'desk'  # The text console paginates the physical panel.
+    switch_keys = None
     if view in ('flow', 'engineer'):
         (flow if view == 'flow' else engineer)(c, data, module, now, tick)
     else:
-        desk(c, data, module, now, tick, switch_offset)
+        switch_keys = desk(c, data, module, now, tick, switch_offset)
     problems = [m for m in modules if m['state'] in ('fail', 'stale')]
     stale = now - data.get('generated_at', 0) > 10
     c.line(rows - 5)
@@ -875,10 +961,10 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
     elif problems:
         m = problems[tick % len(problems)]
         c.marquee(0, rows - 4, '! ' + m['port'] + ': ' + (m.get('detail') or phase(m)), cols, 'fail')
-    elif any(not s['answering'] for s in data.get('switches', [])):
-        c.text(0, rows - 4, '! A switch is not answering. Ports are last known data.', 'warn')
+    elif view != 'desk' and len(online) < len(switches):
+        c.text(0, rows - 4, '! A switch is offline.', 'warn')
     else:
-        unknown = sum(p.get('state') in ('unrecognized', 'quiet') for s in data.get('switches', []) for b in s['blocks'] for p in b['ports'])
+        unknown = sum(p.get('state') in ('unrecognized', 'quiet') for s in online for b in s['blocks'] for p in b['ports'])
         c.text(0, rows - 4, ('! %d unrecognized/quiet ports. Open Ports in the web UI.' % unknown) if unknown else 'READ ONLY / ' + safe(data.get('clock')), 'warn' if unknown else 'dim')
     if rows < 30:
         # Short consoles keep their card height; the otherwise empty footer row holds scrolling links.
@@ -886,8 +972,11 @@ def frame(data, cols, rows, selected=0, view='auto', now=None, tick=0, paused=Fa
     c.text(0, rows - 2, ('PAUSED' if paused else 'AUTO ROTATION') + ' / CARD %d/%d / %s' %
            ((selected % len(cards)) + 1 if cards else 0, len(cards), view.upper()), 'dim')
     keys = 'Alt+F1 console / Alt+F8 board / <- -> / Space pause / V view'
-    if len(data.get('switches', [])) > 1:
-        keys += ' / [ ] switches'
+    if switch_keys:
+        if len(keys) + 3 + len(switch_keys) <= cols:
+            keys += ' / ' + switch_keys
+        else:
+            c.text(cols - len(switch_keys), rows - 2, switch_keys, 'dim')
     c.text(max(0, cols - len(keys)), rows - 1, keys, 'dim')
     return c
 
@@ -1249,10 +1338,13 @@ def display(screen):
             geometry = graphics.output.size if graphics.output else None
             if update is not None or geometry != last_geometry:
                 switches = data.get('switches') or []
-                stops = len(switches)
-                if geometry:
+                if not switches:
+                    stops = 1  # A stand without a configured switch has its own overview.
+                elif geometry:
                     from hdmi_graphics import tour_stops
                     stops = tour_stops(switches, geometry)
+                else:
+                    stops = sum(s.get('answering') is not False for s in switches)
                 last_geometry = geometry
             if view != 'auto':
                 profile = None
@@ -1268,7 +1360,7 @@ def display(screen):
                     last_rotation = monotonic
                 if view == 'auto' and (profile is None or (rotation.pending and not urgent_profile)):
                     urgent_profile = bool(rotation.pending)
-                    index = rotation.take(profiles, tick, len(cards)+max(1, stops), periodic=profile is None)
+                    index = rotation.take(profiles, tick, len(cards)+stops, periodic=profile is None)
                     if index is not None:
                         profile = card_key(profiles[index])
                         last_rotation = monotonic
@@ -1314,7 +1406,7 @@ def display(screen):
                 rotation.last_tour = 0
                 tick, switch_offset = 0, 0
                 last_rotation = time.monotonic()
-            elif key in (ord('['), ord(']')):
+            elif key in (ord('['), ord(']')) and stops:
                 profile = None
                 switch_offset += 1 if key == ord(']') else -1
                 last_rotation = time.monotonic()

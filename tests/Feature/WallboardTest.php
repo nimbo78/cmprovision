@@ -80,6 +80,24 @@ class WallboardTest extends TestCase
         $switches = array_column($reader->current()['switches'], null, 'name');
         $this->assertFalse($switches['sw02']['answering']);
         $this->assertSame('SW02-9876', $switches['sw02']['serial']);
+        $this->assertSame('192.0.2.11', $switches['sw02']['host'] ?? null);
+        $this->assertNotEmpty($switches['sw02']['blocks'], 'The cached ports remain available for diagnostics.');
+        $this->assertTrue($switches['sw01']['answering']);
+    }
+
+    public function test_an_unreachable_switch_without_a_snapshot_stays_listed_beside_the_live_switch()
+    {
+        $this->stand();
+        $this->secondSwitch();
+        $this->fake2->timeout = true;
+        $switches = array_column(app(WallboardSnapshot::class)->current()['switches'], null, 'host');
+        $this->assertSame(['192.0.2.10', '192.0.2.11'], array_keys($switches));
+        $this->assertTrue($switches['192.0.2.10']['answering']);
+        $offline = $switches['192.0.2.11'];
+        $this->assertFalse($offline['answering']);
+        $this->assertSame('192.0.2.11', $offline['name']);
+        $this->assertNull($offline['serial']);
+        $this->assertSame([], $offline['blocks']);
     }
 
     public function test_card_uses_the_project_and_image_of_this_specific_run()
@@ -256,9 +274,8 @@ class WallboardTest extends TestCase
         $this->assertStringNotContainsString('wlanpi-da2', json_encode($data['unknown']));
     }
 
-    public function test_verified_sensors_are_separate_from_local_runs_and_unknown_devices()
+    protected function markSensorOnFirstPort(): string
     {
-        $cm = $this->stand();
         $key = str_repeat('5a', 32);
         app(\App\Services\Sensor\ModuleMark::class)->set($key);
         $mac = '00:0a:95:dd:ee:ff';
@@ -267,6 +284,13 @@ class WallboardTest extends TestCase
         $t[MacTable::OID_HUAWEI_FDB_PORT.'.0.10.149.221.238.255.10.0'] = 6;
         foreach ([4 => 4, 5 => hex2bin('000a95ddeeff'), 6 => 3, 7 => hex2bin('000a95ddeeff'), 8 => "cmprovision mark wlanpi-da2 1/20 $code", 9 => 'wlanpi-fd3', 10 => 'Linux', 12 => hex2bin('10')] as $column => $value)
             $t[\App\Services\Switch\Neighbors::OID_LLDP_REM.'.'.$column.'.0.6.1'] = $value;
+        return $code;
+    }
+
+    public function test_verified_sensors_are_separate_from_local_runs_and_unknown_devices()
+    {
+        $cm = $this->stand();
+        $code = $this->markSensorOnFirstPort();
         $data = app(WallboardSnapshot::class)->current();
         $ports = array_column(array_merge(...array_column($data['switches'][0]['blocks'], 'ports')), null, 'name');
         $this->assertSame(['recognized', 'recognized', []], [$ports['GE0/0/1']['state'], $ports['GE0/0/1']['filter'], $ports['GE0/0/1']['serials']]);
@@ -287,6 +311,38 @@ class WallboardTest extends TestCase
         $this->assertContains('wlanpi-fd3', array_column($untrusted['unknown'], 'name'));
         $ports = array_column(array_merge(...array_column($untrusted['switches'][0]['blocks'], 'ports')), null, 'name');
         $this->assertSame('unrecognized', $ports['GE0/0/1']['state']);
+    }
+
+    public function test_neighbor_cards_follow_each_switch_outage_and_recovery_without_erasing_port_or_module_data()
+    {
+        $cm = $this->stand();
+        $this->secondSwitch();
+        $this->markSensorOnFirstPort();
+        $this->fake->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.0.17.34.51.68.85.10.0'] = 7;
+        $this->fake2->tables[''][MacTable::OID_HUAWEI_FDB_PORT.'.0.17.34.51.68.86.10.0'] = 6;
+
+        $reader = app(WallboardSnapshot::class);
+        $live = $reader->current();
+        $this->assertSame(['wlanpi-fd3'], array_column($live['recognized'], 'name'));
+        $this->assertSame(['sw01 GE0/0/2', 'sw02 GE0/0/1'], array_column($live['unknown'], 'port'));
+
+        $this->travel(31)->seconds();
+        $this->fake->timeout = true;
+        UsbDiagnosticReport::create(['serial' => '1000000000000003', 'boot_id' => 'boot', 'event_id' => 'event', 'mac' => null,
+            'usb_path' => '/dev/ttyACM0', 'report' => [], 'received_at' => now()]);
+        $silent = $reader->current();
+        $this->assertSame([], $silent['recognized']);
+        $this->assertSame(['sw02 GE0/0/1'], array_column($silent['unknown'], 'port'));
+        $cached = array_merge(...array_column($silent['switches'][0]['blocks'], 'ports'));
+        $this->assertContains('wlanpi-fd3', array_column($cached, 'endpoint'));
+        $this->assertContains($cm->serial, array_column($silent['modules'], 'serial'));
+        $this->assertContains('1000000000000003', array_column($silent['modules'], 'serial'));
+
+        $this->travel(31)->seconds();
+        $this->fake->timeout = false;
+        $back = $reader->current();
+        $this->assertSame(array_column($live['recognized'], 'name'), array_column($back['recognized'], 'name'));
+        $this->assertSame(array_column($live['unknown'], 'port'), array_column($back['unknown'], 'port'));
     }
 
     public function test_a_display_takes_a_snapshot_up_to_fifteen_seconds_old_and_polls_after_that()
@@ -313,6 +369,7 @@ class WallboardTest extends TestCase
         $data = app(WallboardSnapshot::class)->current();
         $this->assertSame([$cm->serial], array_column($data['modules'], 'serial'));
         $this->assertFalse($data['switches'][0]['answering']);
+        $this->assertSame('192.0.2.10', $data['switches'][0]['host'] ?? null);
         $this->assertArrayHasKey('serial', $data['switches'][0]);
         $this->assertNull($data['switches'][0]['serial']);
         // since when it has not answered: the front panel says "silent 2 min"

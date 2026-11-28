@@ -1,3 +1,13 @@
+cmprovision4 (2.30.13) trixie; urgency=medium
+
+  * Detect Waveshare 1.44-inch and HyperPixel 4.0 Touch panels on boot.
+  * Use a neutral GPIO profile in universal station images. Apply the
+    Waveshare profile at runtime or boot the HyperPixel profile once.
+  * Install the matching signed fpms-lite package when a supported panel
+    is present and the station is idle. Preserve explicitly fixed profiles.
+
+ -- cmprovision contributors <cmprovision@localhost>  Wed, 25 Nov 2026 14:51:00 +0300
+
 cmprovision4 (2.30.12) trixie; urgency=medium
 
   * Offer NTP on the confirmed provisioning link and advertise DHCP option

@@ -108,6 +108,44 @@ class SwitchSnapshotTest extends TestCase
         $this->assertNull($s['identity']['revision']);
     }
 
+    public function test_yunshan_fixed_board_identifies_the_chassis_and_its_connectors()
+    {
+        $table = $this->interfaces([
+            13 => ['GE1/0/8', 6, 1, 1, 1000],
+            17 => ['10GE1/0/1', 6, 1, 2, 0],
+            18 => ['10GE1/0/5', 6, 1, 2, 0],
+        ]) + [
+            SwitchSnapshot::OID_SYSDESCR.'.0' => "Huawei YunShan OS\r\nVersion 1.22.1.1",
+            SwitchSnapshot::OID_ENT_CLASS.'.16777216' => 3,
+            SwitchSnapshot::OID_ENT_NAME.'.16777216' => 'CloudEngine S5735I-S-V2',
+            SwitchSnapshot::OID_ENT_SERIAL.'.16777216' => 'test-chassis',
+            SwitchSnapshot::OID_ENT_CLASS.'.16842753' => 9,
+            SwitchSnapshot::OID_ENT_NAME.'.16842753' => 'S5735I-S8U4XN-V2 1',
+            SwitchSnapshot::OID_ENT_SERIAL.'.16842753' => 'test-chassis',
+            SwitchSnapshot::OID_ENT_HW_REV.'.16842753' => 'ES5D2V12S036 VER A',
+        ];
+        $s = $this->take($table);
+        $this->assertSame('S5735I-S8U4XN-V2', $s['model']);
+        $this->assertSame('ES5D2V12S036 VER A', $s['identity']['revision']);
+        $this->assertSame('copper', $s['ports'][13]['media']);
+        $this->assertSame('sfp', $s['ports'][17]['media']);
+        $this->assertNull($s['ports'][17]['transceiver']);
+        $this->assertNull($s['ports'][17]['poe']);
+        $this->assertNull($s['ports'][18]['media']);
+
+        foreach ([
+            [SwitchSnapshot::OID_ENT_SERIAL.'.16842753' => 'another-board'],
+            [SwitchSnapshot::OID_ENT_CLASS.'.16842754' => 9,
+             SwitchSnapshot::OID_ENT_NAME.'.16842754' => 'S5735I-S8T4XN-V2 2',
+             SwitchSnapshot::OID_ENT_SERIAL.'.16842754' => 'test-chassis'],
+        ] as $different)
+        {
+            $s = $this->take($different + $table);
+            $this->assertSame('CloudEngine S5735I-S-V2', $s['model']);
+            $this->assertNull($s['ports'][17]['media']);
+        }
+    }
+
     /** ENTITY-MIB rows as Cisco IOS lists them: [entity => [class, name, contained in, ifIndex it stands for or null]] */
     protected function entities(array $rows)
     {

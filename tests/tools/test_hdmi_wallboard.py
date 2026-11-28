@@ -7,7 +7,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 TOOLS = Path(__file__).resolve().parents[2] / 'tools'
 sys.path.insert(0, str(TOOLS))
@@ -653,7 +653,8 @@ class RenderingTest(unittest.TestCase):
         sw['answering'] = False
         canvas = w.Canvas(110, 22)
         w.ports(canvas, 0, 0, 90, 17, [sw], [], 0)
-        self.assertIn('last known', canvas.plain())
+        self.assertIn('OFFLINE', canvas.plain())
+        self.assertNotIn('3.2 W', canvas.plain())
         self.assertIn('S/N DEMO-WEST-02', canvas.plain())
 
     def test_cisco_uplinks_align_with_bottom_row_and_double_digit_labels_fit(self):
@@ -679,6 +680,116 @@ class RenderingTest(unittest.TestCase):
             for number in (9, 10, 11, 12):
                 self.assertIn('|%s|' % str(number).ljust(7), rendered)
             self.assertIn('DEVICE CARD', rendered)
+
+
+class OfflineSwitchNavigationTest(unittest.TestCase):
+    def switch(self, name, answering):
+        return dict(name=name, model='Model', serial='SN-'+name, answering=answering,
+                    blocks=[dict(label='RJ45', rows=1, ports=[
+                        dict(name='Gi0/1', number=1, state='uplink', endpoint='peer-'+name)])])
+
+    def test_switch_keys_and_next_name_follow_the_responding_switches(self):
+        data = snapshot()
+        east, spare, west = data['switches'] = [
+            self.switch('east', True), self.switch('spare', False), self.switch('west', True)]
+
+        def render(offset):
+            return w.frame(data, 160, 40, view='desk', now=1001, switch_offset=offset).plain()
+
+        for offset, current, following in ((0, 'east', 'west'), (1, 'west', 'east'), (-1, 'west', 'east')):
+            text = render(offset)
+            self.assertIn('peer-'+current, text)
+            self.assertIn('Next: '+following, text)
+            self.assertIn('[ ] switches', text)
+            self.assertIn('OFFLINE / spare / Model / S/N SN-spare', text)
+            self.assertEqual(1, text.lower().count('offline'))
+            self.assertNotIn('peer-spare', text)
+
+        self.assertEqual(1, w.frame(data, 160, 40, view='flow', now=1001).plain().lower().count('offline'))
+        west['answering'] = False
+        for offset in (0, 1, -1):
+            text = render(offset)
+            self.assertIn('peer-east', text)
+            self.assertNotIn('peer-west', text)
+            self.assertNotIn('Next:', text)
+            self.assertNotIn('[ ] switches', text)
+
+        east['answering'] = False
+        for offset in (0, 2, -1):
+            text = render(offset)
+            for switch in (east, spare, west):
+                self.assertIn('OFFLINE / {name} / Model / S/N {serial}'.format(**switch), text)
+            self.assertNotIn('peer-', text)
+            self.assertNotIn('[ ] switches', text)
+            self.assertIn('wlanpi-demo', text)
+
+        west['answering'] = True
+        self.assertIn('peer-west', render(1))
+
+    def test_single_live_switch_offers_keys_for_its_real_port_pages(self):
+        data = snapshot()
+        rack, spare = data['switches'] = [self.switch('rack', True), self.switch('spare', False)]
+        rack['blocks'] = [dict(label='RJ45', rows=2, ports=[
+            dict(name='Gi1/0/%d' % n, number=n, state='free') for n in range(1, 49)])]
+        for offset, page in ((0, 1), (1, 2), (-1, 12)):
+            text = w.frame(data, 100, 30, view='desk', now=1001, switch_offset=offset).plain()
+            self.assertIn('PORT PAGE %d/12' % page, text)
+            self.assertIn('[ ] port pages', text.splitlines()[-1])
+        compact = w.frame(data, 60, 24, view='desk', now=1001).plain()
+        self.assertIn('[ ] port pages', '\n'.join(compact.splitlines()[-2:]))
+        rack['answering'], spare['answering'] = False, True
+        self.assertNotIn('[ ]', w.frame(data, 100, 30, view='desk', now=1001).plain().splitlines()[-1])
+
+    def test_outage_rows_allow_the_desk_to_count_only_live_port_warnings(self):
+        data = snapshot()
+        rack, spare = data['switches'] = [self.switch('rack', True), self.switch('spare', False)]
+        rack['blocks'][0]['ports'][0]['state'] = 'quiet'
+        spare['blocks'][0]['ports'][0]['state'] = 'unrecognized'
+        text = w.frame(data, 160, 40, view='desk', now=1001).plain()
+        self.assertIn('1 unrecognized/quiet ports', text)
+        self.assertIn('OFFLINE / spare', text)
+
+    def test_tty_tour_counts_only_online_maps_and_keeps_the_real_passport_when_all_go_offline(self):
+        from hdmi_presentation import Presentation
+
+        screen, presentation, reader = Mock(), Mock(), Mock()
+        screen.getmaxyx.return_value = (40, 160)
+        presentation.output, presentation.present.return_value = None, False
+        now = 0
+        moments = iter((5, 10, 15, 20, 21, 25, 30))
+        frames = {}
+
+        def read_snapshot():
+            data = snapshot()
+            data['switches'] = [self.switch('rack', now < 15 or now >= 25), self.switch('spare', False)]
+            return data
+
+        def getch():
+            nonlocal now
+            now = next(moments, None)
+            if now is None:
+                w.STOP = True
+            return ord(']') if now == 21 else -1
+
+        def paint(screen, canvas, ox, oy, inks):
+            frames[now] = canvas.plain()
+
+        reader.poll.side_effect = read_snapshot
+        screen.getch.side_effect = getch
+        with patch.object(w, 'STOP', False), patch.dict(sys.modules, {w.__name__: w}), \
+             patch.object(w.time, 'monotonic', side_effect=lambda: now), patch.object(w.time, 'time', return_value=1001), \
+             patch.object(w.curses, 'curs_set'), patch.object(w, 'colors', return_value={'fg': 0}), \
+             patch.object(w, 'Reader', return_value=reader), patch.object(w, 'display_cards', return_value=(None, None)), \
+             patch.object(w, 'read_config', return_value=dict(w.DEFAULTS, rotation=5)), \
+             patch.object(Presentation, 'for_console', return_value=presentation), patch.object(w, 'paint_console', paint):
+            w.display(screen)
+
+        self.assertEqual([10, 20, 21, 30], [moment for moment, text in frames.items() if ' / ENGINEER' in text])
+        self.assertIn('peer-rack', frames[5])
+        self.assertIn('OFFLINE / rack / Model / S/N SN-rack', frames[15])
+        self.assertIn('wlanpi-demo', frames[15])
+        self.assertNotIn('peer-rack', frames[15])
+        self.assertIn('peer-rack', frames[25])
 
 
 class AutoAppearanceTest(unittest.TestCase):

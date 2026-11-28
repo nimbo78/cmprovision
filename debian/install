@@ -29,6 +29,8 @@ debian/021_cmprovision-rescue-wifi etc/sudoers.d
 debian/010_cmprovision etc/sudoers.d
 
 debian/cmprovision-usb-diagnostics.service lib/systemd/system
+debian/cmprovision-serial-web.socket lib/systemd/system
+debian/cmprovision-serial-web.service lib/systemd/system
 debian/cmprovision-wallboard.service lib/systemd/system
 debian/cmprovision-wallboard-display.service lib/systemd/system
 debian/cmprovision-wallboard-data.service lib/systemd/system
@@ -40,6 +42,8 @@ debian/015_cmprovision-power etc/sudoers.d
 debian/cmprovision-network-init.service lib/systemd/system
 debian/cmprovision-network-recover.service lib/systemd/system
 debian/cmprovision-fpms.service lib/systemd/system
+debian/cmprovision-display-auto.service lib/systemd/system
+debian/cmprovision-display-auto.timer lib/systemd/system
 debian/cmprovision-fpms-data.service lib/systemd/system
 debian/016_cmprovision-updates etc/sudoers.d
 debian/017_cmprovision-time etc/sudoers.d

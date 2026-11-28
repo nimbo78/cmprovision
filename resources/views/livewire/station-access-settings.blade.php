@@ -1,4 +1,4 @@
-<x-settings-card title="Station access" id="station-access" description="Your web account and the existing Linux administrator of this provisioner. Sensor accounts are separate."
+<x-settings-card title="Station access" id="station-access" description="Your web account and the Linux administrators of this provisioner."
     :bare="$compact" wire:loading.attr="data-wizard-saving">
     @if ($compact)<x-confirm-password-dialog />@endif
     <div x-data x-on:station-access-clear-secrets.window="$el.querySelectorAll('[data-access-secret]').forEach(input => { if (input.dataset.accessSecret === $event.detail.scope) input.value = '' })" @class([$compact ? 'space-y-2' : 'space-y-5'])>
@@ -23,7 +23,6 @@
             :open="(bool) $plan" wire:key="ssh-disclosure-{{ $plan ? 'pending' : 'settings' }}">
         <div id="station-ssh-access-form" data-wizard-form data-wizard-editor="{{ $plan ? 'open' : 'closed' }}" @class(['space-y-3', 'border-t border-line pt-4' => !$compact])>
             @unless ($compact)<h3 class="font-bold">Linux / SSH access</h3>@endunless
-            <p class="text-sm text-fg-muted">Existing users, SSH keys and sudo policy are retained. Keep your current SSH session open until you have tested a new login.</p>
             @if (!$status)
                 <p class="text-sm text-fg-muted">SSH access control is unavailable. Use the station's existing SSH session or local console.</p>
             @elseif ($plan)
@@ -43,13 +42,25 @@
                 </div>
             @else
                 <form x-on:submit.prevent="$el.querySelector('[data-ssh-prepare]').click()" class="space-y-3">
-                    <div><label for="access-linux-user" class="block text-sm mb-1">Existing Linux administrator</label><select id="access-linux-user" wire:model="linuxUser" class="cmp-field w-full">
+                    @if ($createUser)
+                    <div wire:key="new-linux-admin"><label for="access-linux-new-user" class="block text-sm mb-1">New administrator username</label>
+                        <input id="access-linux-new-user" wire:model="newLinuxUser" class="cmp-field w-full" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="engineer">
+                        <p class="text-sm text-fg-muted">Enter a password or add a public key. This administrator uses a Linux password for sudo.</p>
+                        <button type="button" class="cmp-btn cmp-btn-secondary mt-2" wire:click="$set('createUser', false)">Use existing administrator</button>
+                    </div>
+                    @else
+                    <div wire:key="existing-linux-admin"><label for="access-linux-user" class="block text-sm mb-1">Existing Linux administrator</label><select id="access-linux-user" wire:model.live="linuxUser" class="cmp-field w-full">
                         <option value="">Choose an administrator</option>@foreach ($status['users'] ?? [] as $user)<option value="{{ $user['user'] }}">{{ $user['user'] }}</option>@endforeach
-                    </select></div>
+                    </select>
+                        <button type="button" class="cmp-btn cmp-btn-secondary mt-2" wire:click="$set('createUser', true)">Create administrator</button>
+                    </div>
+                    @endif
                     <div><label for="access-linux-password" class="block text-sm mb-1">New Linux password (optional)</label><input id="access-linux-password" x-ref="linuxPassword" data-access-secret="ssh" type="password" autocomplete="new-password" minlength="8" maxlength="256" class="cmp-field w-full"></div>
                     <div><label for="access-linux-keys" class="block text-sm mb-1">Add SSH public keys (optional)</label><textarea id="access-linux-keys" x-ref="linuxKeys" data-access-secret="ssh" rows="3" maxlength="16384" spellcheck="false" class="cmp-field mono w-full" placeholder="ssh-ed25519 AAAA…"></textarea></div>
+                    <label class="flex gap-2 items-center text-sm"><input type="checkbox" wire:model="allowPasswordLogin">Allow SSH password login for this user</label>
+                    <p class="text-sm text-fg-muted">Select this to add a password-login rule for the chosen administrator. Leave it unchecked to keep the current rule.</p>
                     <label class="flex gap-2 items-center text-sm"><input type="checkbox" wire:model="enableSsh">Enable SSH service</label>
-                    <p class="text-sm text-fg-muted">SSH service: {{ ($status['ssh_active'] ?? false) ? 'running' : 'inactive' }}. Global SSH authentication rules are preserved; changing a Linux password does not override a disabled SSH password login.</p>
+                    <p class="text-sm text-fg-muted">SSH service is {{ ($status['ssh_active'] ?? false) ? 'running' : 'inactive' }}.</p>
                     <x-confirms-password wire:then="prepareSsh($refs.linuxPassword.value, $refs.linuxKeys.value)"><button type="button" data-ssh-prepare class="cmp-btn cmp-btn-secondary" wire:loading.attr="disabled"><span wire:loading.remove wire:target="prepareSsh">Review SSH changes</span><span wire:loading wire:target="prepareSsh">Preparing…</span></button></x-confirms-password>
                     <button type="button" class="cmp-btn cmp-btn-secondary" wire:click="discardSsh" wire:loading.attr="disabled">Discard SSH edits</button>
                 </form>

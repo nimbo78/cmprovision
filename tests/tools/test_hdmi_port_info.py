@@ -8,6 +8,18 @@ import hdmi_port_info as ports
 
 
 class PortReadingsTest(unittest.TestCase):
+    def test_industrial_sockets_can_align_across_rows_but_need_two_half_pitches_within_a_row(self):
+        copper = [{'panel_y': y} for y in (0, 2, 4, 6, 9, 11, 13, 15)]
+        fiber = [{'panel_y': y} for y in (4, 8, 12, 15)]
+        switch = {'layout': 'industrial-columns', 'blocks': [
+            {'rows': 8, 'ports': copper}, {'rows': 4, 'ports': fiber},
+        ]}
+        self.assertTrue(ports.industrial_columns(switch))
+        for overlap in (8, 9):
+            with self.subTest(upper_row_position=overlap):
+                fiber[0]['panel_y'] = overlap
+                self.assertFalse(ports.industrial_columns(switch))
+
     def test_link_uses_only_operational_state_and_reports_measured_speed(self):
         for row, expected in [
             ({'link_up': True, 'speed': 2500}, ('2.5G', 'good')),

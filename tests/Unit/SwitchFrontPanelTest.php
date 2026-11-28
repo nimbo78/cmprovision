@@ -76,6 +76,30 @@ class SwitchFrontPanelTest extends TestCase
         $this->assertSame('GigabitEthernet0/12', $panel['blocks'][3]['tiles'][1]['name']);
     }
 
+    public function test_industrial_huawei_has_two_staggered_columns_and_keeps_each_interface_key(): void
+    {
+        $copper = $this->ports('GE1/0/', 8);
+        $fiber = $this->ports('10GE1/0/', 4);
+        $panel = SwitchFrontPanel::resolve('S5735I-S8U4XN-V2', array_reverse([...$copper, ...$fiber]));
+        $this->assertNotNull($panel);
+        $this->assertSame('industrial-columns', $panel['layout']);
+        $this->assertSame([8, 4], array_column($panel['blocks'], 'rows'));
+        $this->assertSame(['RJ45', 'SFP+'], array_column($panel['blocks'], 'label'));
+        $this->assertSame([false, true], array_column($panel['blocks'], 'uplinks'));
+        [$left, $right] = array_column($panel['blocks'], 'tiles');
+        $this->assertSame([0, 2, 4, 6, 9, 11, 13, 15], array_column($left, 'panel_y'));
+        $this->assertSame([4, 8, 12, 15], array_column($right, 'panel_y'));
+        $this->assertSame(range(1, 8), array_column($left, 'panel_number'));
+        $this->assertSame(range(1, 4), array_column($right, 'panel_number'));
+        $this->assertSame(array_column($copper, 'key'), array_column($left, 'key'));
+        $this->assertSame(array_column($fiber, 'key'), array_column($right, 'key'));
+
+        $this->assertNull(SwitchFrontPanel::resolve('S5735I-S8T4XN-V2', [...$copper, ...$fiber]));
+        $this->assertNull(SwitchFrontPanel::resolve('S5735I-S8U4XN-V2', [...$copper, ...array_slice($fiber, 1)]));
+        $this->assertNull(SwitchFrontPanel::resolve('S5735I-S8U4XN-V2', [...$copper, ...$fiber, $fiber[0]]));
+        $this->assertNull(SwitchFrontPanel::resolve('S5735I-S8U4XN-V2', [...$copper, ...$this->ports('10GE2/0/', 4)]));
+    }
+
     public function test_mikrotik_has_eight_sfp_ports_then_ethernet_in_a_single_row(): void
     {
         $ports = array_merge($this->ports('ether', 1), array_reverse($this->ports('sfp-sfpplus', 8)));
