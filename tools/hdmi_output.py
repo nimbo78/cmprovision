@@ -1,4 +1,4 @@
-"""Present a Pillow image on one active HDMI connector's dedicated KMS overlay."""
+"""Present Pillow frames on a dedicated active or newly connected HDMI output."""
 
 import ctypes
 from contextlib import contextmanager
@@ -85,56 +85,82 @@ class _HdmiOutput:
         self.kms, self.master, self.card = kms, master, card
         self.connector, self.status = connector, status
         self.crtc = connector.get_current_crtc()
+        self.mode_blob = None
         if self.crtc is None:
-            raise OSError(errno.ENODEV, 'HDMI has no active CRTC')
-        self.crtc.refresh_props()
-        self.mode_id = self.crtc.get_prop_value('MODE_ID')
-        self.crtc.refresh()
-        if not self.crtc.mode_valid or not self.mode_id or not self._routed():
-            raise OSError(errno.ENODEV, 'HDMI requires an active, dedicated CRTC')
-        mode = self.crtc.mode
+            if not hasattr(master.drm, 'drmModeCloseFB'):
+                raise OSError(errno.ENOSYS, 'Cannot safely release a shared primary framebuffer')
+            mode = connector.get_default_mode()
+            if mode is None:
+                raise OSError(errno.ENODEV, 'HDMI has no preferred mode')
+            self.mode_blob = mode.to_blob(card)
+            self.mode_id = self.mode_blob.id
+        else:
+            self.crtc.refresh_props()
+            self.mode_id = self.crtc.get_prop_value('MODE_ID')
+            self.crtc.refresh()
+            if not self.crtc.mode_valid or not self.mode_id or not self._routed():
+                raise OSError(errno.ENODEV, 'HDMI requires an active, dedicated CRTC')
+            mode = self.crtc.mode
         self.native = (mode.hdisplay, mode.vdisplay)
         self.size = _logical_size(*self.native)
         self.buffers = [kms.DumbFramebuffer(card, *self.size, 'XR24') for _ in range(2)]
         self.front = None
         self.pending = False
-        self.plane = self._select_plane()
+        self.crtc, self.plane = self._select_output()
 
-    def _routed(self):
-        if self.status.read_text().strip() != 'connected':
-            return False
-        self.crtc.refresh_props()
-        if not self.crtc.get_prop_value('ACTIVE') or self.crtc.get_prop_value('MODE_ID') != self.mode_id:
-            return False
+    def _connectors_on(self, crtc):
         routed = []
         for connector in self.card.connectors:
             connector.refresh_props()
-            if connector.get_prop_value('CRTC_ID') == self.crtc.id:
+            if connector.get_prop_value('CRTC_ID') == crtc.id:
                 routed.append(connector.id)
-        return routed == [self.connector.id]
+        return routed
+
+    def _routed(self):
+        self.crtc.refresh_props()
+        return (self.crtc.get_prop_value('ACTIVE')
+                and self.crtc.get_prop_value('MODE_ID') == self.mode_id
+                and self._connectors_on(self.crtc) == [self.connector.id])
+
+    def _free_route(self, crtc):
+        self.connector.refresh_props()
+        crtc.refresh_props()
+        return (not self.connector.get_prop_value('CRTC_ID')
+                and not crtc.get_prop_value('ACTIVE') and not crtc.get_prop_value('MODE_ID')
+                and not self._connectors_on(crtc)
+                and not any(self._plane_state(p)[0] == crtc.id for p in crtc.possible_planes))
 
     @staticmethod
     def _plane_state(plane):
         plane.refresh_props()
         return plane.get_prop_value('CRTC_ID'), plane.get_prop_value('FB_ID')
 
-    def _request(self, plane, fb):
+    def _request(self, crtc, plane, fb, start_mode):
         request = self.kms.AtomicReq(self.card)
-        request.add_plane(plane, fb, self.crtc, dst=(0, 0, *self.native))
+        if start_mode:
+            request.add(self.connector, {'CRTC_ID': crtc.id})
+            request.add(crtc, {'ACTIVE': 1, 'MODE_ID': self.mode_id})
+        request.add_plane(plane, fb, crtc, dst=(0, 0, *self.native))
         return request
 
-    def _select_plane(self):
+    def _select_output(self):
+        start_mode = self.mode_blob is not None
+        plane_type = self.kms.PlaneType.Primary if start_mode else self.kms.PlaneType.Overlay
         with self.master.hold(self.card.fd):
             _require_wallboard_vt()
-            if not self._routed():
-                raise OSError(errno.ENODEV, 'HDMI route changed')
-            for plane in self.crtc.possible_planes:
-                if (plane.plane_type == self.kms.PlaneType.Overlay
-                        and self.kms.PixelFormat.XRGB8888 in plane.formats
-                        and self._plane_state(plane) == (0, 0)
-                        and self._request(plane, self.buffers[0]).test() == 0):
-                    return plane
-        raise OSError(errno.ENOSPC, 'No free HDMI overlay capable of scaling XRGB8888 to this mode')
+            if self.status.read_text().strip() != 'connected':
+                raise OSError(errno.ENODEV, 'HDMI was disconnected')
+            candidates = self.connector.get_possible_crtcs() if start_mode else [self.crtc]
+            for crtc in candidates:
+                if not (self._free_route(crtc) if start_mode else self._routed()):
+                    continue
+                for plane in crtc.possible_planes:
+                    if (plane.plane_type == plane_type and self.kms.PixelFormat.XRGB8888 in plane.formats
+                            and self._plane_state(plane) == (0, 0)):
+                        request = self._request(crtc, plane, self.buffers[0], start_mode)
+                        if request.test(allow_modeset=start_mode) == 0:
+                            return crtc, plane
+        raise OSError(errno.ENOSPC, 'No free HDMI pipeline capable of presenting this mode')
 
     def show(self, image):
         if self.card is None or image.mode != 'RGB' or image.size != self.size:
@@ -146,17 +172,19 @@ class _HdmiOutput:
         try:
             _copy_frame(image, self.buffers[back])
             with self.master.hold(self.card.fd):
-                if not self._routed():
+                start_mode = self.mode_blob is not None and self.front is None
+                if (self.status.read_text().strip() != 'connected'
+                        or not (self._free_route(self.crtc) if start_mode else self._routed())):
                     raise OSError(errno.ENODEV, 'HDMI connector or mode changed')
                 owner = (0, 0) if self.front is None else (self.crtc.id, self.buffers[self.front].id)
                 if self._plane_state(self.plane) != owner:
-                    raise OSError(errno.EBUSY, 'HDMI overlay changed owner')
-                request = self._request(self.plane, self.buffers[back])
+                    raise OSError(errno.EBUSY, 'HDMI plane changed owner')
+                request = self._request(self.crtc, self.plane, self.buffers[back], start_mode)
                 _require_wallboard_vt()
                 token = self.buffers[back].id
-                result = request.commit(token)
+                result = request.commit(token, allow_modeset=start_mode)
                 if result:
-                    raise OSError(-result if result < -1 else errno.EIO, 'Cannot present the HDMI overlay')
+                    raise OSError(-result if result < -1 else errno.EIO, 'Cannot present the HDMI frame')
                 self.front, self.pending = back, True
             # The synchronous ioctl would keep master through vblank and prevent a
             # simultaneous DPI update. Wait on this card FD after returning master.
@@ -172,26 +200,39 @@ class _HdmiOutput:
     def close(self):
         if self.card is None:
             return
+        owned_primary = self.mode_blob is not None and self.front is not None
         try:
             if self.front is not None:
                 with self.master.hold(self.card.fd):
                     owner = (self.crtc.id, self.buffers[self.front].id)
                     if self._routed() and self._plane_state(self.plane) == owner:
+                        if owned_primary and any(self._plane_state(p)[0] == self.crtc.id
+                                                 for p in self.crtc.possible_planes if p.id != self.plane.id):
+                            return
                         request = self.kms.AtomicReq(self.card)
                         request.add(self.plane, {'FB_ID': 0, 'CRTC_ID': 0})
-                        if request.commit_sync() != 0:
-                            raise OSError(errno.EIO, 'Cannot release the HDMI overlay')
+                        if owned_primary:
+                            request.add(self.connector, {'CRTC_ID': 0})
+                            request.add(self.crtc, {'ACTIVE': 0, 'MODE_ID': 0})
+                        if request.commit_sync(allow_modeset=owned_primary) != 0:
+                            raise OSError(errno.EIO, 'Cannot release the HDMI output')
+                        owned_primary = False
         except (RuntimeError, ValueError) as error:
             raise OSError(errno.EIO, str(error)) from error
         finally:
-            # RMFB also retires our own buffers if a peer has DRM master at VT switch.
+            if owned_primary:
+                # RMFB on a primary plane can disable the whole CRTC. A peer that
+                # took over our route keeps scanning out until it replaces our FB.
+                for fb in self.buffers:
+                    self.master.drm.drmModeCloseFB(self.card.fd, fb.id)
             self.front = None
             self.buffers.clear()
+            self.mode_blob = None
             self.plane = self.crtc = self.connector = self.card = None
 
 
 def open_output():
-    """Open a connected HDMI overlay for tty8; callers can retry after an OSError."""
+    """Open a connected HDMI output for tty8; callers can retry after an OSError."""
     _require_wallboard_vt()
     import pykms as kms
 

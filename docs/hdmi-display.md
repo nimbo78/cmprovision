@@ -3,7 +3,7 @@
 # HDMI stand display
 
 Connect a monitor or TV to the **provisioner** to follow the bench. The native graphical display shows the active
-project, switch front panels, modules, write progress and saved diagnostics. It draws directly on an active HDMI output
+project, switch front panels, modules, write progress and saved diagnostics. It draws directly on HDMI
 and falls back to the text display on tty8 when graphics are unavailable. Both run offline on a console-only Raspberry Pi OS Lite installation.
 
 When the wallboard is enabled and the rescue Wi-Fi access point starts, HDMI automatically shows its QR code, SSID and password for 60 seconds,
@@ -45,15 +45,15 @@ to the display automatically. Connecting HDMI later also starts it. The saved mo
 
 The default is **Off**. In **Auto**, a DRM HDMI connector reporting `connected` starts the renderer.
 Disconnecting the last HDMI cable stops it. FPMS can still use the shared data reader.
-**On** keeps the renderer running even when cable detection is unreliable. Graphical output needs a connected HDMI
-port with an active video mode. Display settings take effect while provisioning continues.
+**On** keeps the renderer running even when cable detection is unreliable. A monitor connected after boot can start
+in its preferred video mode while tty8 is active. Display settings take effect while provisioning continues.
 
 A TV in standby, a KVM or an HDMI adapter can keep reporting `connected`. Detection describes the connector, not
 whether someone is watching or whether the TV has selected this input. Use Off when this distinction matters.
 
 ### Use HDMI with a HyperPixel panel
 
-Connect the monitor to HDMI and the rectangular HyperPixel 4.0 Touch to the GPIO header. Enable **HDMI display** and **FPMS display** under **Settings → System**. The touch menu and the HDMI wallboard can show different screens at the same time. Each needs its own active display pipeline and a free overlay plane. With a mirrored output or no suitable HDMI plane, HDMI uses tty8. On the CM4 station `wlanpi-d62`, the HDMI monitor ran at 3440 × 1440 alongside the 800 × 480 landscape HyperPixel. [HyperPixel setup](fpms-display.md#hyperpixel-40-touch)
+Connect the monitor to HDMI and the rectangular HyperPixel 4.0 Touch to the GPIO header. Enable **HDMI display** and **FPMS display** under **Settings → System**. The touch menu and the HDMI wallboard can show different screens at the same time. You can connect HDMI while using the touch menu. The wallboard uses a separate display pipeline for the monitor. Tests on `wlanpi-d62` paired the 800 × 480 landscape HyperPixel first with a 3440 × 1440 monitor, then with a 1920 × 1080 TV. [HyperPixel setup](fpms-display.md#hyperpixel-40-touch)
 
 ### Choose a GPIO panel before first boot
 
@@ -121,7 +121,7 @@ RJ45/SFP uplinks. Other models use automatic layout. The local provisioner's por
 
 ### Text console
 
-If an HDMI output is inactive, shares its display pipeline with another connector, or has no free overlay plane,
+If HDMI shares its display pipeline with another connector or lacks a suitable free pipeline or plane,
 the service uses the tty8 text console. Its panel identifies the current and next switch. The same keys control switch pages, device cards, rotation and views.
 
 The current switch's S/N appears under the panel title when available. Each port shows its number and provisioning status, the attached device, and a line such as `Link Down  PoE 6.2 W`. Older snapshots that predate switch identity and port readings use single-line port tiles.
@@ -193,7 +193,8 @@ screen is intended for a trusted support area: it shows device names, MAC addres
 Three units work together. `cmprovision-wallboard` is a small root watcher of connector state and the fixed settings
 file; it starts and stops `cmprovision-wallboard-display`, and only it does (the display and the data units are not
 enabled at boot). The renderer runs as the dedicated `cmprovision-wallboard` system user. It displays on tty8,
-using a free DRM/KMS overlay on the active HDMI output when available. Provisioning data comes from
+using a free DRM/KMS overlay on an already active HDMI output. For a connected monitor with no video mode,
+it tests the monitor's preferred mode on an unused controller and primary plane, then enables it with the first frame. Provisioning data comes from
 `cmprovision-wallboard-data`, which runs `wallboard:snapshot --watch --output=/run/cmprovision-wallboard-data/snapshot.json`
 as the web user. The setup and rescue Wi-Fi cards use separate local files.
 
@@ -208,7 +209,7 @@ package upgrade does not, and a display unit that keeps failing is retried every
 minute.
 
 Settings are stored in `/etc/default/cmprovision-wallboard.json` and included in a normal provisioner backup.
-Switching to another virtual console releases the HDMI overlay. On stopping, the previous console is restored if tty8
+Switching to another virtual console releases the wallboard's graphics resources. On stopping, the previous console is restored if tty8
 is still active. The text fallback uses Terminus when available.
 
 The station image includes the `python3-kms++` bindings with or without FPMS. The application package depends on
@@ -226,7 +227,7 @@ sudo -u www-data /var/lib/cmprovision/artisan wallboard:snapshot
 If the screen is blank, check the TV input, the HDMI connector status and the saved mode. Press **Alt+F8** to select
 the wallboard again. If you see the text console, check the graphics packages and the display service journal.
 Look for `HDMI graphical display active` or `HDMI text fallback`.
-The graphical display uses the current HDMI video mode. The web UI has the full diagnostic reports and recovery actions.
+If the TV reports no signal, compare the connector's `status` and `enabled` files in `/sys/class/drm/`. A `connected` but `disabled` output has detected the cable and still needs a video mode. The web UI has the full diagnostic reports and recovery actions.
 
 The display unit is deliberately not enabled/started directly at boot: only the watcher starts it. When removing or
 downgrading the package, all three units stop; restore stops the data unit before replacing the SQLite database. No reboot is
