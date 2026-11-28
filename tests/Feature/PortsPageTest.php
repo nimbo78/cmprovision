@@ -126,12 +126,19 @@ class PortsPageTest extends TestCase
         $this->bindSwitches(['192.0.2.10' => new FakeSnmp(['' => $table])]);
         $portKey = 's'.$switch->id.'p20';
         $page = Livewire::test(Ports::class)
-            ->assertSee('Front panel · view from the front')
+            ->assertSee('Front panel · 90° counterclockwise')
             ->assertSeeHtml('aria-label="sw-din front panel"')
-            ->assertSeeHtml('class="ports-panel industrial-columns"')
             ->assertSeeHtml('<h3 class="ports-panel-model">S5735I-S8U4XN-V2</h3>')
             ->assertSee('4 × 10GE SFP+')
-            ->assertSee('RJ45')->assertSee('SFP+')
+            ->assertSeeInOrder(['aria-label="10G SFP+"', 'grid-column: 5 / span 2', 'grid-column: 9 / span 2',
+                'grid-column: 13 / span 2', 'grid-column: 16 / span 2', 'aria-label="1G RJ45"',
+                'grid-column: 1 / span 2', 'grid-column: 3 / span 2', 'grid-column: 5 / span 2',
+                'grid-column: 7 / span 2', 'grid-column: 10 / span 2', 'grid-column: 12 / span 2',
+                'grid-column: 14 / span 2', 'grid-column: 16 / span 2'], false)
+            ->call('select', 's'.$switch->id.'p6')
+            ->assertViewHas('tile', fn ($t) => $t['name'] === 'GE1/0/1' && !$t['sfp'])
+            ->call('select', 's'.$switch->id.'p17')
+            ->assertViewHas('tile', fn ($t) => $t['name'] === '10GE1/0/1' && $t['sfp'])
             ->call('select', $portKey)
             ->assertViewHas('tile', fn ($t) => $t['name'] === '10GE1/0/4' && $t['ifIndex'] === 20
                 && $t['sfp'] && $t['up'] && $t['panel_number'] === 4)

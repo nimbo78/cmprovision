@@ -568,33 +568,63 @@ def port_pages(switch, width, height):
     return pages or [[]]
 
 
+# The sideways front spans 17 half-pitches including the width of the last socket.
+# Each socket needs seven characters for [10GE4] and a one-character separator.
+INDUSTRIAL_GUTTER = 9
+INDUSTRIAL_MIN_WIDTH = 4 + INDUSTRIAL_GUTTER + 17 * 8 // 2
+
+
 def industrial_ports(c, x, y, width, height, switch, tick, by_serial, by_location, host):
     from hdmi_port_info import link_reading, port_endpoint, power_reading
-    col_w = (width-4)//2
-    slots = max(1, height-4)
-    # At full height, leave the gap between the top and bottom RJ45 banks.
-    gap = int(slots >= 9)
-    pages = math.ceil((8+gap)/slots)
+    span = 16 if width >= INDUSTRIAL_MIN_WIDTH else 8
+    pages = 16 // span
     page = tick % pages
-    for col, block in enumerate(switch['blocks']):
-        cx = x+2+col*col_w
-        c.text(cx,y+1,'RJ45 / 1G' if col == 0 else 'SFP+ / 10G', 'dim', col_w-1)
+    available = width - 4 - INDUSTRIAL_GUTTER
+    tile_width = 2 * available // (span + 1) - 1
+    left = x + 2
+    c.marquee(left, y + 1, 'S/N ' + (safe(switch.get('serial')) or 'unknown'), width - 4, 'dim')
+
+    # Two offline summaries can leave just six rows above the navigation hint.
+    fiber_link_row = height >= 10
+    power_row = height >= 11
+    fiber_y = y + 2
+    copper_y = fiber_y + 2 + int(fiber_link_row) + int(height >= 12)
+    copper, fiber = switch['blocks']
+    for block, is_copper, top in ((fiber, False, fiber_y), (copper, True, copper_y)):
+        c.text(left, top, 'RJ45' if is_copper else 'SFP+', 'dim')
+        c.text(left, top + 1, 'Device' if is_copper or fiber_link_row else 'ID/Link', 'dim')
+        if is_copper or fiber_link_row:
+            c.text(left, top + 2, 'Link/PoE' if is_copper and not power_row else 'Link', 'dim')
+        if is_copper and power_row:
+            c.text(left, top + 3, 'PoE', 'dim')
         for port in block['ports']:
-            row = (port['panel_y']+gap)//2
-            if row//slots != page:
+            # Rotating the original two columns counterclockwise makes panel_y the horizontal axis.
+            offset = port['panel_y'] - page * span
+            if not 0 <= offset < span:
                 continue
-            cy = y+2+row%slots
+            px = left + INDUSTRIAL_GUTTER + offset * available // (span + 1)
             members = [by_serial[s] for s in port.get('serials', []) if s in by_serial]
-            observed = by_location.get(switch['name']+' '+port['name'])
-            endpoint = port_endpoint(port,host,modules=members,observed=observed)
+            observed = by_location.get(switch['name'] + ' ' + port['name'])
             mark, ink = port_mark(port, members)
-            label = ('GE' if col == 0 else '10GE')+str(port['number'])
-            reading = link_reading(port)[0]
-            if col == 0:
-                reading += ' PoE '+power_reading(port)[0]
-            c.text(cx,cy,label,ink,6)
-            c.marquee(cx+6,cy,(endpoint or mark.strip() or '-')+' / '+reading,col_w-7,'fg')
-    return page,pages
+            label = ('GE' if is_copper else '10GE') + str(port['number'])
+            c.text(px, top, '[' + label.center(tile_width - 2) + ']', ink, tile_width)
+            endpoint = port_endpoint(port, host, modules=members, observed=observed) or mark.strip() or '-'
+            link = link_reading(port)[0]
+            reading_ink = 'dim'
+            if is_copper:
+                power, power_ink = power_reading(port)
+                reading_ink = {'bad': 'fail', 'warn': 'warn'}.get(power_ink, 'dim')
+                if power_row:
+                    c.marquee(px, top + 3, power, tile_width, reading_ink)
+                    reading_ink = 'dim'
+                else:
+                    link += '/' + power
+            if is_copper or fiber_link_row:
+                c.marquee(px, top + 2, link, tile_width, reading_ink)
+            else:
+                endpoint += ' / ' + link
+            c.marquee(px, top + 1, endpoint, tile_width, 'fg')
+    return page, pages
 
 
 def ports(c, x, y, width, height, switches, modules, tick, host=None, observations=()):
@@ -728,11 +758,13 @@ def detail(c, x, y, width, module, now, height=15):
 
 
 def desk(c, data, module, now, tick, switch_offset=0):
+    from hdmi_port_info import industrial_columns
     y = header(c, data, now)
     switches = data.get('switches', [])
     observations = data.get('recognized', []) + data.get('unknown', [])
     # Fit compact physical panels beside a readable card; larger banks paginate.
-    natural = max((sum(math.ceil(len(b['ports']) / max(1, b['rows'])) for b in s['blocks']) * port_pitch(s)
+    natural = max((INDUSTRIAL_MIN_WIDTH if industrial_columns(s) else
+                   sum(math.ceil(len(b['ports']) / max(1, b['rows'])) for b in s['blocks']) * port_pitch(s)
                    + max(0, len(s['blocks']) - 1) + 4 for s in switches if s.get('answering') is not False), default=0)
     width = max(30, min(c.cols - 42, max(round(c.cols * 0.60), natural)))
     height = min(17, max(11, c.rows - y - 10))

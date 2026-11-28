@@ -85,7 +85,9 @@
                         @if ($sw['placeholder'])
                             <p class="ports-empty">{{ $sw['placeholder'] }}</p>
                         @endif
-                        @if (!empty($sw['part']['blocks']))
+                        @if ($sw['modelHeading'])
+                            <div class="ports-layout-label">Front panel · 90° counterclockwise</div>
+                        @elseif (!empty($sw['part']['blocks']))
                             <div class="ports-layout-label">{{ $sw['part']['panel'] ? 'Front panel · view from the front' : 'Automatic port order' }}</div>
                         @endif
                         @if ($sw['part']['panel'] ?? null)

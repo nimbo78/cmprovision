@@ -91,6 +91,7 @@ In **Settings → System → HDMI display**, set **Screen** to **Full switch map
 - **24 copper ports** fit in two banks of twelve. Odd ports sit above even ports, and the device table fits below the four SFP or SFP+ uplinks.
 - **48 copper ports** occupy four banks of twelve. Read ports 1–24 across the upper half, then 25–48 across the lower half. The four uplinks have their own row below the copper ports.
 - **Huawei S5735I-S8U4XN-V2** uses two groups of tiles in landscape. The left group shows GE1–GE4 above GE5–GE8. The four 10GE SFP+ cages form a 2 × 2 group on the right. Each tile shows its endpoint and link. Copper tiles also show PoE.
+  The text dashboard shows the switch on its side with SFP+ above RJ45, matching the web map. On a narrow console, use `[` and `]` to see both halves.
 
 ![Demonstration Catalyst 9200L showing all 48 copper ports, their devices, Ethernet and PoE, and four SFP+ uplinks on a single HDMI screen.](assets/guides/hdmi-full-switch-48.png)
 

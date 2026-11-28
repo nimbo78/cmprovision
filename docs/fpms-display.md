@@ -47,7 +47,7 @@ For an image dedicated to this panel that should start directly, select the
 4. Tap the tabs at the bottom to navigate. The first tap after the screen goes dark wakes it. The square and non-touch HyperPixel models use different hardware.
 
 - **Overview** shows four batch counters and six devices at a time. Tap a counter to filter by status or a row to open a device. The arrows page through the stand. **Back** returns to the same list and page.
-- **Ports** opens on the switch map. The arrows select responding switches. Offline switches appear in a compact status list and rejoin the map after a successful poll. On the Huawei S5735I-S8U4XN-V2, the left tiles show GE1–GE4 above GE5–GE8. The right group shows the four 10GE SFP+ cages.
+- **Ports** opens on the switch map. The arrows select responding switches. Offline switches appear in a compact status list and rejoin the map after a successful poll. On the Huawei S5735I-S8U4XN-V2, the left tiles show GE1–GE4 above GE5–GE8. The right group holds the four 10GE cages. Each tile shows its connector type (`RJ45` or `SFP+`) beside its port number, even when the link is down.
 - **Connected** lists names, Ethernet link and PoE separately, including a powered port with no carrier. Watts or `On` indicate delivered power, `Idle` means waiting for a device, `Off` means disabled and `?` means no reading. Tap a port and then its device name for diagnostics.
   An overflowing hostname scrolls within its row on the map, in the list and in port details. It pauses at both ends so you can read the prefix and suffix. A short name stays still.
 - Open **Devices** and tap a name for diagnostics. **Errors** brings failed, silent and unrecognized devices into one list.

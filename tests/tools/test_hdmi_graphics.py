@@ -1,6 +1,7 @@
 """Exercise the HDMI artwork with real Pillow fonts, pixels and wallboard helpers."""
 import importlib.util
 from pathlib import Path
+import re
 import sys
 import unittest
 from unittest.mock import patch
@@ -40,6 +41,17 @@ def catalyst(count, suffix="P-4X", name="rack"):
                                   for n in range(1, 5)]))
     return dict(name=name, model=f"C9200L-{count}{suffix}", serial=f"SN-{count}", verified_layout=True,
                 answering=True, blocks=blocks)
+
+
+def industrial():
+    copper = [dict(number=n, name=f'GE1/0/{n}', panel_y=y, endpoint=f'copper-{n}', state='free')
+              for n, y in enumerate((0, 2, 4, 6, 9, 11, 13, 15), 1)]
+    cages = [dict(number=n, name=f'10GE1/0/{n}', panel_y=y, endpoint=f'fiber-{n}', state='free')
+             for n, y in enumerate((4, 8, 12, 15), 1)]
+    copper[0].update(link_up=True, speed=1000, poe_state='delivering', watts=5.5)
+    cages[0].update(link_up=True, speed=10000, watts=9.7)
+    return dict(name='DIN', model='S5735I-S8U4XN-V2', serial='DIN-TEST', verified_layout=True,
+                layout='industrial-columns', answering=True, blocks=[bank('RJ45', 8, copper), bank('SFP+', 4, cages)])
 
 
 def example():
@@ -214,15 +226,9 @@ class GraphicsTest(unittest.TestCase):
                 self.assertIn("Device card", dict(items))
                 self.assertTrue(any("Full map unavailable" in word for word, _ in items))
 
-    def test_industrial_ports_use_landscape_tiles_and_keep_the_front_view_on_tty(self):
-        copper = [dict(number=n, name=f'GE1/0/{n}', panel_y=y, endpoint=f'copper-{n}', state='free')
-                  for n,y in enumerate((0,2,4,6,9,11,13,15),1)]
-        cages = [dict(number=n, name=f'10GE1/0/{n}', panel_y=y, endpoint=f'fiber-{n}', state='free')
-                 for n,y in enumerate((4,8,12,15),1)]
-        copper[0].update(link_up=True, speed=1000, poe_state='delivering', watts=5.5)
-        cages[0].update(link_up=True, speed=10000, watts=9.7)
-        sw = dict(name='DIN', model='S5735I-S8U4XN-V2', serial='DIN-TEST', verified_layout=True,
-                  layout='industrial-columns', answering=True, blocks=[bank('RJ45',8,copper),bank('SFP+',4,cages)])
+    def test_industrial_ports_use_landscape_tiles(self):
+        sw = industrial()
+        copper = sw['blocks'][0]['ports']
         data = dict(generated_at=100, switches=[sw], modules=[])
         for view in ('desk', 'auto', 'map'):
             boxes = []
@@ -252,13 +258,6 @@ class GraphicsTest(unittest.TestCase):
                     self.assertGreaterEqual(h, 54, 'a socket has room for its identity and link reading')
                     self.assertLessEqual(w, 2.3*h, 'individual sockets must not turn into list rows')
             self.assertLess(coords['copper-4'][0], coords['fiber-1'][0])
-        text = board.frame(data,160,40,now=102,view='desk').plain()
-        lines = text.splitlines()
-        self.assertIn('SFP+',text)
-        for copper_num, fiber_num in [(3,1),(8,4)]:
-            line = next(line for line in lines if f'copper-{copper_num}' in line)
-            self.assertLess(line.index(f'copper-{copper_num}'), line.index(f'fiber-{fiber_num}'))
-
         # Two offline rows and the second live switch leave the shortest desk panel.
         data['switches'] += [catalyst(24), switch('offline-a', online=False), switch('offline-b', online=False)]
         copper[0].update(speed=100, watts=24.9)
@@ -269,6 +268,71 @@ class GraphicsTest(unittest.TestCase):
                 labels = dict(painted)
                 for reading in ('100M', '24.9 W', 'Down', '52.7 W'):
                     self.assertIn(reading, labels)
+
+    def test_tty_shows_the_industrial_switch_on_its_side_at_the_physical_half_pitches(self):
+        data = dict(generated_at=100, switches=[industrial()], modules=[])
+        text = board.frame(data, 160, 40, now=102, view='desk').plain()
+        lines = text.splitlines()
+        copper_y = next(row for row, line in enumerate(lines) if re.search(r'\bGE1\b', line))
+        fiber_y = next(row for row, line in enumerate(lines) if re.search(r'\b10GE1\b', line))
+        self.assertLess(fiber_y, copper_y)
+        copper = list(re.finditer(r'\bGE[1-8]\b', lines[copper_y]))
+        fiber = list(re.finditer(r'\b10GE[1-4]\b', lines[fiber_y]))
+        self.assertEqual([m.group() for m in copper], [f'GE{n}' for n in range(1, 9)])
+        self.assertEqual([m.group() for m in fiber], [f'10GE{n}' for n in range(1, 5)])
+        def center(match):
+            return (match.start() + match.end()) / 2
+
+        left = center(copper[0])
+        half_pitch = (center(copper[-1]) - left) / 15
+        for match, offset in zip(copper + fiber, (0, 2, 4, 6, 9, 11, 13, 15, 4, 8, 12, 15)):
+            self.assertAlmostEqual(center(match), left + offset * half_pitch, delta=1)
+        for value in ('S/N DIN-TEST', 'SFP+', 'RJ45', 'fiber-4', 'copper-8', 'PoE'):
+            self.assertIn(value, text)
+        self.assertRegex(lines[fiber_y + 2], r'\b10G\b')
+        self.assertRegex(lines[copper_y + 2], r'\b1G\b')
+        self.assertIn('5.5 W', lines[copper_y + 3])
+        self.assertNotIn('9.7 W', text)
+        # A landscape panel and the neighbouring device card still fit on a 128-column console.
+        narrower = board.frame(data, 128, 38, now=102, view='desk').plain()
+        for label in ('GE8', '10GE4', 'DEVICE CARD'):
+            self.assertIn(label, narrower)
+        self.assertNotIn('PORT PAGE', narrower)
+
+    def test_short_tty_pages_the_industrial_panel_horizontally_with_offline_switches(self):
+        din = industrial()
+        din['blocks'][0]['ports'][7].update(link_up=False, watts=52.7)
+        west = switch('west', bank('RJ45', 1, [port(1, endpoint='west-peer')]))
+        spare = switch('spare', bank('RJ45', 1, [port(1, endpoint='stale-peer')]), online=False)
+        data = dict(generated_at=100, switches=[din, west, spare, switch('offline-b', online=False)],
+                    modules=[example()['modules'][0]])
+        for cols in (60, 100):
+            for offset, expected_ge, expected_optics in ((0, (1, 2, 3, 4), (1,)), (2, (5, 6, 7, 8), (2, 3, 4))):
+                with self.subTest(cols=cols, offset=offset):
+                    screens = [board.frame(data, cols, 24, now=102, view='map', switch_offset=offset, step=step).plain()
+                               for step in range(20)]
+                    lines = screens[0].splitlines()
+                    fiber_y = next(row for row, line in enumerate(lines) if re.search(r'\b10GE[1-4]\b', line))
+                    copper_y = next(row for row, line in enumerate(lines) if re.search(r'\bGE[1-8]\b', line))
+                    self.assertLess(fiber_y, copper_y)
+                    self.assertEqual(re.findall(r'\bGE([1-8])\b', lines[copper_y]), list(map(str, expected_ge)))
+                    self.assertEqual(re.findall(r'\b10GE([1-4])\b', lines[fiber_y]), list(map(str, expected_optics)))
+                    for label in ('OFFLINE / spare', 'OFFLINE / offline-b', 'S/N DIN-TEST', 'Next: west', '[ ] switches',
+                                  f'PORT PAGE {offset // 2 + 1}/2'):
+                        self.assertIn(label, screens[0])
+                    self.assertNotIn('stale-peer', screens[0])
+                    if cols == 100:
+                        card_x = next(line.index('DEVICE CARD') for line in lines if 'DEVICE CARD' in line)
+                        self.assertIn('wlanpi-fd3', '\n'.join(line[card_x-1:] for line in lines))
+                    for value in (('copper-1', 'fiber-1', '5.5 W', '10G') if offset == 0 else
+                                  ('copper-8', 'fiber-4', 'Down', '52.7 W')):
+                        self.assertTrue(any(re.search(r'\b' + re.escape(value) + r'\b', screen) for screen in screens), value)
+                    self.assertFalse(any('9.7 W' in screen for screen in screens))
+        self.assertIn('west-peer', board.frame(data, 60, 24, now=102, view='desk', switch_offset=1).plain())
+        data['switches'] = [din]
+        previous = board.frame(data, 60, 24, now=102, view='desk', switch_offset=-1).plain()
+        self.assertIn('PORT PAGE 2/2', previous)
+        self.assertIn('[ ] port pages', previous)
 
     def test_offline_switch_does_not_offer_a_second_page_or_repeat_its_outage(self):
         spare = switch('unplugged', bank('RJ45', 1, [port(1, endpoint='old-port')]), online=False)
