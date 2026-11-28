@@ -1,5 +1,6 @@
 """All system commands are mocked; tests must never reboot their host."""
 import importlib.util
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -42,6 +43,39 @@ class PowerControlTest(unittest.TestCase):
                 self.assertEqual(5, kwargs['timeout'])
                 self.assertEqual(result, json.loads((self.root / 'pending.json').read_text()))
                 self.assertEqual(0o644, (self.root / 'pending.json').stat().st_mode & 0o777)
+
+    def test_only_private_panel_boot_can_request_the_fixed_firmware_argument(self):
+        with self.assertRaises(power.PowerError):
+            self.controller.schedule('poweroff', tryboot=True)
+        self.controller.schedule('reboot', tryboot=True)
+        self.assertEqual(self.run.call_args.args[0][-4:],
+                         ['/usr/bin/python3', '-I', str(ROOT / 'tools/station-power.py'), '--panel-tryboot'])
+        self.assertTrue(self.controller.pending()['confirmed'])
+
+    def test_tryboot_refuses_a_package_manager_lock_held_by_another_process(self):
+        lock = Path(self.temp.name) / 'dpkg-lock'
+        lock.touch()
+        with power.package_locks((lock,)):
+            child = subprocess.run(['/usr/bin/python3', '-c',
+                'import fcntl,sys; f=open(sys.argv[1],"r+"); fcntl.lockf(f,fcntl.LOCK_EX|fcntl.LOCK_NB)', str(lock)],
+                capture_output=True)
+            self.assertNotEqual(child.returncode, 0)
+        with lock.open('r+') as stream:
+            fcntl.lockf(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_late_dpkg_lock_reports_a_definite_deferral_before_calling_systemctl(self):
+        coordinator = Mock()
+        with (patch.object(power.os, 'geteuid', return_value=0),
+              patch.object(power.sys, 'argv', ['station-power.py', '--panel-tryboot']),
+              patch.object(power.sys, 'path', list(power.sys.path)),
+              patch.dict(power.sys.modules, {'display_auto': coordinator}),
+              patch.object(power, 'Controller') as controller,
+              patch.object(power, 'package_locks', side_effect=BlockingIOError()),
+              patch.object(power.subprocess, 'run') as run):
+            controller.return_value.pending.return_value = {'action': 'reboot', 'confirmed': True, 'boot_id': BOOT}
+            self.assertEqual(power.main(), 0)
+            coordinator.defer_handoff.assert_called_once_with(Path('/var/lib/cmprovision-display-auto/boot.json'), BOOT)
+            run.assert_not_called()
 
     def test_bad_actions_never_spawn_a_process(self):
         for action in ('halt', 'reboot; id', '--force', None, True, ['reboot']):

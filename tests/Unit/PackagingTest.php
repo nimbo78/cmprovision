@@ -305,6 +305,17 @@ SH
         $this->assertStringContainsString("Path('/run/cmprovision-wallboard-data/snapshot.json')", $this->file('tools/hdmi-wallboard.py'));
     }
 
+    public function test_installing_the_station_package_defers_display_commissioning_until_boot(): void
+    {
+        $rules = $this->file('debian/rules');
+        foreach (['service', 'timer'] as $type) {
+            $unit = 'cmprovision-display-auto.'.$type;
+            $this->assertStringContainsString("debian/$unit lib/systemd/system\n", $this->file('debian/install'));
+            $this->assertMatchesRegularExpression('/-X'.preg_quote($unit, '/').'(?=\s|$)/', $rules);
+        }
+        $this->assertStringContainsString("\tdh_installsystemd --no-start cmprovision-display-auto.timer\n", $rules);
+    }
+
     public function test_the_hdmi_units_are_installed_but_only_the_watcher_is_enabled_and_started()
     {
         $install = $this->file('debian/install');

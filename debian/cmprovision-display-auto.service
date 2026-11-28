@@ -1,0 +1,15 @@
+[Unit]
+Description=Detect and commission the GPIO display on a free cmprovision station
+ConditionPathExists=/proc/device-tree/model
+ConditionPathExists=/boot/firmware/config.txt
+ConditionPathExists=!/run/cmprovision-display-auto-done
+After=cmprovision-network-init.service cmprovision-updates-recover.service cmprovision-backups-recover.service cmprovision-image-firstboot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/lib/cmprovision/display_boot_linux.py
+StateDirectory=cmprovision-display-auto
+StateDirectoryMode=0700
+PrivateTmp=yes
+ProtectHome=yes
+TimeoutStartSec=75s
