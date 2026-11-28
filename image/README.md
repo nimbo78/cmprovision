@@ -130,7 +130,7 @@ sudo env CMP_IMAGE_DISPLAY=hyperpixel-4-touch bash image/build.sh /path/to/empty
 
 - `hyperpixel-4-touch` configures DPI for the rectangular HyperPixel 4.0 Touch and disables the competing SPI and I²C interfaces.
 - `waveshare-144` enables SPI for the Waveshare 1.44″ panel.
-- `default` keeps the generic image settings. It is the release build default.
+- `default` is the release build default. GPIO starts neutral so either supported panel can be fitted with the power off. Auto starts Waveshare directly and uses one extra restart on an idle station for HyperPixel. [Automatic panel setup](../docs/fpms-display.md#automatic-panel-setup)
 
 The selected profile is recorded in the build manifest and the image filename. Both panel
 profiles enable FPMS before the first boot. The panel can show a one-time setup code when
