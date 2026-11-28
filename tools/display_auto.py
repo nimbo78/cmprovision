@@ -107,7 +107,7 @@ def boot_mode(config):
     # The DPI profile uses the whole header, including pins outside the ID probe.
     for line in lines:
         key, _, value = (part.strip() for part in line.partition('='))
-        if key == 'dtoverlay' and value not in ('vc4-kms-v3d', 'dwc2,dr_mode=host', 'nospi10'):
+        if key == 'dtoverlay' and value not in ('vc4-kms-v3d', 'dwc2,dr_mode=host', 'nospi10', 'pcie-32bit-dma'):
             return 'manual'
         if key in ('gpio', 'enable_dpi_lcd') or (key == 'enable_uart' and value != '0'):
             return 'manual'
