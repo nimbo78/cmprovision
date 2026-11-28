@@ -2,7 +2,49 @@
 
 # Connect to a USB serial console
 
-From an SSH session on the station, use a local FTDI or PL2303 USB adapter to reach a switch or a board. Choose a cable with the voltage levels and pinout required by the target. A Catalyst RJ45 console takes RS-232. A CM4 GPIO UART uses 3.3 V logic. Power off the carrier before changing an OTG jumper.
+Use a local FTDI or PL2303 USB adapter to reach a switch or a board from the web interface or an SSH session on the station. Choose a cable with the voltage levels and pinout required by the target. A Catalyst RJ45 console takes RS-232. A CM4 GPIO UART uses 3.3 V logic. Power off the carrier before changing an OTG jumper.
+
+## Use the browser terminal
+
+1. Plug the USB adapter into the station. An operator with console access will see **Console** beside **Ports** on the next inventory refresh. A busy adapter stays visible. Open **Console** and confirm your web password.
+2. Choose a cable by USB port, label or last observed hostname. **Connect** listens for one second and opens the keyboard even on a quiet line. Auto starts with the last settings that produced a device prompt for that cable, or 9600 8N1 on first use. If you move the cable to another device, **Re-detect** listens for repeated output. You can also choose a known baud rate and format in **Port details**.
+3. Type into the terminal. Only one session can own the port. Disconnect, leave the tab or sign out to release it. If the browser loses contact, automatic sending pauses after two seconds and the station releases the port after twelve. Use HTTPS on the management network when entering device credentials.
+
+### Wake a quiet device
+
+For a dedicated console cable, enable **Port details → Send Enter on connect**, save, then press **Connect**. The station sends one carriage return after a quiet second or a recognized Cisco or Huawei login invitation. Other input, including a visible question, is shown in the terminal. If the device stays silent, the keyboard is ready. A silent console may already contain an unfinished command that Enter would submit.
+
+The setting starts off. A cable with a unique USB serial number keeps its setting when reconnected. For cables without a serial number, or with a serial number the station has seen on two adapters at once, enable it again after reconnecting the adapter or restarting the console service. After restoring the database on a fresh station, enable it there as well. **Identify**, **Re-detect**, and inventory checks only listen.
+
+### Send a configuration
+
+At a device prompt, choose **Paste config from file** or paste multiple lines into the terminal. Review the UTF-8 text and original line numbers. The limit is 1 MiB per file and 8 KiB per command. The session sends one command at a time and checks its echo before sending Enter.
+
+| Mode | During transfer |
+| --- | --- |
+| **Automatic** (default) | Press **Start sending** once for the whole file. The station answers Yes, accepts displayed filenames and Cisco `[confirm]`, and advances paged output. Progress shows the source line and how many replies it sent. |
+| **Step** | Send each subsequent command explicitly. Use this for an unfamiliar device transcript. |
+| **Smart** | Advance after an expected prompt. A CLI error stops on its source line for correction. At a confirmation or filename prompt, the operator chooses the response. |
+
+Cisco IOS, Huawei S5731 (VRP), S5735-S-V2 and S5735I-S8U4XN-V2 (YunShan OS) have console profiles. On Huawei, run **Read version** (`display version`) at the authenticated prompt before using Automatic or Smart. Supply CLI commands with explicit view changes. For example, a Huawei file can end with `return` and `save`; Automatic handles the save and overwrite questions. A repeated question, missing value, login prompt or rejected command pauses the transfer at that line. After a disconnect, check the last confirmed file line on the device before resuming. Terminal output and uploaded configurations live only in the current session.
+
+### Long output on a serial line
+
+On a Catalyst 2960-CX running IOS 15.2(7)E14, `show terminal` reports the current screen length. From the same EXEC prompt, `terminal length 0` lets `show version` finish without a `--More--` pause. Restore the value you read before disconnecting. On the lab switch it was 24, so the restore command was `terminal length 24`. Closing a browser tab can leave the physical console logged in. [Cisco IOS terminal length](https://www.cisco.com/c/en/us/td/docs/ios/fundamentals/command/reference/cf_book/cf_s5.html)
+
+Huawei documents `screen-length 0 temporary` for continuous output in user view and `mmi-mode enable` for machine-to-machine operation. Automatic answers prompts from the selected file transfer and works with the device's normal console settings. [Huawei S5700 Command Reference, sections 2.5.17 and 2.5.20](https://www.scribd.com/document/960183015/01-02-Basic-Configurations-Commands)
+
+### Grant access
+
+The first web administrator receives the console permission. An upgrade uses the recorded first administrator, or the only existing account if there is one. To grant or revoke access for another operator, run the following on the station with their account email.
+
+```sh
+cd /var/lib/cmprovision
+sudo -u www-data php artisan auth:serial-console engineer@example.com --grant
+sudo -u www-data php artisan auth:serial-console engineer@example.com --revoke
+```
+
+Running the command with the email alone shows the current permission. The terminal assets are bundled locally with the station package. [xterm.js](https://xtermjs.org/)
 
 ## Select the physical port
 
@@ -47,6 +89,8 @@ FTDI supports 7 or 8 data bits. The detector reads back the speed, frame and flo
 | `unavailable` | Check the adapter, permissions and the current identifier. The message gives the reason when available. |
 
 The optional `--target` label records the last confirmed speed and time for that piece of equipment, USB connection and profile. Use a different label when moving the target end of the cable. A saved speed is tried first and must be confirmed again. The station discards the console text it receives.
+
+On Huawei S5731 (VRP) and S5735-S-V2 (YunShan OS), Auto can use a user-view prompt such as `<rack-east-01>`, a distinctive interface-view prompt, or an OS banner. Both platforms share the same prompt conventions. Use `display version` to read the model and software. With `detect --profile huawei`, the detector scans the supported speeds using 8N1. If the line is silent and has no saved speed, the suggested manual command uses the Huawei default of 9600 baud. [Huawei console settings](https://info.support.huawei.com/network/ptmngsys/Web/tsrev_ce/en/content/ce/19_edesk_dc_console_login_failure/edesk_dc_console_login_failure_edesk002.html)
 
 ## Open a manual session
 

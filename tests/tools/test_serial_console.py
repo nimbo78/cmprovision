@@ -29,6 +29,44 @@ if SCRIPT.exists():
 
 
 class SerialConsoleTest(unittest.TestCase):
+    def test_huawei_console_evidence_is_passive_and_frame_independent(self):
+        for line in (b"<rack-east-01>", b"<SSH Server>", b"[HUAWEI]", b"[rack-east-01]",
+                     b"[rack-east-01-GigabitEthernet0/0/1]", b"[access-02-GE1/0/1]", b"[SSH Server-10GE1/0/1]",
+                     b"Huawei Versatile Routing Platform Software", b"Huawei YunShan OS"):
+            with self.subTest(line=line), patch.object(console, "read_window",
+                    side_effect=lambda fd, rate, frame, end: line if (rate, frame) == (38400, "8e1") else b""):
+                result = console.probe_line(self.slave, "auto", None)
+                self.assertEqual((result.status, result.baud, result.frames), ("detected", 38400, ("8e1",)))
+
+    def test_huawei_console_ignores_generic_statuses_and_damaged_or_embedded_prompts(self):
+        for data in (b"[OK]", b"[ERROR]", b"[Y/N]", b"---- More ----", b"YunShan",
+                     b"XML: <rack-east-01>", b"<rss></rss>", b"[rack-east-01]display version",
+                     b"<" + b"a" * 65 + b">", b"\xff\x00X\r\n<HUAWEI>"):
+            with self.subTest(data=data):
+                self.assertFalse(console.recognizable(data))
+
+    def test_huawei_preset_reports_measured_speed_or_suggests_a_manual_default_on_silence(self):
+        cases = [
+            (console.Result("silent", None), None, 1, 9600),
+            (console.Result("silent", None), (19200, "2026-11-24"), 1, 19200),
+            (console.Result("detected", 38400), None, 0, 38400),
+        ]
+        for result, hint, status, speed in cases:
+            output = io.StringIO()
+            with self.subTest(result=result, hint=hint), \
+                    patch.object(sys, "argv", ["cmprovision-console", "detect", "--profile", "huawei",
+                                               "--port", self.line.by_id]), \
+                    patch.object(signal, "signal"), patch.object(signal, "setitimer"), \
+                    patch.object(os, "geteuid", return_value=0), \
+                    patch.object(console, "inventory", return_value=[self.line]), \
+                    patch.object(console, "claim", return_value=contextlib.nullcontext(self.slave)), \
+                    patch.object(console, "last_known", return_value=hint), patch.object(console, "remember"), \
+                    patch.object(console, "probe_line", return_value=result) as probe, contextlib.redirect_stdout(output):
+                self.assertEqual(console.main(), status)
+                probe.assert_called_once_with(self.slave, "8n1", hint[0] if hint else None)
+                self.assertIn(result.status, output.getvalue().splitlines())
+                self.assertIn(f"--baud {speed}", output.getvalue())
+
     def test_auto_reports_each_readable_frame_and_never_uses_a_vendor_name_as_evidence(self):
         banner = b"Cisco IOS Software, version 15.2\r\n"
         for readable in (("8n1",), ("8n2",), ("8n1", "8n2"), ("7e1",), ("8e1",),
@@ -88,6 +126,7 @@ class SerialConsoleTest(unittest.TestCase):
     def test_connect_opens_the_frame_returned_by_auto_and_keeps_an_explicit_profile(self):
         for profile, helper, expected in (("auto", b"19200 8e1\n", "8e1"),
                                           ("cisco", b"19200\n", "8n2"),
+                                          ("huawei", b"19200\n", "8n1"),
                                           ("auto", b"19200\n", None),
                                           ("auto", b"19200 9x3\n", None)):
             with self.subTest(profile=profile, helper=helper), \

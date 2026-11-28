@@ -27,7 +27,7 @@ import tty
 
 
 RATES = (9600, 115200, 19200, 38400, 57600)
-PROFILES = {"cisco": "8n2", "linux": "8n1"}
+PROFILES = {"cisco": "8n2", "linux": "8n1", "huawei": "8n1"}
 AUTO_FRAMES = ("8n1", "8n2", "7e1", "8e1", "7o1", "8o1")
 AUTO_TIMEOUT = 40
 CACHE = Path("/var/cache/cmprovision-console")
@@ -56,6 +56,7 @@ class Line:
     generation: str
     by_id: str | None
     by_path: str | None
+    usb_instance: int = 0
 
 
 def unique_ids(lines):
@@ -95,7 +96,7 @@ def inventory(sysfs=Path("/sys"), dev=Path("/dev")):
             serial = (usb / "serial").read_text().strip() if (usb / "serial").is_file() else ""
             generation = (usb / "devnum").read_text().strip()
             lines.append(Line(node, info.st_rdev, driver, str(usb), channel, serial, generation,
-                              aliases.get((node, "by-id")), aliases.get((node, "by-path"))))
+                              aliases.get((node, "by-id")), aliases.get((node, "by-path")), usb.stat().st_ino))
         except (OSError, UnicodeError, StopIteration):
             continue  # A hot-unplug can remove any part of the sysfs tree.
     return unique_ids(lines)
@@ -178,8 +179,22 @@ def private_directory(folder):
 
 
 @contextmanager
+def operator_lock(line, attribute=None):
+    """Reserve this kernel device across probe, unprivileged picocom and web sessions."""
+    path = attribute or Path("/sys/class/tty") / line.node.name / "dev"
+    with path.open("r") as guard:
+        if guard.read().strip() != f"{os.major(line.rdev)}:{os.minor(line.rdev)}":
+            raise Unavailable("USB console changed")
+        try:
+            fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise Busy("another operator is using this terminal") from exc
+        yield
+
+
+@contextmanager
 def claim(line, refresh, policies=reserved_services, proc=Path("/proc"),
-          locks=Path("/run/lock"), runtime=Path("/run/cmprovision-console")):
+          locks=Path("/run/lock"), runtime=Path("/run/cmprovision-console"), *, writable=False):
     private_directory(runtime)
     name = f"{os.major(line.rdev)}-{os.minor(line.rdev)}"
     with (runtime / name).open("a") as guard:
@@ -195,7 +210,8 @@ def claim(line, refresh, policies=reserved_services, proc=Path("/proc"),
         if refresh() != line:
             raise Unavailable("adapter changed before opening the terminal")
         try:
-            fd = os.open(line.node, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK | os.O_NOFOLLOW)
+            access = os.O_RDWR if writable else os.O_RDONLY
+            fd = os.open(line.node, access | os.O_NOCTTY | os.O_NONBLOCK | os.O_NOFOLLOW)
         except OSError as exc:
             if exc.errno == errno.EBUSY:
                 raise Busy("terminal is exclusive") from exc
@@ -226,9 +242,9 @@ def claim(line, refresh, policies=reserved_services, proc=Path("/proc"),
             os.close(fd)
 
 
-def set_frame(fd, baud, frame):
+def set_frame(fd, baud, frame, *, mark_errors=True):
     attrs = termios.tcgetattr(fd)
-    attrs[0] = termios.INPCK | termios.PARMRK
+    attrs[0] = termios.INPCK | termios.PARMRK if mark_errors else 0
     attrs[1] = attrs[3] = 0
     attrs[2] &= ~(termios.CSIZE | termios.PARENB | termios.PARODD | termios.CSTOPB |
                   termios.CRTSCTS | getattr(termios, "CMSPAR", 0))
@@ -286,6 +302,12 @@ def read_window(fd, baud, frame, end):
 
 CONSOLE_TEXT = re.compile(
     rb"(?:[A-Za-z][A-Za-z0-9_.-]{1,62}(?:\([A-Za-z0-9_-]{1,32}\))?[>#]"
+    rb"|<[A-Za-z0-9](?:[A-Za-z0-9_. -]{0,62}[A-Za-z0-9_.-])?>"
+    # Plain [OK] or [ERROR] is not a distinctive system-view prompt.
+    rb"|\[(?i:HUAWEI|(?=[a-z][a-z0-9_.-]{0,62}[-.0-9])[a-z][a-z0-9_.-]{0,63}"
+    rb"|[a-z0-9][a-z0-9_. -]{0,63}-(?:GigabitEthernet|XGigabitEthernet|(?:[1-9][0-9]?)?GE)"
+    rb"[0-9]+(?:/[0-9]+){1,3})\]"
+    rb"|Huawei (?:Versatile Routing Platform Software|YunShan OS)"
     rb"|[A-Za-z0-9_.-]{1,64} login:"
     rb"|Linux version \d+\.\d+[ -~]*"
     rb"|\[\s*\d+\.\d+\]\s+[A-Za-z0-9][ -~]{5,}"
@@ -311,7 +333,7 @@ class Result:
     frames: tuple[str, ...] = ()
 
 
-def detect_speed(sample, hint=None, frames=("8n1",)):
+def detect_speed(sample, hint=None, frames=("8n1",), rates=RATES):
     auto = len(frames) > 1
     end = time.monotonic() + (AUTO_TIMEOUT if auto else 12)
     window = 1.0 if auto else 1.5
@@ -328,9 +350,9 @@ def detect_speed(sample, hint=None, frames=("8n1",)):
             if not auto:
                 raise
             return None
-    order = [hint] if hint in RATES else []
+    order = [hint] if hint in rates else []
     for frame in frames:
-        for rate in dict.fromkeys([*order, *RATES]):
+        for rate in dict.fromkeys([*order, *rates]):
             data = observe(rate, frame)
             if data is None:
                 break
@@ -371,17 +393,22 @@ def last_known(line, profile, target, folder=CACHE):
     return None
 
 
+def write_cache_entry(folder, key, entry):
+    private_directory(folder)
+    with tempfile.NamedTemporaryFile("w", dir=folder, delete=False) as output:
+        path = Path(output.name)
+        try:
+            json.dump(entry, output)
+            output.flush()
+            path.replace(folder / key)
+        finally:
+            path.unlink(missing_ok=True)
+
+
 def remember(line, profile, target, baud, folder=CACHE):
     if target:
-        private_directory(folder)
-        with tempfile.NamedTemporaryFile("w", dir=folder, delete=False) as output:
-            path = Path(output.name)
-            try:
-                json.dump({"baud": baud, "at": datetime.now(timezone.utc).isoformat()}, output)
-                output.flush()
-                path.replace(folder / cache_key(line, profile, target))
-            finally:
-                path.unlink(missing_ok=True)
+        write_cache_entry(folder, cache_key(line, profile, target),
+                          {"baud": baud, "at": datetime.now(timezone.utc).isoformat()})
 
 
 def picocom_arguments(path, baud, frame):
@@ -544,7 +571,8 @@ def run(args):
     line = select_line(ports, args.port)
     frame = PROFILES.get(args.profile, args.profile)
     if args.operation == "connect":
-        return connect(line, args.port, args.profile, frame)
+        with operator_lock(line):
+            return connect(line, args.port, args.profile, frame)
     if os.geteuid() != 0:
         raise Unavailable("detect requires a station administrator (sudo)")
     if frame != "auto" and line.driver == "ftdi_sio" and frame[0] not in "78":
@@ -590,7 +618,8 @@ def run(args):
         print(f"Possible {result.baud} baud from one window")
     elif result.status == "silent":
         print("No bytes were read in the sampling windows.")
-    speed = result.baud or (known[0] if known else (9600 if args.profile == "cisco" else 115200))
+    default_speed = 9600 if args.profile in ("cisco", "huawei") else 115200
+    speed = result.baud or (known[0] if known else default_speed)
     print("Manual session:", shlex.join(picocom_arguments(Path("/dev/serial") / args.port, speed, frame)))
     if not shutil.which("picocom"):
         print("Install the Debian picocom package to open the manual session.")
@@ -606,7 +635,7 @@ def main():
     for sub in (detect, session):
         sub.add_argument("--port", required=True, help="by-id/... or by-path/... from list")
         sub.add_argument("--profile", default="auto" if sub is session else "linux",
-                         help="auto, linux (8N1), cisco (8N2), or an explicit frame")
+                         help="auto, linux/huawei (8N1), cisco (8N2), or an explicit frame")
     detect.add_argument("--wait", action="store_true", help="wait for fresh data and print the confirmed baud rate")
     detect.add_argument("--target", help="optional equipment label for a line-specific speed hint")
     args = parser.parse_args()

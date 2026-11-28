@@ -24,6 +24,10 @@ return [
         'token' => env('POSTMARK_TOKEN'),
     ],
 
+    'serial_console' => [
+        'socket' => env('CMPROVISION_SERIAL_SOCKET', '/run/cmprovision-serial-web.sock'),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

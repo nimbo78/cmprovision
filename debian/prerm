@@ -94,6 +94,14 @@ if [ "$1" = "remove" ] || { [ "$1" = "upgrade" ] && [ -n "$2" ] && dpkg --compar
     /usr/lib/cmprovision/lldp-station withdraw || true
 fi
 
+# The broker is guaranteed from stable 2.30.14. Display-only 2.30.14~dev3 lacks it.
+# Close the listener before the USB sessions, then let a later upgrade enable the socket again.
+if [ "$1" = "upgrade" ] && [ -n "${2:-}" ] && dpkg --compare-versions "$2" lt "2.30.14"; then
+    deb-systemd-invoke stop cmprovision-serial-web.socket >/dev/null || true
+    deb-systemd-invoke stop cmprovision-serial-web.service >/dev/null || true
+    deb-systemd-helper purge cmprovision-serial-web.socket >/dev/null || true
+fi
+
 #DEBHELPER#
 
 exit 0
