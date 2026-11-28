@@ -10040,10 +10040,10 @@ index 0000000..e9b4c99
 +"""Optional integrations. Importing this package never opens hardware."""
 diff --git a/fpms/integrations/cmprovision.py b/fpms/integrations/cmprovision.py
 new file mode 100644
-index 0000000..a703727
+index 0000000..63fe255
 --- /dev/null
 +++ b/fpms/integrations/cmprovision.py
-@@ -0,0 +1,587 @@
+@@ -0,0 +1,591 @@
 +"""Read-only cmprovision front panel, shared by Lite and the WLAN Pi menu.
 +
 +No WLAN Pi state, subprocesses, database access or device control. Pillow is
@@ -10545,15 +10545,28 @@ index 0000000..a703727
 +                rows.append(dict(name=name, switch_key=key, state="No response", serials=[]))
 +            else:
 +                industrial = switch.get("layout") == "industrial-columns"
++                huawei = view["model"] == "S5735I-S8U4XN-V2"
 +                for group, block in enumerate(objects(switch.get("blocks"), 32)):
 +                    start = len(rows)
++                    connector = ""
++                    if huawei and industrial and group < 2:
++                        connector = ("RJ45", "SFP+")[group]
++                    elif huawei and switch.get("verified_layout") is True and block.get("label") in ("RJ45", "SFP+"):
++                        connector = block["label"]  # verified bank from a snapshot without panel coordinates
 +                    for port in objects(block.get("ports"), 256)[:512-start]:
 +                        portname = text(port.get("name"))
 +                        y = port.get("panel_y")
 +                        if industrial and group < 2 and type(y) is int and 0 <= y <= 15:
 +                            view["slots"].append((group, y, len(rows)))
-+                        rows.append(dict(port, name=name + " " + portname, switch_key=key,
-+                                         portname=portname, pin=f"{s_index}:{portname}"))
++                        row = dict(port, name=name + " " + portname, switch_key=key, panel_connector=connector,
++                                   portname=portname, pin=f"{s_index}:{portname}")
++                        if connector == "SFP+":
++                            row.pop("watts", None)
++                            row.pop("poe_state", None)
++                            info = row.get("info")
++                            if isinstance(info, dict) and "poe_class" in info:
++                                row["info"] = {k: v for k, v in info.items() if k != "poe_class"}
++                        rows.append(row)
 +                    end = len(rows)
 +                    if number(block.get("rows"), 1) >= 2:
 +                        view["columns"].extend((i, i + 1 if i + 1 < end else None, group)
@@ -10562,15 +10575,6 @@ index 0000000..a703727
 +                        view["columns"].extend((None, i, group) for i in range(start, end))
 +                if len(view["slots"]) != len(rows) - view["first"]:
 +                    view["slots"].clear()  # incomplete geometry uses the ordinary map
-+                # The industrial SFP+ bank cannot supply PoE, even if the snapshot carries a reading.
-+                for group, _, index in view["slots"]:
-+                    if group == 1:
-+                        row = rows[index]
-+                        row.pop("watts", None)
-+                        row.pop("poe_state", None)
-+                        info = row.get("info")
-+                        if isinstance(info, dict) and "poe_class" in info:
-+                            row["info"] = {k: v for k, v in info.items() if k != "poe_class"}
 +            view["end"] = len(rows)
 +        return rows, views
 +
@@ -14671,10 +14675,10 @@ index 0000000..e3e2077
 +    assert result.returncode == 0, result.stderr
 diff --git a/tests/test_cmprovision_v2.py b/tests/test_cmprovision_v2.py
 new file mode 100644
-index 0000000..1fa3314
+index 0000000..0710440
 --- /dev/null
 +++ b/tests/test_cmprovision_v2.py
-@@ -0,0 +1,1769 @@
+@@ -0,0 +1,1821 @@
 +"""The second look of the cmprovision panel: buttons, the leave prompt, the age of the data, themes and every screen.
 +
 +The demo stand is the one of the mockups (docs/superpowers/specs/2026-10-30-fpms-panel-v2/mock3.py): one 2960-CX of 12
@@ -16179,6 +16183,58 @@ index 0000000..1fa3314
 +        menu.frame()
 +
 +
++@pytest.mark.parametrize("profile", ["industrial", "legacy-banks", "unverified", "cisco"])
++def test_hyperpixel_socket_card_shows_its_connector_and_only_applicable_power(tmp_path, monkeypatch, profile):
++    from fpms.integrations.cmprovision_touch import TouchMenu
++
++    switch = industrial_switch()
++    copper, cage = [block["ports"][0] for block in switch["blocks"]]
++    copper.update(link_up=True, speed=1000, poe_state="delivering", watts=4.2)
++    cage.update(link_up=False, watts=9.7, poe_state="delivering", info={"media": "sfp", "transceiver": False})
++    if profile != "industrial":
++        del switch["layout"]
++    if profile == "unverified":
++        del switch["verified_layout"]
++    if profile == "cisco":
++        switch["model"] = "C9200L-24P-4X"
++        copper["name"], cage["name"] = "Gi1/0/1", "Te1/1/1"
++    snap = demo_snapshot()
++    snap["switches"] = [switch]
++    p = panel_with(tmp_path, snap)
++    p.page = 1
++    menu, captions, symbols = TouchMenu(p), [], []
++    monkeypatch.setattr(menu, "label", lambda x, y, value, *a, **kw: captions.append(value))
++    monkeypatch.setattr(menu, "mark", lambda x, y, symbol, *a, **kw: symbols.append((x, y, symbol)))
++
++    def tap(target):
++        left, top, right, bottom = next(box for box, action in menu.targets if action == target)
++        menu.tap((left + right) // 2, (top + bottom) // 2)
++        captions.clear()
++        symbols.clear()
++        menu.frame()
++
++    menu.frame()
++    known = profile in ("industrial", "legacy-banks")
++    for port, connector, icon, link in ((cage, "SFP+", "sfp", "Down"), (copper, "RJ45", "Ports", "Up · 1G")):
++        tap(("row", "0:" + port["name"]))
++        assert port["name"] in captions and link in captions
++        assert (connector if known else "Ethernet") in captions
++        assert (34, 162, icon if known else "Ports") in symbols
++        power = port is copper or not known
++        assert ("PoE" in captions) is power and ((295, 162, "bolt") in symbols) is power
++        if port is copper:
++            assert "Delivering · 4.2 W" in captions
++        tap(("section", "physical"))
++        assert ("PoE" in captions) is power and port["name"] in captions and link in captions
++        if known:
++            assert "Connector" in captions and connector in captions and "Link" in captions
++        if port is cage:
++            assert "Empty" in captions
++            assert ("9.7" in " ".join(str(s) for s in captions)) is (not known)
++        tap(("key", "KEY2"))
++        tap(("key", "KEY2"))
++
++
 +def test_hyperpixel_offline_list_pages_independently_of_the_live_map_and_connected(tmp_path, monkeypatch):
 +    from fpms.integrations.cmprovision_touch import TouchMenu
 +
@@ -17341,7 +17397,7 @@ index 0000000..922834a
 +    /bin/sh "$0" --inside "$mode" "$root" "$source"
 diff --git a/fpms/integrations/cmprovision_touch.py b/fpms/integrations/cmprovision_touch.py
 new file mode 100644
-index 0000000..512613e
+index 0000000..f8fe180
 --- /dev/null
 +++ b/fpms/integrations/cmprovision_touch.py
 @@ -0,0 +1,927 @@
@@ -17973,13 +18029,13 @@ index 0000000..512613e
 +                    continue
 +                row = rows[index]
 +                y = 167 + side * 83
-+                self.map_tile(row, (x, y, x + cell - 1, y + 77), tile_connector(row, bank))
++                self.map_tile(row, (x, y, x + cell - 1, y + 77), row.get("panel_connector") or tile_connector(row, bank))
 +            x += cell + gap
 +
 +    def map_tile(self, row, box, connector, *, industrial=False):
 +        x, y, right, bottom = box
 +        width = right - x + 1
-+        supports_poe = not industrial or connector == "RJ45"
++        supports_poe = row.get("panel_connector") != "SFP+" and (not industrial or connector == "RJ45")
 +        local = bool(row.get("server"))
 +        peer = isinstance(row.get("station"), dict) and not local
 +        _, edge = compact.port_style(row)

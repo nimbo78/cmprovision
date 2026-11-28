@@ -35,9 +35,14 @@ def port(menu, row, switch, link, power):
     if switch.get("answering") is False:
         menu.label(35, 168, "Switch not responding", 22, "warn")
         return
+    connector = row.get("panel_connector")
+    readings = [(34, connector or "Ethernet", "sfp" if connector == "SFP+" else "Ports", link)]
+    if connector != "SFP+":
+        readings.append((295, "PoE", "bolt", power))
     if menu.section == "physical":
-        pairs = [("Ethernet", link[1]), ("PoE", power[1])]
-        pairs += fields.physical_rows(row, switch) + fields.neighbor_rows(row)
+        pairs = [("Link" if connector and title == connector else title, reading[1])
+                 for _, title, _, reading in readings]
+        pairs += fields.physical_rows(row, switch, connector=connector) + fields.neighbor_rows(row)
         station = fields.record(row.get("station")) if row.get("state") != "free" and row.get("link_up") is not False else {}
         pairs += fields.rows(("Station address", station.get("address")), ("Station version", station.get("version")))
         facts(menu, pairs, 146, "No port readings", 7)
@@ -57,7 +62,7 @@ def port(menu, row, switch, link, power):
             menu.label(35, 168, "Devices no longer present", 20, "muted")
         return
     menu.card((18, 147, 781, 210))
-    for x, title, sign, reading in ((34, "Ethernet", "Ports", link), (295, "PoE", "bolt", power)):
+    for x, title, sign, reading in readings:
         menu.mark(x, 162, sign, 20, reading[2])
         menu.label(x+28, 156, title, 14, "muted", 218)
         menu.label(x+28, 179, reading[1], 17, reading[2], 244, "bold")
