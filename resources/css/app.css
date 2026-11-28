@@ -386,8 +386,8 @@ body { background: var(--page); color: var(--text); }
     .ports-media-port .ports-tile .ports-logo { width: 26px; max-width: 100%; height: auto; }
 }
 @media (max-width: 400px) {
-    .ports-switch-industrial { padding-inline: 8px; }
-    .ports-switch-industrial .ports-chassis { padding-inline: 8px; }
+    .ports-switch-industrial { padding-inline: 5px; }
+    .ports-switch-industrial .ports-chassis { padding-inline: 6px; }
 }
 .ports-bank { position: relative; display: grid; grid-auto-flow: column; grid-template-rows: 12px var(--tile) var(--tile) 12px; gap: 4px 5px; flex: none; }
 .ports-bank.one-row { grid-template-rows: 12px var(--tile) 12px; }
